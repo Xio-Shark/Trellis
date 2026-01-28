@@ -43,7 +43,6 @@ npm install -g @mindfoldhq/trellis@latest
 ### 2. 初始化项目
 
 ```bash
-cd your-project
 trellis init -u your-name
 ```
 
@@ -916,4 +915,4 @@ trellis update --migrate -s
 
 ## 拓展阅读
 
-- [用 Kubernetes 的方式来理解 Trellis](/use-k8s-to-know-trellis-zh.md) - 如果你熟悉 Kubernetes，这篇文章用 K8s 的概念类比解释 Trellis 的设计
+- [用 Kubernetes 的方式来理解 Trellis](use-k8s-to-know-trellis-zh.md) - 如果你熟悉 Kubernetes，这篇文章用 K8s 的概念类比解释 Trellis 的设计

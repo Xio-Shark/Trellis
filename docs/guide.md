@@ -928,4 +928,4 @@ trellis update --migrate -s
 
 ## Extended Reading
 
-- [Understanding Trellis Through Kubernetes Concepts](./use-k8s-to-know-trellis.md) - If you're familiar with Kubernetes, this article explains Trellis design using K8s concept analogies
+- [Understanding Trellis Through Kubernetes Concepts](use-k8s-to-know-trellis.md) - If you're familiar with Kubernetes, this article explains Trellis design using K8s concept analogies
