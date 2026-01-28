@@ -19,7 +19,7 @@
 <a href="https://www.npmjs.com/package/@mindfoldhq/trellis"><img src="https://img.shields.io/npm/v/@mindfoldhq/trellis.svg?style=flat-square&color=blue" alt="npm version" /></a>
 <a href="https://github.com/mindfold-ai/Trellis/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-FSL-green.svg?style=flat-square" alt="license" /></a>
 <a href="https://github.com/mindfold-ai/Trellis/stargazers"><img src="https://img.shields.io/github/stars/mindfold-ai/Trellis?style=flat-square&color=yellow" alt="stars" /></a>
-<a href="https://discord.gg/trellis"><img src="https://img.shields.io/badge/Discord-Join-7289DA?style=flat-square&logo=discord&logoColor=white" alt="Discord" /></a>
+<a href="https://discord.com/invite/tWcCZ3aRHc"><img src="https://img.shields.io/badge/Discord-Join-7289DA?style=flat-square&logo=discord&logoColor=white" alt="Discord" /></a>
 </p>
 
 <p align="center">
@@ -165,6 +165,10 @@ Skills 是可选的——AI 可能跳过，导致质量不稳定。Trellis 通�
 
 </details>
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=mindfold-ai/Trellis&type=Date)](https://star-history.com/#mindfold-ai/Trellis&Date)
+
 ## 详细文档
 
 - [完整使用指南](docs/guide-zh.md) — 系统架构、工作流、CLI 命令参考
@@ -172,7 +176,7 @@ Skills 是可选的——AI 可能跳过，导致质量不稳定。Trellis 通�
 
 ## 社区
 
-- [Discord](https://discord.gg/trellis) — 加入讨论
+- [Discord](https://discord.com/invite/tWcCZ3aRHc) — 加入讨论
 - [GitHub Issues](https://github.com/mindfold-ai/Trellis/issues) — 报告 Bug & 提功能建议
 
 <p align="center">

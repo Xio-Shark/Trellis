@@ -19,7 +19,7 @@
 <a href="https://www.npmjs.com/package/@mindfoldhq/trellis"><img src="https://img.shields.io/npm/v/@mindfoldhq/trellis.svg?style=flat-square&color=blue" alt="npm version" /></a>
 <a href="https://github.com/mindfold-ai/Trellis/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-FSL-green.svg?style=flat-square" alt="license" /></a>
 <a href="https://github.com/mindfold-ai/Trellis/stargazers"><img src="https://img.shields.io/github/stars/mindfold-ai/Trellis?style=flat-square&color=yellow" alt="stars" /></a>
-<a href="https://discord.gg/trellis"><img src="https://img.shields.io/badge/Discord-Join-7289DA?style=flat-square&logo=discord&logoColor=white" alt="Discord" /></a>
+<a href="https://discord.com/invite/tWcCZ3aRHc"><img src="https://img.shields.io/badge/Discord-Join-7289DA?style=flat-square&logo=discord&logoColor=white" alt="Discord" /></a>
 </p>
 
 <p align="center">
@@ -171,7 +171,7 @@ No. Each person has their own space at `.trellis/workspace/{name}/`.
 
 ## Community
 
-- [Discord](https://discord.gg/trellis) — Join the conversation
+- [Discord](https://discord.com/invite/tWcCZ3aRHc) — Join the conversation
 - [GitHub Issues](https://github.com/mindfold-ai/Trellis/issues) — Report bugs & request features
 
 <p align="center">
