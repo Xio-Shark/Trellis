@@ -165,6 +165,13 @@ No. Each person has their own space at `.trellis/workspace/{name}/`.
 
 </details>
 
+<details>
+<summary><strong>How does AI remember previous conversations?</strong></summary>
+
+Use `/record-session` at the end of each conversation. AI writes a session summary to `.trellis/workspace/{name}/journal-N.md` and indexes it in `index.md`. Next time you `/start`, AI automatically reads recent journals and git info to restore context. In theory, you could just submit your daily journal files as your work report 🤣.
+
+</details>
+
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=mindfold-ai/Trellis&type=Date)](https://star-history.com/#mindfold-ai/Trellis&Date)

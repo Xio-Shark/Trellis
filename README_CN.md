@@ -165,6 +165,13 @@ Skills 是可选的——AI 可能跳过，导致质量不稳定。Trellis 通�
 
 </details>
 
+<details>
+<summary><strong>AI 怎么知道之前的对话内容？</strong></summary>
+
+每次结束对话时用 `/record-session`，AI 会把会话摘要写入 `.trellis/workspace/{name}/journal-N.md`，并在 `index.md` 建立索引。下次 `/start` 时，AI 会自动读取最近的 journal 和 git 信息，恢复上下文。所以理论上直接扒每天的 journal 文件就能当你的工作日报提交了🤣。
+
+</details>
+
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=mindfold-ai/Trellis&type=Date)](https://star-history.com/#mindfold-ai/Trellis&Date)
