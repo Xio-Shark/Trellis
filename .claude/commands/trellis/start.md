@@ -75,7 +75,7 @@ When user describes a task, classify it:
 For questions or trivial fixes, work directly:
 
 1. Answer question or make the fix
-2. If code was changed, remind user to run `/finish-work`
+2. If code was changed, remind user to run `/trellis:finish-work`
 
 ---
 
@@ -222,7 +222,7 @@ Task(
 3. Remind user to:
    - Test the changes
    - Commit when ready
-   - Run `/record-session` to record this session
+   - Run `/trellis:record-session` to record this session
 
 ---
 
@@ -244,10 +244,10 @@ If yes, resume from the appropriate step (usually Step 7 or 8).
 
 | Command | When to Use |
 |---------|-------------|
-| `/start` | Begin a session (this command) |
-| `/parallel` | Complex tasks needing isolated worktree |
-| `/finish-work` | Before committing changes |
-| `/record-session` | After completing a task |
+| `/trellis:start` | Begin a session (this command) |
+| `/trellis:parallel` | Complex tasks needing isolated worktree |
+| `/trellis:finish-work` | Before committing changes |
+| `/trellis:record-session` | After completing a task |
 
 ### AI Scripts `[AI]`
 
