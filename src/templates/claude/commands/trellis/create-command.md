@@ -1,16 +1,16 @@
 # Create New Slash Command
 
-Create a new slash command in both `.cursor/commands/` and `.claude/commands/` directories based on user requirements.
+Create a new slash command in both `.cursor/commands/` (with `trellis-` prefix) and `.claude/commands/trellis/` directories based on user requirements.
 
 ## Usage
 
 ```
-/create-command <command-name> <description>
+/trellis:create-command <command-name> <description>
 ```
 
 **Example**:
 ```
-/create-command review-pr Check PR code changes against project guidelines
+/trellis:create-command review-pr Check PR code changes against project guidelines
 ```
 
 ## Execution Steps
@@ -61,8 +61,8 @@ Template
 ### 4. Create Files
 
 Create in both directories:
-- `.cursor/commands/<command-name>.md`
-- `.claude/commands/<command-name>.md`
+- `.cursor/commands/trellis-<command-name>.md`
+- `.claude/commands/trellis/<command-name>.md`
 
 ### 5. Confirm Creation
 
@@ -71,11 +71,11 @@ Output result:
 [OK] Created Slash Command: /<command-name>
 
 File paths:
-- .cursor/commands/<command-name>.md
-- .claude/commands/<command-name>.md
+- .cursor/commands/trellis-<command-name>.md
+- .claude/commands/trellis/<command-name>.md
 
 Usage:
-/<command-name>
+/trellis:<command-name>
 
 Description:
 <description>
@@ -112,7 +112,7 @@ Description:
 
 ### Input
 ```
-/create-command review-pr Check PR code changes against project guidelines
+/trellis:create-command review-pr Check PR code changes against project guidelines
 ```
 
 ### Generated Command Content

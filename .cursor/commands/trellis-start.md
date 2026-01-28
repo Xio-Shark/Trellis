@@ -92,7 +92,7 @@ Ready for your task. What would you like to work on?
 
 1. Read relevant guidelines based on task type `[AI]`
 2. Implement the task directly `[AI]`
-3. Remind user to run `/finish-work` before committing `[USER]`
+3. Remind user to run `/trellis-finish-work` before committing `[USER]`
 
 ### For Complex Tasks (Multi-Step Tasks)
 
@@ -113,7 +113,7 @@ Ready for your task. What would you like to work on?
 1. Verify typecheck and lint pass `[AI]`
 2. Remind user to test
 3. Remind user to commit
-4. Remind user to run `/record-session` `[USER]`
+4. Remind user to run `/trellis-record-session` `[USER]`
 5. Archive task `[AI]`:
    ```bash
    ./.trellis/scripts/task.sh archive <task-name>
@@ -127,14 +127,14 @@ The following slash commands are for users (not AI):
 
 | Command | Description |
 |---------|-------------|
-| `/start` | Start development session (this command) |
-| `/before-frontend-dev` | Read frontend guidelines |
-| `/before-backend-dev` | Read backend guidelines |
-| `/check-frontend` | Check frontend code |
-| `/check-backend` | Check backend code |
-| `/check-cross-layer` | Cross-layer verification |
-| `/finish-work` | Pre-commit checklist |
-| `/record-session` | Record session progress |
+| `/trellis-start` | Start development session (this command) |
+| `/trellis-before-frontend-dev` | Read frontend guidelines |
+| `/trellis-before-backend-dev` | Read backend guidelines |
+| `/trellis-check-frontend` | Check frontend code |
+| `/trellis-check-backend` | Check backend code |
+| `/trellis-check-cross-layer` | Cross-layer verification |
+| `/trellis-finish-work` | Pre-commit checklist |
+| `/trellis-record-session` | Record session progress |
 
 ---
 
@@ -153,4 +153,4 @@ The following slash commands are for users (not AI):
 
 **IMPORTANT**: When a task or session is completed, remind the user:
 
-> Before ending this session, please run `/record-session` to record what we accomplished.
+> Before ending this session, please run `/trellis-record-session` to record what we accomplished.

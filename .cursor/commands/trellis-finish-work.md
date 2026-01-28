@@ -26,7 +26,7 @@ pnpm test
 
 ### 2. Documentation Sync
 
-**Structure Docs**:
+**Spec Docs**:
 - [ ] Does `.trellis/spec/backend/` need updates?
   - New patterns, new modules, new conventions
 - [ ] Does `.trellis/spec/frontend/` need updates?
@@ -94,7 +94,7 @@ git diff --name-only
 
 | Oversight | Consequence | Check |
 |-----------|-------------|-------|
-| Structure docs not updated | Others don't know the change | Check .trellis/spec/ |
+| Spec docs not updated | Others don't know the change | Check .trellis/spec/ |
 | Migration not created | Schema out of sync | Check db/migrations/ |
 | Types not synced | Runtime errors | Check shared types |
 | Tests not updated | False confidence | Run full test suite |
@@ -106,19 +106,19 @@ git diff --name-only
 
 ```
 Development Flow:
-  Write code -> Test -> /finish-work -> git commit -> /record-session
+  Write code -> Test -> /trellis-finish-work -> git commit -> /trellis-record-session
                           |                              |
                    Ensure completeness              Record progress
                    
 Debug Flow:
-  Hit bug -> Fix -> /break-loop -> Knowledge capture
+  Hit bug -> Fix -> /trellis-break-loop -> Knowledge capture
                        |
                   Deep analysis
 ```
 
-- `/finish-work` - Check work completeness (this command)
-- `/record-session` - Record session and commits
-- `/break-loop` - Deep analysis after debugging
+- `/trellis-finish-work` - Check work completeness (this command)
+- `/trellis-record-session` - Record session and commits
+- `/trellis-break-loop` - Deep analysis after debugging
 
 ---
 

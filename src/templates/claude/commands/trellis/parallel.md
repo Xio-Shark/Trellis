@@ -84,7 +84,7 @@ Plan Agent will:
 After plan.sh completes, start the worktree agent:
 
 ```bash
-./.trellis/scripts/multi-agent/start.sh "$TASK_DIR"
+./.trellis/scripts/multi-agent/trellis:start.sh "$TASK_DIR"
 ```
 
 ### Option B: Manual Configuration (For simple/clear features) `[AI]`
@@ -137,7 +137,7 @@ EOF
 
 ```bash
 ./.trellis/scripts/task.sh validate "$TASK_DIR"
-./.trellis/scripts/multi-agent/start.sh "$TASK_DIR"
+./.trellis/scripts/multi-agent/trellis:start.sh "$TASK_DIR"
 ```
 
 ---
@@ -154,10 +154,10 @@ The following slash commands are for users (not AI):
 
 | Command | Description |
 |---------|-------------|
-| `/parallel` | Start Multi-Agent Pipeline (this command) |
-| `/start` | Start normal development mode (single process) |
-| `/record-session` | Record session progress |
-| `/finish-work` | Pre-completion checklist |
+| `/trellis:parallel` | Start Multi-Agent Pipeline (this command) |
+| `/trellis:start` | Start normal development mode (single process) |
+| `/trellis:record-session` | Record session progress |
+| `/trellis:finish-work` | Pre-completion checklist |
 
 ---
 
