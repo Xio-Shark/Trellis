@@ -145,6 +145,11 @@ vite.config.ts.timestamp-*
 .trellis/.current-task
 .trellis/.developer
 
+# Multi-agent temp files
+.session-id
+.agent-log
+.agent-runner.sh
+
 # Python cache
 __pycache__/
 *.pyc
