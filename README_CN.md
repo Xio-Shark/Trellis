@@ -78,7 +78,7 @@ trellis init -u your-name
 <img src="assets/usecase2.png" alt="并行开发 - 多个功能同时推进" />
 </p>
 
-每个 worker 在独立分支上工作，互不干扰。一个功能完成就可以合并，不用等其他的。
+本地开发时，每个 worker 运行在独立的 worktree（物理隔离的目录），互不阻塞、互不干扰。一个功能完成就可以合并，不用等其他的。
 
 ### 自定义工作流
 

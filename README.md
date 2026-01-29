@@ -78,7 +78,7 @@ Spawn multiple Claude sessions in isolated worktrees with `/trellis:parallel`. W
 <img src="assets/usecase2.png" alt="Parallel Work - Multiple features developing simultaneously" />
 </p>
 
-Each worker runs independently on its own branch. No conflicts, no queue. Review and merge completed features while others are still in progress.
+While coding, each worker runs in its own worktree (physically isolated directory), no blocking, no interference. Review and merge completed features while others are still in progress.
 
 ### Custom Workflows
 
