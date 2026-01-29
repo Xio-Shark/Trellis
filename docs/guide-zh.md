@@ -134,7 +134,7 @@ your-project/
 │   ├── .gitignore               # .trellis 目录的 gitignore 规则
 │   ├── spec/               # 开发规范（核心知识库）
 │   ├── workspace/            # 会话记录和 Feature 追踪
-│   ├── backlog/                 # 需求池（与 Feature 双向链接）
+│   ├── tasks/                   # 任务管理（Feature 追踪）
 │   └── scripts/                 # 自动化脚本
 ├── .claude/                     # Claude Code 专用配置
 │   ├── commands/                # Slash Commands（13 个）
@@ -245,8 +245,7 @@ workspace/
     {"phase": 2, "action": "check"},
     {"phase": 3, "action": "finish"},
     {"phase": 4, "action": "create-pr"}
-  ],
-  "backlog_ref": "260119-user-auth.json"
+  ]
 }
 ```
 
@@ -269,49 +268,6 @@ workspace/
 
 `journal-N.md` 记录每次会话的日期、Feature、工作摘要、主要改动、Git 提交、测试情况、下一步计划。形成完整的开发历史，新会话可以快速回顾之前的工作。
 
-### Backlog 系统
-
-Backlog 是需求池，用于管理待开发的功能和任务。每个 backlog issue 与 Feature 建立双向链接。
-
-```
-.trellis/
-└── backlog/                     # 需求池目录
-    ├── 260119-user-auth.json    # Backlog issue（ID 格式：YYMMDD-slug）
-    └── 260119-payment-fix.json
-```
-
-**`backlog/*.json`** - Backlog issue 结构：
-```json
-{
-  "id": "260119-user-auth",
-  "title": "Add user authentication",
-  "description": "Implement JWT-based auth with email verification",
-  "priority": "P1",
-  "status": "in_progress",
-  "assigned_to": "taosu",
-  "created_by": "taosu",
-  "created_at": "2026-01-19T10:30:00+08:00",
-  "completed_at": null
-}
-```
-
-**双向链接**：
-- `backlog/*.json` 的 `assigned_to` 指向开发者
-- `task.json` 的 `backlog_ref` 指向 backlog 文件名
-- 归档 Feature 时自动将关联的 backlog status 更新为 `done`
-
-**优先级**：P0（紧急）> P1（高）> P2（中）> P3（低）
-
-**在 `get-context.sh` 中显示**：
-```
-## BACKLOG (Assigned to me)
-- [P1] Add user authentication (2026-01-19)
-- [P2] Fix payment display (2026-01-18)
-
-## CREATED BY ME (Assigned to others)
-- [P1] Review API design (assigned to: john)
-```
-
 ---
 
 ## 三、脚本系统（`.trellis/scripts/`）
@@ -320,7 +276,7 @@ Backlog 是需求池，用于管理待开发的功能和任务。每个 backlog 
 
 ```
 scripts/
-├── get-context.sh               # 获取会话上下文（开发者、分支、最近提交、backlog）
+├── get-context.sh               # 获取会话上下文（开发者、分支、最近提交、任务）
 ├── task.sh                   # Feature 管理（创建、归档、配置）
 ├── add-session.sh               # 记录会话
 ├── init-developer.sh            # 初始化开发者身份
@@ -330,7 +286,6 @@ scripts/
 │   ├── git-context.sh           # Git 上下文
 │   ├── phase.sh                 # 阶段管理
 │   ├── worktree.sh              # Worktree 工具
-│   ├── backlog.sh               # Backlog 工具（创建、完成、列表）
 │   ├── registry.sh              # Agent 注册表 CRUD 操作
 │   └── task-utils.sh         # Feature 公共工具（查找、归档、路径安全）
 └── multi-agent/                 # 多 Agent 流水线脚本
@@ -356,13 +311,13 @@ AI 每次执行任务时可能会"随意发挥"——用不同的命令、不同
 
 **`task.sh`** - Feature 生命周期管理：
 ```bash
-# 创建 Feature（自动创建 backlog issue 并建立双向链接）
+# 创建 Feature
 task.sh create "<title>" [--slug <name>] [--assignee <dev>] [--priority P0|P1|P2|P3]
 task.sh init-context <dir> <type>        # 初始化 jsonl 文件
 task.sh add-context <dir> <file> <path> <reason>  # 添加上下文条目
 task.sh set-branch <dir> <branch>        # 设置分支
 task.sh start <dir>                      # 设置为当前 Feature
-task.sh archive <name>                   # 归档 Feature（同时完成关联的 backlog）
+task.sh archive <name>                   # 归档 Feature
 task.sh list                             # 列出活跃 Feature
 task.sh list-archive [YYYY-MM]           # 列出归档 Feature
 ```

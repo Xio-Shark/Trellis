@@ -139,7 +139,7 @@ your-project/
 │   ├── .gitignore               # .trellis directory gitignore rules
 │   ├── spec/               # Development guidelines (core knowledge base)
 │   ├── workspace/            # Session records and Feature tracking
-│   ├── backlog/                 # Requirements pool (bidirectional links with Features)
+│   ├── tasks/                   # Task management (Feature tracking)
 │   └── scripts/                 # Automation scripts
 ├── .claude/                     # Claude Code specific configuration
 │   ├── commands/                # Slash Commands (13)
@@ -250,8 +250,7 @@ Each Feature is an independent work unit containing complete context configurati
     {"phase": 2, "action": "check"},
     {"phase": 3, "action": "finish"},
     {"phase": 4, "action": "create-pr"}
-  ],
-  "backlog_ref": "260119-user-auth.json"
+  ]
 }
 ```
 
@@ -274,49 +273,6 @@ Each Feature's jsonl files record which guideline files were used, which existin
 
 `journal-N.md` records each session's date, Feature, work summary, main changes, Git commits, test status, and next steps. Forms complete development history; new sessions can quickly review previous work.
 
-### Backlog System
-
-Backlog is a requirements pool for managing features and tasks to be developed. Each backlog issue establishes bidirectional links with Features.
-
-```
-.trellis/
-└── backlog/                     # Requirements pool directory
-    ├── 260119-user-auth.json    # Backlog issue (ID format: YYMMDD-slug)
-    └── 260119-payment-fix.json
-```
-
-**`backlog/*.json`** - Backlog Issue Structure:
-```json
-{
-  "id": "260119-user-auth",
-  "title": "Add user authentication",
-  "description": "Implement JWT-based auth with email verification",
-  "priority": "P1",
-  "status": "in_progress",
-  "assigned_to": "taosu",
-  "created_by": "taosu",
-  "created_at": "2026-01-19T10:30:00+08:00",
-  "completed_at": null
-}
-```
-
-**Bidirectional Links**:
-- `backlog/*.json`'s `assigned_to` points to the developer
-- `task.json`'s `backlog_ref` points to the backlog filename
-- When archiving a Feature, the associated backlog status is automatically updated to `done`
-
-**Priority**: P0 (urgent) > P1 (high) > P2 (medium) > P3 (low)
-
-**Displayed in `get-context.sh`**:
-```
-## BACKLOG (Assigned to me)
-- [P1] Add user authentication (2026-01-19)
-- [P2] Fix payment display (2026-01-18)
-
-## CREATED BY ME (Assigned to others)
-- [P1] Review API design (assigned to: john)
-```
-
 ---
 
 ## III. Script System (`.trellis/scripts/`)
@@ -325,7 +281,7 @@ Automation scripts that power the entire workflow.
 
 ```
 scripts/
-├── get-context.sh               # Get session context (developer, branch, recent commits, backlog)
+├── get-context.sh               # Get session context (developer, branch, recent commits, tasks)
 ├── task.sh                   # Feature management (create, archive, configure)
 ├── add-session.sh               # Record session
 ├── init-developer.sh            # Initialize developer identity
@@ -335,7 +291,6 @@ scripts/
 │   ├── git-context.sh           # Git context
 │   ├── phase.sh                 # Phase management
 │   ├── worktree.sh              # Worktree utilities
-│   ├── backlog.sh               # Backlog utilities (create, complete, list)
 │   ├── registry.sh              # Agent registry CRUD operations
 │   └── task-utils.sh         # Feature common utilities (find, archive, path safety)
 └── multi-agent/                 # Multi-Agent pipeline scripts
@@ -361,13 +316,13 @@ AI may "improvise" each time it executes tasks — using different commands, dif
 
 **`task.sh`** - Feature Lifecycle Management:
 ```bash
-# Create Feature (auto-creates backlog issue with bidirectional links)
+# Create Feature
 task.sh create "<title>" [--slug <name>] [--assignee <dev>] [--priority P0|P1|P2|P3]
 task.sh init-context <dir> <type>        # Initialize jsonl files
 task.sh add-context <dir> <file> <path> <reason>  # Add context entry
 task.sh set-branch <dir> <branch>        # Set branch
 task.sh start <dir>                      # Set as current Feature
-task.sh archive <name>                   # Archive Feature (also completes linked backlog)
+task.sh archive <name>                   # Archive Feature
 task.sh list                             # List active Features
 task.sh list-archive [YYYY-MM]           # List archived Features
 ```
