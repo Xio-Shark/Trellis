@@ -405,6 +405,22 @@ task.sh create "Fix payment bug" --assignee john --priority P0
 
 Users interact with Trellis through Slash Commands. Slash Commands are **the entry point for users and the system**, calling scripts and Agents behind the scenes to do actual work.
 
+### Command Quick Reference
+
+| Command | Purpose |
+|---------|---------|
+| `start` | Guide AI to acquire Trellis workflow, Git info, and recent journal knowledge |
+| `record-session` | Record journal after ending a conversation |
+| `parallel` | The "start" command for launching worktree-based workflow (Claude Code only) |
+| `before-*-dev` | Guide AI to read relevant coding-spec before development to avoid low-quality code |
+| `check-*` | After development, force AI to re-read relevant coding-spec and review the code just written |
+| `finish-work` | Verify delivery completeness: lint/type-check/test, spec sync, API schema, DB migration, cross-layer validation, manual testing |
+| `break-loop` | Deep analysis after debugging to break the "fix bug → forget → write same bug again" loop, and document insights in guides |
+| `integrate-skill` | Extract useful knowledge from a skill and write it into project specs |
+| `onboard` | Guide to help understand the Trellis workflow |
+
+---
+
 ### `/trellis:start` - Session Initialization
 
 **Purpose**: Initialize development session, read project context and guidelines.

@@ -400,6 +400,22 @@ task.sh create "Fix payment bug" --assignee john --priority P0
 
 用户通过 Slash Command 与 Trellis 交互。Slash Command 是**用户和系统的入口**，背后调用脚本和 Agent 完成实际工作。
 
+### 命令速览
+
+| 命令 | 作用 |
+|------|------|
+| `start` | 引导 AI 获取 Trellis 工作流、Git 信息、最近 journal 信息的知识 |
+| `record-session` | 结束对话后记录 journal 的指令 |
+| `parallel` | 要启动 worktree 流程的 "start" 命令（Claude Code 专有） |
+| `before-*-dev` | 引导 AI 在开发前先获取相关 coding-spec，避免写出质量太差的代码 |
+| `check-*` | 开发完成后，强制让 AI 再获取一遍相关 coding-spec，重新审查刚写的代码 |
+| `finish-work` | 检查交付完整性：lint/type-check/test、spec 同步、API schema、DB migration、跨层验证、手动测试 |
+| `break-loop` | 调试完成时进行深入分析，打破"修复 bug → 忘记 → 后续又写出同样 bug"的循环，并记录到 guides 思考文档 |
+| `integrate-skill` | 从一个 skill 里提取有用知识，写进项目的 spec |
+| `onboard` | 辅助了解 Trellis 工作流程的指令 |
+
+---
+
 ### `/trellis:start` - 会话初始化
 
 **作用**：初始化开发会话，读取项目上下文和规范。
