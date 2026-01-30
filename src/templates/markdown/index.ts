@@ -95,3 +95,6 @@ export const guidesCrossLayerThinkingGuideContent: string = readLocalTemplate(
 export const guidesCodeReuseThinkingGuideContent: string = readLocalTemplate(
   "spec/guides/code-reuse-thinking-guide.md.txt",
 );
+export const guidesCrossPlatformThinkingGuideContent: string = readLocalTemplate(
+  "spec/guides/cross-platform-thinking-guide.md.txt",
+);

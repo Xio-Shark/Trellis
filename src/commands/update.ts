@@ -65,6 +65,7 @@ import {
   guidesIndexContent,
   guidesCrossLayerThinkingGuideContent,
   guidesCodeReuseThinkingGuideContent,
+  guidesCrossPlatformThinkingGuideContent,
   // Backend structure (multi-doc)
   backendIndexContent,
   backendDirectoryStructureContent,
@@ -180,6 +181,10 @@ function collectTemplateFiles(_cwd: string): Map<string, string> {
   files.set(
     `${PATHS.SPEC}/guides/code-reuse-thinking-guide.md`,
     guidesCodeReuseThinkingGuideContent,
+  );
+  files.set(
+    `${PATHS.SPEC}/guides/cross-platform-thinking-guide.md`,
+    guidesCrossPlatformThinkingGuideContent,
   );
 
   // Spec - backend (created if missing, protected by hash tracking if modified)
