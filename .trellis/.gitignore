@@ -24,3 +24,7 @@
 
 # Conflict resolution temp files
 *.new
+
+# Python cache
+**/__pycache__/
+**/*.pyc

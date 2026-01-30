@@ -9,20 +9,20 @@
 ### Step 1: Get Context
 
 ```bash
-./.trellis/scripts/get-context.sh
+python3 ./.trellis/scripts/get_context.py
 ```
 
 ### Step 2: One-Click Add Session
 
 ```bash
 # Method 1: Simple parameters
-./.trellis/scripts/add-session.sh \
+python3 ./.trellis/scripts/add_session.py \
   --title "Session Title" \
   --commit "hash1,hash2" \
   --summary "Brief summary of what was done"
 
 # Method 2: Pass detailed content via stdin
-cat << 'EOF' | ./.trellis/scripts/add-session.sh --title "Title" --commit "hash"
+cat << 'EOF' | python3 ./.trellis/scripts/add_session.py --title "Title" --commit "hash"
 | Feature | Description |
 |---------|-------------|
 | New API | Added user authentication endpoint |
@@ -46,7 +46,7 @@ EOF
 If a task was completed this session:
 
 ```bash
-./.trellis/scripts/task.sh archive <task-name>
+python3 ./.trellis/scripts/task.py archive <task-name>
 ```
 
 ---
@@ -55,8 +55,8 @@ If a task was completed this session:
 
 | Command | Purpose |
 |---------|---------|
-| `get-context.sh` | Get all context info |
-| `add-session.sh --title "..." --commit "..."` | **One-click add session (recommended)** |
-| `task.sh create "<title>" [--slug <name>]` | Create new task directory |
-| `task.sh archive <name>` | Archive completed task |
-| `task.sh list` | List active tasks |
+| `python3 ./.trellis/scripts/get_context.py` | Get all context info |
+| `python3 ./.trellis/scripts/add_session.py --title "..." --commit "..."` | **One-click add session (recommended)** |
+| `python3 ./.trellis/scripts/task.py create "<title>" [--slug <name>]` | Create new task directory |
+| `python3 ./.trellis/scripts/task.py archive <name>` | Archive completed task |
+| `python3 ./.trellis/scripts/task.py list` | List active tasks |

@@ -660,4 +660,6 @@ get_developer_email() {
 
 ### Complete Entry Script
 
-See `.trellis/scripts/task.sh` for a comprehensive example of an entry script with multiple commands, option parsing, and proper error handling.
+See `.trellis/scripts-shell-archive/task.sh` for a comprehensive example of an entry script with multiple commands, option parsing, and proper error handling.
+
+> **Note**: Shell scripts have been migrated to Python. See `.trellis/scripts/task.py` for the current implementation.

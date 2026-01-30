@@ -22,7 +22,7 @@ def should_skip_injection() -> bool:
     """
     Determine if context injection should be skipped.
 
-    Multi-agent scripts (start.sh, plan.sh) set CLAUDE_NON_INTERACTIVE=1
+    Multi-agent scripts (start.py, plan.py) set CLAUDE_NON_INTERACTIVE=1
     to prevent duplicate context injection.
     """
     return os.environ.get("CLAUDE_NON_INTERACTIVE") == "1"
@@ -39,8 +39,14 @@ def read_file(path: Path, fallback: str = "") -> str:
 def run_script(script_path: Path) -> str:
     """Run a script and return its output."""
     try:
+        # Use python3 for .py scripts, direct execution for others
+        if script_path.suffix == ".py":
+            cmd = ["python3", str(script_path)]
+        else:
+            cmd = [str(script_path)]
+
         result = subprocess.run(
-            [str(script_path)],
+            cmd,
             capture_output=True,
             text=True,
             timeout=5,
@@ -69,7 +75,7 @@ Read and follow all instructions below carefully.
 
     # 2. Current Context (dynamic)
     print("<current-state>")
-    context_script = trellis_dir / "scripts" / "get-context.sh"
+    context_script = trellis_dir / "scripts" / "get_context.py"
     print(run_script(context_script))
     print("</current-state>")
     print()

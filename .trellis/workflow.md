@@ -24,11 +24,11 @@
 
 ```bash
 # Check if already initialized
-./.trellis/scripts/get-developer.sh
+python3 ./.trellis/scripts/get_developer.py
 
 # If not initialized, run:
-./.trellis/scripts/init-developer.sh <your-name>
-# Example: ./.trellis/scripts/init-developer.sh cursor-agent
+python3 ./.trellis/scripts/init_developer.py <your-name>
+# Example: python3 ./.trellis/scripts/init_developer.py cursor-agent
 ```
 
 This creates:
@@ -44,12 +44,12 @@ This creates:
 
 ```bash
 # Get full context in one command
-./.trellis/scripts/get-context.sh
+python3 ./.trellis/scripts/get_context.py
 
 # Or check manually:
-./.trellis/scripts/get-developer.sh      # Your identity
-./.trellis/scripts/task.sh list          # Active tasks
-git status && git log --oneline -10      # Git state
+python3 ./.trellis/scripts/get_developer.py      # Your identity
+python3 ./.trellis/scripts/task.py list          # Active tasks
+git status && git log --oneline -10              # Git state
 ```
 
 ### Step 2: Read Project Guidelines [MANDATORY]
@@ -106,15 +106,23 @@ cat .trellis/spec/backend/logging-guidelines.md    # For logging
 .trellis/
 |-- .developer           # Developer identity (gitignored)
 |-- scripts/
-|   |-- common/              # Shared utilities
-|   |   |-- paths.sh         # Path utilities
-|   |   |-- developer.sh     # Developer management
-|   |   \-- git-context.sh   # Git context implementation
-|   |-- init-developer.sh    # Initialize developer identity
-|   |-- get-developer.sh     # Get current developer name
-|   |-- task.sh              # Manage tasks
-|   |-- get-context.sh       # Get session context
-|   \-- add-session.sh       # One-click session recording
+|   |-- __init__.py          # Python package init
+|   |-- common/              # Shared utilities (Python)
+|   |   |-- __init__.py
+|   |   |-- paths.py         # Path utilities
+|   |   |-- developer.py     # Developer management
+|   |   \-- git_context.py   # Git context implementation
+|   |-- multi_agent/         # Multi-agent pipeline scripts
+|   |   |-- __init__.py
+|   |   |-- start.py         # Start worktree agent
+|   |   |-- status.py        # Monitor agent status
+|   |   |-- create_pr.py     # Create PR
+|   |   \-- cleanup.py       # Cleanup worktree
+|   |-- init_developer.py    # Initialize developer identity
+|   |-- get_developer.py     # Get current developer name
+|   |-- task.py              # Manage tasks
+|   |-- get_context.py       # Get session context
+|   \-- add_session.py       # One-click session recording
 |-- workspace/           # Developer workspaces
 |   |-- index.md         # Workspace index + Session template
 |   \-- {developer}/     # Per-developer directories
@@ -147,10 +155,10 @@ Use the unified context script:
 
 ```bash
 # Get all context in one command
-./.trellis/scripts/get-context.sh
+python3 ./.trellis/scripts/get_context.py
 
 # Or get JSON format
-./.trellis/scripts/get-context.sh --json
+python3 ./.trellis/scripts/get_context.py --json
 ```
 
 ### Step 2: Read Development Guidelines [!] REQUIRED
@@ -183,10 +191,10 @@ Use the task management script:
 
 ```bash
 # List active tasks
-./.trellis/scripts/task.sh list
+python3 ./.trellis/scripts/task.py list
 
 # Create new task (creates directory with task.json)
-./.trellis/scripts/task.sh create "<title>" --slug <task-name>
+python3 ./.trellis/scripts/task.py create "<title>" --slug <task-name>
 ```
 
 ---
@@ -197,7 +205,7 @@ Use the task management script:
 
 ```
 1. Create or select task
-   \-> ./.trellis/scripts/task.sh create "<title>" --slug <name> or list
+   \-> python3 ./.trellis/scripts/task.py create "<title>" --slug <name> or list
 
 2. Write code according to guidelines
    \-> Read .trellis/spec/ docs relevant to your task
@@ -213,7 +221,7 @@ Use the task management script:
        Format: feat/fix/docs/refactor/test/chore
 
 5. Record session (one command)
-   \-> ./.trellis/scripts/add-session.sh --title "Title" --commit "hash"
+   \-> python3 ./.trellis/scripts/add_session.py --title "Title" --commit "hash"
 ```
 
 ### Code Quality Checklist
@@ -236,7 +244,7 @@ Use the task management script:
 After code is committed, use:
 
 ```bash
-./.trellis/scripts/add-session.sh \
+python3 ./.trellis/scripts/add_session.py \
   --title "Session Title" \
   --commit "abc1234" \
   --summary "Brief summary"
@@ -252,7 +260,7 @@ This automatically:
 
 Use `/trellis:finish-work` command to run through:
 1. [OK] All code committed, commit message follows convention
-2. [OK] Session recorded via `add-session.sh`
+2. [OK] Session recorded via `add_session.py`
 3. [OK] No lint/test errors
 4. [OK] Working directory clean (or WIP noted)
 5. [OK] Spec docs updated if needed
@@ -318,10 +326,10 @@ tasks/
 
 **Commands**:
 ```bash
-./.trellis/scripts/task.sh create "<title>" [--slug <name>]   # Create task directory
-./.trellis/scripts/task.sh archive <name>  # Archive to archive/{year-month}/
-./.trellis/scripts/task.sh list            # List active tasks
-./.trellis/scripts/task.sh list-archive    # List archived tasks
+python3 ./.trellis/scripts/task.py create "<title>" [--slug <name>]   # Create task directory
+python3 ./.trellis/scripts/task.py archive <name>  # Archive to archive/{year-month}/
+python3 ./.trellis/scripts/task.py list            # List active tasks
+python3 ./.trellis/scripts/task.py list-archive    # List archived tasks
 ```
 
 ---
@@ -331,7 +339,7 @@ tasks/
 ### [OK] DO - Should Do
 
 1. **Before session start**:
-   - Run `./.trellis/scripts/get-context.sh` for full context
+   - Run `python3 ./.trellis/scripts/get_context.py` for full context
    - [!] **MUST read** relevant `.trellis/spec/` docs
 
 2. **During development**:
@@ -344,7 +352,7 @@ tasks/
    - Use `/trellis:finish-work` for completion checklist
    - After fix bug, use `/trellis:break-loop` for deep analysis
    - Human commits after testing passes
-   - Use `add-session.sh` to record progress
+   - Use `add_session.py` to record progress
 
 ### [X] DON'T - Should Not Do
 
@@ -380,12 +388,12 @@ git commit -m "type(scope): description"
 
 ```bash
 # Session management
-./.trellis/scripts/get-context.sh    # Get full context
-./.trellis/scripts/add-session.sh    # Record session
+python3 ./.trellis/scripts/get_context.py    # Get full context
+python3 ./.trellis/scripts/add_session.py    # Record session
 
 # Task management
-./.trellis/scripts/task.sh list      # List tasks
-./.trellis/scripts/task.sh create "<title>" # Create task
+python3 ./.trellis/scripts/task.py list      # List tasks
+python3 ./.trellis/scripts/task.py create "<title>" # Create task
 
 # Slash commands
 /trellis:finish-work          # Pre-commit checklist
