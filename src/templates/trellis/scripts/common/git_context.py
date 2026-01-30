@@ -86,7 +86,7 @@ def get_context_json(repo_root: Path | None = None) -> dict:
     branch = branch_out.strip() or "unknown"
 
     _, status_out, _ = _run_git_command(["status", "--porcelain"], cwd=repo_root)
-    git_status_count = len([l for l in status_out.splitlines() if l.strip()])
+    git_status_count = len([line for line in status_out.splitlines() if line.strip()])
     is_clean = git_status_count == 0
 
     # Recent commits
@@ -185,7 +185,7 @@ def get_context_text(repo_root: Path | None = None) -> str:
     lines.append(f"Branch: {branch}")
 
     _, status_out, _ = _run_git_command(["status", "--porcelain"], cwd=repo_root)
-    status_lines = [l for l in status_out.splitlines() if l.strip()]
+    status_lines = [line for line in status_out.splitlines() if line.strip()]
     status_count = len(status_lines)
 
     if status_count == 0:
