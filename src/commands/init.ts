@@ -221,8 +221,8 @@ export async function init(options: InitOptions): Promise<void> {
   // Initialize developer identity (silent - no output)
   if (developerName) {
     try {
-      const scriptPath = path.join(cwd, PATHS.SCRIPTS, "init-developer.sh");
-      execSync(`bash "${scriptPath}" "${developerName}"`, {
+      const scriptPath = path.join(cwd, PATHS.SCRIPTS, "init_developer.py");
+      execSync(`python3 "${scriptPath}" "${developerName}"`, {
         cwd,
         stdio: "pipe", // Silent
       });
@@ -231,14 +231,14 @@ export async function init(options: InitOptions): Promise<void> {
       const bootstrapScriptPath = path.join(
         cwd,
         PATHS.SCRIPTS,
-        "create-bootstrap.sh",
+        "create_bootstrap.py",
       );
-      execSync(`bash "${bootstrapScriptPath}" "${projectType}"`, {
+      execSync(`python3 "${bootstrapScriptPath}" "${projectType}"`, {
         cwd,
         stdio: "pipe", // Silent
       });
     } catch {
-      // Silent failure - user can run init-developer.sh manually
+      // Silent failure - user can run init_developer.py manually
     }
   }
 

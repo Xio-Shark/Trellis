@@ -28,28 +28,36 @@ import {
 
 // Import templates for comparison
 import {
-  commonPathsScript,
-  commonDeveloperScript,
-  commonGitContextScript,
-  commonWorktreeScript,
-  commonTaskQueueScript,
-  commonTaskUtilsScript,
-  commonPhaseScript,
-  commonRegistryScript,
-  multiAgentStartScript,
-  multiAgentCleanupScript,
-  multiAgentStatusScript,
-  multiAgentCreatePrScript,
-  multiAgentPlanScript,
-  worktreeYamlTemplate,
-  workflowMdTemplate,
-  gitignoreTemplate,
-  initDeveloperScript,
+  // Python scripts - package init
+  scriptsInit,
+  // Python scripts - common
+  commonInit,
+  commonPaths,
+  commonDeveloper,
+  commonGitContext,
+  commonWorktree,
+  commonTaskQueue,
+  commonTaskUtils,
+  commonPhase,
+  commonRegistry,
+  // Python scripts - multi_agent
+  multiAgentInit,
+  multiAgentStart,
+  multiAgentCleanup,
+  multiAgentStatus,
+  multiAgentCreatePr,
+  multiAgentPlan,
+  // Python scripts - main
   getDeveloperScript,
+  initDeveloperScript,
   taskScript,
   getContextScript,
   addSessionScript,
   createBootstrapScript,
+  // Configuration
+  worktreeYamlTemplate,
+  workflowMdTemplate,
+  gitignoreTemplate,
 } from "../templates/trellis/index.js";
 
 import {
@@ -124,33 +132,35 @@ const PROTECTED_PATHS = [
 function collectTemplateFiles(_cwd: string): Map<string, string> {
   const files = new Map<string, string>();
 
-  // Scripts - common
-  files.set(`${PATHS.SCRIPTS}/common/paths.sh`, commonPathsScript);
-  files.set(`${PATHS.SCRIPTS}/common/developer.sh`, commonDeveloperScript);
-  files.set(`${PATHS.SCRIPTS}/common/git-context.sh`, commonGitContextScript);
-  files.set(`${PATHS.SCRIPTS}/common/worktree.sh`, commonWorktreeScript);
-  files.set(`${PATHS.SCRIPTS}/common/task-queue.sh`, commonTaskQueueScript);
-  files.set(`${PATHS.SCRIPTS}/common/task-utils.sh`, commonTaskUtilsScript);
-  files.set(`${PATHS.SCRIPTS}/common/phase.sh`, commonPhaseScript);
-  files.set(`${PATHS.SCRIPTS}/common/registry.sh`, commonRegistryScript);
+  // Python scripts - package init
+  files.set(`${PATHS.SCRIPTS}/__init__.py`, scriptsInit);
 
-  // Scripts - multi-agent
-  files.set(`${PATHS.SCRIPTS}/multi-agent/start.sh`, multiAgentStartScript);
-  files.set(`${PATHS.SCRIPTS}/multi-agent/cleanup.sh`, multiAgentCleanupScript);
-  files.set(`${PATHS.SCRIPTS}/multi-agent/status.sh`, multiAgentStatusScript);
-  files.set(
-    `${PATHS.SCRIPTS}/multi-agent/create-pr.sh`,
-    multiAgentCreatePrScript,
-  );
-  files.set(`${PATHS.SCRIPTS}/multi-agent/plan.sh`, multiAgentPlanScript);
+  // Python scripts - common
+  files.set(`${PATHS.SCRIPTS}/common/__init__.py`, commonInit);
+  files.set(`${PATHS.SCRIPTS}/common/paths.py`, commonPaths);
+  files.set(`${PATHS.SCRIPTS}/common/developer.py`, commonDeveloper);
+  files.set(`${PATHS.SCRIPTS}/common/git_context.py`, commonGitContext);
+  files.set(`${PATHS.SCRIPTS}/common/worktree.py`, commonWorktree);
+  files.set(`${PATHS.SCRIPTS}/common/task_queue.py`, commonTaskQueue);
+  files.set(`${PATHS.SCRIPTS}/common/task_utils.py`, commonTaskUtils);
+  files.set(`${PATHS.SCRIPTS}/common/phase.py`, commonPhase);
+  files.set(`${PATHS.SCRIPTS}/common/registry.py`, commonRegistry);
 
-  // Scripts - main
-  files.set(`${PATHS.SCRIPTS}/init-developer.sh`, initDeveloperScript);
-  files.set(`${PATHS.SCRIPTS}/get-developer.sh`, getDeveloperScript);
-  files.set(`${PATHS.SCRIPTS}/task.sh`, taskScript);
-  files.set(`${PATHS.SCRIPTS}/get-context.sh`, getContextScript);
-  files.set(`${PATHS.SCRIPTS}/add-session.sh`, addSessionScript);
-  files.set(`${PATHS.SCRIPTS}/create-bootstrap.sh`, createBootstrapScript);
+  // Python scripts - multi_agent
+  files.set(`${PATHS.SCRIPTS}/multi_agent/__init__.py`, multiAgentInit);
+  files.set(`${PATHS.SCRIPTS}/multi_agent/start.py`, multiAgentStart);
+  files.set(`${PATHS.SCRIPTS}/multi_agent/cleanup.py`, multiAgentCleanup);
+  files.set(`${PATHS.SCRIPTS}/multi_agent/status.py`, multiAgentStatus);
+  files.set(`${PATHS.SCRIPTS}/multi_agent/create_pr.py`, multiAgentCreatePr);
+  files.set(`${PATHS.SCRIPTS}/multi_agent/plan.py`, multiAgentPlan);
+
+  // Python scripts - main
+  files.set(`${PATHS.SCRIPTS}/init_developer.py`, initDeveloperScript);
+  files.set(`${PATHS.SCRIPTS}/get_developer.py`, getDeveloperScript);
+  files.set(`${PATHS.SCRIPTS}/task.py`, taskScript);
+  files.set(`${PATHS.SCRIPTS}/get_context.py`, getContextScript);
+  files.set(`${PATHS.SCRIPTS}/add_session.py`, addSessionScript);
+  files.set(`${PATHS.SCRIPTS}/create_bootstrap.py`, createBootstrapScript);
 
   // Configuration
   files.set(`${DIR_NAMES.WORKFLOW}/worktree.yaml`, worktreeYamlTemplate);
@@ -955,7 +965,7 @@ async function executeMigrations(
       renameHash(cwd, item.from, item.to);
 
       // Make executable if it's a script
-      if (item.to.endsWith(".sh")) {
+      if (item.to.endsWith(".sh") || item.to.endsWith(".py")) {
         fs.chmodSync(newPath, "755");
       }
 
@@ -1047,7 +1057,7 @@ async function executeMigrations(
       fs.renameSync(oldPath, newPath);
       renameHash(cwd, item.from, item.to);
 
-      if (item.to.endsWith(".sh")) {
+      if (item.to.endsWith(".sh") || item.to.endsWith(".py")) {
         fs.chmodSync(newPath, "755");
       }
 
@@ -1422,7 +1432,7 @@ export async function update(options: UpdateOptions): Promise<void> {
       fs.writeFileSync(file.path, file.newContent);
 
       // Make scripts executable
-      if (file.relativePath.endsWith(".sh")) {
+      if (file.relativePath.endsWith(".sh") || file.relativePath.endsWith(".py")) {
         fs.chmodSync(file.path, "755");
       }
 
@@ -1438,7 +1448,7 @@ export async function update(options: UpdateOptions): Promise<void> {
       fs.writeFileSync(file.path, file.newContent);
 
       // Make scripts executable
-      if (file.relativePath.endsWith(".sh")) {
+      if (file.relativePath.endsWith(".sh") || file.relativePath.endsWith(".py")) {
         fs.chmodSync(file.path, "755");
       }
 
@@ -1458,7 +1468,7 @@ export async function update(options: UpdateOptions): Promise<void> {
 
       if (action === "overwrite") {
         fs.writeFileSync(file.path, file.newContent);
-        if (file.relativePath.endsWith(".sh")) {
+        if (file.relativePath.endsWith(".sh") || file.relativePath.endsWith(".py")) {
           fs.chmodSync(file.path, "755");
         }
         console.log(chalk.yellow(`  ✓ Overwritten: ${file.relativePath}`));
