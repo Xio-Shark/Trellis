@@ -32,7 +32,7 @@ cat .trellis/workflow.md
 ### Step 2: Get Current Context
 
 ```bash
-./.trellis/scripts/get-context.sh
+python3 ./.trellis/scripts/get_context.py
 ```
 
 This shows: developer identity, git status, current task (if any), active tasks.
@@ -135,7 +135,7 @@ Task(
 Based on research results:
 
 ```bash
-TASK_DIR=$(./.trellis/scripts/task.sh create "<title from research>" --slug <suggested-slug>)
+TASK_DIR=$(python3 ./.trellis/scripts/task.py create "<title from research>" --slug <suggested-slug>)
 ```
 
 ### Step 4: Configure Context `[AI]`
@@ -143,7 +143,7 @@ TASK_DIR=$(./.trellis/scripts/task.sh create "<title from research>" --slug <sug
 Initialize default context:
 
 ```bash
-./.trellis/scripts/task.sh init-context "$TASK_DIR" <type>
+python3 ./.trellis/scripts/task.py init-context "$TASK_DIR" <type>
 # type: backend | frontend | fullstack
 ```
 
@@ -151,8 +151,8 @@ Add specs found by Research Agent:
 
 ```bash
 # For each relevant spec and code pattern:
-./.trellis/scripts/task.sh add-context "$TASK_DIR" implement "<path>" "<reason>"
-./.trellis/scripts/task.sh add-context "$TASK_DIR" check "<path>" "<reason>"
+python3 ./.trellis/scripts/task.py add-context "$TASK_DIR" implement "<path>" "<reason>"
+python3 ./.trellis/scripts/task.py add-context "$TASK_DIR" check "<path>" "<reason>"
 ```
 
 ### Step 5: Write Requirements `[AI]`
@@ -180,7 +180,7 @@ Create `prd.md` in the task directory with:
 ### Step 6: Activate Task `[AI]`
 
 ```bash
-./.trellis/scripts/task.sh start "$TASK_DIR"
+python3 ./.trellis/scripts/task.py start "$TASK_DIR"
 ```
 
 This sets `.current-task` so hooks can inject context.
@@ -228,7 +228,7 @@ Task(
 
 ## Continuing Existing Task
 
-If `get-context.sh` shows a current task:
+If `get_context.py` shows a current task:
 
 1. Read the task's `prd.md` to understand the goal
 2. Check `task.json` for current status and phase
@@ -253,13 +253,13 @@ If yes, resume from the appropriate step (usually Step 7 or 8).
 
 | Script | Purpose |
 |--------|---------|
-| `get-context.sh` | Get session context |
-| `task.sh create` | Create task directory |
-| `task.sh init-context` | Initialize jsonl files |
-| `task.sh add-context` | Add spec to jsonl |
-| `task.sh start` | Set current task |
-| `task.sh finish` | Clear current task |
-| `task.sh archive` | Archive completed task |
+| `python3 ./.trellis/scripts/get_context.py` | Get session context |
+| `python3 ./.trellis/scripts/task.py create` | Create task directory |
+| `python3 ./.trellis/scripts/task.py init-context` | Initialize jsonl files |
+| `python3 ./.trellis/scripts/task.py add-context` | Add spec to jsonl |
+| `python3 ./.trellis/scripts/task.py start` | Set current task |
+| `python3 ./.trellis/scripts/task.py finish` | Clear current task |
+| `python3 ./.trellis/scripts/task.py archive` | Archive completed task |
 
 ### Sub Agents `[AI]`
 

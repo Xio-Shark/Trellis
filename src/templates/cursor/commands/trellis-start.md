@@ -28,7 +28,7 @@ cat .trellis/workflow.md  # Development process, conventions, and quick start gu
 ### Step 2: Get Current Status `[AI]`
 
 ```bash
-./.trellis/scripts/get-context.sh
+python3 ./.trellis/scripts/get_context.py
 ```
 
 This returns:
@@ -61,7 +61,7 @@ cat .trellis/spec/guides/cross-layer-thinking-guide.md
 ### Step 4: Check Active Tasks `[AI]`
 
 ```bash
-./.trellis/scripts/task.sh list
+python3 ./.trellis/scripts/task.py list
 ```
 
 If continuing previous work, review the task file.
@@ -99,7 +99,7 @@ Ready for your task. What would you like to work on?
 #### Step 1: Create Task `[AI]`
 
 ```bash
-./.trellis/scripts/task.sh create "<title>" --slug <name>
+python3 ./.trellis/scripts/task.py create "<title>" --slug <name>
 ```
 
 #### Step 2: Implement and Verify `[AI]`
@@ -116,7 +116,7 @@ Ready for your task. What would you like to work on?
 4. Remind user to run `/trellis-record-session` `[USER]`
 5. Archive task `[AI]`:
    ```bash
-   ./.trellis/scripts/task.sh archive <task-name>
+   python3 ./.trellis/scripts/task.py archive <task-name>
    ```
 
 ---
@@ -142,10 +142,10 @@ The following slash commands are for users (not AI):
 
 | Script | Purpose |
 |--------|---------|
-| `task.sh create "<title>" [--slug <name>]` | Create task directory |
-| `task.sh list` | List active tasks |
-| `task.sh archive <name>` | Archive task |
-| `get-context.sh` | Get session context |
+| `python3 ./.trellis/scripts/task.py create "<title>" [--slug <name>]` | Create task directory |
+| `python3 ./.trellis/scripts/task.py list` | List active tasks |
+| `python3 ./.trellis/scripts/task.py archive <name>` | Archive task |
+| `python3 ./.trellis/scripts/get_context.py` | Get session context |
 
 ---
 
