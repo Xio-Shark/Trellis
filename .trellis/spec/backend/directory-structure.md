@@ -59,10 +59,10 @@ These directories are copied to `dist/` during build and used as templates:
 └── settings.json        # Hook configuration
 
 .trellis/                # Trellis workflow (partially dogfooded)
-├── scripts/             # Shell scripts (dogfooded)
-│   ├── common/          # Shared utilities
-│   ├── multi-agent/     # Pipeline scripts
-│   └── *.sh             # Main scripts
+├── scripts/             # Python scripts (dogfooded)
+│   ├── common/          # Shared utilities (paths.py, developer.py, etc.)
+│   ├── multi_agent/     # Pipeline scripts (start.py, status.py, etc.)
+│   └── *.py             # Main scripts (task.py, get_context.py, etc.)
 ├── workspace/           # Developer progress tracking
 │   └── index.md         # Index template (dogfooded)
 ├── spec/                # Project guidelines (NOT dogfooded)
@@ -200,6 +200,7 @@ Templates use `.txt` extension to:
 - Keep generic templates in `src/templates/markdown/`
 - Use `.md.txt` or `.yaml.txt` for template files
 - Update dogfooding sources (`.cursor/`, `.claude/`, `.trellis/scripts/`) when making changes
+- Always use `python3` explicitly when documenting script invocation (Windows compatibility)
 
 ### DON'T
 

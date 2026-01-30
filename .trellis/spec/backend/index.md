@@ -15,7 +15,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | Guide | Description | Status |
 |-------|-------------|--------|
 | [Directory Structure](./directory-structure.md) | Module organization and file layout | Done |
-| [Shell Conventions](./shell-conventions.md) | Bash script standards for .trellis/scripts/ | Done |
+| [Script Conventions](./script-conventions.md) | Python script standards for .trellis/scripts/ | Done |
 | [Error Handling](./error-handling.md) | Error types, handling strategies | Done |
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | Done |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | Done |

@@ -28,7 +28,7 @@ src/migrations/
     },
     {
       "type": "delete",
-      "from": ".trellis/scripts/deprecated.sh",
+      "from": ".trellis/scripts/deprecated.py",
       "description": "删除原因"
     }
   ]
