@@ -7,9 +7,11 @@
  * Directory structure:
  *   trellis/
  *   ├── scripts/
- *   │   ├── common/           # Shared utilities
- *   │   ├── multi-agent/      # Multi-agent pipeline scripts
- *   │   └── *.sh              # Main scripts
+ *   │   ├── __init__.py
+ *   │   ├── common/           # Shared utilities (Python)
+ *   │   ├── multi_agent/      # Multi-agent pipeline scripts (Python)
+ *   │   └── *.py              # Main scripts (Python)
+ *   ├── scripts-shell-archive/ # Archived shell scripts (for reference)
  *   ├── workflow.md           # Workflow guide
  *   ├── worktree.yaml         # Worktree configuration
  *   └── gitignore.txt         # .gitignore content
@@ -26,50 +28,35 @@ function readTemplate(relativePath: string): string {
   return readFileSync(join(__dirname, relativePath), "utf-8");
 }
 
-// Common utilities
-export const commonPathsScript = readTemplate("scripts/common/paths.sh");
-export const commonDeveloperScript = readTemplate(
-  "scripts/common/developer.sh",
-);
-export const commonGitContextScript = readTemplate(
-  "scripts/common/git-context.sh",
-);
-export const commonWorktreeScript = readTemplate(
-  "scripts/common/worktree.sh",
-);
-export const commonTaskQueueScript = readTemplate("scripts/common/task-queue.sh");
-export const commonTaskUtilsScript = readTemplate(
-  "scripts/common/task-utils.sh",
-);
-export const commonPhaseScript = readTemplate("scripts/common/phase.sh");
-export const commonRegistryScript = readTemplate("scripts/common/registry.sh");
+// Python scripts - package init
+export const scriptsInit = readTemplate("scripts/__init__.py");
 
-// Multi-agent scripts
-export const multiAgentStartScript = readTemplate(
-  "scripts/multi-agent/start.sh",
-);
-export const multiAgentCleanupScript = readTemplate(
-  "scripts/multi-agent/cleanup.sh",
-);
-export const multiAgentStatusScript = readTemplate(
-  "scripts/multi-agent/status.sh",
-);
-export const multiAgentCreatePrScript = readTemplate(
-  "scripts/multi-agent/create-pr.sh",
-);
-export const multiAgentPlanScript = readTemplate(
-  "scripts/multi-agent/plan.sh",
-);
+// Python scripts - common
+export const commonInit = readTemplate("scripts/common/__init__.py");
+export const commonPaths = readTemplate("scripts/common/paths.py");
+export const commonDeveloper = readTemplate("scripts/common/developer.py");
+export const commonGitContext = readTemplate("scripts/common/git_context.py");
+export const commonWorktree = readTemplate("scripts/common/worktree.py");
+export const commonTaskQueue = readTemplate("scripts/common/task_queue.py");
+export const commonTaskUtils = readTemplate("scripts/common/task_utils.py");
+export const commonPhase = readTemplate("scripts/common/phase.py");
+export const commonRegistry = readTemplate("scripts/common/registry.py");
 
-// Main scripts
-export const initDeveloperScript = readTemplate("scripts/init-developer.sh");
-export const getDeveloperScript = readTemplate("scripts/get-developer.sh");
-export const taskScript = readTemplate("scripts/task.sh");
-export const getContextScript = readTemplate("scripts/get-context.sh");
-export const addSessionScript = readTemplate("scripts/add-session.sh");
-export const createBootstrapScript = readTemplate(
-  "scripts/create-bootstrap.sh",
-);
+// Python scripts - multi_agent
+export const multiAgentInit = readTemplate("scripts/multi_agent/__init__.py");
+export const multiAgentStart = readTemplate("scripts/multi_agent/start.py");
+export const multiAgentCleanup = readTemplate("scripts/multi_agent/cleanup.py");
+export const multiAgentStatus = readTemplate("scripts/multi_agent/status.py");
+export const multiAgentCreatePr = readTemplate("scripts/multi_agent/create_pr.py");
+export const multiAgentPlan = readTemplate("scripts/multi_agent/plan.py");
+
+// Python scripts - main
+export const getDeveloperScript = readTemplate("scripts/get_developer.py");
+export const initDeveloperScript = readTemplate("scripts/init_developer.py");
+export const taskScript = readTemplate("scripts/task.py");
+export const getContextScript = readTemplate("scripts/get_context.py");
+export const addSessionScript = readTemplate("scripts/add_session.py");
+export const createBootstrapScript = readTemplate("scripts/create_bootstrap.py");
 
 // Configuration files
 export const workflowMdTemplate = readTemplate("workflow.md");
@@ -82,30 +69,35 @@ export const gitignoreTemplate = readTemplate("gitignore.txt");
 export function getAllScripts(): Map<string, string> {
   const scripts = new Map<string, string>();
 
+  // Package init
+  scripts.set("__init__.py", scriptsInit);
+
   // Common
-  scripts.set("common/paths.sh", commonPathsScript);
-  scripts.set("common/developer.sh", commonDeveloperScript);
-  scripts.set("common/git-context.sh", commonGitContextScript);
-  scripts.set("common/worktree.sh", commonWorktreeScript);
-  scripts.set("common/task-queue.sh", commonTaskQueueScript);
-  scripts.set("common/task-utils.sh", commonTaskUtilsScript);
-  scripts.set("common/phase.sh", commonPhaseScript);
-  scripts.set("common/registry.sh", commonRegistryScript);
+  scripts.set("common/__init__.py", commonInit);
+  scripts.set("common/paths.py", commonPaths);
+  scripts.set("common/developer.py", commonDeveloper);
+  scripts.set("common/git_context.py", commonGitContext);
+  scripts.set("common/worktree.py", commonWorktree);
+  scripts.set("common/task_queue.py", commonTaskQueue);
+  scripts.set("common/task_utils.py", commonTaskUtils);
+  scripts.set("common/phase.py", commonPhase);
+  scripts.set("common/registry.py", commonRegistry);
 
   // Multi-agent
-  scripts.set("multi-agent/start.sh", multiAgentStartScript);
-  scripts.set("multi-agent/cleanup.sh", multiAgentCleanupScript);
-  scripts.set("multi-agent/status.sh", multiAgentStatusScript);
-  scripts.set("multi-agent/create-pr.sh", multiAgentCreatePrScript);
-  scripts.set("multi-agent/plan.sh", multiAgentPlanScript);
+  scripts.set("multi_agent/__init__.py", multiAgentInit);
+  scripts.set("multi_agent/start.py", multiAgentStart);
+  scripts.set("multi_agent/cleanup.py", multiAgentCleanup);
+  scripts.set("multi_agent/status.py", multiAgentStatus);
+  scripts.set("multi_agent/create_pr.py", multiAgentCreatePr);
+  scripts.set("multi_agent/plan.py", multiAgentPlan);
 
   // Main
-  scripts.set("init-developer.sh", initDeveloperScript);
-  scripts.set("get-developer.sh", getDeveloperScript);
-  scripts.set("task.sh", taskScript);
-  scripts.set("get-context.sh", getContextScript);
-  scripts.set("add-session.sh", addSessionScript);
-  scripts.set("create-bootstrap.sh", createBootstrapScript);
+  scripts.set("get_developer.py", getDeveloperScript);
+  scripts.set("init_developer.py", initDeveloperScript);
+  scripts.set("task.py", taskScript);
+  scripts.set("get_context.py", getContextScript);
+  scripts.set("add_session.py", addSessionScript);
+  scripts.set("create_bootstrap.py", createBootstrapScript);
 
   return scripts;
 }

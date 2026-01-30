@@ -83,7 +83,7 @@ export function getClaudeSourcePath(): string {
 
 /**
  * Read a file from the .trellis directory
- * @param relativePath - Path relative to .trellis/ (e.g., 'scripts/task.sh')
+ * @param relativePath - Path relative to .trellis/ (e.g., 'scripts/task.py')
  * @returns File content as string
  */
 export function readTrellisFile(relativePath: string): string {
@@ -108,7 +108,7 @@ export function readTemplate(
 
 /**
  * Helper to read script template from .trellis/scripts/
- * @param relativePath - Path relative to .trellis/scripts/ (e.g., 'task.sh')
+ * @param relativePath - Path relative to .trellis/scripts/ (e.g., 'task.py')
  */
 export function readScript(relativePath: string): string {
   return readTrellisFile(`scripts/${relativePath}`);
@@ -186,8 +186,8 @@ function copyDirRecursive(
       copyDirRecursive(srcPath, destPath, options);
     } else {
       fs.copyFileSync(srcPath, destPath);
-      // Make shell scripts executable
-      if (options?.executable && entry.endsWith(".sh")) {
+      // Make scripts executable
+      if (options?.executable && (entry.endsWith(".sh") || entry.endsWith(".py"))) {
         fs.chmodSync(destPath, 0o755);
       }
     }

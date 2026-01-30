@@ -9,4 +9,4 @@
 
 # Agent runtime files (in worktree)
 .agent-log
-.agent-runner.sh
+.session-id
