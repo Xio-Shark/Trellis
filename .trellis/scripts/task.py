@@ -266,8 +266,8 @@ def cmd_create(args: argparse.Namespace) -> int:
     print("", file=sys.stderr)
     print(colored("Next steps:", Colors.BLUE), file=sys.stderr)
     print("  1. Create prd.md with requirements", file=sys.stderr)
-    print(f"  2. Run: task.py init-context <dir> <dev_type>", file=sys.stderr)
-    print(f"  3. Run: task.py start <dir>", file=sys.stderr)
+    print("  2. Run: task.py init-context <dir> <dev_type>", file=sys.stderr)
+    print("  3. Run: task.py start <dir>", file=sys.stderr)
     print("", file=sys.stderr)
 
     # Output relative path for script chaining
