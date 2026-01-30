@@ -1184,44 +1184,7 @@ export async function update(options: UpdateOptions): Promise<void> {
     );
   }
 
-  // Display migration metadata (changelog, breaking changes, recommendations)
-  if (cliVsProject > 0 && projectVersion !== "unknown") {
-    const metadata = getMigrationMetadata(projectVersion, cliVersion);
-
-    if (metadata.breaking || metadata.changelog.length > 0) {
-      console.log(chalk.cyan("═".repeat(60)));
-
-      if (metadata.breaking) {
-        console.log(
-          chalk.bgRed.white.bold(" ⚠️  BREAKING CHANGES ") +
-            chalk.red.bold(" This update contains breaking changes!")
-        );
-        console.log("");
-      }
-
-      if (metadata.changelog.length > 0) {
-        console.log(chalk.cyan.bold("📋 What's Changed:"));
-        for (const entry of metadata.changelog) {
-          console.log(chalk.white(`   ${entry}`));
-        }
-        console.log("");
-      }
-
-      if (metadata.recommendMigrate) {
-        console.log(
-          chalk.bgGreen.black.bold(" 💡 RECOMMENDED ") +
-            chalk.green.bold(" Run with --migrate to complete the migration")
-        );
-        console.log(
-          chalk.gray("   This will remove legacy files and apply all changes.")
-        );
-        console.log("");
-      }
-
-      console.log(chalk.cyan("═".repeat(60)));
-      console.log("");
-    }
-  }
+  // Migration metadata is displayed at the end to prevent scrolling off screen
 
   // Load template hashes for modification detection
   const hashes = loadHashes(cwd);
@@ -1384,23 +1347,6 @@ export async function update(options: UpdateOptions): Promise<void> {
     console.log(
       chalk.red(`⚠️  This will DOWNGRADE: ${projectVersion} → ${cliVersion}\n`),
     );
-  }
-
-  // Re-show breaking change warning before confirm (in case it scrolled off)
-  if (cliVsProject > 0 && projectVersion !== "unknown") {
-    const confirmMetadata = getMigrationMetadata(projectVersion, cliVersion);
-    if (confirmMetadata.breaking) {
-      console.log(
-        chalk.bgRed.white.bold(" ⚠️  BREAKING CHANGE ") +
-          chalk.red(" Review the changes above carefully!")
-      );
-      if (confirmMetadata.recommendMigrate && !options.migrate) {
-        console.log(
-          chalk.yellow("   💡 Consider using --migrate to complete the migration")
-        );
-      }
-      console.log("");
-    }
   }
 
   // Dry run mode
@@ -1701,6 +1647,45 @@ export async function update(options: UpdateOptions): Promise<void> {
           )
         );
       }
+    }
+  }
+
+  // Display breaking change warnings at the very end (so they don't scroll off screen)
+  if (cliVsProject > 0 && projectVersion !== "unknown") {
+    const finalMetadata = getMigrationMetadata(projectVersion, cliVersion);
+
+    if (finalMetadata.breaking || finalMetadata.changelog.length > 0) {
+      console.log("");
+      console.log(chalk.cyan("═".repeat(60)));
+
+      if (finalMetadata.breaking) {
+        console.log(
+          chalk.bgRed.white.bold(" ⚠️  BREAKING CHANGES ") +
+            chalk.red.bold(" This update contains breaking changes!")
+        );
+        console.log("");
+      }
+
+      if (finalMetadata.changelog.length > 0) {
+        console.log(chalk.cyan.bold("📋 What's Changed:"));
+        for (const entry of finalMetadata.changelog) {
+          console.log(chalk.white(`   ${entry}`));
+        }
+        console.log("");
+      }
+
+      if (finalMetadata.recommendMigrate && !options.migrate) {
+        console.log(
+          chalk.bgGreen.black.bold(" 💡 RECOMMENDED ") +
+            chalk.green.bold(" Run with --migrate to complete the migration")
+        );
+        console.log(
+          chalk.gray("   This will remove legacy files and apply all changes.")
+        );
+        console.log("");
+      }
+
+      console.log(chalk.cyan("═".repeat(60)));
     }
   }
 }
