@@ -172,7 +172,7 @@ def get_context_text(repo_root: Path | None = None) -> str:
     # Developer section
     lines.append("## DEVELOPER")
     if not developer:
-        lines.append(f"ERROR: Not initialized. Run: ./{DIR_WORKFLOW}/{DIR_SCRIPTS}/init_developer.py <name>")
+        lines.append(f"ERROR: Not initialized. Run: python3 ./{DIR_WORKFLOW}/{DIR_SCRIPTS}/init_developer.py <name>")
         return "\n".join(lines)
 
     lines.append(f"Name: {developer}")
