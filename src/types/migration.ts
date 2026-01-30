@@ -25,8 +25,20 @@ export interface MigrationItem {
 export interface MigrationManifest {
   /** Target version this migration upgrades to */
   version: string;
+  /** Human-readable description of changes in this version */
+  description?: string;
   /** List of migration actions */
   migrations: MigrationItem[];
+  /** Detailed changelog for display to users */
+  changelog?: string;
+  /** Whether this version contains breaking changes */
+  breaking?: boolean;
+  /** Whether users should run --migrate (recommended for breaking changes) */
+  recommendMigrate?: boolean;
+  /** Detailed migration guide for AI-assisted fixes (markdown format) */
+  migrationGuide?: string;
+  /** Instructions for AI assistants on how to help with migration */
+  aiInstructions?: string;
 }
 
 /**

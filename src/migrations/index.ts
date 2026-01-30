@@ -165,3 +165,58 @@ export function getAllMigrations(): MigrationItem[] {
 export function clearManifestCache(): void {
   manifestCache = null;
 }
+
+/**
+ * Get aggregated metadata for migrations between versions
+ * Returns combined changelog, breaking status, migrate recommendation, and migration guides
+ */
+export function getMigrationMetadata(
+  fromVersion: string,
+  toVersion: string
+): {
+  changelog: string[];
+  breaking: boolean;
+  recommendMigrate: boolean;
+  migrationGuides: { version: string; guide: string; aiInstructions?: string }[];
+} {
+  const manifests = loadManifests();
+  const versions = Object.keys(manifests).sort(compareVersions);
+
+  // Filter to versions > fromVersion and <= toVersion
+  const applicableVersions = versions.filter((v) => {
+    const afterFrom = compareVersions(v, fromVersion) > 0;
+    const atOrBeforeTo = compareVersions(v, toVersion) <= 0;
+    return afterFrom && atOrBeforeTo;
+  });
+
+  const result = {
+    changelog: [] as string[],
+    breaking: false,
+    recommendMigrate: false,
+    migrationGuides: [] as { version: string; guide: string; aiInstructions?: string }[],
+  };
+
+  for (const version of applicableVersions) {
+    const manifest = manifests[version];
+    if (manifest) {
+      if (manifest.changelog) {
+        result.changelog.push(`v${version}: ${manifest.changelog}`);
+      }
+      if (manifest.breaking) {
+        result.breaking = true;
+      }
+      if (manifest.recommendMigrate) {
+        result.recommendMigrate = true;
+      }
+      if (manifest.migrationGuide) {
+        result.migrationGuides.push({
+          version,
+          guide: manifest.migrationGuide,
+          aiInstructions: manifest.aiInstructions,
+        });
+      }
+    }
+  }
+
+  return result;
+}
