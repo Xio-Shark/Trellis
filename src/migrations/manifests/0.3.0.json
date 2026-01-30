@@ -1,6 +1,11 @@
 {
   "version": "0.3.0",
-  "description": "Command path namespace migration for brand recognition",
+  "description": "Command path namespace migration + Shell to Python script migration",
+  "breaking": true,
+  "recommendMigrate": true,
+  "changelog": "BREAKING: All shell scripts (.sh) have been replaced by Python scripts (.py). Requires Python 3.10+. The multi-agent/ directory is now multi_agent/ (underscore). Run with --migrate to remove legacy shell scripts.",
+  "migrationGuide": "# Migration Guide: v0.3.0 Shell to Python\n\n## Overview\n\nAll shell scripts (.sh) have been replaced by Python scripts (.py). This affects any custom workflows, slash commands, or documentation that references the old scripts.\n\n## Requirements\n\n- Python 3.10 or higher\n\n## What Changed\n\n### Script Extensions\n\n| Old Path | New Path |\n|----------|----------|\n| `.trellis/scripts/*.sh` | `.trellis/scripts/*.py` |\n| `.trellis/scripts/common/*.sh` | `.trellis/scripts/common/*.py` |\n| `.trellis/scripts/multi-agent/*.sh` | `.trellis/scripts/multi_agent/*.py` |\n\n### Directory Rename\n\n| Old | New |\n|-----|-----|\n| `multi-agent/` (hyphen) | `multi_agent/` (underscore) |\n\n### Invocation Change\n\n| Old | New |\n|-----|-----|\n| `./script.sh` | `python3 ./script.py` |\n| `./.trellis/scripts/task.sh` | `python3 ./.trellis/scripts/task.py` |\n\n## Files to Check\n\nSearch your project for these patterns and update them:\n\n```bash\n# Find files with old .sh references\ngrep -r '\\.trellis/scripts.*\\.sh' .claude/ .cursor/ .trellis/\n\n# Find files with old multi-agent directory\ngrep -r 'multi-agent/' .claude/ .cursor/ .trellis/\n```\n\n## Common Replacements\n\n```\n# Task management\n./.trellis/scripts/task.sh → python3 ./.trellis/scripts/task.py\n\n# Context\n./.trellis/scripts/get-context.sh → python3 ./.trellis/scripts/get_context.py\n\n# Developer\n./.trellis/scripts/get-developer.sh → python3 ./.trellis/scripts/get_developer.py\n./.trellis/scripts/init-developer.sh → python3 ./.trellis/scripts/init_developer.py\n\n# Session\n./.trellis/scripts/add-session.sh → python3 ./.trellis/scripts/add_session.py\n\n# Multi-agent\n./.trellis/scripts/multi-agent/start.sh → python3 ./.trellis/scripts/multi_agent/start.py\n./.trellis/scripts/multi-agent/status.sh → python3 ./.trellis/scripts/multi_agent/status.py\n./.trellis/scripts/multi-agent/plan.sh → python3 ./.trellis/scripts/multi_agent/plan.py\n./.trellis/scripts/multi-agent/cleanup.sh → python3 ./.trellis/scripts/multi_agent/cleanup.py\n./.trellis/scripts/multi-agent/create-pr.sh → python3 ./.trellis/scripts/multi_agent/create_pr.py\n```\n\n## After Migration\n\nRun `trellis update --migrate` to remove the old shell scripts from your project.",
+  "aiInstructions": "1. Search for files containing old patterns:\n   - `.trellis/scripts/*.sh` references\n   - `multi-agent/` directory references (should be `multi_agent/`)\n2. For each file found, apply the replacements from the migration guide\n3. Verify the changes compile/work correctly\n4. After all files are updated, remind user to run `trellis update --migrate`",
   "migrations": [
     {
       "type": "rename",
@@ -169,7 +174,105 @@
       "from": ".cursor/commands/parallel.md",
       "to": ".cursor/commands/trellis-parallel.md",
       "description": "Rename Cursor parallel command with trellis- prefix"
+    },
+
+    {
+      "type": "delete",
+      "from": ".trellis/scripts/get-developer.sh",
+      "description": "Remove legacy shell script (replaced by Python)"
+    },
+    {
+      "type": "delete",
+      "from": ".trellis/scripts/init-developer.sh",
+      "description": "Remove legacy shell script (replaced by Python)"
+    },
+    {
+      "type": "delete",
+      "from": ".trellis/scripts/get-context.sh",
+      "description": "Remove legacy shell script (replaced by Python)"
+    },
+    {
+      "type": "delete",
+      "from": ".trellis/scripts/task.sh",
+      "description": "Remove legacy shell script (replaced by Python)"
+    },
+    {
+      "type": "delete",
+      "from": ".trellis/scripts/add-session.sh",
+      "description": "Remove legacy shell script (replaced by Python)"
+    },
+    {
+      "type": "delete",
+      "from": ".trellis/scripts/create-bootstrap.sh",
+      "description": "Remove legacy shell script (replaced by Python)"
+    },
+
+    {
+      "type": "delete",
+      "from": ".trellis/scripts/common/paths.sh",
+      "description": "Remove legacy shell script (replaced by Python)"
+    },
+    {
+      "type": "delete",
+      "from": ".trellis/scripts/common/developer.sh",
+      "description": "Remove legacy shell script (replaced by Python)"
+    },
+    {
+      "type": "delete",
+      "from": ".trellis/scripts/common/git-context.sh",
+      "description": "Remove legacy shell script (replaced by Python)"
+    },
+    {
+      "type": "delete",
+      "from": ".trellis/scripts/common/worktree.sh",
+      "description": "Remove legacy shell script (replaced by Python)"
+    },
+    {
+      "type": "delete",
+      "from": ".trellis/scripts/common/task-queue.sh",
+      "description": "Remove legacy shell script (replaced by Python)"
+    },
+    {
+      "type": "delete",
+      "from": ".trellis/scripts/common/task-utils.sh",
+      "description": "Remove legacy shell script (replaced by Python)"
+    },
+    {
+      "type": "delete",
+      "from": ".trellis/scripts/common/phase.sh",
+      "description": "Remove legacy shell script (replaced by Python)"
+    },
+    {
+      "type": "delete",
+      "from": ".trellis/scripts/common/registry.sh",
+      "description": "Remove legacy shell script (replaced by Python)"
+    },
+
+    {
+      "type": "delete",
+      "from": ".trellis/scripts/multi-agent/start.sh",
+      "description": "Remove legacy shell script (replaced by Python in multi_agent/)"
+    },
+    {
+      "type": "delete",
+      "from": ".trellis/scripts/multi-agent/plan.sh",
+      "description": "Remove legacy shell script (replaced by Python in multi_agent/)"
+    },
+    {
+      "type": "delete",
+      "from": ".trellis/scripts/multi-agent/status.sh",
+      "description": "Remove legacy shell script (replaced by Python in multi_agent/)"
+    },
+    {
+      "type": "delete",
+      "from": ".trellis/scripts/multi-agent/create-pr.sh",
+      "description": "Remove legacy shell script (replaced by Python in multi_agent/)"
+    },
+    {
+      "type": "delete",
+      "from": ".trellis/scripts/multi-agent/cleanup.sh",
+      "description": "Remove legacy shell script (replaced by Python in multi_agent/)"
     }
   ],
-  "notes": "Claude Code uses subdirectory namespacing (.claude/commands/trellis/), Cursor uses filename prefix (.cursor/commands/trellis-*) since Cursor doesn't support nested command directories"
+  "notes": "Part 1: Command namespace migration - Claude Code uses subdirectory namespacing (.claude/commands/trellis/), Cursor uses filename prefix (.cursor/commands/trellis-*). Part 2: Shell to Python migration - All .trellis/scripts/*.sh files are replaced by Python equivalents. The multi-agent/ directory (with hyphen) is replaced by multi_agent/ (with underscore). Empty directories are automatically cleaned up after file deletion."
 }
