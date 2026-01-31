@@ -96,9 +96,31 @@ def _slugify(title: str) -> str:
 
 
 def _resolve_task_dir(target_dir: str, repo_root: Path) -> Path:
-    """Resolve task directory to absolute path."""
+    """Resolve task directory to absolute path.
+
+    Supports:
+    - Absolute path: /path/to/task
+    - Relative path: .trellis/tasks/01-31-my-task
+    - Task name: my-task (uses find_task_by_name for lookup)
+    """
+    if not target_dir:
+        return Path()
+
+    # Absolute path
     if target_dir.startswith("/"):
         return Path(target_dir)
+
+    # Relative path (contains path separator or starts with .trellis)
+    if "/" in target_dir or target_dir.startswith(".trellis"):
+        return repo_root / target_dir
+
+    # Task name - try to find in tasks directory
+    tasks_dir = get_tasks_dir(repo_root)
+    found = find_task_by_name(target_dir, tasks_dir)
+    if found:
+        return found
+
+    # Fallback to treating as relative path
     return repo_root / target_dir
 
 
@@ -529,21 +551,25 @@ def cmd_list_context(args: argparse.Namespace) -> int:
 def cmd_start(args: argparse.Namespace) -> int:
     """Set current task."""
     repo_root = get_repo_root()
-    task_dir = args.dir
+    task_input = args.dir
 
-    if not task_dir:
-        print(colored("Error: task directory required", Colors.RED))
+    if not task_input:
+        print(colored("Error: task directory or name required", Colors.RED))
         return 1
 
-    # Convert to relative path
-    if task_dir.startswith("/"):
-        task_dir = task_dir[len(str(repo_root)) + 1:]
+    # Resolve task directory (supports task name, relative path, or absolute path)
+    full_path = _resolve_task_dir(task_input, repo_root)
 
-    # Verify directory exists
-    full_path = repo_root / task_dir
     if not full_path.is_dir():
-        print(colored(f"Error: Task directory not found: {task_dir}", Colors.RED))
+        print(colored(f"Error: Task not found: {task_input}", Colors.RED))
+        print("Hint: Use task name (e.g., 'my-task') or full path (e.g., '.trellis/tasks/01-31-my-task')")
         return 1
+
+    # Convert to relative path for storage
+    try:
+        task_dir = str(full_path.relative_to(repo_root))
+    except ValueError:
+        task_dir = str(full_path)
 
     if set_current_task(task_dir, repo_root):
         print(colored(f"✓ Current task set to: {task_dir}", Colors.GREEN))
