@@ -77,7 +77,7 @@ export async function createWorkflowStructure(
   ensureDir(path.join(cwd, DIR_NAMES.WORKFLOW));
 
   // Copy scripts/ directory from templates
-  copyTrellisDir("scripts", path.join(cwd, PATHS.SCRIPTS), {
+  await copyTrellisDir("scripts", path.join(cwd, PATHS.SCRIPTS), {
     executable: true,
   });
 
