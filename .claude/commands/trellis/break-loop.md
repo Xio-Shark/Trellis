@@ -122,6 +122,4 @@ Three levels of insight:
 
 3. **Commit the spec updates** - This is the primary output, not just the analysis text
 
-4. **(Optional) Record to journal** - If you want a session record, use `/trellis:record-session`
-
 > **The analysis is worthless if it stays in chat. The value is in the updated specs.**
