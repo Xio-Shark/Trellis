@@ -35,7 +35,6 @@ def parse_simple_yaml(content: str) -> dict:
         Parsed dict.
     """
     result: dict = {}
-    current_key: str | None = None
     current_list: list | None = None
 
     for line in content.splitlines():
@@ -52,10 +51,10 @@ def parse_simple_yaml(content: str) -> dict:
             value = value.strip().strip('"').strip("'")
             if value:
                 result[key] = value
-                current_key = None
+                _ = None
                 current_list = None
             else:
-                current_key = key
+                _ = key
                 current_list = []
                 result[key] = current_list
 

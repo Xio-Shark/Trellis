@@ -14,37 +14,45 @@ import subprocess
 from pathlib import Path
 
 from .paths import (
+    DIR_SCRIPTS,
+    DIR_SPEC,
+    DIR_TASKS,
     DIR_WORKFLOW,
     DIR_WORKSPACE,
-    DIR_TASKS,
-    DIR_SPEC,
-    DIR_SCRIPTS,
     FILE_TASK_JSON,
-    get_repo_root,
-    get_developer,
-    get_tasks_dir,
+    count_lines,
     get_active_journal_file,
     get_current_task,
-    count_lines,
+    get_developer,
+    get_repo_root,
+    get_tasks_dir,
 )
-
 
 # =============================================================================
 # Helper Functions
 # =============================================================================
 
+
 def _run_git_command(args: list[str], cwd: Path | None = None) -> tuple[int, str, str]:
-    """Run a git command and return (returncode, stdout, stderr)."""
+    """Run a git command and return (returncode, stdout, stderr).
+
+    Uses UTF-8 encoding with -c i18n.logOutputEncoding=UTF-8 to ensure
+    consistent output across all platforms (Windows, macOS, Linux).
+    """
     try:
+        # Force git to output UTF-8 for consistent cross-platform behavior
+        git_args = ["git", "-c", "i18n.logOutputEncoding=UTF-8"] + args
         result = subprocess.run(
-            ["git"] + args,
+            git_args,
             cwd=cwd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         return result.returncode, result.stdout, result.stderr
-    except Exception:
-        return 1, "", ""
+    except Exception as e:
+        return 1, "", str(e)
 
 
 def _read_json_file(path: Path) -> dict | None:
@@ -58,6 +66,7 @@ def _read_json_file(path: Path) -> dict | None:
 # =============================================================================
 # JSON Output
 # =============================================================================
+
 
 def get_context_json(repo_root: Path | None = None) -> dict:
     """Get context as a dictionary.
@@ -79,7 +88,9 @@ def get_context_json(repo_root: Path | None = None) -> dict:
     journal_relative = ""
     if journal_file and developer:
         journal_lines = count_lines(journal_file)
-        journal_relative = f"{DIR_WORKFLOW}/{DIR_WORKSPACE}/{developer}/{journal_file.name}"
+        journal_relative = (
+            f"{DIR_WORKFLOW}/{DIR_WORKSPACE}/{developer}/{journal_file.name}"
+        )
 
     # Git info
     _, branch_out, _ = _run_git_command(["branch", "--show-current"], cwd=repo_root)
@@ -109,11 +120,13 @@ def get_context_json(repo_root: Path | None = None) -> dict:
                 if task_json_path.is_file():
                     data = _read_json_file(task_json_path)
                     if data:
-                        tasks.append({
-                            "dir": d.name,
-                            "name": data.get("name") or data.get("id") or "unknown",
-                            "status": data.get("status", "unknown"),
-                        })
+                        tasks.append(
+                            {
+                                "dir": d.name,
+                                "name": data.get("name") or data.get("id") or "unknown",
+                                "status": data.get("status", "unknown"),
+                            }
+                        )
 
     return {
         "developer": developer or "",
@@ -149,6 +162,7 @@ def output_json(repo_root: Path | None = None) -> None:
 # Text Output
 # =============================================================================
 
+
 def get_context_text(repo_root: Path | None = None) -> str:
     """Get context as formatted text.
 
@@ -172,7 +186,9 @@ def get_context_text(repo_root: Path | None = None) -> str:
     # Developer section
     lines.append("## DEVELOPER")
     if not developer:
-        lines.append(f"ERROR: Not initialized. Run: python3 ./{DIR_WORKFLOW}/{DIR_SCRIPTS}/init_developer.py <name>")
+        lines.append(
+            f"ERROR: Not initialized. Run: python3 ./{DIR_WORKFLOW}/{DIR_SCRIPTS}/init_developer.py <name>"
+        )
         return "\n".join(lines)
 
     lines.append(f"Name: {developer}")
@@ -330,13 +346,15 @@ def output_text(repo_root: Path | None = None) -> None:
 # Main Entry
 # =============================================================================
 
+
 def main() -> None:
     """CLI entry point."""
     import argparse
 
     parser = argparse.ArgumentParser(description="Get Session Context for AI Agent")
     parser.add_argument(
-        "--json", "-j",
+        "--json",
+        "-j",
         action="store_true",
         help="Output context in JSON format",
     )

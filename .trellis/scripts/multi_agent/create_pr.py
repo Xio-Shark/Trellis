@@ -26,18 +26,19 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from common.git_context import _run_git_command
 from common.paths import (
     DIR_WORKFLOW,
     FILE_TASK_JSON,
-    get_repo_root,
     get_current_task,
+    get_repo_root,
 )
 from common.phase import get_phase_for_action
-
 
 # =============================================================================
 # Colors
 # =============================================================================
+
 
 class Colors:
     RED = "\033[0;31m"
@@ -51,6 +52,7 @@ class Colors:
 # Helper Functions
 # =============================================================================
 
+
 def _read_json_file(path: Path) -> dict | None:
     """Read and parse a JSON file."""
     try:
@@ -62,37 +64,26 @@ def _read_json_file(path: Path) -> dict | None:
 def _write_json_file(path: Path, data: dict) -> bool:
     """Write dict to JSON file."""
     try:
-        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        path.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
         return True
     except (OSError, IOError):
         return False
-
-
-def _run_git_command(args: list[str], cwd: Path | None = None) -> tuple[int, str, str]:
-    """Run a git command and return (returncode, stdout, stderr)."""
-    try:
-        result = subprocess.run(
-            ["git"] + args,
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-        )
-        return result.returncode, result.stdout, result.stderr
-    except Exception as e:
-        return 1, "", str(e)
 
 
 # =============================================================================
 # Main
 # =============================================================================
 
+
 def main() -> int:
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Multi-Agent Pipeline: Create PR"
-    )
+    parser = argparse.ArgumentParser(description="Multi-Agent Pipeline: Create PR")
     parser.add_argument("dir", nargs="?", help="Task directory")
-    parser.add_argument("--dry-run", action="store_true", help="Show what would be done")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show what would be done"
+    )
 
     args = parser.parse_args()
     repo_root = get_repo_root()
@@ -108,7 +99,9 @@ def main() -> int:
             target_dir = current_task
 
     if not target_dir:
-        print(f"{Colors.RED}Error: No task directory specified and no current task set{Colors.NC}")
+        print(
+            f"{Colors.RED}Error: No task directory specified and no current task set{Colors.NC}"
+        )
         print("Usage: python3 create_pr.py [task-dir] [--dry-run]")
         return 1
 
@@ -128,7 +121,9 @@ def main() -> int:
     # =============================================================================
     print(f"{Colors.BLUE}=== Create PR ==={Colors.NC}")
     if args.dry_run:
-        print(f"{Colors.YELLOW}[DRY-RUN MODE] No actual changes will be made{Colors.NC}")
+        print(
+            f"{Colors.YELLOW}[DRY-RUN MODE] No actual changes will be made{Colors.NC}"
+        )
     print()
 
     # Read task config
@@ -178,15 +173,17 @@ def main() -> int:
     _run_git_command(["reset", ".agent-log", ".session-id"])
 
     # Check if there are staged changes
-    ret, diff_out, _ = _run_git_command(["diff", "--cached", "--quiet"])
+    ret, _, _ = _run_git_command(["diff", "--cached", "--quiet"])
     has_staged_changes = ret != 0
 
     if not has_staged_changes:
         print(f"{Colors.YELLOW}No staged changes to commit{Colors.NC}")
 
         # Check for unpushed commits
-        ret, log_out, _ = _run_git_command(["log", f"origin/{current_branch}..HEAD", "--oneline"])
-        unpushed = len([l for l in log_out.splitlines() if l.strip()])
+        ret, log_out, _ = _run_git_command(
+            ["log", f"origin/{current_branch}..HEAD", "--oneline"]
+        )
+        unpushed = len([line for line in log_out.splitlines() if line.strip()])
 
         if unpushed == 0:
             if args.dry_run:
@@ -238,9 +235,23 @@ def main() -> int:
     else:
         # Check if PR already exists
         result = subprocess.run(
-            ["gh", "pr", "list", "--head", current_branch, "--base", base_branch, "--json", "url", "--jq", ".[0].url"],
+            [
+                "gh",
+                "pr",
+                "list",
+                "--head",
+                current_branch,
+                "--base",
+                base_branch,
+                "--json",
+                "url",
+                "--jq",
+                ".[0].url",
+            ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         existing_pr = result.stdout.strip()
 
@@ -256,9 +267,22 @@ def main() -> int:
 
             # Create PR
             result = subprocess.run(
-                ["gh", "pr", "create", "--draft", "--base", base_branch, "--title", pr_title, "--body", pr_body],
+                [
+                    "gh",
+                    "pr",
+                    "create",
+                    "--draft",
+                    "--base",
+                    base_branch,
+                    "--title",
+                    pr_title,
+                    "--body",
+                    pr_body,
+                ],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
             )
 
             if result.returncode != 0:
@@ -286,7 +310,9 @@ def main() -> int:
         task_data["current_phase"] = create_pr_phase
 
         _write_json_file(task_json, task_data)
-        print(f"{Colors.GREEN}Task status updated to 'completed', phase {create_pr_phase}{Colors.NC}")
+        print(
+            f"{Colors.GREEN}Task status updated to 'completed', phase {create_pr_phase}{Colors.NC}"
+        )
 
     # In dry-run, reset the staging area
     if args.dry_run:

@@ -30,23 +30,24 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from common.git_context import _run_git_command
 from common.paths import get_repo_root
 from common.registry import (
     registry_get_file,
-    registry_search_agent,
     registry_get_task_dir,
     registry_remove_by_id,
     registry_remove_by_worktree,
+    registry_search_agent,
 )
 from common.task_utils import (
-    is_safe_task_path,
     archive_task_complete,
+    is_safe_task_path,
 )
-
 
 # =============================================================================
 # Colors
 # =============================================================================
+
 
 class Colors:
     RED = "\033[0;31m"
@@ -76,19 +77,6 @@ def log_error(msg: str) -> None:
 # Helper Functions
 # =============================================================================
 
-def _run_git_command(args: list[str], cwd: Path | None = None) -> tuple[int, str, str]:
-    """Run a git command and return (returncode, stdout, stderr)."""
-    try:
-        result = subprocess.run(
-            ["git"] + args,
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-        )
-        return result.returncode, result.stdout, result.stderr
-    except Exception as e:
-        return 1, "", str(e)
-
 
 def confirm(prompt: str, skip_confirm: bool) -> bool:
     """Ask for confirmation."""
@@ -107,6 +95,7 @@ def confirm(prompt: str, skip_confirm: bool) -> bool:
 # Commands
 # =============================================================================
 
+
 def cmd_list(repo_root: Path) -> int:
     """List worktrees."""
     print(f"{Colors.BLUE}=== Git Worktrees ==={Colors.NC}")
@@ -122,12 +111,15 @@ def cmd_list(repo_root: Path) -> int:
         print()
 
         import json
+
         data = json.loads(registry_file.read_text(encoding="utf-8"))
         agents = data.get("agents", [])
 
         if agents:
             for agent in agents:
-                print(f"  {agent.get('id', '?')}: PID={agent.get('pid', '?')} [{agent.get('worktree_path', '?')}]")
+                print(
+                    f"  {agent.get('id', '?')}: PID={agent.get('pid', '?')} [{agent.get('worktree_path', '?')}]"
+                )
         else:
             print("  (none)")
         print()
@@ -180,7 +172,9 @@ def cleanup_registry_only(search: str, repo_root: Path, skip_confirm: bool) -> i
             result = archive_task_complete(task_dir_abs, repo_root)
             if "archived_to" in result:
                 dest = Path(result["archived_to"])
-                log_success(f"Archived task: {dest.name} -> archive/{dest.parent.name}/")
+                log_success(
+                    f"Archived task: {dest.name} -> archive/{dest.parent.name}/"
+                )
     else:
         log_warn("Invalid task_dir in registry, skipping archive")
 
@@ -193,14 +187,13 @@ def cleanup_registry_only(search: str, repo_root: Path, skip_confirm: bool) -> i
 
 
 def cleanup_worktree(
-    branch: str,
-    repo_root: Path,
-    skip_confirm: bool,
-    keep_branch: bool
+    branch: str, repo_root: Path, skip_confirm: bool, keep_branch: bool
 ) -> int:
     """Cleanup single worktree."""
     # Find worktree path for branch
-    ret, worktree_list, _ = _run_git_command(["worktree", "list", "--porcelain"], cwd=repo_root)
+    _, worktree_list, _ = _run_git_command(
+        ["worktree", "list", "--porcelain"], cwd=repo_root
+    )
 
     worktree_path = None
     current_worktree = None
@@ -239,7 +232,9 @@ def cleanup_worktree(
 
     # 3. Remove worktree
     log_info("Removing worktree...")
-    ret, _, err = _run_git_command(["worktree", "remove", worktree_path, "--force"], cwd=repo_root)
+    ret, _, _ = _run_git_command(
+        ["worktree", "remove", worktree_path, "--force"], cwd=repo_root
+    )
     if ret != 0:
         # Try removing directory manually
         try:
@@ -263,9 +258,8 @@ def cleanup_worktree(
 def cmd_merged(repo_root: Path, skip_confirm: bool, keep_branch: bool) -> int:
     """Cleanup merged worktrees."""
     # Get main branch
-    ret, head_out, _ = _run_git_command(
-        ["symbolic-ref", "refs/remotes/origin/HEAD"],
-        cwd=repo_root
+    _, head_out, _ = _run_git_command(
+        ["symbolic-ref", "refs/remotes/origin/HEAD"], cwd=repo_root
     )
     main_branch = head_out.strip().replace("refs/remotes/origin/", "") or "main"
 
@@ -273,7 +267,9 @@ def cmd_merged(repo_root: Path, skip_confirm: bool, keep_branch: bool) -> int:
     print()
 
     # Get merged branches
-    ret, merged_out, _ = _run_git_command(["branch", "--merged", main_branch], cwd=repo_root)
+    _, merged_out, _ = _run_git_command(
+        ["branch", "--merged", main_branch], cwd=repo_root
+    )
     merged_branches = []
     for line in merged_out.splitlines():
         branch = line.strip().lstrip("* ")
@@ -285,7 +281,7 @@ def cmd_merged(repo_root: Path, skip_confirm: bool, keep_branch: bool) -> int:
         return 0
 
     # Get worktree list
-    ret, worktree_list, _ = _run_git_command(["worktree", "list"], cwd=repo_root)
+    _, worktree_list, _ = _run_git_command(["worktree", "list"], cwd=repo_root)
 
     worktree_branches = []
     for branch in merged_branches:
@@ -314,10 +310,11 @@ def cmd_all(repo_root: Path, skip_confirm: bool, keep_branch: bool) -> int:
     print()
 
     # Get worktree list
-    ret, worktree_list, _ = _run_git_command(["worktree", "list", "--porcelain"], cwd=repo_root)
+    _, worktree_list, _ = _run_git_command(
+        ["worktree", "list", "--porcelain"], cwd=repo_root
+    )
 
     worktrees = []
-    current_worktree = None
     main_worktree = str(repo_root.resolve())
 
     for line in worktree_list.splitlines():
@@ -343,11 +340,12 @@ def cmd_all(repo_root: Path, skip_confirm: bool, keep_branch: bool) -> int:
     # Get branch for each worktree
     for wt in worktrees:
         # Find branch name from worktree list
-        ret, wt_list, _ = _run_git_command(["worktree", "list"], cwd=repo_root)
+        _, wt_list, _ = _run_git_command(["worktree", "list"], cwd=repo_root)
         for line in wt_list.splitlines():
             if wt in line:
                 # Extract branch from [branch] format
                 import re
+
                 match = re.search(r"\[([^\]]+)\]", line)
                 if match:
                     branch = match.group(1)
@@ -361,6 +359,7 @@ def cmd_all(repo_root: Path, skip_confirm: bool, keep_branch: bool) -> int:
 # Main
 # =============================================================================
 
+
 def main() -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -368,7 +367,9 @@ def main() -> int:
     )
     parser.add_argument("branch", nargs="?", help="Branch name to cleanup")
     parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation")
-    parser.add_argument("--keep-branch", action="store_true", help="Don't delete git branch")
+    parser.add_argument(
+        "--keep-branch", action="store_true", help="Don't delete git branch"
+    )
     parser.add_argument("--list", action="store_true", help="List all worktrees")
     parser.add_argument("--merged", action="store_true", help="Remove merged worktrees")
     parser.add_argument("--all", action="store_true", help="Remove all worktrees")

@@ -19,26 +19,27 @@ import json
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from common.developer import ensure_developer
 from common.paths import (
     FILE_TASK_JSON,
     get_repo_root,
     get_tasks_dir,
 )
-from common.worktree import get_agents_dir
 from common.phase import get_phase_info
-from common.task_queue import get_task_stats, format_task_stats
-from common.developer import ensure_developer
-
+from common.task_queue import format_task_stats, get_task_stats
+from common.worktree import get_agents_dir
 
 # =============================================================================
 # Colors
 # =============================================================================
+
 
 class Colors:
     RED = "\033[0;31m"
@@ -53,6 +54,7 @@ class Colors:
 # =============================================================================
 # Helper Functions
 # =============================================================================
+
 
 def _read_json_file(path: Path) -> dict | None:
     """Read and parse a JSON file."""
@@ -156,10 +158,26 @@ def count_modified_files(worktree: str) -> int:
             cwd=worktree,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
-        return len([l for l in result.stdout.splitlines() if l.strip()])
+        return len([line for line in result.stdout.splitlines() if line.strip()])
     except Exception:
         return 0
+
+
+def tail_follow(file_path: Path) -> None:
+    """Follow a file like 'tail -f', cross-platform compatible."""
+    with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+        # Seek to end of file
+        f.seek(0, 2)
+
+        while True:
+            line = f.readline()
+            if line:
+                print(line, end="", flush=True)
+            else:
+                time.sleep(0.1)
 
 
 def get_last_tool(log_file: Path) -> str | None:
@@ -211,6 +229,7 @@ def get_last_message(log_file: Path, max_len: int = 100) -> str | None:
 # =============================================================================
 # Commands
 # =============================================================================
+
 
 def cmd_help() -> int:
     """Show help."""
@@ -304,7 +323,9 @@ def cmd_summary(repo_root: Path, filter_assignee: str | None = None) -> int:
     task_stats = get_task_stats(repo_root)
 
     print(f"{Colors.BLUE}=== Multi-Agent Status ==={Colors.NC}")
-    print(f"  Agents:  {Colors.GREEN}{running_count}{Colors.NC} running / {total_agents} registered")
+    print(
+        f"  Agents:  {Colors.GREEN}{running_count}{Colors.NC} running / {total_agents} registered"
+    )
     print(f"  Tasks:   {format_task_stats(task_stats)}")
     print()
 
@@ -313,7 +334,11 @@ def cmd_summary(repo_root: Path, filter_assignee: str | None = None) -> int:
     stopped_tasks = []
     regular_tasks = []
 
-    registry_data = _read_json_file(registry_file) if registry_file and registry_file.is_file() else None
+    registry_data = (
+        _read_json_file(registry_file)
+        if registry_file and registry_file.is_file()
+        else None
+    )
 
     for d in sorted(tasks_dir.iterdir()):
         if not d.is_dir() or d.name == "archive":
@@ -367,17 +392,19 @@ def cmd_summary(repo_root: Path, filter_assignee: str | None = None) -> int:
                 log_file = Path(worktree) / ".agent-log"
                 last_tool = get_last_tool(log_file)
 
-                running_tasks.append({
-                    "name": name,
-                    "priority": priority,
-                    "assignee": assignee,
-                    "phase_info": phase_info_str,
-                    "elapsed": elapsed,
-                    "branch": branch,
-                    "modified": modified,
-                    "last_tool": last_tool,
-                    "pid": pid,
-                })
+                running_tasks.append(
+                    {
+                        "name": name,
+                        "priority": priority,
+                        "assignee": assignee,
+                        "phase_info": phase_info_str,
+                        "elapsed": elapsed,
+                        "branch": branch,
+                        "modified": modified,
+                        "last_tool": last_tool,
+                        "pid": pid,
+                    }
+                )
             else:
                 # Stopped agent
                 task_dir_rel = agent_info.get("task_dir", "")
@@ -392,30 +419,38 @@ def cmd_summary(repo_root: Path, filter_assignee: str | None = None) -> int:
                 session_id_file = Path(worktree) / ".session-id"
                 log_file = Path(worktree) / ".agent-log"
 
-                stopped_tasks.append({
-                    "name": name,
-                    "worktree": worktree,
-                    "status": worktree_status,
-                    "session_id_file": session_id_file,
-                    "log_file": log_file,
-                })
+                stopped_tasks.append(
+                    {
+                        "name": name,
+                        "worktree": worktree,
+                        "status": worktree_status,
+                        "session_id_file": session_id_file,
+                        "log_file": log_file,
+                    }
+                )
         else:
             # Regular task
-            regular_tasks.append({
-                "name": name,
-                "status": status,
-                "priority": priority,
-                "assignee": assignee,
-            })
+            regular_tasks.append(
+                {
+                    "name": name,
+                    "status": status,
+                    "priority": priority,
+                    "assignee": assignee,
+                }
+            )
 
     # Output running agents
     if running_tasks:
         print(f"{Colors.CYAN}Running Agents:{Colors.NC}")
         for t in running_tasks:
-            priority_color = Colors.RED if t["priority"] == "P0" else (
-                Colors.YELLOW if t["priority"] == "P1" else Colors.BLUE
+            priority_color = (
+                Colors.RED
+                if t["priority"] == "P0"
+                else (Colors.YELLOW if t["priority"] == "P1" else Colors.BLUE)
             )
-            print(f"{Colors.GREEN}▶{Colors.NC} {Colors.CYAN}{t['name']}{Colors.NC} {Colors.GREEN}[running]{Colors.NC} {priority_color}[{t['priority']}]{Colors.NC} @{t['assignee']}")
+            print(
+                f"{Colors.GREEN}▶{Colors.NC} {Colors.CYAN}{t['name']}{Colors.NC} {Colors.GREEN}[running]{Colors.NC} {priority_color}[{t['priority']}]{Colors.NC} @{t['assignee']}"
+            )
             print(f"  Phase:    {t['phase_info']}")
             print(f"  Elapsed:  {t['elapsed']}")
             print(f"  Branch:   {Colors.DIM}{t['branch']}{Colors.NC}")
@@ -430,17 +465,27 @@ def cmd_summary(repo_root: Path, filter_assignee: str | None = None) -> int:
         print(f"{Colors.RED}Stopped Agents:{Colors.NC}")
         for t in stopped_tasks:
             if t["status"] == "completed":
-                print(f"{Colors.GREEN}✓{Colors.NC} {t['name']} {Colors.GREEN}[completed]{Colors.NC}")
+                print(
+                    f"{Colors.GREEN}✓{Colors.NC} {t['name']} {Colors.GREEN}[completed]{Colors.NC}"
+                )
             else:
                 if t["session_id_file"].is_file():
-                    session_id = t["session_id_file"].read_text(encoding="utf-8").strip()
+                    session_id = (
+                        t["session_id_file"].read_text(encoding="utf-8").strip()
+                    )
                     last_msg = get_last_message(t["log_file"], 150)
-                    print(f"{Colors.RED}○{Colors.NC} {t['name']} {Colors.RED}[stopped]{Colors.NC}")
+                    print(
+                        f"{Colors.RED}○{Colors.NC} {t['name']} {Colors.RED}[stopped]{Colors.NC}"
+                    )
                     if last_msg:
-                        print(f"{Colors.DIM}\"{last_msg}\"{Colors.NC}")
-                    print(f"{Colors.YELLOW}cd {t['worktree']} && claude --resume {session_id}{Colors.NC}")
+                        print(f'{Colors.DIM}"{last_msg}"{Colors.NC}')
+                    print(
+                        f"{Colors.YELLOW}cd {t['worktree']} && claude --resume {session_id}{Colors.NC}"
+                    )
                 else:
-                    print(f"{Colors.RED}○{Colors.NC} {t['name']} {Colors.RED}[stopped]{Colors.NC} {Colors.DIM}(no session-id){Colors.NC}")
+                    print(
+                        f"{Colors.RED}○{Colors.NC} {t['name']} {Colors.RED}[stopped]{Colors.NC} {Colors.DIM}(no session-id){Colors.NC}"
+                    )
             print()
 
     # Separator
@@ -451,11 +496,13 @@ def cmd_summary(repo_root: Path, filter_assignee: str | None = None) -> int:
     # Output regular tasks grouped by assignee
     if regular_tasks:
         # Sort by assignee, priority, status
-        regular_tasks.sort(key=lambda x: (
-            x["assignee"],
-            {"P0": 0, "P1": 1, "P2": 2, "P3": 3}.get(x["priority"], 2),
-            {"in_progress": 0, "planning": 1, "completed": 2}.get(x["status"], 1),
-        ))
+        regular_tasks.sort(
+            key=lambda x: (
+                x["assignee"],
+                {"P0": 0, "P1": 1, "P2": 2, "P3": 3}.get(x["priority"], 2),
+                {"in_progress": 0, "planning": 1, "completed": 2}.get(x["status"], 1),
+            )
+        )
 
         current_assignee = None
         for t in regular_tasks:
@@ -466,10 +513,14 @@ def cmd_summary(repo_root: Path, filter_assignee: str | None = None) -> int:
                 current_assignee = t["assignee"]
 
             color = status_color(t["status"])
-            priority_color = Colors.RED if t["priority"] == "P0" else (
-                Colors.YELLOW if t["priority"] == "P1" else Colors.BLUE
+            priority_color = (
+                Colors.RED
+                if t["priority"] == "P0"
+                else (Colors.YELLOW if t["priority"] == "P1" else Colors.BLUE)
             )
-            print(f"  {color}●{Colors.NC} {t['name']} ({t['status']}) {priority_color}[{t['priority']}]{Colors.NC}")
+            print(
+                f"  {color}●{Colors.NC} {t['name']} ({t['status']}) {priority_color}[{t['priority']}]{Colors.NC}"
+            )
 
     if running_tasks:
         print()
@@ -517,7 +568,9 @@ def cmd_detail(target: str, repo_root: Path) -> int:
         print(f"  Status:    {Colors.RED}Stopped{Colors.NC}")
         if session_id:
             print()
-            print(f"  {Colors.YELLOW}Resume:{Colors.NC} cd {worktree} && claude --resume {session_id}")
+            print(
+                f"  {Colors.YELLOW}Resume:{Colors.NC} cd {worktree} && claude --resume {session_id}"
+            )
 
     # Task info
     task_json = repo_root / task_dir / "task.json"
@@ -542,6 +595,8 @@ def cmd_detail(target: str, repo_root: Path) -> int:
             cwd=worktree,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         changes = result.stdout.strip()
         if changes:
@@ -575,7 +630,10 @@ def cmd_watch(target: str, repo_root: Path) -> int:
     print(f"{Colors.DIM}Press Ctrl+C to stop{Colors.NC}")
     print()
 
-    subprocess.run(["tail", "-f", str(log_file)])
+    try:
+        tail_follow(log_file)
+    except KeyboardInterrupt:
+        print()  # Clean newline after Ctrl+C
     return 0
 
 
@@ -654,13 +712,14 @@ def cmd_registry(repo_root: Path) -> int:
 # Main
 # =============================================================================
 
+
 def main() -> int:
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Multi-Agent Pipeline: Status Monitor"
-    )
+    parser = argparse.ArgumentParser(description="Multi-Agent Pipeline: Status Monitor")
     parser.add_argument("-a", "--assignee", help="Filter by assignee")
-    parser.add_argument("--list", action="store_true", help="List all worktrees and agents")
+    parser.add_argument(
+        "--list", action="store_true", help="List all worktrees and agents"
+    )
     parser.add_argument("--detail", metavar="TASK", help="Detailed task status")
     parser.add_argument("--progress", metavar="TASK", help="Quick progress view")
     parser.add_argument("--watch", metavar="TASK", help="Watch agent log")

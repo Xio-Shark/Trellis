@@ -32,27 +32,28 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from common.git_context import _run_git_command
 from common.paths import (
     DIR_WORKFLOW,
-    FILE_TASK_JSON,
     FILE_CURRENT_TASK,
+    FILE_TASK_JSON,
     get_repo_root,
-)
-from common.worktree import (
-    get_worktree_config,
-    get_worktree_base_dir,
-    get_worktree_copy_files,
-    get_worktree_post_create_hooks,
 )
 from common.registry import (
     registry_add_agent,
     registry_get_file,
 )
-
+from common.worktree import (
+    get_worktree_base_dir,
+    get_worktree_config,
+    get_worktree_copy_files,
+    get_worktree_post_create_hooks,
+)
 
 # =============================================================================
 # Colors
 # =============================================================================
+
 
 class Colors:
     RED = "\033[0;31m"
@@ -82,6 +83,7 @@ def log_error(msg: str) -> None:
 # Helper Functions
 # =============================================================================
 
+
 def _read_json_file(path: Path) -> dict | None:
     """Read and parse a JSON file."""
     try:
@@ -93,24 +95,12 @@ def _read_json_file(path: Path) -> dict | None:
 def _write_json_file(path: Path, data: dict) -> bool:
     """Write dict to JSON file."""
     try:
-        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        path.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
         return True
     except (OSError, IOError):
         return False
-
-
-def _run_git_command(args: list[str], cwd: Path | None = None) -> tuple[int, str, str]:
-    """Run a git command and return (returncode, stdout, stderr)."""
-    try:
-        result = subprocess.run(
-            ["git"] + args,
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-        )
-        return result.returncode, result.stdout, result.stderr
-    except Exception as e:
-        return 1, "", str(e)
 
 
 # =============================================================================
@@ -123,6 +113,7 @@ DISPATCH_MD_PATH = ".claude/agents/dispatch.md"
 # =============================================================================
 # Main
 # =============================================================================
+
 
 def main() -> int:
     """Main entry point."""
@@ -137,7 +128,7 @@ def main() -> int:
 
     # Normalize paths
     if task_dir_arg.startswith("/"):
-        task_dir_relative = task_dir_arg[len(str(project_root)) + 1:]
+        task_dir_relative = task_dir_arg[len(str(project_root)) + 1 :]
         task_dir_abs = Path(task_dir_arg)
     else:
         task_dir_relative = task_dir_arg
@@ -188,7 +179,9 @@ def main() -> int:
             print(f"{Colors.YELLOW}Rejection reason:{Colors.NC}")
             print(rejected_file.read_text(encoding="utf-8"))
         print()
-        log_info("To retry, delete this directory and run plan.py again with revised requirements")
+        log_info(
+            "To retry, delete this directory and run plan.py again with revised requirements"
+        )
         return 1
 
     # Check if prd.md exists (plan completed successfully)
@@ -201,7 +194,9 @@ def main() -> int:
     if not branch:
         log_error("branch field not set in task.json")
         log_info("Please set branch field first, e.g.:")
-        log_info('  jq \'.branch = "task/my-task"\' task.json > tmp && mv tmp task.json')
+        log_info(
+            "  jq '.branch = \"task/my-task\"' task.json > tmp && mv tmp task.json"
+        )
         return 1
 
     log_info(f"Branch: {branch}")
@@ -214,7 +209,9 @@ def main() -> int:
         log_info("Step 1: Creating worktree...")
 
         # Record current branch as base_branch (PR target)
-        _, base_branch_out, _ = _run_git_command(["branch", "--show-current"], cwd=project_root)
+        _, base_branch_out, _ = _run_git_command(
+            ["branch", "--show-current"], cwd=project_root
+        )
         base_branch = base_branch_out.strip()
         log_info(f"Base branch (PR target): {base_branch}")
 
@@ -231,19 +228,17 @@ def main() -> int:
         # Create branch if not exists
         ret, _, _ = _run_git_command(
             ["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
-            cwd=project_root
+            cwd=project_root,
         )
         if ret == 0:
             log_info("Branch exists, checking out...")
-            ret, out, err = _run_git_command(
-                ["worktree", "add", worktree_path, branch],
-                cwd=project_root
+            ret, _, err = _run_git_command(
+                ["worktree", "add", worktree_path, branch], cwd=project_root
             )
         else:
             log_info(f"Creating new branch: {branch}")
-            ret, out, err = _run_git_command(
-                ["worktree", "add", "-b", branch, worktree_path],
-                cwd=project_root
+            ret, _, err = _run_git_command(
+                ["worktree", "add", "-b", branch, worktree_path], cwd=project_root
             )
 
         if ret != 0:
@@ -353,10 +348,13 @@ def main() -> int:
     claude_cmd = [
         "claude",
         "-p",
-        "--agent", "dispatch",
-        "--session-id", session_id,
+        "--agent",
+        "dispatch",
+        "--session-id",
+        session_id,
         "--dangerously-skip-permissions",
-        "--output-format", "stream-json",
+        "--output-format",
+        "stream-json",
         "--verbose",
         "Start the pipeline",
     ]
@@ -390,7 +388,9 @@ def main() -> int:
     if not task_id:
         task_id = branch.replace("/", "-")
 
-    registry_add_agent(task_id, worktree_path, agent_pid, task_dir_relative, project_root)
+    registry_add_agent(
+        task_id, worktree_path, agent_pid, task_dir_relative, project_root
+    )
 
     log_success(f"Agent registered: {task_id}")
 
@@ -410,7 +410,9 @@ def main() -> int:
     print()
     print(f"{Colors.YELLOW}To monitor:{Colors.NC} tail -f {log_file}")
     print(f"{Colors.YELLOW}To stop:{Colors.NC}    kill {agent_pid}")
-    print(f"{Colors.YELLOW}To resume:{Colors.NC}  cd {worktree_path} && claude --resume {session_id}")
+    print(
+        f"{Colors.YELLOW}To resume:{Colors.NC}  cd {worktree_path} && claude --resume {session_id}"
+    )
 
     return 0
 

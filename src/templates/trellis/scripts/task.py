@@ -802,7 +802,7 @@ def cmd_create_pr(args: argparse.Namespace) -> int:
     script_dir = Path(__file__).parent
     create_pr_script = script_dir / "multi_agent" / "create_pr.py"
 
-    cmd = ["python3", str(create_pr_script)]
+    cmd = [sys.executable, str(create_pr_script)]
     if args.dir:
         cmd.append(args.dir)
     if args.dry_run:
