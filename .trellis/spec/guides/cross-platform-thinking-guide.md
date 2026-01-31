@@ -23,9 +23,10 @@
 |------------|-------------|---------|
 | Shebang (`#!/usr/bin/env python3`) | ✅ Works | ❌ Ignored |
 | Direct execution (`./script.py`) | ✅ Works | ❌ Fails |
-| Explicit interpreter (`python3 script.py`) | ✅ Works | ✅ Works |
+| `python3` command | ✅ Always available | ⚠️ May need `python` |
+| `python` command | ⚠️ May be Python 2 | ✅ Usually Python 3 |
 
-**Rule**: Always use explicit `python3` in documentation, help text, and error messages.
+**Rule 1**: Always use explicit `python3` in documentation, help text, and error messages.
 
 ```python
 # BAD - Assumes shebang works
@@ -35,6 +36,37 @@ print("Run: script.py <args>")
 # GOOD - Explicit interpreter
 print("Usage: python3 script.py <args>")
 print("Run: python3 ./script.py <args>")
+```
+
+**Rule 2**: When calling Python from TypeScript/Node.js, detect the available command:
+
+```typescript
+function getPythonCommand(): string {
+  try {
+    execSync("python3 --version", { stdio: "pipe" });
+    return "python3";
+  } catch {
+    try {
+      execSync("python --version", { stdio: "pipe" });
+      return "python";
+    } catch {
+      return "python3"; // Default, will fail with clear error
+    }
+  }
+}
+```
+
+**Rule 3**: When calling Python from Python, use `sys.executable`:
+
+```python
+import sys
+import subprocess
+
+# BAD - Hardcoded command
+subprocess.run(["python3", "other_script.py"])
+
+# GOOD - Use current interpreter
+subprocess.run([sys.executable, "other_script.py"])
 ```
 
 ### 2. Path Handling
@@ -96,8 +128,70 @@ home = Path.home()
 | `grep` | ✅ Built-in | ❌ Not available |
 | `find` | ✅ Built-in | ⚠️ Different syntax |
 | `cat` | ✅ Built-in | ❌ Use `type` |
+| `tail -f` | ✅ Built-in | ❌ Not available |
 
 **Rule**: Use Python standard library instead of shell commands when possible.
+
+```python
+# BAD - tail -f is not available on Windows
+subprocess.run(["tail", "-f", log_file])
+
+# GOOD - Cross-platform implementation
+def tail_follow(file_path: Path) -> None:
+    """Follow a file like 'tail -f', cross-platform compatible."""
+    with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+        f.seek(0, 2)  # Go to end
+        while True:
+            line = f.readline()
+            if line:
+                print(line, end="", flush=True)
+            else:
+                time.sleep(0.1)
+```
+
+### 6. File Encoding
+
+| Default Encoding | macOS/Linux | Windows |
+|------------------|-------------|---------|
+| Terminal | UTF-8 | Often CP1252 or GBK |
+| File I/O | UTF-8 | System locale |
+| Git output | UTF-8 | May vary |
+
+**Rule**: Always explicitly specify `encoding="utf-8"` and use `errors="replace"`.
+
+```python
+# BAD - Relies on system default
+with open(file, "r") as f:
+    content = f.read()
+
+result = subprocess.run(cmd, capture_output=True, text=True)
+
+# GOOD - Explicit encoding with error handling
+with open(file, "r", encoding="utf-8", errors="replace") as f:
+    content = f.read()
+
+result = subprocess.run(
+    cmd,
+    capture_output=True,
+    text=True,
+    encoding="utf-8",
+    errors="replace"
+)
+```
+
+**Git commands**: Force UTF-8 output encoding:
+
+```python
+# Force git to output UTF-8
+git_args = ["git", "-c", "i18n.logOutputEncoding=UTF-8"] + args
+result = subprocess.run(
+    git_args,
+    capture_output=True,
+    text=True,
+    encoding="utf-8",
+    errors="replace"
+)
+```
 
 ---
 
@@ -130,12 +224,38 @@ grep -r "\./" --include="*.py" --include="*.md" | grep -v python3
 
 Before committing cross-platform code:
 
-- [ ] All Python invocations use `python3` explicitly
+- [ ] All Python invocations use `python3` explicitly (docs) or `sys.executable` (code)
 - [ ] All paths use `pathlib.Path`
 - [ ] No hardcoded path separators (`/` or `\`)
-- [ ] No platform-specific commands without fallbacks
+- [ ] No platform-specific commands without fallbacks (e.g., `tail -f`)
+- [ ] All file I/O specifies `encoding="utf-8"` and `errors="replace"`
+- [ ] All subprocess calls specify `encoding="utf-8"` and `errors="replace"`
+- [ ] Git commands use `-c i18n.logOutputEncoding=UTF-8`
+- [ ] External tool API formats verified from documentation
 - [ ] Documentation matches code behavior
 - [ ] Ran search to find all affected locations
+
+### 7. External Tool API Contracts
+
+When integrating with external tools (Claude Code, Cursor, etc.), their API contracts are **implicit assumptions**.
+
+**Rule**: Verify API formats from official documentation, don't guess.
+
+```python
+# BAD - Guessed format
+output = {"continue": True, "message": "..."}
+
+# GOOD - Verified format from documentation
+output = {
+    "hookSpecificOutput": {
+        "hookEventName": "SessionStart",
+        "additionalContext": "..."
+    }
+}
+```
+
+> **Warning**: Different hook types may have different output formats.
+> Always check the specific documentation for each hook event.
 
 ---
 
@@ -164,6 +284,26 @@ subprocess.run(["./script.py"])  # FileNotFoundError
 src/templates/script.py  ← Updated
 .trellis/scripts/script.py  ← Forgot to sync!
 ```
+
+### 4. "Python 3 is always python3"
+
+```bash
+# Developer's Mac/Linux
+python3 script.py  # Works!
+
+# User's Windows (Python from python.org)
+python3 script.py  # 'python3' is not recognized
+python script.py   # Works!
+```
+
+### 5. "UTF-8 is the default everywhere"
+
+```python
+# Developer's Mac (UTF-8 default)
+subprocess.run(cmd, capture_output=True, text=True)  # Works!
+
+# User's Windows (GBK/CP1252 default)
+subprocess.run(cmd, capture_output=True, text=True)  # Garbled Chinese/Unicode
 
 ---
 
