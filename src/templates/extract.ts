@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { ensureDir, writeFile } from "../utils/file-writer.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -153,29 +154,31 @@ export function readClaudeFile(relativePath: string): string {
 
 /**
  * Copy a directory from .trellis/ to target, making scripts executable
+ * Uses writeFile to handle file conflicts with the global writeMode setting
  * @param srcRelativePath - Source path relative to .trellis/ (e.g., 'scripts')
  * @param destPath - Absolute destination path
  * @param options - Copy options
  */
-export function copyTrellisDir(
+export async function copyTrellisDir(
   srcRelativePath: string,
   destPath: string,
   options?: { executable?: boolean },
-): void {
+): Promise<void> {
   const trellisPath = getTrellisSourcePath();
   const srcPath = path.join(trellisPath, srcRelativePath);
-  copyDirRecursive(srcPath, destPath, options);
+  await copyDirRecursive(srcPath, destPath, options);
 }
 
 /**
  * Recursively copy directory with options
+ * Uses writeFile to handle file conflicts
  */
-function copyDirRecursive(
+async function copyDirRecursive(
   src: string,
   dest: string,
   options?: { executable?: boolean },
-): void {
-  fs.mkdirSync(dest, { recursive: true });
+): Promise<void> {
+  ensureDir(dest);
 
   for (const entry of fs.readdirSync(src)) {
     const srcPath = path.join(src, entry);
@@ -183,13 +186,11 @@ function copyDirRecursive(
     const stat = fs.statSync(srcPath);
 
     if (stat.isDirectory()) {
-      copyDirRecursive(srcPath, destPath, options);
+      await copyDirRecursive(srcPath, destPath, options);
     } else {
-      fs.copyFileSync(srcPath, destPath);
-      // Make shell scripts executable
-      if (options?.executable && entry.endsWith(".sh")) {
-        fs.chmodSync(destPath, 0o755);
-      }
+      const content = fs.readFileSync(srcPath, "utf-8");
+      const isExecutable = options?.executable && entry.endsWith(".sh");
+      await writeFile(destPath, content, { executable: isExecutable });
     }
   }
 }

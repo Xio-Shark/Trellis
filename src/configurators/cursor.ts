@@ -1,6 +1,7 @@
-import { cpSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { getCursorTemplatePath } from "../templates/extract.js";
+import { ensureDir, writeFile } from "../utils/file-writer.js";
 
 /**
  * Files to exclude when copying templates
@@ -22,9 +23,10 @@ function shouldExclude(filename: string): boolean {
 
 /**
  * Recursively copy directory, excluding build artifacts
+ * Uses writeFile to handle file conflicts with the global writeMode setting
  */
-function copyDirFiltered(src: string, dest: string): void {
-  mkdirSync(dest, { recursive: true });
+async function copyDirFiltered(src: string, dest: string): Promise<void> {
+  ensureDir(dest);
 
   for (const entry of readdirSync(src)) {
     if (shouldExclude(entry)) {
@@ -36,9 +38,10 @@ function copyDirFiltered(src: string, dest: string): void {
     const stat = statSync(srcPath);
 
     if (stat.isDirectory()) {
-      copyDirFiltered(srcPath, destPath);
+      await copyDirFiltered(srcPath, destPath);
     } else {
-      cpSync(srcPath, destPath);
+      const content = readFileSync(srcPath, "utf-8");
+      await writeFile(destPath, content);
     }
   }
 }
@@ -51,5 +54,5 @@ export async function configureCursor(cwd: string): Promise<void> {
   const destPath = path.join(cwd, ".cursor");
 
   // Copy templates, excluding build artifacts
-  copyDirFiltered(sourcePath, destPath);
+  await copyDirFiltered(sourcePath, destPath);
 }
