@@ -26,9 +26,7 @@
     "release": "git add -A && git diff-index --quiet HEAD || git commit -m 'chore: pre-release updates' && pnpm version patch && git push origin main --tags",
     "release:minor": "git add -A && git diff-index --quiet HEAD || git commit -m 'chore: pre-release updates' && pnpm version minor && git push origin main --tags",
     "release:major": "git add -A && git diff-index --quiet HEAD || git commit -m 'chore: pre-release updates' && pnpm version major && git push origin main --tags",
-    "release:beta": "git add -A && git diff-index --quiet HEAD || git commit -m 'chore: pre-release updates' && pnpm version prerelease --preid beta && git push origin HEAD --tags",
-    "publish:beta": "pnpm run build && npm publish --tag beta",
-    "publish:latest": "pnpm run build && npm publish"
+    "release:beta": "git add -A && git diff-index --quiet HEAD || git commit -m 'chore: pre-release updates' && pnpm version prerelease --preid beta && git push origin HEAD --tags"
   },
   "keywords": [
     "ai",
