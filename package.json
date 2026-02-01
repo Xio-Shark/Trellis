@@ -39,7 +39,7 @@
     "trellis"
   ],
   "author": "Mindfold LLC",
-  "license": "FSL-1.1-MIT",
+  "license": "AGPL-3.0-only",
   "dependencies": {
     "chalk": "^5.3.0",
     "commander": "^12.1.0",
