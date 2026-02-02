@@ -27,6 +27,7 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from common.cli_adapter import get_cli_adapter
 from common.paths import get_repo_root
 from common.developer import ensure_developer
 
@@ -60,6 +61,7 @@ def log_error(msg: str) -> None:
 # =============================================================================
 
 PLAN_MD_PATH = ".claude/agents/plan.md"
+DEFAULT_PLATFORM = "claude"
 
 
 # =============================================================================
@@ -74,12 +76,22 @@ def main() -> int:
     parser.add_argument("--name", "-n", required=True, help="Task name (e.g., user-auth)")
     parser.add_argument("--type", "-t", required=True, help="Dev type: backend|frontend|fullstack")
     parser.add_argument("--requirement", "-r", required=True, help="Requirement description")
+    parser.add_argument(
+        "--platform", "-p",
+        choices=["claude", "opencode"],
+        default=DEFAULT_PLATFORM,
+        help="Platform to use (default: claude)"
+    )
 
     args = parser.parse_args()
 
     task_name = args.name
     dev_type = args.type
     requirement = args.requirement
+    platform = args.platform
+
+    # Initialize CLI adapter
+    adapter = get_cli_adapter(platform)
 
     # Validate dev type
     if dev_type not in ("backend", "frontend", "fullstack"):
@@ -88,10 +100,11 @@ def main() -> int:
 
     project_root = get_repo_root()
 
-    # Check plan.md exists
-    plan_md = project_root / PLAN_MD_PATH
+    # Check plan agent exists (path varies by platform)
+    plan_md = adapter.get_agent_path("plan", project_root)
     if not plan_md.is_file():
-        log_error(f"plan.md not found at {plan_md}")
+        log_error(f"plan agent not found at {plan_md}")
+        log_info(f"Platform: {platform}")
         return 1
 
     ensure_developer(project_root)
@@ -160,17 +173,18 @@ def main() -> int:
     env["https_proxy"] = https_proxy
     env["http_proxy"] = http_proxy
     env["all_proxy"] = all_proxy
-    env["CLAUDE_NON_INTERACTIVE"] = "1"
 
-    claude_cmd = [
-        "claude",
-        "-p",
-        "--agent", "plan",
-        "--dangerously-skip-permissions",
-        "--output-format", "stream-json",
-        "--verbose",
-        f"Start planning for task: {task_name}",
-    ]
+    # Set non-interactive env var based on platform
+    env.update(adapter.get_non_interactive_env())
+
+    # Build CLI command using adapter
+    cli_cmd = adapter.build_run_command(
+        agent="plan",  # Will be mapped to "trellis-plan" for OpenCode
+        prompt=f"Start planning for task: {task_name}",
+        skip_permissions=True,
+        verbose=True,
+        json_output=True,
+    )
 
     with log_file.open("w") as log_f:
         # Use shell=False for cross-platform compatibility
@@ -186,7 +200,7 @@ def main() -> int:
         else:
             popen_kwargs["start_new_session"] = True
 
-        process = subprocess.Popen(claude_cmd, **popen_kwargs)
+        process = subprocess.Popen(cli_cmd, **popen_kwargs)
     agent_pid = process.pid
 
     log_success(f"Plan Agent started (PID: {agent_pid})")
