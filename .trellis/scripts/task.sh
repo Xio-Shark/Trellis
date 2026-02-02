@@ -47,6 +47,21 @@ NC='\033[0m'
 
 REPO_ROOT=$(get_repo_root)
 
+# Platform (claude | cursor), can be overridden via --platform flag
+PLATFORM="claude"
+
+# Get command file path based on platform
+# Claude: .claude/commands/trellis/<name>.md
+# Cursor: .cursor/commands/trellis-<name>.md
+get_command_path() {
+  local name="$1"
+  if [[ "$PLATFORM" == "cursor" ]]; then
+    echo ".cursor/commands/trellis-${name}.md"
+  else
+    echo ".claude/commands/trellis/${name}.md"
+  fi
+}
+
 # =============================================================================
 # Helper Functions
 # =============================================================================
@@ -85,30 +100,35 @@ EOF
 
 get_check_context() {
   local dev_type="$1"
+  local finish_work=$(get_command_path "finish-work")
+  local check_backend=$(get_command_path "check-backend")
+  local check_frontend=$(get_command_path "check-frontend")
 
   cat << EOF
-{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": "${finish_work}", "reason": "Finish work checklist"}
 {"file": "$DIR_WORKFLOW/$DIR_SPEC/shared/index.md", "reason": "Shared coding standards"}
 EOF
 
   if [[ "$dev_type" == "backend" ]] || [[ "$dev_type" == "fullstack" ]]; then
-    echo '{"file": ".claude/commands/trellis/check-backend.md", "reason": "Backend check spec"}'
+    echo "{\"file\": \"${check_backend}\", \"reason\": \"Backend check spec\"}"
   fi
   if [[ "$dev_type" == "frontend" ]] || [[ "$dev_type" == "fullstack" ]]; then
-    echo '{"file": ".claude/commands/trellis/check-frontend.md", "reason": "Frontend check spec"}'
+    echo "{\"file\": \"${check_frontend}\", \"reason\": \"Frontend check spec\"}"
   fi
 }
 
 get_debug_context() {
   local dev_type="$1"
+  local check_backend=$(get_command_path "check-backend")
+  local check_frontend=$(get_command_path "check-frontend")
 
   echo "{\"file\": \"$DIR_WORKFLOW/$DIR_SPEC/shared/index.md\", \"reason\": \"Shared coding standards\"}"
 
   if [[ "$dev_type" == "backend" ]] || [[ "$dev_type" == "fullstack" ]]; then
-    echo '{"file": ".claude/commands/trellis/check-backend.md", "reason": "Backend check spec"}'
+    echo "{\"file\": \"${check_backend}\", \"reason\": \"Backend check spec\"}"
   fi
   if [[ "$dev_type" == "frontend" ]] || [[ "$dev_type" == "fullstack" ]]; then
-    echo '{"file": ".claude/commands/trellis/check-frontend.md", "reason": "Frontend check spec"}'
+    echo "{\"file\": \"${check_frontend}\", \"reason\": \"Frontend check spec\"}"
   fi
 }
 
@@ -272,13 +292,36 @@ EOF
 # =============================================================================
 
 cmd_init_context() {
-  local target_dir="$1"
-  local dev_type="$2"
+  local target_dir=""
+  local dev_type=""
+
+  # Parse arguments
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --platform)
+        PLATFORM="$2"
+        shift 2
+        ;;
+      -*)
+        echo -e "${RED}Error: Unknown option $1${NC}"
+        exit 1
+        ;;
+      *)
+        if [[ -z "$target_dir" ]]; then
+          target_dir="$1"
+        elif [[ -z "$dev_type" ]]; then
+          dev_type="$1"
+        fi
+        shift
+        ;;
+    esac
+  done
 
   if [[ -z "$target_dir" ]] || [[ -z "$dev_type" ]]; then
     echo -e "${RED}Error: Missing arguments${NC}"
-    echo "Usage: $0 init-context <task-dir> <dev_type>"
+    echo "Usage: $0 init-context <task-dir> <dev_type> [--platform claude|cursor]"
     echo "  dev_type: backend | frontend | fullstack | test | docs"
+    echo "  --platform: claude (default) | cursor"
     exit 1
   fi
 
@@ -1024,7 +1067,7 @@ Task Management Script for Multi-Agent Pipeline
 
 Usage:
   $0 create <title>                     Create new task directory
-  $0 init-context <dir> <dev_type>      Initialize jsonl files
+  $0 init-context <dir> <type> [--platform claude|cursor]  Initialize jsonl files
   $0 add-context <dir> <jsonl> <path> [reason]  Add entry to jsonl
   $0 validate <dir>                     Validate jsonl files
   $0 list-context <dir>                 List jsonl entries
@@ -1047,6 +1090,7 @@ List options:
 Examples:
   $0 create "Add login feature" --slug add-login
   $0 init-context .trellis/tasks/01-21-add-login backend
+  $0 init-context .trellis/tasks/01-21-add-login frontend --platform cursor
   $0 add-context <dir> implement .trellis/spec/backend/auth.md "Auth guidelines"
   $0 set-branch <dir> task/add-login
   $0 start .trellis/tasks/01-21-add-login
@@ -1070,7 +1114,8 @@ case "${1:-}" in
     cmd_create "$@"
     ;;
   init-context)
-    cmd_init_context "$2" "$3"
+    shift
+    cmd_init_context "$@"
     ;;
   add-context)
     cmd_add_context "$2" "$3" "$4" "$5"
