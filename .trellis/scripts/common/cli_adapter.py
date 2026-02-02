@@ -63,6 +63,26 @@ class CLIAdapter:
     # Agent Path
     # =========================================================================
 
+    @property
+    def config_dir_name(self) -> str:
+        """Get platform-specific config directory name.
+
+        Returns:
+            Directory name ('.claude' or '.opencode')
+        """
+        return ".opencode" if self.platform == "opencode" else ".claude"
+
+    def get_config_dir(self, project_root: Path) -> Path:
+        """Get platform-specific config directory.
+
+        Args:
+            project_root: Project root directory
+
+        Returns:
+            Path to config directory (.claude or .opencode)
+        """
+        return project_root / self.config_dir_name
+
     def get_agent_path(self, agent: str, project_root: Path) -> Path:
         """Get path to agent definition file.
 
@@ -74,11 +94,19 @@ class CLIAdapter:
             Path to agent .md file
         """
         mapped_name = self.get_agent_name(agent)
+        return self.get_config_dir(project_root) / "agents" / f"{mapped_name}.md"
 
-        if self.platform == "opencode":
-            return project_root / ".opencode" / "agents" / f"{mapped_name}.md"
-        else:
-            return project_root / ".claude" / "agents" / f"{mapped_name}.md"
+    def get_commands_path(self, project_root: Path, *parts: str) -> Path:
+        """Get path to commands directory or specific command file.
+
+        Args:
+            project_root: Project root directory
+            *parts: Additional path parts (e.g., 'trellis', 'finish-work.md')
+
+        Returns:
+            Path to commands directory or file
+        """
+        return self.get_config_dir(project_root) / "commands" / Path(*parts) if parts else self.get_config_dir(project_root) / "commands"
 
     # =========================================================================
     # Environment Variables
@@ -265,4 +293,46 @@ def get_cli_adapter(platform: str = "claude") -> CLIAdapter:
     if platform not in ("claude", "opencode"):
         raise ValueError(f"Unsupported platform: {platform} (must be 'claude' or 'opencode')")
 
+    return CLIAdapter(platform=platform)
+
+
+def detect_platform(project_root: Path) -> Platform:
+    """Auto-detect platform based on existing config directories.
+
+    Detection order:
+    1. TRELLIS_PLATFORM environment variable (if set)
+    2. .opencode directory exists → opencode
+    3. Default → claude
+
+    Args:
+        project_root: Project root directory
+
+    Returns:
+        Detected platform ('claude' or 'opencode')
+    """
+    import os
+
+    # Check environment variable first
+    env_platform = os.environ.get("TRELLIS_PLATFORM", "").lower()
+    if env_platform in ("claude", "opencode"):
+        return env_platform  # type: ignore
+
+    # Check for .opencode directory (OpenCode-specific)
+    # Note: .claude might exist in both platforms during migration
+    if (project_root / ".opencode").is_dir():
+        return "opencode"
+
+    return "claude"
+
+
+def get_cli_adapter_auto(project_root: Path) -> CLIAdapter:
+    """Get CLI adapter with auto-detected platform.
+
+    Args:
+        project_root: Project root directory
+
+    Returns:
+        CLIAdapter instance for detected platform
+    """
+    platform = detect_platform(project_root)
     return CLIAdapter(platform=platform)

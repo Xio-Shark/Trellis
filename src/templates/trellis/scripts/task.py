@@ -36,6 +36,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from common.cli_adapter import get_cli_adapter_auto
 from common.paths import (
     DIR_WORKFLOW,
     DIR_TASKS,
@@ -162,31 +163,39 @@ def get_implement_frontend() -> list[dict]:
     ]
 
 
-def get_check_context(dev_type: str) -> list[dict]:
+def get_check_context(dev_type: str, repo_root: Path) -> list[dict]:
     """Get check context entries."""
+    adapter = get_cli_adapter_auto(repo_root)
+    # Use relative path (e.g., ".claude/commands/trellis" or ".opencode/commands/trellis")
+    commands_base = f"{adapter.config_dir_name}/commands/trellis"
+
     entries = [
-        {"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"},
+        {"file": f"{commands_base}/finish-work.md", "reason": "Finish work checklist"},
         {"file": f"{DIR_WORKFLOW}/{DIR_SPEC}/shared/index.md", "reason": "Shared coding standards"},
     ]
 
     if dev_type in ("backend", "fullstack"):
-        entries.append({"file": ".claude/commands/trellis/check-backend.md", "reason": "Backend check spec"})
+        entries.append({"file": f"{commands_base}/check-backend.md", "reason": "Backend check spec"})
     if dev_type in ("frontend", "fullstack"):
-        entries.append({"file": ".claude/commands/trellis/check-frontend.md", "reason": "Frontend check spec"})
+        entries.append({"file": f"{commands_base}/check-frontend.md", "reason": "Frontend check spec"})
 
     return entries
 
 
-def get_debug_context(dev_type: str) -> list[dict]:
+def get_debug_context(dev_type: str, repo_root: Path) -> list[dict]:
     """Get debug context entries."""
+    adapter = get_cli_adapter_auto(repo_root)
+    # Use relative path (e.g., ".claude/commands/trellis" or ".opencode/commands/trellis")
+    commands_base = f"{adapter.config_dir_name}/commands/trellis"
+
     entries = [
         {"file": f"{DIR_WORKFLOW}/{DIR_SPEC}/shared/index.md", "reason": "Shared coding standards"},
     ]
 
     if dev_type in ("backend", "fullstack"):
-        entries.append({"file": ".claude/commands/trellis/check-backend.md", "reason": "Backend check spec"})
+        entries.append({"file": f"{commands_base}/check-backend.md", "reason": "Backend check spec"})
     if dev_type in ("frontend", "fullstack"):
-        entries.append({"file": ".claude/commands/trellis/check-frontend.md", "reason": "Frontend check spec"})
+        entries.append({"file": f"{commands_base}/check-frontend.md", "reason": "Frontend check spec"})
 
     return entries
 
@@ -348,14 +357,14 @@ def cmd_init_context(args: argparse.Namespace) -> int:
 
     # check.jsonl
     print(colored("Creating check.jsonl...", Colors.CYAN))
-    check_entries = get_check_context(dev_type)
+    check_entries = get_check_context(dev_type, repo_root)
     check_file = target_dir / "check.jsonl"
     _write_jsonl(check_file, check_entries)
     print(f"  {colored('✓', Colors.GREEN)} {len(check_entries)} entries")
 
     # debug.jsonl
     print(colored("Creating debug.jsonl...", Colors.CYAN))
-    debug_entries = get_debug_context(dev_type)
+    debug_entries = get_debug_context(dev_type, repo_root)
     debug_file = target_dir / "debug.jsonl"
     _write_jsonl(debug_file, debug_entries)
     print(f"  {colored('✓', Colors.GREEN)} {len(debug_entries)} entries")
