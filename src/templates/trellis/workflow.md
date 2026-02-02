@@ -111,38 +111,38 @@ cat .trellis/spec/backend/logging-guidelines.md    # For logging
 |   |   |-- __init__.py
 |   |   |-- paths.py         # Path utilities
 |   |   |-- developer.py     # Developer management
-|   |   \-- git_context.py   # Git context implementation
+|   |   +-- git_context.py   # Git context implementation
 |   |-- multi_agent/         # Multi-agent pipeline scripts
 |   |   |-- __init__.py
 |   |   |-- start.py         # Start worktree agent
 |   |   |-- status.py        # Monitor agent status
 |   |   |-- create_pr.py     # Create PR
-|   |   \-- cleanup.py       # Cleanup worktree
+|   |   +-- cleanup.py       # Cleanup worktree
 |   |-- init_developer.py    # Initialize developer identity
 |   |-- get_developer.py     # Get current developer name
 |   |-- task.py              # Manage tasks
 |   |-- get_context.py       # Get session context
-|   \-- add_session.py       # One-click session recording
+|   +-- add_session.py       # One-click session recording
 |-- workspace/           # Developer workspaces
 |   |-- index.md         # Workspace index + Session template
-|   \-- {developer}/     # Per-developer directories
+|   +-- {developer}/     # Per-developer directories
 |       |-- index.md     # Personal index (with @@@auto markers)
-|       \-- journal-N.md # Journal files (sequential numbering)
+|       +-- journal-N.md # Journal files (sequential numbering)
 |-- tasks/               # Task tracking
-|   \-- {MM}-{DD}-{name}/
-|       \-- task.json
+|   +-- {MM}-{DD}-{name}/
+|       +-- task.json
 |-- spec/                # [!] MUST READ before coding
 |   |-- frontend/        # Frontend guidelines (if applicable)
 |   |   |-- index.md               # Start here - guidelines index
-|   |   \-- *.md                   # Topic-specific docs
+|   |   +-- *.md                   # Topic-specific docs
 |   |-- backend/         # Backend guidelines (if applicable)
 |   |   |-- index.md               # Start here - guidelines index
-|   |   \-- *.md                   # Topic-specific docs
-|   \-- guides/          # Thinking guides
+|   |   +-- *.md                   # Topic-specific docs
+|   +-- guides/          # Thinking guides
 |       |-- index.md                      # Guides index
 |       |-- cross-layer-thinking-guide.md # Pre-implementation checklist
-|       \-- *.md                          # Other guides
-\-- workflow.md             # This document
+|       +-- *.md                          # Other guides
++-- workflow.md             # This document
 ```
 
 ---
@@ -205,23 +205,23 @@ python3 ./.trellis/scripts/task.py create "<title>" --slug <task-name>
 
 ```
 1. Create or select task
-   \-> python3 ./.trellis/scripts/task.py create "<title>" --slug <name> or list
+   --> python3 ./.trellis/scripts/task.py create "<title>" --slug <name> or list
 
 2. Write code according to guidelines
-   \-> Read .trellis/spec/ docs relevant to your task
-   \-> For cross-layer: read .trellis/spec/guides/
+   --> Read .trellis/spec/ docs relevant to your task
+   --> For cross-layer: read .trellis/spec/guides/
 
 3. Self-test
-   \-> Run project's lint/test commands (see spec docs)
-   \-> Manual feature testing
+   --> Run project's lint/test commands (see spec docs)
+   --> Manual feature testing
 
 4. Commit code
-   \-> git add <files>
-   \-> git commit -m "type(scope): description"
+   --> git add <files>
+   --> git commit -m "type(scope): description"
        Format: feat/fix/docs/refactor/test/chore
 
 5. Record session (one command)
-   \-> python3 ./.trellis/scripts/add_session.py --title "Title" --commit "hash"
+   --> python3 ./.trellis/scripts/add_session.py --title "Title" --commit "hash"
 ```
 
 ### Code Quality Checklist
@@ -277,9 +277,9 @@ Use `/trellis:finish-work` command to run through:
 ```
 workspace/
 |-- index.md              # Main index (Active Developers table)
-\-- {developer}/          # Per-developer directory
++-- {developer}/          # Per-developer directory
     |-- index.md          # Personal index (with @@@auto markers)
-    \-- journal-N.md      # Journal files (sequential: 1, 2, 3...)
+    +-- journal-N.md      # Journal files (sequential: 1, 2, 3...)
 ```
 
 **When to update**:
@@ -296,13 +296,13 @@ workspace/
 spec/
 |-- frontend/           # Frontend docs (if applicable)
 |   |-- index.md        # Start here
-|   \-- *.md            # Topic-specific docs
+|   +-- *.md            # Topic-specific docs
 |-- backend/            # Backend docs (if applicable)
 |   |-- index.md        # Start here
-|   \-- *.md            # Topic-specific docs
-\-- guides/             # Thinking guides
+|   +-- *.md            # Topic-specific docs
++-- guides/             # Thinking guides
     |-- index.md        # Start here
-    \-- *.md            # Guide-specific docs
+    +-- *.md            # Guide-specific docs
 ```
 
 **When to update**:
@@ -317,11 +317,11 @@ Each task is a directory containing `task.json`:
 ```
 tasks/
 |-- 01-21-my-task/
-|   \-- task.json
-\-- archive/
-    \-- 2026-01/
-        \-- 01-15-old-task/
-            \-- task.json
+|   +-- task.json
++-- archive/
+    +-- 2026-01/
+        +-- 01-15-old-task/
+            +-- task.json
 ```
 
 **Commands**:

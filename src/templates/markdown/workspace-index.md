@@ -13,12 +13,12 @@ This directory tracks records for all developers working with AI Agents on this 
 ```
 workspace/
 |-- index.md              # This file - main index
-\-- {developer}/          # Per-developer directory
++-- {developer}/          # Per-developer directory
     |-- index.md          # Personal index with session history
     |-- tasks/         # Task files
     |   |-- *.json        # Active tasks
-    |   \-- archive/      # Archived tasks by month
-    \-- journal-N.md     # Journal files (sequential: 1, 2, 3...)
+    |   +-- archive/      # Archived tasks by month
+    +-- journal-N.md     # Journal files (sequential: 1, 2, 3...)
 ```
 
 ---

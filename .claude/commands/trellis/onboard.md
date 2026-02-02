@@ -69,18 +69,18 @@ Even after injecting guidelines, AI has limited context window. As conversation 
 |-- workflow.md             # Complete workflow documentation
 |-- workspace/              # "AI Memory" - session history
 |   |-- index.md            # All developers' progress
-|   \-- {developer}/        # Per-developer directory
+|   +-- {developer}/        # Per-developer directory
 |       |-- index.md        # Personal progress index
-|       \-- journal-N.md    # Session records (max 2000 lines)
+|       +-- journal-N.md    # Session records (max 2000 lines)
 |-- tasks/                  # Task tracking (unified)
-|   \-- {MM}-{DD}-{slug}/   # Task directory
+|   +-- {MM}-{DD}-{slug}/   # Task directory
 |       |-- task.json       # Task metadata
-|       \-- prd.md          # Requirements doc
+|       +-- prd.md          # Requirements doc
 |-- spec/                   # "AI Training Data" - project knowledge
 |   |-- frontend/           # Frontend conventions
 |   |-- backend/            # Backend conventions
-|   \-- guides/             # Thinking patterns
-\-- scripts/                # Automation tools
+|   +-- guides/             # Thinking patterns
++-- scripts/                # Automation tools
 ```
 
 ### Understanding spec/ subdirectories
