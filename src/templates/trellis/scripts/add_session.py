@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Add a new session to journal file and update index.md.
 
@@ -8,6 +9,14 @@ Usage:
 """
 
 from __future__ import annotations
+
+import sys
+
+# IMPORTANT: Force stdout to use UTF-8 on Windows
+# This fixes UnicodeEncodeError when outputting non-ASCII characters
+if sys.platform == "win32":
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 import argparse
 import re

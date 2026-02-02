@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Session Start Hook - Inject structured context
-
-Matcher: "startup" - only runs on normal startup (not resume/clear/compact)
-
-This hook injects:
-1. Current state (git status, current task, task queue)
-2. Workflow guide
-3. Guidelines index (frontend/backend/guides)
-4. Session instructions (start.md)
-5. Action directive
 """
+
+# IMPORTANT: Suppress all warnings FIRST
+import warnings
+warnings.filterwarnings("ignore")
 
 import json
 import os
@@ -19,14 +15,14 @@ import sys
 from io import StringIO
 from pathlib import Path
 
+# IMPORTANT: Force stdout to use UTF-8 on Windows
+# This fixes UnicodeEncodeError when outputting non-ASCII characters
+if sys.platform == "win32":
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+
 
 def should_skip_injection() -> bool:
-    """
-    Determine if context injection should be skipped.
-
-    Multi-agent scripts (start.py, plan.py) set CLAUDE_NON_INTERACTIVE=1
-    or OPENCODE_NON_INTERACTIVE=1 to prevent duplicate context injection.
-    """
     return (
         os.environ.get("CLAUDE_NON_INTERACTIVE") == "1"
         or os.environ.get("OPENCODE_NON_INTERACTIVE") == "1"
@@ -34,7 +30,6 @@ def should_skip_injection() -> bool:
 
 
 def read_file(path: Path, fallback: str = "") -> str:
-    """Read file content, return fallback if not found."""
     try:
         return path.read_text(encoding="utf-8")
     except (FileNotFoundError, PermissionError):
@@ -42,12 +37,14 @@ def read_file(path: Path, fallback: str = "") -> str:
 
 
 def run_script(script_path: Path) -> str:
-    """Run a script and return its output."""
     try:
-        # Use python3 for .py scripts, direct execution for others
         if script_path.suffix == ".py":
-            cmd = [sys.executable, str(script_path)]
+            # Add PYTHONIOENCODING to force UTF-8 in subprocess
+            env = os.environ.copy()
+            env["PYTHONIOENCODING"] = "utf-8"
+            cmd = [sys.executable, "-W", "ignore", str(script_path)]
         else:
+            env = os.environ
             cmd = [str(script_path)]
 
         result = subprocess.run(
@@ -57,7 +54,8 @@ def run_script(script_path: Path) -> str:
             encoding="utf-8",
             errors="replace",
             timeout=5,
-            cwd=script_path.parent.parent.parent,  # repo root
+            cwd=script_path.parent.parent.parent,
+            env=env,
         )
         return result.stdout if result.returncode == 0 else "No context available"
     except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError):
@@ -65,19 +63,15 @@ def run_script(script_path: Path) -> str:
 
 
 def main():
-    # Skip injection in non-interactive mode (multi-agent scripts set CLAUDE_NON_INTERACTIVE=1)
     if should_skip_injection():
-        # No output needed when skipping
         sys.exit(0)
 
     project_dir = Path(os.environ.get("CLAUDE_PROJECT_DIR", ".")).resolve()
     trellis_dir = project_dir / ".trellis"
     claude_dir = project_dir / ".claude"
 
-    # Collect all output into a buffer
     output = StringIO()
 
-    # 1. Header
     output.write("""<session-context>
 You are starting a new session in a Trellis-managed project.
 Read and follow all instructions below carefully.
@@ -85,19 +79,16 @@ Read and follow all instructions below carefully.
 
 """)
 
-    # 2. Current Context (dynamic)
     output.write("<current-state>\n")
     context_script = trellis_dir / "scripts" / "get_context.py"
     output.write(run_script(context_script))
     output.write("\n</current-state>\n\n")
 
-    # 3. Workflow Guide
     output.write("<workflow>\n")
     workflow_content = read_file(trellis_dir / "workflow.md", "No workflow.md found")
     output.write(workflow_content)
     output.write("\n</workflow>\n\n")
 
-    # 4. Guidelines Index
     output.write("<guidelines>\n")
 
     output.write("## Frontend\n")
@@ -122,7 +113,6 @@ Read and follow all instructions below carefully.
 
     output.write("\n</guidelines>\n\n")
 
-    # 5. Session Instructions
     output.write("<instructions>\n")
     start_md = read_file(
         claude_dir / "commands" / "trellis" / "start.md", "No start.md found"
@@ -130,19 +120,19 @@ Read and follow all instructions below carefully.
     output.write(start_md)
     output.write("\n</instructions>\n\n")
 
-    # 6. Final directive
     output.write("""<ready>
 Context loaded. Wait for user's first message, then follow <instructions> to handle their request.
 </ready>""")
 
-    # Output in Claude Code SessionStart hook format
     result = {
         "hookSpecificOutput": {
             "hookEventName": "SessionStart",
             "additionalContext": output.getvalue(),
         }
     }
-    print(json.dumps(result, ensure_ascii=False))
+
+    # Output JSON - stdout is already configured for UTF-8
+    print(json.dumps(result, ensure_ascii=False), flush=True)
 
 
 if __name__ == "__main__":

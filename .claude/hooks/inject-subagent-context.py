@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Multi-Agent Pipeline Context Injection Hook
 
@@ -21,10 +22,20 @@ Context Source: .trellis/.current-task points to task directory
 - codex-review-output.txt - Code Review results
 """
 
+# IMPORTANT: Suppress all warnings FIRST
+import warnings
+warnings.filterwarnings("ignore")
+
 import json
 import os
 import sys
 from pathlib import Path
+
+# IMPORTANT: Force stdout to use UTF-8 on Windows
+# This fixes UnicodeEncodeError when outputting non-ASCII characters
+if sys.platform == "win32":
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 # =============================================================================
 # Path Constants (change here to rename directories)
