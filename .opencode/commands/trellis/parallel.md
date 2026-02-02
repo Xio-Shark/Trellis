@@ -71,7 +71,8 @@ Use when:
 python3 ./.trellis/scripts/multi_agent/plan.py \
   --name "<feature-name>" \
   --type "<backend|frontend|fullstack>" \
-  --requirement "<user requirement description>"
+  --requirement "<user requirement description>" \
+  --platform opencode
 ```
 
 Plan Agent will:
@@ -84,7 +85,7 @@ Plan Agent will:
 After plan.py completes, start the worktree agent:
 
 ```bash
-python3 ./.trellis/scripts/multi_agent/start.py "$TASK_DIR"
+python3 ./.trellis/scripts/multi_agent/start.py "$TASK_DIR" --platform opencode
 ```
 
 ### Option B: Manual Configuration (For simple/clear features) `[AI]`
@@ -137,7 +138,7 @@ EOF
 
 ```bash
 python3 ./.trellis/scripts/task.py validate "$TASK_DIR"
-python3 ./.trellis/scripts/multi_agent/start.py "$TASK_DIR"
+python3 ./.trellis/scripts/multi_agent/start.py "$TASK_DIR" --platform opencode
 ```
 
 ---
