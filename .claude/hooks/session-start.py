@@ -25,9 +25,12 @@ def should_skip_injection() -> bool:
     Determine if context injection should be skipped.
 
     Multi-agent scripts (start.py, plan.py) set CLAUDE_NON_INTERACTIVE=1
-    to prevent duplicate context injection.
+    or OPENCODE_NON_INTERACTIVE=1 to prevent duplicate context injection.
     """
-    return os.environ.get("CLAUDE_NON_INTERACTIVE") == "1"
+    return (
+        os.environ.get("CLAUDE_NON_INTERACTIVE") == "1"
+        or os.environ.get("OPENCODE_NON_INTERACTIVE") == "1"
+    )
 
 
 def read_file(path: Path, fallback: str = "") -> str:

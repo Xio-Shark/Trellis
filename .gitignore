@@ -150,6 +150,9 @@ vite.config.ts.timestamp-*
 .agent-log
 .agent-runner.sh
 
+# OpenCode local config (contains local proxy settings)
+opencode.json
+
 # Python cache
 __pycache__/
 *.pyc
@@ -157,5 +160,11 @@ __pycache__/
 .reference
 
 .trellis/tasks/01-23-eng-blog-research
+
+# External reference code
+third/
+
+# Test scripts (development only)
+.trellis/scripts/test/
 
 doc/
