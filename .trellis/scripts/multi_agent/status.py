@@ -26,6 +26,7 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from common.cli_adapter import get_cli_adapter
 from common.developer import ensure_developer
 from common.paths import (
     FILE_TASK_JSON,
@@ -180,8 +181,17 @@ def tail_follow(file_path: Path) -> None:
                 time.sleep(0.1)
 
 
-def get_last_tool(log_file: Path) -> str | None:
-    """Get the last tool call from agent log."""
+def get_last_tool(log_file: Path, platform: str = "claude") -> str | None:
+    """Get the last tool call from agent log.
+
+    Supports both Claude Code and OpenCode log formats.
+
+    Claude Code format:
+        {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Read"}]}}
+
+    OpenCode format:
+        {"type": "tool_use", "tool": "bash", "state": {"status": "completed"}}
+    """
     if not log_file.is_file():
         return None
 
@@ -190,11 +200,18 @@ def get_last_tool(log_file: Path) -> str | None:
         for line in reversed(lines[-100:]):
             try:
                 data = json.loads(line)
-                if data.get("type") == "assistant":
-                    content = data.get("message", {}).get("content", [])
-                    for item in content:
-                        if item.get("type") == "tool_use":
-                            return item.get("name")
+
+                if platform == "opencode":
+                    # OpenCode format: {"type": "tool_use", "tool": "bash", ...}
+                    if data.get("type") == "tool_use":
+                        return data.get("tool")
+                else:
+                    # Claude Code format: {"type": "assistant", "message": {"content": [...]}}
+                    if data.get("type") == "assistant":
+                        content = data.get("message", {}).get("content", [])
+                        for item in content:
+                            if item.get("type") == "tool_use":
+                                return item.get("name")
             except json.JSONDecodeError:
                 continue
     except Exception:
@@ -202,8 +219,17 @@ def get_last_tool(log_file: Path) -> str | None:
     return None
 
 
-def get_last_message(log_file: Path, max_len: int = 100) -> str | None:
-    """Get the last assistant text from agent log."""
+def get_last_message(log_file: Path, max_len: int = 100, platform: str = "claude") -> str | None:
+    """Get the last assistant text from agent log.
+
+    Supports both Claude Code and OpenCode log formats.
+
+    Claude Code format:
+        {"type": "assistant", "message": {"content": [{"type": "text", "text": "..."}]}}
+
+    OpenCode format:
+        {"type": "text", "text": "..."}
+    """
     if not log_file.is_file():
         return None
 
@@ -212,13 +238,22 @@ def get_last_message(log_file: Path, max_len: int = 100) -> str | None:
         for line in reversed(lines[-100:]):
             try:
                 data = json.loads(line)
-                if data.get("type") == "assistant":
-                    content = data.get("message", {}).get("content", [])
-                    for item in content:
-                        if item.get("type") == "text":
-                            text = item.get("text", "")
-                            if text:
-                                return text[:max_len]
+
+                if platform == "opencode":
+                    # OpenCode format: {"type": "text", "text": "..."}
+                    if data.get("type") == "text":
+                        text = data.get("text", "")
+                        if text:
+                            return text[:max_len]
+                else:
+                    # Claude Code format: {"type": "assistant", "message": {"content": [...]}}
+                    if data.get("type") == "assistant":
+                        content = data.get("message", {}).get("content", [])
+                        for item in content:
+                            if item.get("type") == "text":
+                                text = item.get("text", "")
+                                if text:
+                                    return text[:max_len]
             except json.JSONDecodeError:
                 continue
     except Exception:
@@ -373,6 +408,7 @@ def cmd_summary(repo_root: Path, filter_assignee: str | None = None) -> int:
             pid = agent_info.get("pid")
             worktree = agent_info.get("worktree_path", "")
             started = agent_info.get("started_at")
+            agent_platform = agent_info.get("platform", "claude")
 
             if is_running(pid):
                 # Running agent
@@ -390,7 +426,7 @@ def cmd_summary(repo_root: Path, filter_assignee: str | None = None) -> int:
                 branch = worktree_data.get("branch", "N/A") if worktree_data else "N/A"
 
                 log_file = Path(worktree) / ".agent-log"
-                last_tool = get_last_tool(log_file)
+                last_tool = get_last_tool(log_file, platform=agent_platform)
 
                 running_tasks.append(
                     {
@@ -426,6 +462,7 @@ def cmd_summary(repo_root: Path, filter_assignee: str | None = None) -> int:
                         "status": worktree_status,
                         "session_id_file": session_id_file,
                         "log_file": log_file,
+                        "platform": agent_info.get("platform", "claude"),
                     }
                 )
         else:
@@ -473,15 +510,16 @@ def cmd_summary(repo_root: Path, filter_assignee: str | None = None) -> int:
                     session_id = (
                         t["session_id_file"].read_text(encoding="utf-8").strip()
                     )
-                    last_msg = get_last_message(t["log_file"], 150)
+                    last_msg = get_last_message(t["log_file"], 150, platform=t.get("platform", "claude"))
                     print(
                         f"{Colors.RED}○{Colors.NC} {t['name']} {Colors.RED}[stopped]{Colors.NC}"
                     )
                     if last_msg:
                         print(f'{Colors.DIM}"{last_msg}"{Colors.NC}')
-                    print(
-                        f"{Colors.YELLOW}cd {t['worktree']} && claude --resume {session_id}{Colors.NC}"
-                    )
+                    # Use CLI adapter for platform-specific resume command
+                    adapter = get_cli_adapter(t.get("platform", "claude"))
+                    resume_cmd = adapter.get_resume_command_str(session_id, cwd=t["worktree"])
+                    print(f"{Colors.YELLOW}{resume_cmd}{Colors.NC}")
                 else:
                     print(
                         f"{Colors.RED}○{Colors.NC} {t['name']} {Colors.RED}[stopped]{Colors.NC} {Colors.DIM}(no session-id){Colors.NC}"
@@ -544,6 +582,7 @@ def cmd_detail(target: str, repo_root: Path) -> int:
     worktree = agent.get("worktree_path", "?")
     task_dir = agent.get("task_dir", "?")
     started = agent.get("started_at", "?")
+    platform = agent.get("platform", "claude")
 
     # Check for session-id
     session_id = ""
@@ -568,9 +607,10 @@ def cmd_detail(target: str, repo_root: Path) -> int:
         print(f"  Status:    {Colors.RED}Stopped{Colors.NC}")
         if session_id:
             print()
-            print(
-                f"  {Colors.YELLOW}Resume:{Colors.NC} cd {worktree} && claude --resume {session_id}"
-            )
+            # Use CLI adapter for platform-specific resume command
+            adapter = get_cli_adapter(platform)
+            resume_cmd = adapter.get_resume_command_str(session_id, cwd=worktree)
+            print(f"  {Colors.YELLOW}Resume:{Colors.NC} {resume_cmd}")
 
     # Task info
     task_json = repo_root / task_dir / "task.json"
@@ -645,6 +685,7 @@ def cmd_log(target: str, repo_root: Path) -> int:
         return 1
 
     worktree = agent.get("worktree_path", "")
+    platform = agent.get("platform", "claude")
     log_file = Path(worktree) / ".agent-log"
 
     if not log_file.is_file():
@@ -652,6 +693,7 @@ def cmd_log(target: str, repo_root: Path) -> int:
         return 1
 
     print(f"{Colors.BLUE}=== Recent Log: {target} ==={Colors.NC}")
+    print(f"{Colors.DIM}Platform: {platform}{Colors.NC}")
     print()
 
     lines = log_file.read_text(encoding="utf-8").splitlines()
@@ -660,29 +702,52 @@ def cmd_log(target: str, repo_root: Path) -> int:
             data = json.loads(line)
             msg_type = data.get("type", "")
 
-            if msg_type == "system":
-                subtype = data.get("subtype", "")
-                print(f"{Colors.CYAN}[SYSTEM]{Colors.NC} {subtype}")
-            elif msg_type == "user":
-                content = data.get("message", {}).get("content", "")
-                if content:
-                    print(f"{Colors.GREEN}[USER]{Colors.NC} {content[:200]}")
-            elif msg_type == "assistant":
-                content = data.get("message", {}).get("content", [])
-                if content:
-                    item = content[0]
-                    text = item.get("text")
-                    tool = item.get("name")
+            if platform == "opencode":
+                # OpenCode format
+                if msg_type == "text":
+                    text = data.get("text", "")
                     if text:
                         display = text[:300]
                         if len(text) > 300:
                             display += "..."
-                        print(f"{Colors.BLUE}[ASSISTANT]{Colors.NC} {display}")
-                    elif tool:
-                        print(f"{Colors.YELLOW}[TOOL]{Colors.NC} {tool}")
-            elif msg_type == "result":
-                tool_name = data.get("tool", "unknown")
-                print(f"{Colors.DIM}[RESULT]{Colors.NC} {tool_name} completed")
+                        print(f"{Colors.BLUE}[TEXT]{Colors.NC} {display}")
+                elif msg_type == "tool_use":
+                    tool_name = data.get("tool", "unknown")
+                    status = data.get("state", {}).get("status", "")
+                    print(f"{Colors.YELLOW}[TOOL]{Colors.NC} {tool_name} ({status})")
+                elif msg_type == "step_start":
+                    print(f"{Colors.CYAN}[STEP]{Colors.NC} Start")
+                elif msg_type == "step_finish":
+                    reason = data.get("reason", "")
+                    print(f"{Colors.CYAN}[STEP]{Colors.NC} Finish ({reason})")
+                elif msg_type == "error":
+                    error_msg = data.get("message", "")
+                    print(f"{Colors.RED}[ERROR]{Colors.NC} {error_msg}")
+            else:
+                # Claude Code format
+                if msg_type == "system":
+                    subtype = data.get("subtype", "")
+                    print(f"{Colors.CYAN}[SYSTEM]{Colors.NC} {subtype}")
+                elif msg_type == "user":
+                    content = data.get("message", {}).get("content", "")
+                    if content:
+                        print(f"{Colors.GREEN}[USER]{Colors.NC} {content[:200]}")
+                elif msg_type == "assistant":
+                    content = data.get("message", {}).get("content", [])
+                    if content:
+                        item = content[0]
+                        text = item.get("text")
+                        tool = item.get("name")
+                        if text:
+                            display = text[:300]
+                            if len(text) > 300:
+                                display += "..."
+                            print(f"{Colors.BLUE}[ASSISTANT]{Colors.NC} {display}")
+                        elif tool:
+                            print(f"{Colors.YELLOW}[TOOL]{Colors.NC} {tool}")
+                elif msg_type == "result":
+                    tool_name = data.get("tool", "unknown")
+                    print(f"{Colors.DIM}[RESULT]{Colors.NC} {tool_name} completed")
         except json.JSONDecodeError:
             continue
 

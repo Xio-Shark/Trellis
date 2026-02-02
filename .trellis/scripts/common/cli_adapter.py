@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import ClassVar, Literal
 
 Platform = Literal["claude", "opencode"]
 
@@ -39,7 +39,8 @@ class CLIAdapter:
 
     # OpenCode has built-in agents that cannot be overridden
     # See: https://github.com/sst/opencode/issues/4271
-    AGENT_NAME_MAP: dict[Platform, dict[str, str]] = {
+    # Note: Class-level constant, not a dataclass field
+    _AGENT_NAME_MAP: ClassVar[dict[Platform, dict[str, str]]] = {
         "claude": {},  # No mapping needed
         "opencode": {
             "plan": "trellis-plan",  # 'plan' is built-in in OpenCode
@@ -55,7 +56,7 @@ class CLIAdapter:
         Returns:
             Platform-specific agent name (e.g., 'trellis-plan' for OpenCode)
         """
-        mapping = self.AGENT_NAME_MAP.get(self.platform, {})
+        mapping = self._AGENT_NAME_MAP.get(self.platform, {})
         return mapping.get(agent, agent)
 
     # =========================================================================
@@ -126,8 +127,9 @@ class CLIAdapter:
             cmd = ["opencode", "run"]
             cmd.extend(["--agent", mapped_agent])
 
-            if skip_permissions:
-                cmd.append("--yolo")
+            # Note: OpenCode 'run' mode is non-interactive by default
+            # No equivalent to Claude Code's --dangerously-skip-permissions
+            # See: https://github.com/anomalyco/opencode/issues/9070
 
             if json_output:
                 cmd.extend(["--format", "json"])

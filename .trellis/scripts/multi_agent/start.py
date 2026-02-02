@@ -32,6 +32,7 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from common.cli_adapter import CLIAdapter, get_cli_adapter
 from common.git_context import _run_git_command
 from common.paths import (
     DIR_WORKFLOW,
@@ -107,7 +108,9 @@ def _write_json_file(path: Path, data: dict) -> bool:
 # Constants
 # =============================================================================
 
+# Default paths (will be overridden by CLI adapter for OpenCode)
 DISPATCH_MD_PATH = ".claude/agents/dispatch.md"
+DEFAULT_PLATFORM = "claude"
 
 
 # =============================================================================
@@ -117,13 +120,24 @@ DISPATCH_MD_PATH = ".claude/agents/dispatch.md"
 
 def main() -> int:
     """Main entry point."""
-    if len(sys.argv) < 2:
-        log_error("Task directory required")
-        print("Usage: python3 start.py <task-dir>")
-        print("Example: python3 start.py .trellis/tasks/01-21-my-task")
-        return 1
+    import argparse
 
-    task_dir_arg = sys.argv[1]
+    parser = argparse.ArgumentParser(description="Multi-Agent Pipeline: Start Worktree Agent")
+    parser.add_argument("task_dir", help="Task directory path")
+    parser.add_argument(
+        "--platform", "-p",
+        choices=["claude", "opencode"],
+        default=DEFAULT_PLATFORM,
+        help="Platform to use (default: claude)"
+    )
+
+    args = parser.parse_args()
+    task_dir_arg = args.task_dir
+    platform = args.platform
+
+    # Initialize CLI adapter
+    adapter = get_cli_adapter(platform)
+
     project_root = get_repo_root()
 
     # Normalize paths
@@ -143,9 +157,10 @@ def main() -> int:
         log_error(f"task.json not found at {task_json_path}")
         return 1
 
-    dispatch_md = project_root / DISPATCH_MD_PATH
+    dispatch_md = adapter.get_agent_path("dispatch", project_root)
     if not dispatch_md.is_file():
         log_error(f"dispatch.md not found at {dispatch_md}")
+        log_info(f"Platform: {platform}")
         return 1
 
     config_file = get_worktree_config(project_root)
@@ -317,7 +332,7 @@ def main() -> int:
     # =============================================================================
     # Step 3: Prepare and Start Claude Agent
     # =============================================================================
-    log_info("Step 3: Starting Claude agent...")
+    log_info(f"Step 3: Starting {adapter.cli_name} agent...")
 
     # Update task status
     task_data["status"] = "in_progress"
@@ -328,10 +343,15 @@ def main() -> int:
 
     log_file.touch()
 
-    # Generate session ID for resume support
-    session_id = str(uuid.uuid4()).lower()
-    session_id_file.write_text(session_id, encoding="utf-8")
-    log_info(f"Session ID: {session_id}")
+    # Generate session ID for resume support (Claude Code only)
+    # OpenCode generates its own session ID, we'll extract it from logs later
+    if adapter.supports_session_id_on_create:
+        session_id = str(uuid.uuid4()).lower()
+        session_id_file.write_text(session_id, encoding="utf-8")
+        log_info(f"Session ID: {session_id}")
+    else:
+        session_id = None  # Will be extracted from logs after startup
+        log_info("Session ID will be extracted from logs after startup")
 
     # Get proxy environment variables
     https_proxy = os.environ.get("https_proxy", "")
@@ -343,21 +363,19 @@ def main() -> int:
     env["https_proxy"] = https_proxy
     env["http_proxy"] = http_proxy
     env["all_proxy"] = all_proxy
-    env["CLAUDE_NON_INTERACTIVE"] = "1"
 
-    claude_cmd = [
-        "claude",
-        "-p",
-        "--agent",
-        "dispatch",
-        "--session-id",
-        session_id,
-        "--dangerously-skip-permissions",
-        "--output-format",
-        "stream-json",
-        "--verbose",
-        "Start the pipeline",
-    ]
+    # Set non-interactive env var based on platform
+    env.update(adapter.get_non_interactive_env())
+
+    # Build CLI command using adapter
+    cli_cmd = adapter.build_run_command(
+        agent="dispatch",
+        prompt="Start the pipeline",
+        session_id=session_id if adapter.supports_session_id_on_create else None,
+        skip_permissions=True,
+        verbose=True,
+        json_output=True,
+    )
 
     with log_file.open("w") as log_f:
         # Use shell=False for cross-platform compatibility
@@ -373,10 +391,30 @@ def main() -> int:
         else:
             popen_kwargs["start_new_session"] = True
 
-        process = subprocess.Popen(claude_cmd, **popen_kwargs)
+        process = subprocess.Popen(cli_cmd, **popen_kwargs)
     agent_pid = process.pid
 
     log_success(f"Agent started with PID: {agent_pid}")
+
+    # For OpenCode: extract session ID from logs after startup
+    if not adapter.supports_session_id_on_create:
+        import time
+        log_info("Waiting for session ID from logs...")
+        # Wait a bit for the log to have session ID
+        for _ in range(10):  # Try for up to 5 seconds
+            time.sleep(0.5)
+            try:
+                log_content = log_file.read_text(encoding="utf-8", errors="replace")
+                session_id = adapter.extract_session_id_from_log(log_content)
+                if session_id:
+                    session_id_file.write_text(session_id, encoding="utf-8")
+                    log_success(f"Session ID extracted: {session_id}")
+                    break
+            except Exception:
+                pass
+        else:
+            log_warn("Could not extract session ID from logs")
+            session_id = "unknown"
 
     # =============================================================================
     # Step 4: Register to Registry (in main repo, not worktree)
@@ -389,7 +427,7 @@ def main() -> int:
         task_id = branch.replace("/", "-")
 
     registry_add_agent(
-        task_id, worktree_path, agent_pid, task_dir_relative, project_root
+        task_id, worktree_path, agent_pid, task_dir_relative, project_root, platform
     )
 
     log_success(f"Agent registered: {task_id}")
@@ -410,9 +448,11 @@ def main() -> int:
     print()
     print(f"{Colors.YELLOW}To monitor:{Colors.NC} tail -f {log_file}")
     print(f"{Colors.YELLOW}To stop:{Colors.NC}    kill {agent_pid}")
-    print(
-        f"{Colors.YELLOW}To resume:{Colors.NC}  cd {worktree_path} && claude --resume {session_id}"
-    )
+    if session_id and session_id != "unknown":
+        resume_cmd = adapter.get_resume_command_str(session_id, cwd=worktree_path)
+        print(f"{Colors.YELLOW}To resume:{Colors.NC}  {resume_cmd}")
+    else:
+        print(f"{Colors.YELLOW}To resume:{Colors.NC}  (session ID not available)")
 
     return 0
 

@@ -279,7 +279,8 @@ def registry_add_agent(
     worktree_path: str,
     pid: int,
     task_dir: str,
-    repo_root: Path | None = None
+    repo_root: Path | None = None,
+    platform: str = "claude",
 ) -> bool:
     """Add agent to registry (replaces if same ID exists).
 
@@ -289,6 +290,7 @@ def registry_add_agent(
         pid: Process ID.
         task_dir: Task directory path.
         repo_root: Repository root path. Defaults to auto-detected.
+        platform: Platform used ('claude' or 'opencode'). Defaults to 'claude'.
 
     Returns:
         True on success.
@@ -316,6 +318,7 @@ def registry_add_agent(
         "pid": pid,
         "started_at": started_at,
         "task_dir": task_dir,
+        "platform": platform,
     }
 
     agents.append(new_agent)
