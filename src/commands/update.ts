@@ -1275,7 +1275,7 @@ export async function update(options: UpdateOptions): Promise<void> {
   const orphanedMigrations = allMigrations.filter((item) => {
     // Only check rename and rename-dir migrations
     if (item.type !== "rename" && item.type !== "rename-dir") return false;
-    if (!item.to) return false;
+    if (!item.from || !item.to) return false;
 
     const oldPath = path.join(cwd, item.from);
     const newPath = path.join(cwd, item.to);
