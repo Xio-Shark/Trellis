@@ -1,11 +1,12 @@
 """
 CLI Adapter for Multi-Platform Support.
 
-Abstracts differences between Claude Code and OpenCode CLI interfaces.
+Abstracts differences between Claude Code, OpenCode, and Cursor interfaces.
 
 Supported platforms:
 - claude: Claude Code (default)
 - opencode: OpenCode
+- cursor: Cursor IDE
 
 Usage:
     from common.cli_adapter import CLIAdapter
@@ -24,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar, Literal
 
-Platform = Literal["claude", "opencode"]
+Platform = Literal["claude", "opencode", "cursor"]
 
 
 @dataclass
@@ -68,9 +69,14 @@ class CLIAdapter:
         """Get platform-specific config directory name.
 
         Returns:
-            Directory name ('.claude' or '.opencode')
+            Directory name ('.claude', '.opencode', or '.cursor')
         """
-        return ".opencode" if self.platform == "opencode" else ".claude"
+        if self.platform == "opencode":
+            return ".opencode"
+        elif self.platform == "cursor":
+            return ".cursor"
+        else:
+            return ".claude"
 
     def get_config_dir(self, project_root: Path) -> Path:
         """Get platform-specific config directory.
@@ -105,8 +111,39 @@ class CLIAdapter:
 
         Returns:
             Path to commands directory or file
+
+        Note:
+            Cursor uses prefix naming: .cursor/commands/trellis-<name>.md
+            Claude/OpenCode use subdirectory: .claude/commands/trellis/<name>.md
         """
-        return self.get_config_dir(project_root) / "commands" / Path(*parts) if parts else self.get_config_dir(project_root) / "commands"
+        if not parts:
+            return self.get_config_dir(project_root) / "commands"
+
+        # Cursor uses prefix naming instead of subdirectory
+        if self.platform == "cursor" and len(parts) >= 2 and parts[0] == "trellis":
+            # Convert trellis/<name>.md to trellis-<name>.md
+            filename = parts[-1]
+            return self.get_config_dir(project_root) / "commands" / f"trellis-{filename}"
+
+        return self.get_config_dir(project_root) / "commands" / Path(*parts)
+
+    def get_trellis_command_path(self, name: str) -> str:
+        """Get relative path to a trellis command file.
+
+        Args:
+            name: Command name without extension (e.g., 'finish-work', 'check-backend')
+
+        Returns:
+            Relative path string for use in JSONL entries
+
+        Note:
+            Cursor: .cursor/commands/trellis-<name>.md
+            Others: .{platform}/commands/trellis/<name>.md
+        """
+        if self.platform == "cursor":
+            return f".cursor/commands/trellis-{name}.md"
+        else:
+            return f"{self.config_dir_name}/commands/trellis/{name}.md"
 
     # =========================================================================
     # Environment Variables
@@ -236,9 +273,31 @@ class CLIAdapter:
         return self.platform == "claude"
 
     @property
+    def is_cursor(self) -> bool:
+        """Check if platform is Cursor."""
+        return self.platform == "cursor"
+
+    @property
     def cli_name(self) -> str:
-        """Get CLI executable name."""
-        return "opencode" if self.is_opencode else "claude"
+        """Get CLI executable name.
+
+        Note: Cursor doesn't have a CLI tool, returns None-like value.
+        """
+        if self.is_opencode:
+            return "opencode"
+        elif self.is_cursor:
+            return "cursor"  # Note: Cursor is IDE-only, no CLI
+        else:
+            return "claude"
+
+    @property
+    def supports_cli_agents(self) -> bool:
+        """Check if platform supports running agents via CLI.
+
+        Claude Code and OpenCode support CLI agent execution.
+        Cursor is IDE-only and doesn't support CLI agents.
+        """
+        return self.platform in ("claude", "opencode")
 
     # =========================================================================
     # Session ID Handling
@@ -282,7 +341,7 @@ def get_cli_adapter(platform: str = "claude") -> CLIAdapter:
     """Get CLI adapter for the specified platform.
 
     Args:
-        platform: Platform name ('claude' or 'opencode')
+        platform: Platform name ('claude', 'opencode', or 'cursor')
 
     Returns:
         CLIAdapter instance
@@ -290,10 +349,10 @@ def get_cli_adapter(platform: str = "claude") -> CLIAdapter:
     Raises:
         ValueError: If platform is not supported
     """
-    if platform not in ("claude", "opencode"):
-        raise ValueError(f"Unsupported platform: {platform} (must be 'claude' or 'opencode')")
+    if platform not in ("claude", "opencode", "cursor"):
+        raise ValueError(f"Unsupported platform: {platform} (must be 'claude', 'opencode', or 'cursor')")
 
-    return CLIAdapter(platform=platform)
+    return CLIAdapter(platform=platform)  # type: ignore
 
 
 def detect_platform(project_root: Path) -> Platform:
@@ -302,25 +361,31 @@ def detect_platform(project_root: Path) -> Platform:
     Detection order:
     1. TRELLIS_PLATFORM environment variable (if set)
     2. .opencode directory exists → opencode
-    3. Default → claude
+    3. .cursor directory exists (without .claude) → cursor
+    4. Default → claude
 
     Args:
         project_root: Project root directory
 
     Returns:
-        Detected platform ('claude' or 'opencode')
+        Detected platform ('claude', 'opencode', or 'cursor')
     """
     import os
 
     # Check environment variable first
     env_platform = os.environ.get("TRELLIS_PLATFORM", "").lower()
-    if env_platform in ("claude", "opencode"):
+    if env_platform in ("claude", "opencode", "cursor"):
         return env_platform  # type: ignore
 
     # Check for .opencode directory (OpenCode-specific)
     # Note: .claude might exist in both platforms during migration
     if (project_root / ".opencode").is_dir():
         return "opencode"
+
+    # Check for .cursor directory (Cursor-specific)
+    # Only detect as cursor if .claude doesn't exist (to avoid confusion)
+    if (project_root / ".cursor").is_dir() and not (project_root / ".claude").is_dir():
+        return "cursor"
 
     return "claude"
 

@@ -108,8 +108,6 @@ def _write_json_file(path: Path, data: dict) -> bool:
 # Constants
 # =============================================================================
 
-# Default paths (will be overridden by CLI adapter for OpenCode)
-DISPATCH_MD_PATH = ".claude/agents/dispatch.md"
 DEFAULT_PLATFORM = "claude"
 
 

@@ -166,18 +166,16 @@ def get_implement_frontend() -> list[dict]:
 def get_check_context(dev_type: str, repo_root: Path) -> list[dict]:
     """Get check context entries."""
     adapter = get_cli_adapter_auto(repo_root)
-    # Use relative path (e.g., ".claude/commands/trellis" or ".opencode/commands/trellis")
-    commands_base = f"{adapter.config_dir_name}/commands/trellis"
 
     entries = [
-        {"file": f"{commands_base}/finish-work.md", "reason": "Finish work checklist"},
+        {"file": adapter.get_trellis_command_path("finish-work"), "reason": "Finish work checklist"},
         {"file": f"{DIR_WORKFLOW}/{DIR_SPEC}/shared/index.md", "reason": "Shared coding standards"},
     ]
 
     if dev_type in ("backend", "fullstack"):
-        entries.append({"file": f"{commands_base}/check-backend.md", "reason": "Backend check spec"})
+        entries.append({"file": adapter.get_trellis_command_path("check-backend"), "reason": "Backend check spec"})
     if dev_type in ("frontend", "fullstack"):
-        entries.append({"file": f"{commands_base}/check-frontend.md", "reason": "Frontend check spec"})
+        entries.append({"file": adapter.get_trellis_command_path("check-frontend"), "reason": "Frontend check spec"})
 
     return entries
 
@@ -185,17 +183,15 @@ def get_check_context(dev_type: str, repo_root: Path) -> list[dict]:
 def get_debug_context(dev_type: str, repo_root: Path) -> list[dict]:
     """Get debug context entries."""
     adapter = get_cli_adapter_auto(repo_root)
-    # Use relative path (e.g., ".claude/commands/trellis" or ".opencode/commands/trellis")
-    commands_base = f"{adapter.config_dir_name}/commands/trellis"
 
     entries = [
         {"file": f"{DIR_WORKFLOW}/{DIR_SPEC}/shared/index.md", "reason": "Shared coding standards"},
     ]
 
     if dev_type in ("backend", "fullstack"):
-        entries.append({"file": f"{commands_base}/check-backend.md", "reason": "Backend check spec"})
+        entries.append({"file": adapter.get_trellis_command_path("check-backend"), "reason": "Backend check spec"})
     if dev_type in ("frontend", "fullstack"):
-        entries.append({"file": f"{commands_base}/check-frontend.md", "reason": "Frontend check spec"})
+        entries.append({"file": adapter.get_trellis_command_path("check-frontend"), "reason": "Frontend check spec"})
 
     return entries
 

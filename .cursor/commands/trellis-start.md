@@ -149,6 +149,29 @@ The following slash commands are for users (not AI):
 
 ---
 
+## Platform Detection
+
+Trellis auto-detects your platform based on config directories. For Cursor users, ensure detection works correctly:
+
+| Condition | Detected Platform |
+|-----------|-------------------|
+| Only `.cursor/` exists | `cursor` ✅ |
+| Both `.cursor/` and `.claude/` exist | `claude` (default) |
+
+If auto-detection fails, set manually:
+
+```bash
+export TRELLIS_PLATFORM=cursor
+```
+
+Or prefix commands:
+
+```bash
+TRELLIS_PLATFORM=cursor python3 ./.trellis/scripts/task.py list
+```
+
+---
+
 ## Session End Reminder
 
 **IMPORTANT**: When a task or session is completed, remind the user:

@@ -60,7 +60,6 @@ def log_error(msg: str) -> None:
 # Constants
 # =============================================================================
 
-PLAN_MD_PATH = ".claude/agents/plan.md"
 DEFAULT_PLATFORM = "claude"
 
 
