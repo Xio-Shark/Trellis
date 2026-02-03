@@ -242,6 +242,8 @@ cmd_create() {
   fi
 
   local today=$(date +%Y-%m-%d)
+  # Record current branch as base_branch (PR target)
+  local current_branch=$(git branch --show-current 2>/dev/null || echo "main")
 
   cat > "$task_json" << EOF
 {
@@ -258,7 +260,7 @@ cmd_create() {
   "createdAt": "$today",
   "completedAt": null,
   "branch": null,
-  "base_branch": null,
+  "base_branch": "$current_branch",
   "worktree_path": null,
   "current_phase": 0,
   "next_action": [
