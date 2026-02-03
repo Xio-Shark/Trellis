@@ -831,6 +831,42 @@ cmd_set_branch() {
 }
 
 # =============================================================================
+# Command: set-base-branch
+# =============================================================================
+
+cmd_set_base_branch() {
+  local target_dir="$1"
+  local base_branch="$2"
+
+  if [[ -z "$target_dir" ]] || [[ -z "$base_branch" ]]; then
+    echo -e "${RED}Error: Missing arguments${NC}"
+    echo "Usage: $0 set-base-branch <task-dir> <base-branch>"
+    echo "Example: $0 set-base-branch <dir> develop"
+    echo ""
+    echo "This sets the target branch for PR (the branch your feature will merge into)."
+    exit 1
+  fi
+
+  # Support relative paths
+  if [[ ! "$target_dir" = /* ]]; then
+    target_dir="$REPO_ROOT/$target_dir"
+  fi
+
+  local task_json="$target_dir/$FILE_TASK_JSON"
+  if [[ ! -f "$task_json" ]]; then
+    echo -e "${RED}Error: task.json not found at $target_dir${NC}"
+    exit 1
+  fi
+
+  # Update base_branch field
+  jq --arg base "$base_branch" '.base_branch = $base' "$task_json" > "${task_json}.tmp"
+  mv "${task_json}.tmp" "$task_json"
+
+  echo -e "${GREEN}✓ Base branch set to: $base_branch${NC}"
+  echo -e "  PR will target: $base_branch"
+}
+
+# =============================================================================
 # Command: set-scope
 # =============================================================================
 
@@ -1134,6 +1170,9 @@ case "${1:-}" in
     ;;
   set-branch)
     cmd_set_branch "$2" "$3"
+    ;;
+  set-base-branch)
+    cmd_set_base_branch "$2" "$3"
     ;;
   set-scope)
     cmd_set_scope "$2" "$3"
