@@ -12,6 +12,7 @@ Usage:
     python3 task.py start <dir>                 # Set as current task
     python3 task.py finish                      # Clear current task
     python3 task.py set-branch <dir> <branch>   # Set git branch
+    python3 task.py set-base-branch <dir> <branch>  # Set PR target branch
     python3 task.py set-scope <dir> <scope>     # Set scope for PR title
     python3 task.py create-pr [dir] [--dry-run] # Create PR from task
     python3 task.py archive <task-name>         # Archive completed task
@@ -37,6 +38,7 @@ from datetime import datetime
 from pathlib import Path
 
 from common.cli_adapter import get_cli_adapter_auto
+from common.git_context import _run_git_command
 from common.paths import (
     DIR_WORKFLOW,
     DIR_TASKS,
@@ -266,6 +268,10 @@ def cmd_create(args: argparse.Namespace) -> int:
 
     today = datetime.now().strftime("%Y-%m-%d")
 
+    # Record current branch as base_branch (PR target)
+    _, branch_out, _ = _run_git_command(["branch", "--show-current"], cwd=repo_root)
+    current_branch = branch_out.strip() or "main"
+
     task_data = {
         "id": slug,
         "name": slug,
@@ -280,7 +286,7 @@ def cmd_create(args: argparse.Namespace) -> int:
         "createdAt": today,
         "completedAt": None,
         "branch": None,
-        "base_branch": None,
+        "base_branch": current_branch,
         "worktree_path": None,
         "current_phase": 0,
         "next_action": [
@@ -802,6 +808,41 @@ def cmd_set_branch(args: argparse.Namespace) -> int:
 
 
 # =============================================================================
+# Command: set-base-branch
+# =============================================================================
+
+def cmd_set_base_branch(args: argparse.Namespace) -> int:
+    """Set the base branch (PR target) for task."""
+    repo_root = get_repo_root()
+    target_dir = _resolve_task_dir(args.dir, repo_root)
+    base_branch = args.base_branch
+
+    if not base_branch:
+        print(colored("Error: Missing arguments", Colors.RED))
+        print("Usage: python3 task.py set-base-branch <task-dir> <base-branch>")
+        print("Example: python3 task.py set-base-branch <dir> develop")
+        print()
+        print("This sets the target branch for PR (the branch your feature will merge into).")
+        return 1
+
+    task_json = target_dir / FILE_TASK_JSON
+    if not task_json.is_file():
+        print(colored(f"Error: task.json not found at {target_dir}", Colors.RED))
+        return 1
+
+    data = _read_json_file(task_json)
+    if not data:
+        return 1
+
+    data["base_branch"] = base_branch
+    _write_json_file(task_json, data)
+
+    print(colored(f"✓ Base branch set to: {base_branch}", Colors.GREEN))
+    print(f"  PR will target: {base_branch}")
+    return 0
+
+
+# =============================================================================
 # Command: set-scope
 # =============================================================================
 
@@ -950,6 +991,11 @@ def main() -> int:
     p_branch.add_argument("dir", help="Task directory")
     p_branch.add_argument("branch", help="Branch name")
 
+    # set-base-branch
+    p_base = subparsers.add_parser("set-base-branch", help="Set PR target branch")
+    p_base.add_argument("dir", help="Task directory")
+    p_base.add_argument("base_branch", help="Base branch name (PR target)")
+
     # set-scope
     p_scope = subparsers.add_parser("set-scope", help="Set scope")
     p_scope.add_argument("dir", help="Task directory")
@@ -988,6 +1034,7 @@ def main() -> int:
         "start": cmd_start,
         "finish": cmd_finish,
         "set-branch": cmd_set_branch,
+        "set-base-branch": cmd_set_base_branch,
         "set-scope": cmd_set_scope,
         "create-pr": cmd_create_pr,
         "archive": cmd_archive,
