@@ -98,20 +98,7 @@ echo ""
 
 # Read task config
 TASK_NAME=$(jq -r '.name' "$TASK_JSON")
-CONFIGURED_BASE=$(jq -r '.base_branch // empty' "$TASK_JSON")
-
-# Determine base branch: configured value > remote default branch > "main"
-if [ -n "$CONFIGURED_BASE" ]; then
-  BASE_BRANCH="$CONFIGURED_BASE"
-else
-  # Try to get remote default branch
-  BASE_BRANCH=$(git remote show origin 2>/dev/null | grep "HEAD branch" | sed 's/.*: //')
-  if [ -z "$BASE_BRANCH" ]; then
-    BASE_BRANCH="main"
-  fi
-  log_warn "base_branch not set in task.json, using remote default: $BASE_BRANCH"
-fi
-
+BASE_BRANCH=$(jq -r '.base_branch // "main"' "$TASK_JSON")
 SCOPE=$(jq -r '.scope // "core"' "$TASK_JSON")
 DEV_TYPE=$(jq -r '.dev_type // "feature"' "$TASK_JSON")
 
