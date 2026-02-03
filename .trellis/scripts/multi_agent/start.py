@@ -368,9 +368,11 @@ def main() -> int:
     env.update(adapter.get_non_interactive_env())
 
     # Build CLI command using adapter
+    # Note: Use explicit prompt to avoid confusion with CI/CD pipelines
+    # Also remind the model to follow its agent definition for better cross-model compatibility
     cli_cmd = adapter.build_run_command(
         agent="dispatch",
-        prompt="Start the pipeline",
+        prompt="Follow your agent instructions to execute the task workflow. Start by reading .trellis/.current-task to get the task directory, then execute each action in task.json next_action array in order.",
         session_id=session_id if adapter.supports_session_id_on_create else None,
         skip_permissions=True,
         verbose=True,
