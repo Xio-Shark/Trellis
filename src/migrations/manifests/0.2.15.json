@@ -1,0 +1,6 @@
+{
+  "version": "0.2.15",
+  "description": "Hotfix for 0.2.14 migration bug - removed unsupported 'update' migration type",
+  "migrations": [],
+  "notes": "This release fixes a bug in 0.2.14 where invalid 'update' migration type entries caused 'path argument undefined' error during trellis update. The actual file updates (dispatch.md, plan.md, status.sh) are applied via normal template sync, not migrations."
+}
