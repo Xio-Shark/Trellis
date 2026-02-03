@@ -98,6 +98,7 @@ BRANCH=$(jq -r '.branch' "$TASK_JSON")
 TASK_NAME=$(jq -r '.name' "$TASK_JSON")
 TASK_STATUS=$(jq -r '.status' "$TASK_JSON")
 WORKTREE_PATH=$(jq -r '.worktree_path // empty' "$TASK_JSON")
+CONFIGURED_BASE_BRANCH=$(jq -r '.base_branch // empty' "$TASK_JSON")
 
 # Check if task was rejected
 if [ "$TASK_STATUS" = "rejected" ]; then
@@ -135,9 +136,15 @@ log_info "Name: ${TASK_NAME}"
 if [ -z "$WORKTREE_PATH" ] || [ ! -d "$WORKTREE_PATH" ]; then
   log_info "Step 1: Creating worktree..."
 
-  # Record current branch as base_branch (PR target)
-  BASE_BRANCH=$(git -C "$PROJECT_ROOT" branch --show-current)
-  log_info "Base branch (PR target): ${BASE_BRANCH}"
+  # Determine base_branch (PR target)
+  # Priority: 1) task.json configured value, 2) current branch
+  if [ -n "$CONFIGURED_BASE_BRANCH" ]; then
+    BASE_BRANCH="$CONFIGURED_BASE_BRANCH"
+    log_info "Base branch (from task.json): ${BASE_BRANCH}"
+  else
+    BASE_BRANCH=$(git -C "$PROJECT_ROOT" branch --show-current)
+    log_info "Base branch (current branch): ${BASE_BRANCH}"
+  fi
 
   # Calculate worktree path
   WORKTREE_BASE=$(get_worktree_base_dir "$PROJECT_ROOT")
