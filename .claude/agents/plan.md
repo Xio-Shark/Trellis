@@ -335,7 +335,7 @@ Input:
 Result: ACCEPTED - Clear, specific, has defined behavior
 
 Output:
-  .trellis/workspace/xxx/tasks/17-add-rate-limiting/
+  .trellis/tasks/02-03-add-rate-limiting/
   ├── task.json      # branch: feature/add-rate-limiting, scope: api
   ├── prd.md            # Detailed requirements with acceptance criteria
   ├── implement.jsonl   # Backend specs + existing middleware patterns

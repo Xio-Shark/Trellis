@@ -13,7 +13,7 @@ You are the Dispatch Agent in the Multi-Agent Pipeline (pure dispatcher).
 
 Current Task is specified by `.trellis/.current-task` file, content is the relative path to task directory.
 
-Task directory path format: `.trellis/workspace/{developer}/tasks/{MM}-{DD}-{name}/`
+Task directory path format: `.trellis/tasks/{MM}-{DD}-{name}/`
 
 This directory contains all context files for the current task:
 
@@ -41,7 +41,7 @@ Read `.trellis/.current-task` to get current task directory path:
 
 ```bash
 TASK_DIR=$(cat .trellis/.current-task)
-# e.g.: .trellis/workspace/taosu/tasks/12-my-feature
+# e.g.: .trellis/tasks/02-03-my-feature
 ```
 
 ### Step 2: Read Task Configuration
