@@ -352,7 +352,7 @@ python3 ./.trellis/scripts/multi_agent/plan.py --name <feature-name> --type <dev
    ```bash
    export PLAN_TASK_NAME="user-auth"
    export PLAN_DEV_TYPE="backend"
-   export PLAN_TASK_DIR=".trellis/workspace/taosu/tasks/19-user-auth"
+   export PLAN_TASK_DIR=".trellis/tasks/02-03-user-auth"
    export PLAN_REQUIREMENT="Add JWT-based authentication"
    ```
 4. Launch Claude Code in background via subprocess

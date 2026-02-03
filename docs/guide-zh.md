@@ -347,7 +347,7 @@ task.py create "Fix payment bug" --assignee john --priority P0
    ```bash
    export PLAN_FEATURE_NAME="user-auth"
    export PLAN_DEV_TYPE="backend"
-   export PLAN_FEATURE_DIR=".trellis/workspace/taosu/tasks/19-user-auth"
+   export PLAN_FEATURE_DIR=".trellis/tasks/02-03-user-auth"
    export PLAN_REQUIREMENT="Add JWT-based authentication"
    ```
 4. 后台启动 Claude Code：`nohup claude -p --dangerously-skip-permissions < prompt &`

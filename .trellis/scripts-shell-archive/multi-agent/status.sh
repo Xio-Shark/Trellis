@@ -201,7 +201,7 @@ Usage:
   $0 --registry              Show agent registry
 
 Examples:
-  $0 -a taosu
+  $0 -a john
   $0 --detail my-task
   $0 --progress my-task
   $0 --watch 01-16-worktree-support
