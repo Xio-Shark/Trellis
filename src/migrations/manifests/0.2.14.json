@@ -169,22 +169,7 @@
       "from": ".cursor/commands/parallel.md",
       "to": ".cursor/commands/trellis-parallel.md",
       "description": "Rename Cursor parallel command with trellis- prefix"
-    },
-    {
-      "type": "update",
-      "path": ".claude/agents/dispatch.md",
-      "description": "Fix incorrect task directory path format (was .trellis/workspace/{dev}/tasks/, should be .trellis/tasks/)"
-    },
-    {
-      "type": "update",
-      "path": ".claude/agents/plan.md",
-      "description": "Fix incorrect task directory path in example output"
-    },
-    {
-      "type": "update",
-      "path": ".trellis/scripts/multi-agent/status.sh",
-      "description": "Remove hardcoded developer name in help example"
     }
   ],
-  "notes": "This release includes: (1) Command namespace migration - Claude Code uses subdirectory (.claude/commands/trellis/), Cursor uses filename prefix (.cursor/commands/trellis-*); (2) Bug fix for incorrect task directory paths that caused worktrees to be created in wrong locations"
+  "notes": "This release includes: (1) Command namespace migration - Claude Code uses subdirectory (.claude/commands/trellis/), Cursor uses filename prefix (.cursor/commands/trellis-*); (2) Bug fix for incorrect task directory paths in agent docs - these files will be updated via normal template sync"
 }
