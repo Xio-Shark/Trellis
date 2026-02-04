@@ -92,6 +92,12 @@ import {
   getAllHooks,
   getSettingsTemplate,
 } from "../templates/claude/index.js";
+import {
+  getAllAgents as getAllIflowAgents,
+  getAllCommands as getAllIflowCommands,
+  getAllHooks as getAllIflowHooks,
+  getSettingsTemplate as getIflowSettingsTemplate,
+} from "../templates/iflow/index.js";
 
 export interface UpdateOptions {
   dryRun?: boolean;
@@ -263,6 +269,28 @@ function collectTemplateFiles(_cwd: string): Map<string, string> {
   // Claude settings
   const settingsTemplate = getSettingsTemplate();
   files.set(`.claude/${settingsTemplate.targetPath}`, settingsTemplate.content);
+
+  // iFlow commands
+  const iflowCommands = getAllIflowCommands();
+  for (const command of iflowCommands) {
+    files.set(`.iflow/commands/${command.name}.md`, command.content);
+  }
+
+  // iFlow agents
+  const iflowAgents = getAllIflowAgents();
+  for (const agent of iflowAgents) {
+    files.set(`.iflow/agents/${agent.name}.md`, agent.content);
+  }
+
+  // iFlow hooks
+  const iflowHooks = getAllIflowHooks();
+  for (const hook of iflowHooks) {
+    files.set(`.iflow/${hook.targetPath}`, hook.content);
+  }
+
+  // iFlow settings
+  const iflowSettingsTemplate = getIflowSettingsTemplate();
+  files.set(`.iflow/${iflowSettingsTemplate.targetPath}`, iflowSettingsTemplate.content);
 
   return files;
 }
@@ -480,7 +508,7 @@ function backupFile(
 /**
  * Directories to backup as complete snapshot
  */
-const BACKUP_DIRS = [".trellis", ".claude", ".cursor"];
+const BACKUP_DIRS = [".trellis", ".claude", ".cursor", ".iflow", ".opencode"];
 
 /**
  * Patterns to exclude from backup (user data that shouldn't be backed up)
@@ -507,7 +535,7 @@ function shouldExcludeFromBackup(relativePath: string): boolean {
 
 /**
  * Create complete snapshot backup of all managed directories
- * Backs up .trellis, .claude, .cursor directories entirely
+ * Backs up .trellis, .claude, .cursor, .iflow, .opencode directories entirely
  * (excluding user data like workspace/, tasks/, backlog/)
  */
 function createFullBackup(cwd: string): string | null {
@@ -935,7 +963,9 @@ function cleanupEmptyDirs(cwd: string, dirPath: string): void {
   if (
     !dirPath.startsWith(".trellis/") &&
     !dirPath.startsWith(".claude/") &&
-    !dirPath.startsWith(".cursor/")
+    !dirPath.startsWith(".cursor/") &&
+    !dirPath.startsWith(".iflow/") &&
+    !dirPath.startsWith(".opencode/")
   ) {
     return;
   }
@@ -957,7 +987,9 @@ function cleanupEmptyDirs(cwd: string, dirPath: string): void {
         parent !== dirPath &&
         parent !== ".trellis" &&
         parent !== ".claude" &&
-        parent !== ".cursor"
+        parent !== ".cursor" &&
+        parent !== ".iflow" &&
+        parent !== ".opencode"
       ) {
         cleanupEmptyDirs(cwd, parent);
       }
@@ -1454,7 +1486,7 @@ export async function update(options: UpdateOptions): Promise<void> {
     return;
   }
 
-  // Create complete backup of .trellis, .claude, .cursor directories
+  // Create complete backup of .trellis, .claude, .cursor, .iflow, .opencode directories
   const backupDir = createFullBackup(cwd);
 
   if (backupDir) {
