@@ -11,10 +11,10 @@ When you learn something valuable (from debugging, implementing, or discussion),
 | Trigger | Example | Target Spec |
 |---------|---------|-------------|
 | **Fixed a bug** | Found a subtle issue with error handling | `backend/error-handling.md` |
-| **Discovered a pattern** | Found a better way to structure code | Relevant guidelines file |
+| **Discovered a pattern** | Found a better way to structure code | Relevant `backend/` or `frontend/` file |
 | **Hit a gotcha** | Learned that X must be done before Y | Relevant spec + "Common Mistakes" section |
 | **Established a convention** | Team agreed on naming pattern | `quality-guidelines.md` |
-| **Cross-layer insight** | Understood how data flows between layers | `guides/cross-layer-thinking-guide.md` |
+| **New thinking trigger** | "Don't forget to check X before doing Y" | `guides/*.md` (as a checklist item, not detailed rules) |
 
 ---
 
@@ -22,16 +22,37 @@ When you learn something valuable (from debugging, implementing, or discussion),
 
 ```
 .trellis/spec/
-├── backend/           # Backend development standards
+├── backend/           # Backend coding standards
 │   ├── index.md       # Overview and links
 │   └── *.md           # Topic-specific guidelines
-├── frontend/          # Frontend development standards
+├── frontend/          # Frontend coding standards
 │   ├── index.md       # Overview and links
 │   └── *.md           # Topic-specific guidelines
-└── guides/            # Thinking guides
+└── guides/            # Thinking checklists (NOT coding specs!)
     ├── index.md       # Guide index
     └── *.md           # Topic-specific guides
 ```
+
+### CRITICAL: Spec vs Guide - Know the Difference
+
+| Type | Location | Purpose | Content Style |
+|------|----------|---------|---------------|
+| **Spec** | `backend/*.md`, `frontend/*.md` | Tell AI "how to write code" | Detailed rules, code examples, forbidden patterns |
+| **Guide** | `guides/*.md` | Help AI "what to think about" | Checklists, questions, pointers to specs |
+
+**Decision Rule**: Ask yourself:
+
+- "This is **how to write** the code" → Put in `backend/` or `frontend/`
+- "This is **what to consider** before writing" → Put in `guides/`
+
+**Example**:
+
+| Learning | Wrong Location | Correct Location |
+|----------|----------------|------------------|
+| "Use `reconfigure()` not `TextIOWrapper` for Windows stdout" | ❌ `guides/cross-platform-thinking-guide.md` | ✅ `backend/script-conventions.md` |
+| "Remember to check encoding when writing cross-platform code" | ❌ `backend/script-conventions.md` | ✅ `guides/cross-platform-thinking-guide.md` |
+
+**Guides should be short checklists that point to specs**, not duplicate the detailed rules.
 
 ---
 

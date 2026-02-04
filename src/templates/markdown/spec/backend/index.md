@@ -20,7 +20,6 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | Done |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | Done |
 | [Migrations](./migrations.md) | Version migration system for template files | Done |
-| [Platform Integration](./platform-integration.md) | How to add support for new AI CLI platforms | Done |
 | [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | N/A (CLI project) |
 
 ---

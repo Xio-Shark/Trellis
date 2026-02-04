@@ -159,6 +159,9 @@ def tail_follow(file_path: Path) -> None:
 
 **Rule**: Always explicitly specify `encoding="utf-8"` and use `errors="replace"`.
 
+> **Checklist**: When writing scripts that print non-ASCII, did you configure stdout encoding?
+> See `backend/script-conventions.md` for the specific pattern.
+
 ```python
 # BAD - Relies on system default
 with open(file, "r") as f:
@@ -349,6 +352,9 @@ subprocess.run(cmd, capture_output=True, text=True)  # Works!
 
 # User's Windows (GBK/CP1252 default)
 subprocess.run(cmd, capture_output=True, text=True)  # Garbled Chinese/Unicode
+```
+
+> **Note**: stdout encoding is also affected. See `backend/script-conventions.md` for the fix.
 
 ---
 
