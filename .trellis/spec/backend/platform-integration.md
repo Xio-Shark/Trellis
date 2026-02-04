@@ -49,10 +49,13 @@ When adding a new platform `{platform}`, update all of the following:
 
 | File | Change |
 |------|--------|
+| `src/commands/update.ts` | Add `.{platform}` to `getConfiguredPlatforms()` detection |
+| `src/commands/update.ts` | Add template collection in `collectTemplateFiles()` with `platforms.has("{platform}")` check |
 | `src/commands/update.ts` | Add to `BACKUP_DIRS` array |
-| `src/commands/update.ts` | Add template collection in `collectTemplateFiles()` |
 | `src/commands/update.ts` | Add to directory cleanup logic |
 | `src/utils/template-hash.ts` | Add to `TEMPLATE_DIRS` array |
+
+**Note**: `trellis update` only updates platforms that have existing directories. The `getConfiguredPlatforms()` function detects which `.{platform}/` directories exist and only collects templates for those platforms.
 
 ### 7. Python Scripts
 
@@ -127,6 +130,12 @@ if sys.platform == "win32":
 ---
 
 ## Common Mistakes
+
+### Missing from getConfiguredPlatforms()
+
+**Symptom**: `trellis update` doesn't update templates for the new platform even when its directory exists.
+
+**Fix**: Add `.{platform}` detection to `getConfiguredPlatforms()` in `src/commands/update.ts`.
 
 ### Missing from BACKUP_DIRS
 

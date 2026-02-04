@@ -136,10 +136,25 @@ const PROTECTED_PATHS = [
 ];
 
 /**
- * Collect all template files that should be managed by update
+ * Detect which AI tool platforms are configured in the project
+ * by checking for their config directories
  */
-function collectTemplateFiles(_cwd: string): Map<string, string> {
+function getConfiguredPlatforms(cwd: string): Set<string> {
+  const platforms = new Set<string>();
+  if (fs.existsSync(path.join(cwd, ".claude"))) platforms.add("claude");
+  if (fs.existsSync(path.join(cwd, ".cursor"))) platforms.add("cursor");
+  if (fs.existsSync(path.join(cwd, ".iflow"))) platforms.add("iflow");
+  if (fs.existsSync(path.join(cwd, ".opencode"))) platforms.add("opencode");
+  return platforms;
+}
+
+/**
+ * Collect all template files that should be managed by update
+ * Only collects templates for platforms that are already configured (have directories)
+ */
+function collectTemplateFiles(cwd: string): Map<string, string> {
   const files = new Map<string, string>();
+  const platforms = getConfiguredPlatforms(cwd);
 
   // Python scripts - package init
   files.set(`${PATHS.SCRIPTS}/__init__.py`, scriptsInit);
@@ -242,55 +257,66 @@ function collectTemplateFiles(_cwd: string): Map<string, string> {
     frontendStateManagementContent,
   );
 
-  // Claude commands (in trellis/ subdirectory for namespace)
-  const claudeCommands = getCommandTemplates("claude-code");
-  for (const [name, content] of Object.entries(claudeCommands)) {
-    files.set(`.claude/commands/trellis/${name}.md`, content);
+  // Claude templates (only if .claude/ exists)
+  if (platforms.has("claude")) {
+    // Claude commands (in trellis/ subdirectory for namespace)
+    const claudeCommands = getCommandTemplates("claude-code");
+    for (const [name, content] of Object.entries(claudeCommands)) {
+      files.set(`.claude/commands/trellis/${name}.md`, content);
+    }
+
+    // Claude agents
+    const agents = getAllAgents();
+    for (const agent of agents) {
+      files.set(`.claude/agents/${agent.name}.md`, agent.content);
+    }
+
+    // Claude hooks
+    const hooks = getAllHooks();
+    for (const hook of hooks) {
+      files.set(`.claude/${hook.targetPath}`, hook.content);
+    }
+
+    // Claude settings
+    const settingsTemplate = getSettingsTemplate();
+    files.set(`.claude/${settingsTemplate.targetPath}`, settingsTemplate.content);
   }
 
-  // Cursor commands (flat structure with trellis- prefix, Cursor doesn't support subdirs)
-  const cursorCommands = getCommandTemplates("cursor");
-  for (const [name, content] of Object.entries(cursorCommands)) {
-    files.set(`.cursor/commands/${name}.md`, content);
+  // Cursor templates (only if .cursor/ exists)
+  if (platforms.has("cursor")) {
+    // Cursor commands (flat structure with trellis- prefix, Cursor doesn't support subdirs)
+    const cursorCommands = getCommandTemplates("cursor");
+    for (const [name, content] of Object.entries(cursorCommands)) {
+      files.set(`.cursor/commands/${name}.md`, content);
+    }
   }
 
-  // Claude agents
-  const agents = getAllAgents();
-  for (const agent of agents) {
-    files.set(`.claude/agents/${agent.name}.md`, agent.content);
+  // iFlow templates (only if .iflow/ exists)
+  if (platforms.has("iflow")) {
+    // iFlow commands
+    const iflowCommands = getAllIflowCommands();
+    for (const command of iflowCommands) {
+      files.set(`.iflow/commands/${command.name}.md`, command.content);
+    }
+
+    // iFlow agents
+    const iflowAgents = getAllIflowAgents();
+    for (const agent of iflowAgents) {
+      files.set(`.iflow/agents/${agent.name}.md`, agent.content);
+    }
+
+    // iFlow hooks
+    const iflowHooks = getAllIflowHooks();
+    for (const hook of iflowHooks) {
+      files.set(`.iflow/${hook.targetPath}`, hook.content);
+    }
+
+    // iFlow settings
+    const iflowSettingsTemplate = getIflowSettingsTemplate();
+    files.set(`.iflow/${iflowSettingsTemplate.targetPath}`, iflowSettingsTemplate.content);
   }
 
-  // Claude hooks
-  const hooks = getAllHooks();
-  for (const hook of hooks) {
-    files.set(`.claude/${hook.targetPath}`, hook.content);
-  }
-
-  // Claude settings
-  const settingsTemplate = getSettingsTemplate();
-  files.set(`.claude/${settingsTemplate.targetPath}`, settingsTemplate.content);
-
-  // iFlow commands
-  const iflowCommands = getAllIflowCommands();
-  for (const command of iflowCommands) {
-    files.set(`.iflow/commands/${command.name}.md`, command.content);
-  }
-
-  // iFlow agents
-  const iflowAgents = getAllIflowAgents();
-  for (const agent of iflowAgents) {
-    files.set(`.iflow/agents/${agent.name}.md`, agent.content);
-  }
-
-  // iFlow hooks
-  const iflowHooks = getAllIflowHooks();
-  for (const hook of iflowHooks) {
-    files.set(`.iflow/${hook.targetPath}`, hook.content);
-  }
-
-  // iFlow settings
-  const iflowSettingsTemplate = getIflowSettingsTemplate();
-  files.set(`.iflow/${iflowSettingsTemplate.targetPath}`, iflowSettingsTemplate.content);
+  // Note: OpenCode uses plugin system, templates handled separately
 
   return files;
 }
