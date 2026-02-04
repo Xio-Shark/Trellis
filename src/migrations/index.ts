@@ -94,10 +94,10 @@ function compareVersions(a: string, b: string): number {
   if (aPrerelease && !bPrerelease) return -1;
   if (!aPrerelease && !bPrerelease) return 0;
 
-  // Both have prerelease, compare them
+  // Both have prerelease, compare them (guaranteed non-null by checks above)
   // Split prerelease by dots and compare each part
-  const aPre = aPrerelease!.split(".");
-  const bPre = bPrerelease!.split(".");
+  const aPre = (aPrerelease as string).split(".");
+  const bPre = (bPrerelease as string).split(".");
   const maxPreLen = Math.max(aPre.length, bPre.length);
 
   for (let i = 0; i < maxPreLen; i++) {

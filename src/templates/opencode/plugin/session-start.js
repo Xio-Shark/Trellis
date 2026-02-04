@@ -92,7 +92,7 @@ export default async ({ directory }) => {
 
   return {
     // chat.message - triggered when user sends a message
-    "chat.message": async (input, output) => {
+    "chat.message": async (input) => {
       try {
         const sessionID = input.sessionID
         const agent = input.agent || "unknown"
