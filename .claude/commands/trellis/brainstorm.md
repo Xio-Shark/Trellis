@@ -1,350 +1,469 @@
-# Brainstorm - Requirements Discovery
+# Brainstorm - Requirements Discovery (AI Coding Enhanced)
 
-Guide AI through collaborative requirements discovery before implementation.
+Guide AI through collaborative requirements discovery **before implementation**, optimized for AI coding workflows:
+
+* **Task-first** (capture ideas immediately)
+* **Action-before-asking** (reduce low-value questions)
+* **Research-first** for technical choices (avoid asking users to invent options)
+* **Diverge → Converge** (expand thinking, then lock MVP)
 
 ---
 
 ## When to Use
 
-This skill is triggered from `/trellis:start` when the user describes a development task.
-It helps turn vague ideas into well-defined requirements through structured dialogue.
+Triggered from `/trellis:start` when the user describes a development task, especially when:
+
+* requirements are unclear or evolving
+* there are multiple valid implementation paths
+* trade-offs matter (UX, reliability, maintainability, cost, performance)
+* the user might not know the best options up front
 
 ---
 
-## Task Classification
+## Core Principles (Non-negotiable)
 
-First, classify the user's request to determine if brainstorming is needed:
+1. **Task-first (capture early)**
+   Always ensure a task exists at the start so the user's ideas are recorded immediately.
 
-| Complexity | Criteria | Action |
-|------------|----------|--------|
-| **Trivial** | Single-line fix, typo, obvious change | Skip brainstorm, direct edit |
-| **Simple** | Clear goal, 1-2 files, well-defined scope | Quick confirm, then implement |
-| **Moderate** | Multiple files, some ambiguity | Light brainstorm (2-3 questions) |
-| **Complex** | Vague goal, architectural decisions, multiple approaches | Full brainstorm |
+2. **Action before asking**
+   If you can derive the answer from repo code, docs, configs, conventions, or quick research — do that first.
 
-### Classification Signals
+3. **One question per message**
+   Never overwhelm the user with a list of questions. Ask one, update PRD, repeat.
 
-**Trivial/Simple indicators:**
-- User specifies exact file and change
-- "Fix the typo in X"
-- "Add field Y to component Z"
-- Clear acceptance criteria already stated
+4. **Prefer concrete options**
+   For preference/decision questions, present 2–3 feasible, specific approaches with trade-offs.
 
-**Moderate/Complex indicators:**
-- "I want to add a feature for..."
-- "Can you help me improve..."
-- Mentions multiple areas or systems
-- No clear implementation path
-- User seems unsure about approach
+5. **Research-first for technical choices**
+   If the decision depends on industry conventions / similar tools / established patterns, do research first, then propose options.
+
+6. **Diverge → Converge**
+   After initial understanding, proactively consider future evolution, related scenarios, and failure/edge cases — then converge to an MVP with explicit out-of-scope.
+
+7. **No meta questions**
+   Do not ask "should I search?" or "can you paste the code so I can continue?"
+   If you need information: search/inspect. If blocked: ask the minimal blocking question.
 
 ---
 
-## The Brainstorm Process
+## Step 0: Ensure Task Exists (ALWAYS)
 
-### Step 1: Acknowledge and Classify (No task creation yet)
+Before any Q&A, ensure a task exists. If none exists, create one immediately.
 
-First, understand and classify without creating any task directory:
-
-```markdown
-I understand you want to [summarize goal].
-
-This looks like a [complexity level] task because [reason].
-
-[If Simple]: Let me confirm: [restate understanding]. Ready to proceed?
-[If Moderate/Complex]: Let me ask a few questions to clarify the requirements.
-```
-
-**Do NOT create task yet** - wait until you have basic understanding.
-
-### Step 2: Initial Discovery (1-2 key questions)
-
-For Moderate/Complex tasks, ask 1-2 **foundational questions** to establish basic understanding:
-
-- What is the core goal?
-- What's the scope boundary?
-
-This helps form a meaningful **working title** for the task.
-
-### Step 3: Create Task Directory (after basic understanding)
-
-**Only after** you can articulate what the task is about, create the directory:
+* Use a **temporary working title** derived from the user's message.
+* It's OK if the title is imperfect — refine later in PRD.
 
 ```bash
-TASK_DIR=$(python3 ./.trellis/scripts/task.py create "[working title]" --slug [slug])
+TASK_DIR=$(python3 ./.trellis/scripts/task.py create "brainstorm: <short goal>" --slug <auto>)
 ```
 
-Create initial `prd.md` with what you know so far:
+Create/seed `prd.md` immediately with what you know:
 
 ```markdown
-# [Working Title]
+# brainstorm: <short goal>
 
 ## Goal
-[Initial understanding from discovery]
+
+<one paragraph: what + why>
+
+## What I already know
+
+* <facts from user message>
+* <facts discovered from repo/docs>
+
+## Assumptions (temporary)
+
+* <assumptions to validate>
 
 ## Open Questions
-- [Remaining questions]
+
+* <ONLY Blocking / Preference questions; keep list short>
 
 ## Requirements (evolving)
-- [What we know so far]
+
+* <start with what is known>
 
 ## Acceptance Criteria (evolving)
-(To be refined)
+
+* [ ] <testable criterion>
+
+## Definition of Done (team quality bar)
+
+* Tests added/updated (unit/integration where appropriate)
+* Lint / typecheck / CI green
+* Docs/notes updated if behavior changes
+* Rollout/rollback considered if risky
+
+## Out of Scope (explicit)
+
+* <what we will not do in this task>
+
+## Technical Notes
+
+* <files inspected, constraints, links, references>
+* <research notes summary if applicable>
 ```
 
-### Step 4: Continue Q&A Loop
+---
 
-**Key principle**: One question per message. **Update PRD after each answer.**
+## Step 1: Auto-Context (DO THIS BEFORE ASKING QUESTIONS)
 
-**Question types (in order of priority):**
+Before asking questions like "what does the code look like?", gather context yourself:
 
-1. **Scope** - "Should this also handle X, or just Y?"
-2. **Constraints** - "Are there any technical constraints I should know about?"
-3. **Edge cases** - "What should happen when X occurs?"
-4. **Success criteria** - "How will we know this is working correctly?"
+### Repo inspection checklist
 
-**Question format:**
+* Identify likely modules/files impacted
+* Locate existing patterns (similar features, conventions, error handling style)
+* Check configs, scripts, existing command definitions
+* Note any constraints (runtime, dependency policy, build tooling)
 
-For **multiple choice** questions (preferred when options are clear):
+### Documentation checklist
+
+* Look for existing PRDs/specs/templates
+* Look for command usage examples, README, ADRs if any
+
+Write findings into PRD:
+
+* Add to `What I already know`
+* Add constraints/links to `Technical Notes`
+
+---
+
+## Step 2: Classify Complexity (still useful, not gating task creation)
+
+| Complexity   | Criteria                                               | Action                                      |
+| ------------ | ------------------------------------------------------ | ------------------------------------------- |
+| **Trivial**  | Single-line fix, typo, obvious change                  | Skip brainstorm, implement directly         |
+| **Simple**   | Clear goal, 1–2 files, scope well-defined              | Ask 1 confirm question, then implement      |
+| **Moderate** | Multiple files, some ambiguity                         | Light brainstorm (2–3 high-value questions) |
+| **Complex**  | Vague goal, architectural choices, multiple approaches | Full brainstorm                             |
+
+> Note: Task already exists from Step 0. Classification only affects depth of brainstorming.
+
+---
+
+## Step 3: Question Gate (Ask ONLY high-value questions)
+
+Before asking ANY question, run the following gate:
+
+### Gate A — Can I derive this without the user?
+
+If answer is available via:
+
+* repo inspection (code/config)
+* docs/specs/conventions
+* quick market/OSS research
+
+→ **Do not ask.** Fetch it, summarize, update PRD.
+
+### Gate B — Is this a meta/lazy question?
+
+Examples:
+
+* "Should I search?"
+* "Can you paste the code so I can proceed?"
+* "What does the code look like?" (when repo is available)
+
+→ **Do not ask.** Take action.
+
+### Gate C — What type of question is it?
+
+* **Blocking**: cannot proceed without user input
+* **Preference**: multiple valid choices, depends on product/UX/risk preference
+* **Derivable**: should be answered by inspection/research
+
+→ Only ask **Blocking** or **Preference**.
+
+---
+
+## Step 4: Research-first Mode (Mandatory for technical choices)
+
+### Trigger conditions (any → research-first)
+
+* The task involves selecting an approach, library, protocol, framework, template system, plugin mechanism, or CLI UX convention
+* The user asks for "best practice", "how others do it", "recommendation"
+* The user can't reasonably enumerate options
+
+### Research steps
+
+1. Identify 2–4 comparable tools/patterns
+2. Summarize common conventions and why they exist
+3. Map conventions onto our repo constraints
+4. Produce **2–3 feasible approaches** for our project
+
+### Research output format (PRD)
+
+Add a section in PRD (either within Technical Notes or as its own):
+
 ```markdown
-For [topic], which approach would you prefer?
+## Research Notes
 
-1. **[Option A]** - [brief description, trade-off]
-2. **[Option B]** - [brief description, trade-off]
-3. **Other** - tell me your preference
+### What similar tools do
+
+* ...
+* ...
+
+### Constraints from our repo/project
+
+* ...
+
+### Feasible approaches here
+
+**Approach A: <name>** (Recommended)
+
+* How it works:
+* Pros:
+* Cons:
+
+**Approach B: <name>**
+
+* How it works:
+* Pros:
+* Cons:
+
+**Approach C: <name>** (optional)
+
+* ...
 ```
 
-For **open-ended** questions:
-```markdown
-[Question]?
+Then ask **one** preference question:
 
-(Feel free to be brief - we can clarify if needed)
-```
+* "Which approach do you prefer: A / B / C (or other)?"
 
-**After each answer, immediately update `prd.md`:**
+---
 
-```bash
-# Update with new information using Edit tool
-# Move answered questions to Requirements section
-# Add any new follow-up questions to Open Questions
-```
+## Step 5: Expansion Sweep (DIVERGE) — Required after initial understanding
 
-**Example PRD evolution:**
+After you can summarize the goal, proactively broaden thinking before converging.
 
-Before:
-```markdown
-## Open Questions
-- What input format is expected?
-- Should validation be strict or lenient?
+### Expansion categories (keep to 1–2 bullets each)
 
-## Requirements (evolving)
-(To be filled)
-```
+1. **Future evolution**
 
-After user answers "JSON input, strict validation":
-```markdown
-## Open Questions
-- (none remaining)
+   * What might this feature become in 1–3 months?
+   * What extension points are worth preserving now?
 
-## Requirements (evolving)
-- Input: JSON format only
-- Validation: Strict - reject invalid input with clear error messages
-```
+2. **Related scenarios**
 
-### Step 5: Propose Approaches (if needed)
+   * What adjacent commands/flows should remain consistent with this?
+   * Are there parity expectations (create vs update, import vs export, etc.)?
 
-For complex tasks, after gathering requirements, propose 2-3 approaches:
+3. **Failure & edge cases**
 
-```markdown
-Based on what you've described, here are the main approaches:
+   * Conflicts, offline/network failure, retries, idempotency, compatibility, rollback
+   * Input validation, security boundaries, permission checks
 
-**Approach A: [Name]** (Recommended)
-- [How it works]
-- Pros: [benefits]
-- Cons: [trade-offs]
-
-**Approach B: [Name]**
-- [How it works]
-- Pros: [benefits]
-- Cons: [trade-offs]
-
-Which direction would you prefer?
-```
-
-Update PRD with chosen approach in a new section:
+### Expansion message template (to user)
 
 ```markdown
-## Technical Approach
-[Chosen approach and reasoning]
+I understand you want to implement: <current goal>.
+
+Before diving into design, let me quickly diverge to consider three categories (to avoid rework later):
+
+1. Future evolution: <1–2 bullets>
+2. Related scenarios: <1–2 bullets>
+3. Failure/edge cases: <1–2 bullets>
+
+For this MVP, which would you like to include (or none)?
+
+1. Current requirement only (minimal viable)
+2. Add <X> (reserve for future extension)
+3. Add <Y> (improve robustness/consistency)
+4. Other: describe your preference
 ```
 
-### Step 6: Confirm Final Requirements
+Then update PRD:
 
-When all questions are resolved:
+* What's in MVP → `Requirements`
+* What's excluded → `Out of Scope`
+
+---
+
+## Step 6: Q&A Loop (CONVERGE)
+
+### Rules
+
+* One question per message
+* Prefer multiple-choice when possible
+* After each user answer:
+
+  * Update PRD immediately
+  * Move answered items from `Open Questions` → `Requirements`
+  * Update `Acceptance Criteria` with testable checkboxes
+  * Clarify `Out of Scope`
+
+### Question priority (recommended)
+
+1. **MVP scope boundary** (what is included/excluded)
+2. **Preference decisions** (after presenting concrete options)
+3. **Failure/edge behavior** (only for MVP-critical paths)
+4. **Success metrics & Acceptance Criteria** (what proves it works)
+
+### Preferred question format (multiple choice)
+
+```markdown
+For <topic>, which approach do you prefer?
+
+1. **Option A** — <what it means + trade-off>
+2. **Option B** — <what it means + trade-off>
+3. **Option C** — <what it means + trade-off>
+4. **Other** — describe your preference
+```
+
+---
+
+## Step 7: Propose Approaches + Record Decisions (Complex tasks)
+
+After requirements are clear enough, propose 2–3 approaches (if not already done via research-first):
+
+```markdown
+Based on current information, here are 2–3 feasible approaches:
+
+**Approach A: <name>** (Recommended)
+
+* How:
+* Pros:
+* Cons:
+
+**Approach B: <name>**
+
+* How:
+* Pros:
+* Cons:
+
+Which direction do you prefer?
+```
+
+Record the outcome in PRD as an ADR-lite section:
+
+```markdown
+## Decision (ADR-lite)
+
+**Context**: Why this decision was needed
+**Decision**: Which approach was chosen
+**Consequences**: Trade-offs, risks, potential future improvements
+```
+
+---
+
+## Step 8: Final Confirmation + Implementation Plan
+
+When open questions are resolved, confirm complete requirements with a structured summary:
+
+### Final confirmation format
 
 ```markdown
 Here's my understanding of the complete requirements:
 
-**Goal**: [one sentence]
+**Goal**: <one sentence>
 
 **Requirements**:
-- [Requirement 1]
-- [Requirement 2]
+
+* ...
+* ...
 
 **Acceptance Criteria**:
-- [ ] [Criterion 1]
-- [ ] [Criterion 2]
 
-**Technical Approach**: [brief summary]
+* [ ] ...
+* [ ] ...
+
+**Definition of Done**:
+
+* ...
+
+**Out of Scope**:
+
+* ...
+
+**Technical Approach**:
+<brief summary + key decisions>
+
+**Implementation Plan (small PRs)**:
+
+* PR1: <scaffolding + tests + minimal plumbing>
+* PR2: <core behavior>
+* PR3: <edge cases + docs + cleanup>
 
 Does this look correct? If yes, I'll proceed with implementation.
 ```
 
-Update PRD to finalize all sections and remove "Open Questions" section.
+---
+
+## PRD Target Structure (final)
+
+`prd.md` should converge to:
+
+```markdown
+# <Task Title>
+
+## Goal
+
+<why + what>
+
+## Requirements
+
+* ...
+
+## Acceptance Criteria
+
+* [ ] ...
+
+## Definition of Done
+
+* ...
+
+## Technical Approach
+
+<key design + decisions>
+
+## Decision (ADR-lite)
+
+Context / Decision / Consequences
+
+## Out of Scope
+
+* ...
+
+## Technical Notes
+
+<constraints, references, files, research notes>
+```
 
 ---
 
-## PRD Template
+## Anti-Patterns (Hard Avoid)
 
-The final `prd.md` should follow this structure:
-
-```markdown
-# [Task Title]
-
-## Goal
-[One paragraph describing what we're trying to achieve and why]
-
-## Requirements
-- [Functional requirement 1]
-- [Functional requirement 2]
-- [Non-functional requirement if any]
-
-## Acceptance Criteria
-- [ ] [Testable criterion 1]
-- [ ] [Testable criterion 2]
-- [ ] [Testable criterion 3]
-
-## Technical Approach
-[If complex: chosen approach and key decisions]
-
-## Out of Scope
-[Explicitly list what this task does NOT include]
-
-## Technical Notes
-[Any constraints, dependencies, or implementation hints]
-```
+* Asking user for code/context that can be derived from repo
+* Asking user to choose an approach before presenting concrete options
+* Meta questions about whether to research
+* Staying narrowly on the initial request without considering evolution/edges
+* Letting brainstorming drift without updating PRD
 
 ---
 
 ## Integration with Start Workflow
 
-This brainstorm process integrates into `/trellis:start` as follows:
+High-level flow:
 
-```
+```text
 User describes task
-       ↓
-Step 1: Classify (no task yet)
-       ↓
-┌──────┴──────┐
-│ Trivial/    │ Complex/
-│ Simple      │ Moderate
-│     ↓       │     ↓
-│ Quick       │ Step 2: Initial discovery
-│ confirm     │ (1-2 key questions)
-│     ↓       │     ↓
-│             │ Step 3: Create task
-│             │ (now have working title)
-│             │     ↓
-│             │ Step 4: Q&A loop
-│             │ (update PRD each time)
-│             │     ↓
-│             │ Step 5-6: Approaches + Confirm
-└──────┬──────┘
-       ↓
-   Implement
+↓
+Step 0: Ensure task exists (create if missing)
+↓
+Step 1: Auto-context (inspect repo/docs, research if needed)
+↓
+Step 2: Classify complexity
+↓
+Step 4 (if triggered): Research-first → propose options
+↓
+Step 5: Expansion sweep (diverge)
+↓
+Step 6: Q&A loop (converge; update PRD each turn)
+↓
+Step 8: Final confirmation + small-PR plan
+↓
+Implement
 ```
-
-**Key insight**: Task creation happens AFTER basic understanding, not before.
-
----
-
-## Key Principles
-
-| Principle | Description |
-|-----------|-------------|
-| **Create task after understanding** | Wait until you can form a meaningful title (usually after 1-2 questions) |
-| **One question at a time** | Never overwhelm with multiple questions |
-| **Update PRD immediately** | After each answer, update the document |
-| **Prefer multiple choice** | Easier for users to answer |
-| **YAGNI** | Challenge unnecessary complexity |
-| **Incremental clarity** | Build understanding step by step |
-| **Visible progress** | User can see PRD evolving |
-
----
-
-## Example Session
-
-```
-User: I want to add authentication to my app
-
-AI: I understand you want to add authentication. This looks like a complex
-    task with multiple valid approaches.
-
-    First, let me understand the core approach:
-    What type of authentication do you need?
-
-    1. **Email/password** - Traditional login with optional email verification
-    2. **OAuth only** - Google/GitHub login, no password management
-    3. **Both** - Support multiple login methods
-    4. **Other** - tell me your preference
-
-User: OAuth only, just Google for now
-
-AI: Got it - Google OAuth only. Now I have enough context to create the task.
-
-    [Creates task directory: 02-01-google-oauth-auth]
-    [Creates initial PRD with: Goal = Google OAuth authentication]
-
-    Next question: What should happen after login?
-
-    1. **Redirect to dashboard** - Main app view
-    2. **Redirect to previous page** - Return where they came from
-    3. **Stay on current page** - Refresh with logged-in state
-
-User: Redirect to previous page
-
-AI: [Updates PRD: adds redirect behavior to Requirements]
-
-    One more: What user data do we need to store?
-
-    1. **Minimal** - Just email and name from Google
-    2. **Profile** - Email, name, and avatar
-    3. **Extended** - Above plus custom profile fields
-
-User: Just minimal for now
-
-AI: [Updates PRD: adds data storage requirement]
-
-    Here's my understanding of the complete requirements:
-
-    **Goal**: Add Google OAuth authentication
-
-    **Requirements**:
-    - Google OAuth login only (no email/password)
-    - Store minimal user data (email, name)
-    - Redirect to previous page after login
-
-    **Acceptance Criteria**:
-    - [ ] User can click "Login with Google" button
-    - [ ] Google OAuth flow completes successfully
-    - [ ] User data is stored in database
-    - [ ] User is redirected to previous page after login
-    - [ ] Logout clears session
-
-    Does this look correct? If yes, I'll proceed with implementation.
-```
-
-**Note**: Task was created after the first question, when we knew "Google OAuth" -
-giving us a meaningful title instead of just "authentication".
 
 ---
 
