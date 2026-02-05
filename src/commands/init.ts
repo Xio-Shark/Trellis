@@ -26,7 +26,6 @@ import { initializeHashes } from "../utils/template-hash.js";
 import {
   fetchTemplateIndex,
   downloadTemplateById,
-  type SpecTemplate,
   type TemplateStrategy,
 } from "../utils/template-fetcher.js";
 

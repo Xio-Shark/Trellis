@@ -76,7 +76,7 @@ export async function findTemplate(
   templateId: string,
 ): Promise<SpecTemplate | null> {
   const templates = await fetchTemplateIndex();
-  return templates.find((t) => t.id === templateId) || null;
+  return templates.find((t) => t.id === templateId) ?? null;
 }
 
 // =============================================================================
