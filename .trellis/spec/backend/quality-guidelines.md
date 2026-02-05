@@ -292,6 +292,62 @@ pnpm lint && pnpm typecheck
 
 ---
 
+## CLI Design Patterns
+
+### Explicit Flags Take Precedence
+
+When a CLI has both explicit flags (`--tool`) and convenience flags (`-y`), explicit flags must always win:
+
+```typescript
+// Bad: -y overrides explicit flags
+if (options.yes) {
+  tools = ["cursor", "claude"]; // Ignores --iflow, --opencode!
+} else if (options.cursor || options.iflow) {
+  // Build from flags...
+}
+
+// Good: Check explicit flags first
+const hasExplicitTools = options.cursor || options.iflow || options.opencode;
+if (hasExplicitTools) {
+  // Build from explicit flags (works with or without -y)
+} else if (options.yes) {
+  // Default only when no explicit flags
+}
+```
+
+**Why**: Users specify explicit flags intentionally. The `-y` flag means "skip interactive prompts", not "ignore my other flags".
+
+### Data-Driven Configuration
+
+When handling multiple similar options, use arrays with metadata instead of repeated if-else:
+
+```typescript
+// Bad: Repetitive if-else
+if (options.cursor) tools.push("cursor");
+if (options.claude) tools.push("claude");
+if (options.iflow) tools.push("iflow");
+// ... repeated logic, easy to miss one
+
+// Good: Data-driven approach
+const TOOLS = [
+  { key: "cursor", name: "Cursor", defaultChecked: true },
+  { key: "claude", name: "Claude Code", defaultChecked: true },
+  { key: "iflow", name: "iFlow CLI", defaultChecked: false },
+] as const;
+
+// Single source of truth for:
+// - Building from flags: TOOLS.filter(t => options[t.key])
+// - Interactive choices: TOOLS.map(t => ({ name: t.name, value: t.key }))
+// - Default values: TOOLS.filter(t => t.defaultChecked)
+```
+
+**Benefits**:
+- Adding a new tool = adding one line to TOOLS array
+- Display name, flag key, and default are co-located
+- Less code duplication, fewer bugs
+
+---
+
 ## DO / DON'T
 
 ### DO
