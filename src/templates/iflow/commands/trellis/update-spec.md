@@ -10,11 +10,15 @@ When you learn something valuable (from debugging, implementing, or discussion),
 
 | Trigger | Example | Target Spec |
 |---------|---------|-------------|
+| **Implemented a feature** | Added template download with giget | Relevant `backend/` or `frontend/` file |
+| **Made a design decision** | Used type field + mapping table for extensibility | Relevant spec + "Design Decisions" section |
 | **Fixed a bug** | Found a subtle issue with error handling | `backend/error-handling.md` |
 | **Discovered a pattern** | Found a better way to structure code | Relevant `backend/` or `frontend/` file |
 | **Hit a gotcha** | Learned that X must be done before Y | Relevant spec + "Common Mistakes" section |
 | **Established a convention** | Team agreed on naming pattern | `quality-guidelines.md` |
 | **New thinking trigger** | "Don't forget to check X before doing Y" | `guides/*.md` (as a checklist item, not detailed rules) |
+
+**Key Insight**: Spec updates are NOT just for problems. Every feature implementation contains design decisions and project conventions that future AI/developers need to know.
 
 ---
 
@@ -70,6 +74,8 @@ Answer these questions:
 
 | Type | Description | Action |
 |------|-------------|--------|
+| **Design Decision** | Why we chose approach X over Y | Add to "Design Decisions" section |
+| **Project Convention** | How we do X in this project | Add to relevant section with examples |
 | **New Pattern** | A reusable approach discovered | Add to "Patterns" section |
 | **Forbidden Pattern** | Something that causes problems | Add to "Anti-patterns" or "Don't" section |
 | **Common Mistake** | Easy-to-make error | Add to "Common Mistakes" section |
@@ -103,6 +109,46 @@ If you added a new section or the spec status changed, update the category's `in
 ---
 
 ## Update Templates
+
+### Adding a Design Decision
+
+```markdown
+### Design Decision: [Decision Name]
+
+**Context**: What problem were we solving?
+
+**Options Considered**:
+1. Option A - brief description
+2. Option B - brief description
+
+**Decision**: We chose Option X because...
+
+**Example**:
+\`\`\`typescript
+// How it's implemented
+code example
+\`\`\`
+
+**Extensibility**: How to extend this in the future...
+```
+
+### Adding a Project Convention
+
+```markdown
+### Convention: [Convention Name]
+
+**What**: Brief description of the convention.
+
+**Why**: Why we do it this way in this project.
+
+**Example**:
+\`\`\`typescript
+// How to follow this convention
+code example
+\`\`\`
+
+**Related**: Links to related conventions or specs.
+```
 
 ### Adding a New Pattern
 
@@ -179,12 +225,17 @@ If you're unsure what to update, answer these prompts:
    - [ ] Refactored code
    - [ ] Had a discussion about approach
 
-2. **What surprised you or was non-obvious?**
-   - (Describe the insight)
+2. **What did you learn or decide?**
+   - Design decision (why X over Y)
+   - Project convention (how we do X)
+   - Non-obvious behavior (gotcha)
+   - Better approach (pattern)
 
-3. **Would this help someone else avoid the same problem?**
-   - Yes → Proceed to update spec
-   - No → Maybe not worth documenting
+3. **Would future AI/developers need to know this?**
+   - To understand how the code works → Yes, update spec
+   - To maintain or extend the feature → Yes, update spec
+   - To avoid repeating mistakes → Yes, update spec
+   - Purely one-off implementation detail → Maybe skip
 
 4. **Which area does it relate to?**
    - [ ] Backend code
