@@ -369,70 +369,47 @@ export async function init(options: InitOptions): Promise<void> {
   // Detect project type (silent - no output)
   const detectedType = detectProjectType(cwd);
 
+  // Tool definitions: [flag key, display name, default checked in interactive]
+  const TOOLS = [
+    { key: "cursor", name: "Cursor", defaultChecked: true },
+    { key: "claude", name: "Claude Code", defaultChecked: true },
+    { key: "iflow", name: "iFlow CLI", defaultChecked: false },
+    { key: "opencode", name: "OpenCode", defaultChecked: false },
+  ] as const;
+
+  // Build tools from explicit flags
+  const explicitTools = TOOLS.filter(
+    (t) => options[t.key as keyof InitOptions],
+  ).map((t) => t.key);
+
   let tools: string[];
-  let projectType: ProjectType = detectedType;
 
-  // Check if any explicit tool flags are provided
-  const hasExplicitTools =
-    options.cursor || options.claude || options.iflow || options.opencode;
-
-  if (hasExplicitTools) {
-    // Use explicit flags (works with or without -y)
-    tools = [];
-    if (options.cursor) {
-      tools.push("cursor");
-    }
-    if (options.claude) {
-      tools.push("claude");
-    }
-    if (options.iflow) {
-      tools.push("iflow");
-    }
-    if (options.opencode) {
-      tools.push("opencode");
-    }
-    // Treat unknown as fullstack
-    if (detectedType === "unknown") {
-      projectType = "fullstack";
-    }
+  if (explicitTools.length > 0) {
+    // Explicit flags take precedence (works with or without -y)
+    tools = explicitTools;
   } else if (options.yes) {
-    // No explicit tools + -y flag: default to Cursor and Claude
-    tools = ["cursor", "claude"];
-    // Treat unknown as fullstack
-    if (detectedType === "unknown") {
-      projectType = "fullstack";
-    }
+    // No explicit tools + -y: default to Cursor and Claude
+    tools = TOOLS.filter((t) => t.defaultChecked).map((t) => t.key);
   } else {
     // Interactive mode
-    const questions: {
-      type: string;
-      name: string;
-      message: string;
-      choices?: { name: string; value: string; checked?: boolean }[];
-      default?: boolean | string;
-      when?: (answers: InitAnswers) => boolean;
-    }[] = [
+    const answers = await inquirer.prompt<InitAnswers>([
       {
         type: "checkbox",
         name: "tools",
         message: "Select AI tools to configure:",
-        choices: [
-          { name: "Cursor", value: "cursor", checked: true },
-          { name: "Claude Code", value: "claude", checked: true },
-          { name: "iFlow CLI", value: "iflow", checked: false },
-          { name: "OpenCode", value: "opencode", checked: false },
-        ],
+        choices: TOOLS.map((t) => ({
+          name: t.name,
+          value: t.key,
+          checked: t.defaultChecked,
+        })),
       },
-    ];
-
-    const answers = await inquirer.prompt<InitAnswers>(questions);
+    ]);
     tools = answers.tools;
-
-    // Treat unknown as fullstack
-    if (detectedType === "unknown") {
-      projectType = "fullstack";
-    }
   }
+
+  // Treat unknown project type as fullstack
+  const projectType: ProjectType =
+    detectedType === "unknown" ? "fullstack" : detectedType;
 
   if (tools.length === 0) {
     console.log(
