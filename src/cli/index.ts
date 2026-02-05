@@ -102,6 +102,12 @@ program
   )
   .option("-f, --force", "Overwrite existing files without asking")
   .option("-s, --skip-existing", "Skip existing files without asking")
+  .option(
+    "-t, --template <name>",
+    "Use a remote spec template (e.g., electron-fullstack)",
+  )
+  .option("--overwrite", "Overwrite existing spec directory when using template")
+  .option("--append", "Only add missing files when using template")
   .action(async (options: Record<string, unknown>) => {
     try {
       await init(options);

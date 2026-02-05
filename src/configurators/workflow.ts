@@ -50,6 +50,8 @@ export interface WorkflowOptions {
   projectType: ProjectType;
   /** Enable multi-agent pipeline with worktree support */
   multiAgent?: boolean;
+  /** Skip creating local spec templates (when using remote template) */
+  skipSpecTemplates?: boolean;
 }
 
 /**
@@ -72,6 +74,7 @@ export async function createWorkflowStructure(
 ): Promise<void> {
   const projectType = options?.projectType ?? "fullstack";
   const multiAgent = options?.multiAgent ?? false;
+  const skipSpecTemplates = options?.skipSpecTemplates ?? false;
 
   // Create base .trellis directory
   ensureDir(path.join(cwd, DIR_NAMES.WORKFLOW));
@@ -113,7 +116,10 @@ export async function createWorkflowStructure(
 
   // Create spec templates based on project type
   // These are NOT dogfooded - they are generic templates for new projects
-  await createSpecTemplates(cwd, projectType);
+  // Skip if using remote template (already downloaded)
+  if (!skipSpecTemplates) {
+    await createSpecTemplates(cwd, projectType);
+  }
 }
 
 async function createSpecTemplates(

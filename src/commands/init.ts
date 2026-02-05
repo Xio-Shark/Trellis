@@ -23,6 +23,12 @@ import {
   type ProjectType,
 } from "../utils/project-detector.js";
 import { initializeHashes } from "../utils/template-hash.js";
+import {
+  fetchTemplateIndex,
+  downloadTemplateById,
+  type SpecTemplate,
+  type TemplateStrategy,
+} from "../utils/template-fetcher.js";
 
 /**
  * Detect available Python command (python3 or python)
@@ -290,10 +296,15 @@ interface InitOptions {
   user?: string;
   force?: boolean;
   skipExisting?: boolean;
+  template?: string;
+  overwrite?: boolean;
+  append?: boolean;
 }
 
 interface InitAnswers {
   tools: string[];
+  template?: string;
+  existingDirAction?: TemplateStrategy;
 }
 
 export async function init(options: InitOptions): Promise<void> {
@@ -426,12 +437,121 @@ export async function init(options: InitOptions): Promise<void> {
     return;
   }
 
-  // Silent - no "Configuring" output
+  // ==========================================================================
+  // Template Selection
+  // ==========================================================================
+
+  let selectedTemplate: string | null = null;
+  let templateStrategy: TemplateStrategy = "skip";
+
+  // Determine template strategy from flags
+  if (options.overwrite) {
+    templateStrategy = "overwrite";
+  } else if (options.append) {
+    templateStrategy = "append";
+  }
+
+  if (options.template) {
+    // Template specified via --template flag
+    selectedTemplate = options.template;
+  } else if (!options.yes) {
+    // Interactive mode: show template selection
+    const templates = await fetchTemplateIndex();
+
+    if (templates.length > 0) {
+      // Build template choices with "blank" as first (default)
+      const templateChoices = [
+        {
+          name: "blank (default - empty templates)",
+          value: "blank",
+        },
+        ...templates
+          .filter((t) => t.type === "spec") // MVP: only spec templates
+          .map((t) => ({
+            name: `${t.id} (${t.name})`,
+            value: t.id,
+          })),
+      ];
+
+      const templateAnswer = await inquirer.prompt<{ template: string }>([
+        {
+          type: "list",
+          name: "template",
+          message: "Select a spec template:",
+          choices: templateChoices,
+          default: "blank",
+        },
+      ]);
+
+      if (templateAnswer.template !== "blank") {
+        selectedTemplate = templateAnswer.template;
+
+        // Check if spec directory already exists and ask what to do
+        const specDir = path.join(cwd, PATHS.SPEC);
+        if (fs.existsSync(specDir) && !options.overwrite && !options.append) {
+          const actionAnswer = await inquirer.prompt<{
+            action: TemplateStrategy;
+          }>([
+            {
+              type: "list",
+              name: "action",
+              message: `Directory ${PATHS.SPEC} already exists. What do you want to do?`,
+              choices: [
+                { name: "Skip (keep existing)", value: "skip" },
+                { name: "Overwrite (replace all)", value: "overwrite" },
+                { name: "Append (add missing files only)", value: "append" },
+              ],
+              default: "skip",
+            },
+          ]);
+          templateStrategy = actionAnswer.action;
+        }
+      }
+    }
+  }
+  // If -y flag: selectedTemplate stays null, use blank templates
+
+  // ==========================================================================
+  // Download Remote Template (if selected)
+  // ==========================================================================
+
+  let useRemoteTemplate = false;
+
+  if (selectedTemplate) {
+    console.log(
+      chalk.blue(`📦 Downloading template "${selectedTemplate}"...`),
+    );
+    const result = await downloadTemplateById(
+      cwd,
+      selectedTemplate,
+      templateStrategy,
+    );
+
+    if (result.success) {
+      if (result.skipped) {
+        console.log(chalk.gray(`   ${result.message}`));
+      } else {
+        console.log(chalk.green(`   ${result.message}`));
+        useRemoteTemplate = true;
+      }
+    } else {
+      console.log(chalk.yellow(`   ${result.message}`));
+      console.log(chalk.gray("   Falling back to blank templates..."));
+    }
+  }
+
+  // ==========================================================================
+  // Create Workflow Structure
+  // ==========================================================================
 
   // Create workflow structure with project type
   // Multi-agent is enabled by default
   console.log(chalk.blue("📁 Creating workflow structure..."));
-  await createWorkflowStructure(cwd, { projectType, multiAgent: true });
+  await createWorkflowStructure(cwd, {
+    projectType,
+    multiAgent: true,
+    skipSpecTemplates: useRemoteTemplate,
+  });
 
   // Write version file for update tracking
   const versionPath = path.join(cwd, DIR_NAMES.WORKFLOW, ".version");
