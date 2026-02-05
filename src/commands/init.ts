@@ -372,15 +372,12 @@ export async function init(options: InitOptions): Promise<void> {
   let tools: string[];
   let projectType: ProjectType = detectedType;
 
-  if (options.yes) {
-    // Default: both Cursor and Claude
-    tools = ["cursor", "claude"];
-    // Treat unknown as fullstack
-    if (detectedType === "unknown") {
-      projectType = "fullstack";
-    }
-  } else if (options.cursor || options.claude || options.iflow || options.opencode) {
-    // Use flags
+  // Check if any explicit tool flags are provided
+  const hasExplicitTools =
+    options.cursor || options.claude || options.iflow || options.opencode;
+
+  if (hasExplicitTools) {
+    // Use explicit flags (works with or without -y)
     tools = [];
     if (options.cursor) {
       tools.push("cursor");
@@ -394,6 +391,13 @@ export async function init(options: InitOptions): Promise<void> {
     if (options.opencode) {
       tools.push("opencode");
     }
+    // Treat unknown as fullstack
+    if (detectedType === "unknown") {
+      projectType = "fullstack";
+    }
+  } else if (options.yes) {
+    // No explicit tools + -y flag: default to Cursor and Claude
+    tools = ["cursor", "claude"];
     // Treat unknown as fullstack
     if (detectedType === "unknown") {
       projectType = "fullstack";
