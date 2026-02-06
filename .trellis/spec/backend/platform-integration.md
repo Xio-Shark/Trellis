@@ -4,25 +4,49 @@ How to add support for a new AI CLI platform (like Claude Code, Cursor, OpenCode
 
 ---
 
-## Checklist
+## Architecture
 
-When adding a new platform `{platform}`, update all of the following:
+Platform support uses a **centralized registry pattern** (similar to Turborepo's package manager support):
 
-### 1. CLI Commands
+- **Data registry**: `src/types/ai-tools.ts` — `AI_TOOLS` record with all platform metadata
+- **Function registry**: `src/configurators/index.ts` — `PLATFORM_FUNCTIONS` with configure/collectTemplates per platform
+- **Derived helpers**: `ALL_MANAGED_DIRS`, `getConfiguredPlatforms()`, etc. — consumed by update, init, hash tracking
+
+All lists (backup dirs, template dirs, platform detection, cleanup whitelist) are **derived from the registry automatically**. No scattered hardcoded lists.
+
+---
+
+## Checklist: Adding a New Platform
+
+When adding a new platform `{platform}`, update the following:
+
+### Step 1: Type Definitions (data registry)
+
+| File | Change |
+|------|--------|
+| `src/types/ai-tools.ts` | Add to `AITool` union type |
+| `src/types/ai-tools.ts` | Add to `TemplateDir` union type |
+| `src/types/ai-tools.ts` | Add entry to `AI_TOOLS` record (name, configDir, cliFlag, defaultChecked, hasPythonHooks, templateDirs) |
+
+**This single entry automatically propagates to**: `BACKUP_DIRS`, `TEMPLATE_DIRS`, `getConfiguredPlatforms()`, `cleanupEmptyDirs()`, `initializeHashes()`, init `TOOLS[]` prompt, Windows detection.
+
+### Step 2: CLI Flag
 
 | File | Change |
 |------|--------|
 | `src/cli/index.ts` | Add `--{platform}` option |
-| `src/commands/init.ts` | Add option handling and configurator call |
-| `src/commands/update.ts` | Add template collection for new platform |
+| `src/commands/init.ts` | Add `{platform}?: boolean` to `InitOptions` interface |
 
-### 2. Configurator
+> Note: Commander.js options and TypeScript interfaces require static declarations — cannot be derived from registry.
+
+### Step 3: Configurator (function registry)
 
 | File | Change |
 |------|--------|
-| `src/configurators/{platform}.ts` | Create new configurator (copy from existing) |
+| `src/configurators/{platform}.ts` | Create new configurator (copy from existing, export `configure{Platform}`) |
+| `src/configurators/index.ts` | Add entry to `PLATFORM_FUNCTIONS` with `configure` and optional `collectTemplates` |
 
-### 3. Templates
+### Step 4: Templates
 
 | Directory | Contents |
 |-----------|----------|
@@ -33,53 +57,38 @@ When adding a new platform `{platform}`, update all of the following:
 | `src/templates/{platform}/hooks/` | Hook scripts (`.py` files) |
 | `src/templates/{platform}/settings.json` | Platform settings |
 
-### 4. Type Definitions
-
-| File | Change |
-|------|--------|
-| `src/types/ai-tools.ts` | Add to `AITool` and `TemplateDir` types |
-
-### 5. Template Extraction
+### Step 5: Template Extraction
 
 | File | Change |
 |------|--------|
 | `src/templates/extract.ts` | Add `get{Platform}TemplatePath()` function |
 
-### 6. Update Mechanism
+### Step 6: Python Scripts (independent runtime)
 
 | File | Change |
 |------|--------|
-| `src/commands/update.ts` | Add `.{platform}` to `getConfiguredPlatforms()` detection |
-| `src/commands/update.ts` | Add template collection in `collectTemplateFiles()` with `platforms.has("{platform}")` check |
-| `src/commands/update.ts` | Add to `BACKUP_DIRS` array |
-| `src/commands/update.ts` | Add to directory cleanup logic |
-| `src/utils/template-hash.ts` | Add to `TEMPLATE_DIRS` array |
-
-**Note**: `trellis update` only updates platforms that have existing directories. The `getConfiguredPlatforms()` function detects which `.{platform}/` directories exist and only collects templates for those platforms.
-
-### 7. Python Scripts
-
-| File | Change |
-|------|--------|
-| `src/templates/trellis/scripts/common/cli_adapter.py` | Add platform to `Platform` type and `config_dir_name` |
+| `src/templates/trellis/scripts/common/cli_adapter.py` | Add to `Platform` literal type, `config_dir` property, `detect_platform()`, `get_cli_adapter()` validation |
+| `src/templates/trellis/scripts/common/registry.py` | Update default platform if needed |
 | `src/templates/trellis/scripts/multi_agent/plan.py` | Add to `--platform` choices |
 | `src/templates/trellis/scripts/multi_agent/start.py` | Add to `--platform` choices |
+| `src/templates/trellis/scripts/multi_agent/status.py` | Add platform-specific behavior if needed |
 
-### 8. Build Scripts
+> Note: Python scripts run in user projects at runtime — they cannot import from the TS registry and maintain their own registry in `cli_adapter.py`.
 
-| File | Change |
-|------|--------|
-| `scripts/copy-templates.js` | Add new template directory to copy list |
-
-### 9. Documentation
+### Step 7: Documentation
 
 | File | Change |
 |------|--------|
 | `README.md` | Add platform to supported tools list |
 | `README_CN.md` | Add platform to supported tools list (Chinese) |
-| `src/templates/trellis/workflow.md` | Add developer naming convention |
 
-### 10. Project Config (Optional)
+### Step 8: Build Scripts
+
+| File | Change |
+|------|--------|
+| `scripts/copy-templates.js` | No change needed (copies entire `src/templates/` directory) |
+
+### Step 9: Project Config (Optional)
 
 If Trellis project itself should support the new platform:
 
@@ -91,11 +100,28 @@ If Trellis project itself should support the new platform:
 | `.{platform}/hooks/` | Hooks |
 | `.{platform}/settings.json` | Settings |
 
-### 11. Gitignore
+### Step 10: Gitignore
 
 | File | Change |
 |------|--------|
 | `.gitignore` | Add local config patterns (e.g., `{platform}.local.json`) |
+
+---
+
+## What You DON'T Need to Update
+
+These are now **automatically derived** from the registry:
+
+| Previously hardcoded | Now derived from |
+|---------------------|------------------|
+| `BACKUP_DIRS` in update.ts | `ALL_MANAGED_DIRS` from `configurators/index.ts` |
+| `TEMPLATE_DIRS` in template-hash.ts | `ALL_MANAGED_DIRS` from `configurators/index.ts` |
+| `getConfiguredPlatforms()` in update.ts | `getConfiguredPlatforms()` from `configurators/index.ts` |
+| `cleanupEmptyDirs()` whitelist in update.ts | `isManagedPath()` / `isManagedRootDir()` from `configurators/index.ts` |
+| `collectTemplateFiles()` if/else in update.ts | `collectPlatformTemplates()` dispatch loop |
+| `TOOLS[]` in init.ts | `getInitToolChoices()` from `configurators/index.ts` |
+| Configurator dispatch in init.ts | `configurePlatform()` from `configurators/index.ts` |
+| Windows Python detection in init.ts | `getPlatformsWithPythonHooks()` from `configurators/index.ts` |
 
 ---
 
@@ -131,35 +157,45 @@ if sys.platform == "win32":
 
 ## Common Mistakes
 
-### Missing from getConfiguredPlatforms()
+### Forgot to add entry to PLATFORM_FUNCTIONS
 
-**Symptom**: `trellis update` doesn't update templates for the new platform even when its directory exists.
+**Symptom**: `trellis init` configures the platform, but `trellis update` doesn't track its template files.
 
-**Fix**: Add `.{platform}` detection to `getConfiguredPlatforms()` in `src/commands/update.ts`.
-
-### Missing from BACKUP_DIRS
-
-**Symptom**: `trellis update` doesn't backup the new platform's directory.
-
-**Fix**: Add `.{platform}` to `BACKUP_DIRS` in `src/commands/update.ts`.
-
-### Missing from TEMPLATE_DIRS
-
-**Symptom**: Template hash tracking doesn't work for new platform.
-
-**Fix**: Add `.{platform}` to `TEMPLATE_DIRS` in `src/utils/template-hash.ts`.
+**Fix**: Add entry with `collectTemplates` function to `PLATFORM_FUNCTIONS` in `src/configurators/index.ts`.
 
 ### Missing platform in cli_adapter.py
 
 **Symptom**: Python scripts fail with "Unsupported platform" error.
 
-**Fix**: Add platform to `Platform` literal type and `config_dir_name` method.
+**Fix**: Add platform to `Platform` literal type, `config_dir` property, and `get_cli_adapter()` validation in `cli_adapter.py`.
 
 ### Wrong command format in templates
 
 **Symptom**: Slash commands don't work or show wrong format.
 
 **Fix**: Check platform's command format and update all command references in templates.
+
+### Missing CLI flag or InitOptions field
+
+**Symptom**: `trellis init --{platform}` doesn't work.
+
+**Fix**: Add `--{platform}` option in `src/cli/index.ts` and `{platform}?: boolean` in `InitOptions` in `src/commands/init.ts`. These are static declarations that cannot be derived from the registry.
+
+### Template placeholder not resolved in collectTemplates
+
+**Symptom**: `trellis update` auto-updates platform files on every run, even when nothing changed. The update summary shows hooks/settings as "changed".
+
+**Cause**: `configurePlatform()` resolves `{{PYTHON_CMD}}` to `python3`/`python` when writing files during init, but `collectPlatformTemplates()` returns raw templates with `{{PYTHON_CMD}}` unresolved. The hash comparison sees them as different.
+
+**Fix**: Apply `resolvePlaceholders()` in the `collectTemplates` lambda in `PLATFORM_FUNCTIONS` (see `configurators/index.ts`). Any new placeholder added to templates must be resolved in **both** `configure()` and `collectTemplates()`.
+
+### Template listed in update but not created by init
+
+**Symptom**: `trellis update` always detects a "new file" to add, even on a freshly initialized project with the same version.
+
+**Cause**: `collectTemplateFiles()` in `update.ts` lists a file that `createSpecTemplates()` / `createWorkflowStructure()` in init never creates. The two template lists are out of sync.
+
+**Fix**: Ensure every file listed in `collectTemplateFiles()` is actually created during `init`. If a file is project-specific (not a user template), do not include it in the update template list.
 
 ---
 
