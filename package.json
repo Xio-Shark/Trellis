@@ -17,8 +17,11 @@
     "copy-templates": "node scripts/copy-templates.js",
     "dev": "tsc --watch",
     "start": "node ./dist/cli/index.js",
-    "lint": "eslint src/",
-    "lint:fix": "eslint src/ --fix",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src/ test/",
+    "lint:fix": "eslint src/ test/ --fix",
     "format": "prettier --write src/",
     "format:check": "prettier --check src/",
     "typecheck": "tsc --noEmit",
@@ -58,13 +61,15 @@
     "@types/figlet": "^1.7.0",
     "@types/inquirer": "^9.0.7",
     "@types/node": "^20.17.10",
+    "@vitest/coverage-v8": "^4.0.18",
     "basedpyright": "^1.37.2",
     "eslint": "^9.18.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
     "prettier": "^3.4.2",
     "typescript": "^5.7.2",
-    "typescript-eslint": "^8.21.0"
+    "typescript-eslint": "^8.21.0",
+    "vitest": "^4.0.18"
   },
   "engines": {
     "node": ">=18.0.0"
