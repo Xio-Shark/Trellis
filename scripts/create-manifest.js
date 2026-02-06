@@ -5,13 +5,18 @@
  * Usage:
  *   node scripts/create-manifest.js
  *   node scripts/create-manifest.js --breaking
- *   node scripts/create-manifest.js --version 0.3.0-beta.9
+ *   node scripts/create-manifest.js --version 0.3.0-rc.0
  *
  * Interactive prompts will ask for:
- *   - Version (default: next beta from package.json)
+ *   - Version (default: next prerelease from package.json)
  *   - Description
  *   - Changelog
  *   - Breaking change (y/n)
+ *
+ * Version suggestion logic:
+ *   beta.N  → beta.(N+1)    (also shows rc.0 hint)
+ *   rc.N    → rc.(N+1)      (also shows release hint)
+ *   X.Y.Z   → X.Y.(Z+1)-beta.0
  */
 
 import fs from "node:fs";
@@ -29,20 +34,29 @@ function readPackageVersion() {
   return pkg.version;
 }
 
-function getNextBetaVersion(currentVersion) {
-  // Parse current version like "0.3.0-beta.7"
-  const match = currentVersion.match(/^(\d+\.\d+\.\d+)-beta\.(\d+)$/);
-  if (match) {
-    const base = match[1];
-    const betaNum = parseInt(match[2], 10) + 1;
-    return `${base}-beta.${betaNum}`;
+function getNextVersion(currentVersion) {
+  // beta.N → next beta
+  const betaMatch = currentVersion.match(/^(\d+\.\d+\.\d+)-beta\.(\d+)$/);
+  if (betaMatch) {
+    const base = betaMatch[1];
+    const next = parseInt(betaMatch[2], 10) + 1;
+    return { suggested: `${base}-beta.${next}`, hint: `or ${base}-rc.0 to promote to RC` };
   }
-  // If not beta, suggest beta.0
-  const baseMatch = currentVersion.match(/^(\d+\.\d+\.\d+)/);
-  if (baseMatch) {
-    return `${baseMatch[1]}-beta.0`;
+  // rc.N → next rc
+  const rcMatch = currentVersion.match(/^(\d+\.\d+\.\d+)-rc\.(\d+)$/);
+  if (rcMatch) {
+    const base = rcMatch[1];
+    const next = parseInt(rcMatch[2], 10) + 1;
+    return { suggested: `${base}-rc.${next}`, hint: `or ${base} to release` };
   }
-  return currentVersion;
+  // stable X.Y.Z → next patch beta
+  const stableMatch = currentVersion.match(/^(\d+)\.(\d+)\.(\d+)$/);
+  if (stableMatch) {
+    const [, major, minor, patch] = stableMatch;
+    const nextPatch = `${major}.${minor}.${parseInt(patch, 10) + 1}`;
+    return { suggested: `${nextPatch}-beta.0`, hint: null };
+  }
+  return { suggested: currentVersion, hint: null };
 }
 
 function askQuestion(rl, question, defaultValue = "") {
@@ -61,7 +75,8 @@ async function main() {
   const versionArg = versionArgIndex !== -1 ? args[versionArgIndex + 1] : null;
 
   const currentVersion = readPackageVersion();
-  const suggestedVersion = versionArg || getNextBetaVersion(currentVersion);
+  const { suggested, hint } = getNextVersion(currentVersion);
+  const suggestedVersion = versionArg || suggested;
 
   const rl = readline.createInterface({
     input: process.stdin,
@@ -70,6 +85,9 @@ async function main() {
 
   console.log("\n📝 Create Migration Manifest\n");
   console.log(`Current package.json version: ${currentVersion}`);
+  if (!versionArg && hint) {
+    console.log(`Hint: ${hint}`);
+  }
   console.log("");
 
   try {
@@ -128,10 +146,12 @@ async function main() {
     console.log("\nManifest content:");
     console.log(JSON.stringify(manifest, null, 2));
 
+    // Detect release type for next steps hint
+    const releaseCmd = version.includes("-beta.") ? "pnpm release:beta" : version.includes("-rc.") ? "pnpm release:rc" : "pnpm release";
+
     console.log("\n📋 Next steps:");
     console.log(`  1. Edit ${version}.json if needed (add migrations, migrationGuide, etc.)`);
-    console.log("  2. git add && git commit");
-    console.log("  3. pnpm release:beta");
+    console.log(`  2. ${releaseCmd}`);
   } finally {
     rl.close();
   }

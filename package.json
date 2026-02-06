@@ -33,6 +33,7 @@
     "release:minor": "git add -A && git diff-index --quiet HEAD || git commit -m 'chore: pre-release updates' && pnpm version minor && git push origin main --tags",
     "release:major": "git add -A && git diff-index --quiet HEAD || git commit -m 'chore: pre-release updates' && pnpm version major && git push origin main --tags",
     "release:beta": "git add -A && git diff-index --quiet HEAD || git commit -m 'chore: pre-release updates' && pnpm version prerelease --preid beta && git push origin HEAD --tags",
+    "release:rc": "git add -A && git diff-index --quiet HEAD || git commit -m 'chore: pre-release updates' && pnpm version prerelease --preid rc && git push origin HEAD --tags",
     "manifest": "node scripts/create-manifest.js"
   },
   "keywords": [
