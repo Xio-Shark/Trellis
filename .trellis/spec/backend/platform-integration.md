@@ -10,6 +10,7 @@ Platform support uses a **centralized registry pattern** (similar to Turborepo's
 
 - **Data registry**: `src/types/ai-tools.ts` — `AI_TOOLS` record with all platform metadata
 - **Function registry**: `src/configurators/index.ts` — `PLATFORM_FUNCTIONS` with configure/collectTemplates per platform
+- **Shared utilities**: `src/configurators/shared.ts` — `resolvePlaceholders()` used by both init and update paths
 - **Derived helpers**: `ALL_MANAGED_DIRS`, `getConfiguredPlatforms()`, etc. — consumed by update, init, hash tracking
 
 All lists (backup dirs, template dirs, platform detection, cleanup whitelist) are **derived from the registry automatically**. No scattered hardcoded lists.
@@ -25,6 +26,7 @@ When adding a new platform `{platform}`, update the following:
 | File | Change |
 |------|--------|
 | `src/types/ai-tools.ts` | Add to `AITool` union type |
+| `src/types/ai-tools.ts` | Add to `CliFlag` union type |
 | `src/types/ai-tools.ts` | Add to `TemplateDir` union type |
 | `src/types/ai-tools.ts` | Add entry to `AI_TOOLS` record (name, configDir, cliFlag, defaultChecked, hasPythonHooks, templateDirs) |
 
@@ -37,7 +39,7 @@ When adding a new platform `{platform}`, update the following:
 | `src/cli/index.ts` | Add `--{platform}` option |
 | `src/commands/init.ts` | Add `{platform}?: boolean` to `InitOptions` interface |
 
-> Note: Commander.js options and TypeScript interfaces require static declarations — cannot be derived from registry.
+> Note: Commander.js options and TypeScript interfaces require static declarations — cannot be derived from registry. A compile-time assertion `_AssertCliFlagsInOptions` in `init.ts` will catch missing `InitOptions` fields — you'll get a build error if `CliFlag` has a value not present in `InitOptions`.
 
 ### Step 3: Configurator (function registry)
 
@@ -48,6 +50,8 @@ When adding a new platform `{platform}`, update the following:
 
 ### Step 4: Templates
 
+**Standard pattern** (Python hooks — like Claude, iFlow):
+
 | Directory | Contents |
 |-----------|----------|
 | `src/templates/{platform}/` | Root directory |
@@ -55,7 +59,19 @@ When adding a new platform `{platform}`, update the following:
 | `src/templates/{platform}/commands/trellis/` | Slash commands (`.md` files) |
 | `src/templates/{platform}/agents/` | Agent definitions (`.md` files) |
 | `src/templates/{platform}/hooks/` | Hook scripts (`.py` files) |
-| `src/templates/{platform}/settings.json` | Platform settings |
+| `src/templates/{platform}/settings.json` | Platform settings (may use `{{PYTHON_CMD}}` placeholder) |
+
+**JS plugin pattern** (like OpenCode):
+
+| Directory | Contents |
+|-----------|----------|
+| `src/templates/{platform}/` | Root directory |
+| `src/templates/{platform}/commands/trellis/` | Slash commands (`.md` files) |
+| `src/templates/{platform}/plugin/` | JS plugin files |
+| `src/templates/{platform}/lib/` | JS library files |
+| `src/templates/{platform}/package.json` | Plugin dependencies |
+
+> Note: OpenCode uses JS plugins instead of Python hooks, has no `index.ts` template module, and has no `collectTemplates` — so `trellis update` does not track OpenCode template files. If a new platform uses JS plugins, follow this pattern.
 
 ### Step 5: Template Extraction
 
@@ -67,7 +83,7 @@ When adding a new platform `{platform}`, update the following:
 
 | File | Change |
 |------|--------|
-| `src/templates/trellis/scripts/common/cli_adapter.py` | Add to `Platform` literal type, `config_dir` property, `detect_platform()`, `get_cli_adapter()` validation |
+| `src/templates/trellis/scripts/common/cli_adapter.py` | Add to `Platform` literal type, `config_dir_name` property, `detect_platform()`, `get_cli_adapter()` validation |
 | `src/templates/trellis/scripts/common/registry.py` | Update default platform if needed |
 | `src/templates/trellis/scripts/multi_agent/plan.py` | Add to `--platform` choices |
 | `src/templates/trellis/scripts/multi_agent/start.py` | Add to `--platform` choices |
@@ -167,7 +183,7 @@ if sys.platform == "win32":
 
 **Symptom**: Python scripts fail with "Unsupported platform" error.
 
-**Fix**: Add platform to `Platform` literal type, `config_dir` property, and `get_cli_adapter()` validation in `cli_adapter.py`.
+**Fix**: Add platform to `Platform` literal type, `config_dir_name` property, and `get_cli_adapter()` validation in `cli_adapter.py`.
 
 ### Wrong command format in templates
 
@@ -187,7 +203,7 @@ if sys.platform == "win32":
 
 **Cause**: `configurePlatform()` resolves `{{PYTHON_CMD}}` to `python3`/`python` when writing files during init, but `collectPlatformTemplates()` returns raw templates with `{{PYTHON_CMD}}` unresolved. The hash comparison sees them as different.
 
-**Fix**: Apply `resolvePlaceholders()` in the `collectTemplates` lambda in `PLATFORM_FUNCTIONS` (see `configurators/index.ts`). Any new placeholder added to templates must be resolved in **both** `configure()` and `collectTemplates()`.
+**Fix**: Apply `resolvePlaceholders()` (from `configurators/shared.ts`) in the `collectTemplates` lambda in `PLATFORM_FUNCTIONS`. Any new placeholder added to templates must be resolved in **both** `configure()` and `collectTemplates()`.
 
 ### Template listed in update but not created by init
 
@@ -196,6 +212,14 @@ if sys.platform == "win32":
 **Cause**: `collectTemplateFiles()` in `update.ts` lists a file that `createSpecTemplates()` / `createWorkflowStructure()` in init never creates. The two template lists are out of sync.
 
 **Fix**: Ensure every file listed in `collectTemplateFiles()` is actually created during `init`. If a file is project-specific (not a user template), do not include it in the update template list.
+
+### iFlow getAllCommands() reads wrong directory level (known gap)
+
+**Symptom**: `trellis update` tracks zero iFlow commands — commands are correctly copied during `init` but not tracked for update diffs.
+
+**Cause**: iFlow `getAllCommands()` calls `listFiles("commands")` which returns `["trellis"]` (a directory, not `.md` files). Claude's version correctly reads `listFiles("commands/trellis")`.
+
+**Impact**: Low — iFlow commands are still correctly installed during `init` (recursive directory copy). They just won't be updated by `trellis update` if templates change.
 
 ---
 
