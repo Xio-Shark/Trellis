@@ -1,3 +1,8 @@
+---
+name: start
+description: "Start Session"
+---
+
 # Start Session
 
 Initialize your AI development session and begin working on tasks.
@@ -43,7 +48,6 @@ This shows: developer identity, git status, current task (if any), active tasks.
 cat .trellis/spec/frontend/index.md  # Frontend guidelines
 cat .trellis/spec/backend/index.md   # Backend guidelines
 cat .trellis/spec/guides/index.md    # Thinking guides
-cat .trellis/spec/unit-test/index.md # Testing guidelines
 ```
 
 ### Step 4: Report and Ask

@@ -1,3 +1,8 @@
+---
+name: finish-work
+description: "Finish Work - Pre-Commit Checklist"
+---
+
 # Finish Work - Pre-Commit Checklist
 
 Before submitting or committing, use this checklist to ensure work completeness.
@@ -23,15 +28,6 @@ pnpm test
 - [ ] No `console.log` statements (use logger)?
 - [ ] No non-null assertions (the `x!` operator)?
 - [ ] No `any` types?
-
-### 1.5. Test Coverage
-
-Check if your change needs new or updated tests (see `.trellis/spec/unit-test/conventions.md`):
-
-- [ ] New pure function → unit test added?
-- [ ] Bug fix → regression test added in `test/regression.test.ts`?
-- [ ] Changed init/update behavior → integration test added/updated?
-- [ ] No logic change (text/data only) → no test needed
 
 ### 2. Documentation Sync
 
