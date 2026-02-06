@@ -6,30 +6,10 @@ import { init } from "../commands/init.js";
 import { update } from "../commands/update.js";
 import { DIR_NAMES } from "../constants/paths.js";
 import { VERSION, PACKAGE_NAME } from "../constants/version.js";
+import { compareVersions } from "../utils/compare-versions.js";
 
 // Re-export for backwards compatibility (consumers should prefer constants/version.js)
 export { VERSION, PACKAGE_NAME };
-
-/**
- * Compare two semver versions. Returns:
- * -1 if a < b, 0 if a == b, 1 if a > b
- */
-function compareVersions(a: string, b: string): number {
-  const parseVersion = (v: string): number[] =>
-    v.split(".").map((n) => parseInt(n, 10) || 0);
-
-  const aParts = parseVersion(a);
-  const bParts = parseVersion(b);
-  const maxLen = Math.max(aParts.length, bParts.length);
-
-  for (let i = 0; i < maxLen; i++) {
-    const aVal = aParts[i] ?? 0;
-    const bVal = bParts[i] ?? 0;
-    if (aVal < bVal) return -1;
-    if (aVal > bVal) return 1;
-  }
-  return 0;
-}
 
 /**
  * Check if a Trellis update is available (compare project version with CLI version)
