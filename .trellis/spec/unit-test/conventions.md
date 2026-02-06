@@ -164,6 +164,99 @@ vi.spyOn(console, "log").mockImplementation(noop);
 
 ---
 
+## Test Anti-Patterns
+
+Tests should verify **meaningful behavior**, not restate what TypeScript or the runtime already guarantees. The following anti-patterns were identified during a full test audit and should be avoided.
+
+### Hardcoded Counts on Growing Data
+
+```typescript
+// Bad: breaks every time a manifest/script is added
+expect(scripts.size).toBe(23);
+expect(versions.length).toBe(23);
+
+// Good: dynamic count from source of truth
+const jsonFiles = fs.readdirSync(manifestDir).filter(f => f.endsWith(".json"));
+expect(versions.length).toBe(jsonFiles.length);
+expect(versions.length).toBeGreaterThan(0);
+```
+
+**Why**: Hardcoded counts create false-positive failures on unrelated changes and require constant manual updates.
+
+### Tautological Assertions
+
+```typescript
+// Bad: testing that registry[key] === registry[key]
+const config = getToolConfig(id);
+expect(config).toBe(AI_TOOLS[id]); // getToolConfig just returns AI_TOOLS[id]
+
+// Bad: testing that a function returns its own input
+const dirs = getTemplateDirs(id);
+expect(dirs).toEqual(AI_TOOLS[id].templateDirs); // getTemplateDirs just returns .templateDirs
+```
+
+**Why**: These tests verify that JavaScript object property access works, not that our code is correct. If the implementation is a trivial lookup, don't test it — test the **consumer behavior** instead.
+
+### Redundant Type Checks (TypeScript Guarantees)
+
+```typescript
+// Bad: TypeScript already guarantees these at compile time
+expect(typeof settingsTemplate).toBe("string");
+expect(Array.isArray(commands)).toBe(true);
+expect(typeof cmd.name).toBe("string");
+
+// Good: test meaningful properties instead
+expect(settingsTemplate.length).toBeGreaterThan(0);
+expect(commands.length).toBeGreaterThan(0);
+```
+
+**Why**: In a strict TypeScript project, runtime type checks in tests add noise without catching real bugs.
+
+### Duplicate Coverage Across Files
+
+```typescript
+// Bad: registry-invariants.test.ts AND index.test.ts both test:
+// - PLATFORM_IDS length matches AI_TOOLS keys
+// - cliFlag uniqueness
+// - configDir starts with dot
+
+// Good: test each invariant in ONE canonical location
+// registry-invariants.test.ts: internal consistency (unique flags, no collisions, reserved names)
+// index.test.ts: derived helper correctness (getConfiguredPlatforms, isManagedPath, etc.)
+```
+
+**Why**: Duplicate tests give a false sense of coverage, make refactoring harder, and increase maintenance burden.
+
+### Redundant Assertions Within a Test
+
+```typescript
+// Bad: parse test already proves it's valid JSON string
+it("is valid JSON", () => {
+  expect(() => JSON.parse(settingsTemplate)).not.toThrow();
+});
+it("is a non-empty string", () => { // redundant if parse succeeds
+  expect(settingsTemplate.length).toBeGreaterThan(0);
+});
+
+// Good: combine into one meaningful assertion
+it("is valid non-empty JSON", () => {
+  const parsed = JSON.parse(settingsTemplate);
+  expect(parsed).toBeTruthy();
+});
+```
+
+### Decision Rule
+
+Before writing a test, ask:
+
+1. **Does TypeScript already guarantee this?** → Skip (typeof, Array.isArray, property existence)
+2. **Is this a trivial passthrough?** → Skip (getter that returns a property)
+3. **Is this already tested elsewhere?** → Skip (avoid cross-file duplication)
+4. **Does this depend on data that grows over time?** → Use dynamic counts
+5. **Does this test real behavior or just restate the implementation?** → Only test behavior
+
+---
+
 ## DO / DON'T
 
 ### DO
@@ -173,6 +266,8 @@ vi.spyOn(console, "log").mockImplementation(noop);
 - Restore all mocks in `afterEach` with `vi.restoreAllMocks()`
 - Use `vi.mocked()` for type-safe mock access
 - Number test scenarios (`#1`, `#2`, ...) for traceability to PRD
+- Use dynamic counts derived from the source of truth (filesystem, registry)
+- Test meaningful behavior, not implementation details
 
 ### DON'T
 
@@ -181,3 +276,7 @@ vi.spyOn(console, "log").mockImplementation(noop);
 - Don't leave temp files after test completion
 - Don't use `any` in test files (same ESLint rules apply)
 - Don't forget `vi.unstubAllGlobals()` when using `vi.stubGlobal`
+- Don't hardcode counts on growing datasets (manifests, scripts, platforms)
+- Don't add `typeof` or `Array.isArray` checks in TypeScript tests
+- Don't duplicate the same assertion across multiple test files
+- Don't write tautological tests that just verify `x === x`
