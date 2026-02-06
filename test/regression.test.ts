@@ -12,6 +12,9 @@
  * 5. Platform Registry (beta.9, beta.13, beta.16)
  */
 
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   clearManifestCache,
@@ -492,9 +495,17 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
 // =============================================================================
 
 describe("regression: migration manifest consistency", () => {
-  it("all 23 manifest versions are loaded", () => {
+  it("all manifest JSON files are loaded", () => {
+    const manifestDir = path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "../src/migrations/manifests",
+    );
+    const jsonFiles = fs
+      .readdirSync(manifestDir)
+      .filter((f) => f.endsWith(".json"));
     const versions = getAllMigrationVersions();
-    expect(versions.length).toBe(23);
+    expect(versions.length).toBe(jsonFiles.length);
+    expect(versions.length).toBeGreaterThan(0);
   });
 
   it("version ordering is strictly ascending", () => {

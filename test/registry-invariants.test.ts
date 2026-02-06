@@ -12,13 +12,7 @@
 import { describe, expect, it } from "vitest";
 import { AI_TOOLS } from "../src/types/ai-tools.js";
 import {
-  ALL_MANAGED_DIRS,
-  CONFIG_DIRS,
   PLATFORM_IDS,
-  collectPlatformTemplates,
-  getInitToolChoices,
-  getPlatformsWithPythonHooks,
-  resolveCliFlag,
 } from "../src/configurators/index.js";
 
 const COMMANDER_RESERVED_FLAGS = ["help", "version", "V", "h"];
@@ -74,70 +68,7 @@ describe("registry internal consistency", () => {
     }
   });
 
-  it("ALL_MANAGED_DIRS has no duplicates", () => {
-    const unique = new Set(ALL_MANAGED_DIRS);
-    expect(unique.size).toBe(ALL_MANAGED_DIRS.length);
-  });
-
-  it("ALL_MANAGED_DIRS starts with .trellis", () => {
-    expect(ALL_MANAGED_DIRS[0]).toBe(".trellis");
-  });
-
-  it("CONFIG_DIRS is ordered mapping of AI_TOOLS configDir", () => {
-    for (let i = 0; i < PLATFORM_IDS.length; i++) {
-      expect(CONFIG_DIRS[i]).toBe(AI_TOOLS[PLATFORM_IDS[i]].configDir);
-    }
-  });
 });
 
-// =============================================================================
-// Roundtrip Consistency (Seemann consumer-perspective checks)
-// =============================================================================
-
-describe("registry roundtrip consistency", () => {
-  it("resolveCliFlag roundtrips for all platforms", () => {
-    for (const id of PLATFORM_IDS) {
-      const flag = AI_TOOLS[id].cliFlag;
-      expect(resolveCliFlag(flag)).toBe(id);
-    }
-  });
-
-  it("getInitToolChoices keys all resolve back to platformId", () => {
-    const choices = getInitToolChoices();
-    for (const choice of choices) {
-      expect(resolveCliFlag(choice.key)).toBe(choice.platformId);
-    }
-  });
-
-  it("getInitToolChoices covers all platforms", () => {
-    const choices = getInitToolChoices();
-    const platformIds = choices.map((c) => c.platformId);
-    expect(platformIds).toEqual(expect.arrayContaining(PLATFORM_IDS));
-    expect(platformIds).toHaveLength(PLATFORM_IDS.length);
-  });
-
-  it("collectPlatformTemplates does not throw for any platform", () => {
-    for (const id of PLATFORM_IDS) {
-      expect(() => collectPlatformTemplates(id)).not.toThrow();
-    }
-  });
-
-  it("collectPlatformTemplates paths belong to owning platform", () => {
-    for (const id of PLATFORM_IDS) {
-      const templates = collectPlatformTemplates(id);
-      if (templates) {
-        const configDir = AI_TOOLS[id].configDir;
-        for (const [filePath] of templates) {
-          expect(filePath.startsWith(configDir + "/")).toBe(true);
-        }
-      }
-    }
-  });
-
-  it("getPlatformsWithPythonHooks is a subset of PLATFORM_IDS", () => {
-    const hooks = getPlatformsWithPythonHooks();
-    for (const id of hooks) {
-      expect(PLATFORM_IDS).toContain(id);
-    }
-  });
-});
+// Roundtrip and derived-helper tests are in configurators/index.test.ts
+// This file focuses on internal consistency invariants only

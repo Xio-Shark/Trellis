@@ -1,54 +1,24 @@
 import { describe, expect, it } from "vitest";
-import {
-  AI_TOOLS,
-  type AITool,
-  getTemplateDirs,
-  getToolConfig,
-} from "../../src/types/ai-tools.js";
+import { AI_TOOLS, type AITool } from "../../src/types/ai-tools.js";
 
 const ALL_TOOL_IDS = Object.keys(AI_TOOLS) as AITool[];
 
 // =============================================================================
-// getToolConfig
+// AI_TOOLS registry data integrity
 // =============================================================================
 
-describe("getToolConfig", () => {
-  it("returns the correct config for each platform", () => {
-    for (const id of ALL_TOOL_IDS) {
-      const config = getToolConfig(id);
-      expect(config).toBe(AI_TOOLS[id]);
-    }
+describe("AI_TOOLS registry", () => {
+  it("has at least one platform", () => {
+    expect(ALL_TOOL_IDS.length).toBeGreaterThan(0);
   });
 
-  it("returned config has all required fields", () => {
+  it("every platform has all required fields", () => {
     for (const id of ALL_TOOL_IDS) {
-      const config = getToolConfig(id);
-      expect(config).toHaveProperty("name");
-      expect(config).toHaveProperty("templateDirs");
-      expect(config).toHaveProperty("configDir");
-      expect(config).toHaveProperty("cliFlag");
-      expect(config).toHaveProperty("defaultChecked");
-      expect(config).toHaveProperty("hasPythonHooks");
-    }
-  });
-});
-
-// =============================================================================
-// getTemplateDirs
-// =============================================================================
-
-describe("getTemplateDirs", () => {
-  it("returns the correct template dirs for each platform", () => {
-    for (const id of ALL_TOOL_IDS) {
-      const dirs = getTemplateDirs(id);
-      expect(dirs).toEqual(AI_TOOLS[id].templateDirs);
-    }
-  });
-
-  it("every platform includes common templates", () => {
-    for (const id of ALL_TOOL_IDS) {
-      const dirs = getTemplateDirs(id);
-      expect(dirs).toContain("common");
+      const config = AI_TOOLS[id];
+      expect(config.name.length).toBeGreaterThan(0);
+      expect(config.configDir.startsWith(".")).toBe(true);
+      expect(config.cliFlag.length).toBeGreaterThan(0);
+      expect(config.templateDirs).toContain("common");
     }
   });
 });
