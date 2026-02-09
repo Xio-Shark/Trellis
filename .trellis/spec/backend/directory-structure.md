@@ -19,9 +19,12 @@ src/
 ├── commands/            # Command implementations
 │   └── init.ts          # Each command in its own file
 ├── configurators/       # Configuration generators
-│   ├── claude.ts        # Copies .claude/ directory
-│   ├── cursor.ts        # Copies .cursor/ directory
-│   ├── opencode.ts      # OpenCode configuration (TODO)
+│   ├── index.ts         # Platform registry (PLATFORM_FUNCTIONS, derived helpers)
+│   ├── shared.ts        # Shared utilities (resolvePlaceholders)
+│   ├── claude.ts        # Claude Code configurator
+│   ├── cursor.ts        # Cursor configurator
+│   ├── iflow.ts         # iFlow CLI configurator
+│   ├── opencode.ts      # OpenCode configurator
 │   └── workflow.ts      # Creates .trellis/ structure
 ├── constants/           # Shared constants and paths
 │   └── paths.ts         # Path constants (centralized)
@@ -36,9 +39,11 @@ src/
 ├── types/               # TypeScript type definitions
 │   └── ai-tools.ts      # AI tool types and registry
 ├── utils/               # Shared utility functions
+│   ├── compare-versions.ts # Semver comparison with prerelease support
 │   ├── file-writer.ts   # File writing with conflict handling
 │   ├── project-detector.ts # Project type detection
-│   └── template-fetcher.ts # Remote template download from GitHub
+│   ├── template-fetcher.ts # Remote template download from GitHub
+│   └── template-hash.ts # Template hash tracking for update detection
 └── index.ts             # Package entry point (exports public API)
 ```
 

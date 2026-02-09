@@ -11,6 +11,7 @@ Platform support uses a **centralized registry pattern** (similar to Turborepo's
 - **Data registry**: `src/types/ai-tools.ts` — `AI_TOOLS` record with all platform metadata
 - **Function registry**: `src/configurators/index.ts` — `PLATFORM_FUNCTIONS` with configure/collectTemplates per platform
 - **Shared utilities**: `src/configurators/shared.ts` — `resolvePlaceholders()` used by both init and update paths
+- **Shared utilities**: `src/utils/compare-versions.ts` — `compareVersions()` with full prerelease support (used by cli, update, migrations)
 - **Derived helpers**: `ALL_MANAGED_DIRS`, `getConfiguredPlatforms()`, etc. — consumed by update, init, hash tracking
 
 All lists (backup dirs, template dirs, platform detection, cleanup whitelist) are **derived from the registry automatically**. No scattered hardcoded lists.

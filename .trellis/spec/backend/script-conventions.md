@@ -81,10 +81,19 @@ Task Management Script.
 
 Usage:
     python3 task.py create "<title>" [--slug <name>]
-    python3 task.py list [--mine] [--status <status>]
+    python3 task.py init-context <dir> <dev_type>
+    python3 task.py add-context <dir> <file> <reason>
+    python3 task.py validate <dir>
+    python3 task.py list-context <dir>
     python3 task.py start <dir>
     python3 task.py finish
+    python3 task.py set-branch <dir> <branch>
+    python3 task.py set-base-branch <dir> <branch>
+    python3 task.py set-scope <dir> <scope>
+    python3 task.py create-pr [dir] [--dry-run]
     python3 task.py archive <task-name>
+    python3 task.py list [--mine] [--status <status>]
+    python3 task.py list-archive [YYYY-MM]
 """
 
 from __future__ import annotations
