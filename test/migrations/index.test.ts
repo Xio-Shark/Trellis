@@ -8,6 +8,7 @@ import {
   getMigrationSummary,
   hasPendingMigrations,
 } from "../../src/migrations/index.js";
+import { compareVersions } from "../../src/utils/compare-versions.js";
 
 // Clear manifest cache before each test to ensure clean state
 afterEach(() => {
@@ -30,10 +31,7 @@ describe("getAllMigrationVersions", () => {
   it("versions are sorted in ascending order", () => {
     const versions = getAllMigrationVersions();
     for (let i = 1; i < versions.length; i++) {
-      // Each version should be >= the previous one
-      // We can't import compareVersions (not exported), but we can check
-      // that the array doesn't start with a higher major version
-      expect(versions[i]).not.toBe(versions[i - 1]); // no duplicates
+      expect(compareVersions(versions[i - 1], versions[i])).toBeLessThan(0);
     }
   });
 
