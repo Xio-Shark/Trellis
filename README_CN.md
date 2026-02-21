@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-<strong>Claude Code、Cursor、iFlow 和 Codex 的一站式 AI 开发框架</strong><br/>
+<strong>一站式 AI Coding 框架</strong><br/>
 <sub>能解决以下问题</sub>
 </p>
 
@@ -194,7 +194,7 @@ Skills 是可选的——AI 可能跳过，导致质量不稳定。Trellis 通�
 - 微信群 — 扫码加入
 
 <p align="center">
-<img src="assets/wx_link1.jpg" alt="微信群二维码" width="200" />
+<img src="assets/wx_link2.jpg" alt="微信群二维码" width="200" />
 </p>
 
 <p align="center">
