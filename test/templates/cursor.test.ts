@@ -5,23 +5,35 @@ import { getAllCommands } from "../../src/templates/cursor/index.js";
 // getAllCommands — reads cursor command templates
 // =============================================================================
 
-describe("cursor getAllCommands", () => {
-  it("returns an array", () => {
-    const commands = getAllCommands();
-    expect(Array.isArray(commands)).toBe(true);
-  });
+// Cursor uses prefix naming: trellis-<name>.md (no subdirectory, no parallel)
+const EXPECTED_COMMAND_NAMES = [
+  "trellis-before-backend-dev",
+  "trellis-before-frontend-dev",
+  "trellis-brainstorm",
+  "trellis-break-loop",
+  "trellis-check-backend",
+  "trellis-check-cross-layer",
+  "trellis-check-frontend",
+  "trellis-create-command",
+  "trellis-finish-work",
+  "trellis-integrate-skill",
+  "trellis-onboard",
+  "trellis-record-session",
+  "trellis-start",
+  "trellis-update-spec",
+];
 
-  it("returns non-empty list (templates exist)", () => {
+describe("cursor getAllCommands", () => {
+  it("returns the expected command set", () => {
     const commands = getAllCommands();
-    expect(commands.length).toBeGreaterThan(0);
+    const names = commands.map((cmd) => cmd.name);
+    expect(names).toEqual(EXPECTED_COMMAND_NAMES);
   });
 
   it("each command has name and content", () => {
     const commands = getAllCommands();
     for (const cmd of commands) {
-      expect(typeof cmd.name).toBe("string");
       expect(cmd.name.length).toBeGreaterThan(0);
-      expect(typeof cmd.content).toBe("string");
       expect(cmd.content.length).toBeGreaterThan(0);
     }
   });

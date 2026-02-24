@@ -25,10 +25,29 @@ describe("settingsTemplate", () => {
 // getAllCommands — reads command templates from filesystem
 // =============================================================================
 
+const EXPECTED_COMMAND_NAMES = [
+  "before-backend-dev",
+  "before-frontend-dev",
+  "brainstorm",
+  "break-loop",
+  "check-backend",
+  "check-cross-layer",
+  "check-frontend",
+  "create-command",
+  "finish-work",
+  "integrate-skill",
+  "onboard",
+  "parallel",
+  "record-session",
+  "start",
+  "update-spec",
+];
+
 describe("getAllCommands", () => {
-  it("returns non-empty list (templates exist)", () => {
+  it("returns the expected command set", () => {
     const commands = getAllCommands();
-    expect(commands.length).toBeGreaterThan(0);
+    const names = commands.map((cmd) => cmd.name);
+    expect(names).toEqual(EXPECTED_COMMAND_NAMES);
   });
 
   it("each command has name and content", () => {

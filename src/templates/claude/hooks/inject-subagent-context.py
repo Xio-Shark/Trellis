@@ -369,7 +369,8 @@ def get_finish_context(repo_root: str, task_dir: str) -> str:
     Read order:
     1. All files in finish.jsonl (if exists)
     2. Fallback to finish-work.md only (lightweight final check)
-    3. prd.md (for verifying requirements are met)
+    3. update-spec.md (for active spec sync)
+    4. prd.md (for verifying requirements are met)
     """
     context_parts = []
 
@@ -389,7 +390,16 @@ def get_finish_context(repo_root: str, task_dir: str) -> str:
                 f"=== .claude/commands/trellis/finish-work.md (Finish checklist) ===\n{finish_work}"
             )
 
-    # 2. Requirements document (for verifying requirements are met)
+    # 2. Spec update process (for active spec sync)
+    update_spec = read_file_content(
+        repo_root, ".claude/commands/trellis/update-spec.md"
+    )
+    if update_spec:
+        context_parts.append(
+            f"=== .claude/commands/trellis/update-spec.md (Spec update process) ===\n{update_spec}"
+        )
+
+    # 3. Requirements document (for verifying requirements are met)
     prd_content = read_file_content(repo_root, f"{task_dir}/prd.md")
     if prd_content:
         context_parts.append(
@@ -533,13 +543,19 @@ Finish checklist and requirements:
 
 1. **Review changes** - Run `git diff --name-only` to see all changed files
 2. **Verify requirements** - Check each requirement in prd.md is implemented
-3. **Run final checks** - Execute finish-work.md checklist
-4. **Confirm ready** - Ensure code is ready for PR
+3. **Spec sync** - Analyze whether changes introduce new patterns, contracts, or conventions
+   - If new pattern/convention found: read target spec file → update it → update index.md if needed
+   - If infra/cross-layer change: follow the 7-section mandatory template from update-spec.md
+   - If pure code fix with no new patterns: skip this step
+4. **Run final checks** - Execute lint and typecheck
+5. **Confirm ready** - Ensure code is ready for PR
 
 ## Important Constraints
 
-- This is a final verification, not a fix phase
-- If critical issues found, report them clearly
+- You MAY update spec files when gaps are detected (use update-spec.md as guide)
+- MUST read the target spec file BEFORE editing (avoid duplicating existing content)
+- Do NOT update specs for trivial changes (typos, formatting, obvious fixes)
+- If critical CODE issues found, report them clearly (fix specs, not code)
 - Verify all acceptance criteria in prd.md are met"""
 
 

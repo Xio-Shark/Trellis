@@ -84,6 +84,29 @@ When adding a new platform `{platform}`, update the following:
 
 > Note: Codex uses skills (not slash commands). Skill content should use `$<skill-name>` / `/skills` semantics, not `/trellis:*` syntax.
 
+**Required commands/skills**: All platforms must include the following (adapted to each platform's format):
+
+| Command | Purpose | Required |
+|---------|---------|----------|
+| `start` | Session initialization | Yes |
+| `finish-work` | Pre-commit checklist | Yes |
+| `brainstorm` | Requirements discovery | Yes |
+| `break-loop` | Post-debug analysis | Yes |
+| `record-session` | Session recording | Yes |
+| `before-backend-dev` | Read backend guidelines | Yes |
+| `before-frontend-dev` | Read frontend guidelines | Yes |
+| `check-backend` | Check backend code quality | Yes |
+| `check-frontend` | Check frontend code quality | Yes |
+| `check-cross-layer` | Cross-layer verification | Yes |
+| `create-command` | Create new slash command | Yes |
+| `integrate-skill` | Integrate external skill | Yes |
+| `onboard` | Team onboarding guide | Yes |
+| `update-spec` | Update code-spec docs | Yes |
+| `parallel` | Multi-agent parallel work | Optional (platform capability) |
+| `migrate-specs` | Migrate spec versions | Optional |
+
+> **Rule**: When a new command is added to any platform, it must be added to ALL platforms. Check `src/templates/claude/commands/trellis/` as the reference list.
+
 ### Step 5: Template Extraction
 
 | File | Change |

@@ -166,7 +166,13 @@ function getFinishContext(ctx, taskDir) {
     }
   }
 
-  // 2. Requirements document (for verifying requirements are met)
+  // 2. Spec update process (for active spec sync)
+  const updateSpec = ctx.readProjectFile(".opencode/commands/trellis/update-spec.md")
+  if (updateSpec) {
+    parts.push(`=== .opencode/commands/trellis/update-spec.md (Spec update process) ===\n${updateSpec}`)
+  }
+
+  // 3. Requirements document (for verifying requirements are met)
   const prd = ctx.readProjectFile(join(taskDir, "prd.md"))
   if (prd) {
     parts.push(`=== ${taskDir}/prd.md (Requirements - verify all met) ===\n${prd}`)
@@ -306,10 +312,22 @@ ${originalPrompt}
 
 ## Workflow
 
-1. **Review changes** - Run \`git diff --name-only\`
-2. **Verify requirements** - Check each requirement in prd.md
-3. **Run final checks** - Execute finish-work.md checklist
-4. **Confirm ready** - Ensure code is ready for PR` :
+1. **Review changes** - Run \`git diff --name-only\` to see all changed files
+2. **Verify requirements** - Check each requirement in prd.md is implemented
+3. **Spec sync** - Analyze whether changes introduce new patterns, contracts, or conventions
+   - If new pattern/convention found: read target spec file → update it → update index.md if needed
+   - If infra/cross-layer change: follow the 7-section mandatory template from update-spec.md
+   - If pure code fix with no new patterns: skip this step
+4. **Run final checks** - Execute lint and typecheck
+5. **Confirm ready** - Ensure code is ready for PR
+
+## Important Constraints
+
+- You MAY update spec files when gaps are detected (use update-spec.md as guide)
+- MUST read the target spec file BEFORE editing (avoid duplicating existing content)
+- Do NOT update specs for trivial changes (typos, formatting, obvious fixes)
+- If critical CODE issues found, report them clearly (fix specs, not code)
+- Verify all acceptance criteria in prd.md are met` :
       `# Check Agent Task
 
 You are the Check Agent in the Multi-Agent Pipeline.

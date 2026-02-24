@@ -138,9 +138,11 @@ Task(
 ```
 
 **Important**: The `[finish]` marker in prompt triggers different context injection:
-- Lighter context focused on final verification
 - finish-work.md checklist
+- update-spec.md (spec update process and templates)
 - prd.md for verifying requirements are met
+
+The finish agent actively updates spec docs when it detects new patterns or contracts in the changes.
 
 This is different from regular "check" which has full specs for self-fix loop.
 

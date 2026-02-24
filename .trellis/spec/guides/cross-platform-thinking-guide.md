@@ -227,6 +227,12 @@ result = subprocess.run(
 
 When making platform-related changes, check **all these locations**:
 
+### Commands / Skills Sync
+- [ ] New command/skill added to ALL platforms (claude, cursor, iflow, codex, and any new platform)
+- [ ] Each platform's test file updated with new entry in `EXPECTED_COMMAND_NAMES` / `EXPECTED_SKILL_NAMES`
+- [ ] Platform-integration spec's required command table updated if adding a new required command
+- [ ] Command format matches platform convention (see `platform-integration.md` → Command Format by Platform)
+
 ### Documentation & Help Text
 - [ ] Docstrings at top of Python files
 - [ ] `--help` output / argparse descriptions

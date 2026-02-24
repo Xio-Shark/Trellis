@@ -25,13 +25,38 @@ describe("iflow settingsTemplate", () => {
 // getAllCommands — reads iflow command templates
 // =============================================================================
 
+const EXPECTED_COMMAND_NAMES = [
+  "before-backend-dev",
+  "before-frontend-dev",
+  "brainstorm",
+  "break-loop",
+  "check-backend",
+  "check-cross-layer",
+  "check-frontend",
+  "create-command",
+  "finish-work",
+  "integrate-skill",
+  "onboard",
+  "parallel",
+  "record-session",
+  "start",
+  "update-spec",
+];
+
 describe("iflow getAllCommands", () => {
-  it("returns empty list (commands are in trellis/ subdirectory, not listed by getAllCommands)", () => {
-    // iflow getAllCommands lists commands/ top-level only, but actual .md files are in commands/trellis/
+  it("returns the expected command set", () => {
     const commands = getAllCommands();
-    expect(commands.length).toBe(0);
+    const names = commands.map((c) => c.name);
+    expect(names).toEqual(EXPECTED_COMMAND_NAMES);
   });
 
+  it("each command has name and content", () => {
+    const commands = getAllCommands();
+    for (const command of commands) {
+      expect(command.name.length).toBeGreaterThan(0);
+      expect(command.content.length).toBeGreaterThan(0);
+    }
+  });
 });
 
 // =============================================================================

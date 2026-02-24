@@ -40,6 +40,13 @@
 | New migration manifest JSON | `registry-invariants.test.ts` auto-validates format |
 | CLI flag description text | Display-only |
 
+### Must update existing tests
+
+| Change Type | What to Update |
+|-------------|----------------|
+| New command/skill added to a platform | Add to `EXPECTED_COMMAND_NAMES` / `EXPECTED_SKILL_NAMES` in that platform's test file |
+| New command added to ANY platform | Add to ALL platform test files (claude, cursor, iflow, codex) — see platform-integration spec for required command list |
+
 ### Decision flow
 
 ```

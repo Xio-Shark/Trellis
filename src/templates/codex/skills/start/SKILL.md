@@ -64,13 +64,14 @@ When user describes a task, classify it:
 |------|----------|----------|
 | **Question** | User asks about code, architecture, or how something works | Answer directly |
 | **Trivial Fix** | Typo fix, comment update, single-line change, < 5 minutes | Direct Edit |
-| **Development Task** | Any code change that: modifies logic, adds features, fixes bugs, touches multiple files | **Task Workflow** |
+| **Simple Task** | Clear goal, 1-2 files, well-defined scope | Quick confirm → Task Workflow |
+| **Complex Task** | Vague goal, multiple files, architectural decisions | **Brainstorm → Task Workflow** |
 
 ### Decision Rule
 
-> **If in doubt, use Task Workflow.**
+> **If in doubt, use Brainstorm + Task Workflow.**
 >
-> Task Workflow ensures specs are injected to the right context, resulting in higher quality code.
+> Task Workflow ensures code-specs are injected to the right context, resulting in higher quality code.
 > The overhead is minimal, but the benefit is significant.
 
 ---
@@ -81,6 +82,21 @@ For questions or trivial fixes, work directly:
 
 1. Answer question or make the fix
 2. If code was changed, remind user to run `$finish-work`
+
+---
+
+## Complex Task - Brainstorm First
+
+For complex or vague tasks, use the brainstorm process to clarify requirements.
+
+See `$brainstorm` for the full process. Summary:
+
+1. **Acknowledge and classify** - State your understanding
+2. **Create task directory** - Track evolving requirements in `prd.md`
+3. **Ask questions one at a time** - Update PRD after each answer
+4. **Propose approaches** - For architectural decisions
+5. **Confirm final requirements** - Get explicit approval
+6. **Proceed to Task Workflow** - With clear requirements in PRD
 
 ---
 
@@ -95,12 +111,30 @@ For questions or trivial fixes, work directly:
 
 ### Step 1: Understand the Task `[AI]`
 
-Before creating anything, understand what user wants:
+**If coming from Brainstorm:** Skip this step - requirements are already in PRD.
+
+**If Simple Task:** Quick confirm understanding:
 - What is the goal?
 - What type of development? (frontend / backend / fullstack)
 - Any specific requirements or constraints?
 
 If unclear, ask clarifying questions.
+
+### Step 1.5: Code-Spec Depth Requirement (CRITICAL) `[AI]`
+
+If the task touches infra or cross-layer contracts, do not start implementation until code-spec depth is defined.
+
+Trigger this requirement when the change includes any of:
+- New or changed command/API signatures
+- Database schema or migration changes
+- Infra integrations (storage, queue, cache, secrets, env contracts)
+- Cross-layer payload transformations
+
+Must-have before implementation:
+- [ ] Target code-spec files to update are identified
+- [ ] Concrete contract is defined (signature, fields, env keys)
+- [ ] Validation and error matrix is defined
+- [ ] At least one Good/Base/Bad case is defined
 
 ### Step 2: Research the Codebase `[AI]`
 
@@ -256,7 +290,7 @@ If yes, resume from the appropriate step (usually Step 7 or 8).
 
 ## Key Principle
 
-> **Specs are injected, not remembered.**
+> **Code-spec context is injected, not remembered.**
 >
-> The Task Workflow ensures agents receive relevant specs automatically.
+> The Task Workflow ensures agents receive relevant code-spec context automatically.
 > This is more reliable than hoping the AI "remembers" conventions.

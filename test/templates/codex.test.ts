@@ -4,6 +4,7 @@ import { getAllSkills } from "../../src/templates/codex/index.js";
 const EXPECTED_SKILL_NAMES = [
   "before-backend-dev",
   "before-frontend-dev",
+  "brainstorm",
   "break-loop",
   "check-backend",
   "check-cross-layer",
