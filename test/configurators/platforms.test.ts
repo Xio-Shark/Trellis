@@ -10,6 +10,7 @@ import {
 import { AI_TOOLS } from "../../src/types/ai-tools.js";
 import { setWriteMode } from "../../src/utils/file-writer.js";
 import { getAllSkills } from "../../src/templates/codex/index.js";
+import { getAllSkills as getAllKiroSkills } from "../../src/templates/kiro/index.js";
 
 // =============================================================================
 // getConfiguredPlatforms — detects existing platform directories
@@ -59,6 +60,12 @@ describe("getConfiguredPlatforms", () => {
     fs.mkdirSync(path.join(tmpDir, ".agents", "skills"), { recursive: true });
     const result = getConfiguredPlatforms(tmpDir);
     expect(result.has("codex")).toBe(true);
+  });
+
+  it("detects .kiro/skills directory as kiro", () => {
+    fs.mkdirSync(path.join(tmpDir, ".kiro", "skills"), { recursive: true });
+    const result = getConfiguredPlatforms(tmpDir);
+    expect(result.has("kiro")).toBe(true);
   });
 
   it("detects multiple platforms simultaneously", () => {
@@ -132,6 +139,34 @@ describe("configurePlatform", () => {
     const expectedNames = expectedSkills.map((skill) => skill.name).sort();
 
     const skillsRoot = path.join(tmpDir, ".agents", "skills");
+    const actualNames = fs
+      .readdirSync(skillsRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+
+    expect(actualNames).toEqual(expectedNames);
+    expect(actualNames).not.toContain("parallel");
+
+    for (const skill of expectedSkills) {
+      const skillPath = path.join(skillsRoot, skill.name, "SKILL.md");
+      expect(fs.existsSync(skillPath)).toBe(true);
+      expect(fs.readFileSync(skillPath, "utf-8")).toBe(skill.content);
+    }
+  });
+
+  it("configurePlatform('kiro') creates .kiro/skills directory", async () => {
+    await configurePlatform("kiro", tmpDir);
+    expect(fs.existsSync(path.join(tmpDir, ".kiro", "skills"))).toBe(true);
+  });
+
+  it("configurePlatform('kiro') writes all skill templates", async () => {
+    await configurePlatform("kiro", tmpDir);
+
+    const expectedSkills = getAllKiroSkills();
+    const expectedNames = expectedSkills.map((skill) => skill.name).sort();
+
+    const skillsRoot = path.join(tmpDir, ".kiro", "skills");
     const actualNames = fs
       .readdirSync(skillsRoot, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())

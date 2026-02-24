@@ -58,6 +58,9 @@ trellis init --codex -u your-name
 # 或包含 Kilo CLI 支持
 trellis init --kilo -u your-name
 
+# 或包含 Kiro Code Skills 支持
+trellis init --kiro -u your-name
+
 # 3. 启动 Claude Code，开始干活
 ```
 
@@ -140,7 +143,7 @@ trellis init --kilo -u your-name
 
 - [ ] **更好的代码审查** — 更完善的自动化审查流程
 - [ ] **Skill 包** — 预置工作流包，即插即用
-- [ ] **更广泛的工具支持** — Cursor、OpenCode、Codex 集成
+- [ ] **更广泛的工具支持** — Cursor、OpenCode、Codex、Kiro 集成
 - [ ] **更强的会话连续性** — 自动保存全会话历史
 - [ ] **可视化并行会话** — 实时查看每个 Agent 的进度
 

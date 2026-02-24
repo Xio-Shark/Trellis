@@ -141,6 +141,30 @@ export function getKiloTemplatePath(): string {
 }
 
 /**
+ * Get the path to the kiro templates directory.
+ *
+ * This reads from src/templates/kiro/ (development) or dist/templates/kiro/ (production).
+ * These are GENERIC templates, not the Trellis project's own .kiro/ configuration.
+ */
+export function getKiroTemplatePath(): string {
+  const templatePath = path.join(__dirname, "kiro");
+  if (fs.existsSync(templatePath)) {
+    return templatePath;
+  }
+
+  throw new Error(
+    "Could not find kiro templates directory. Expected at templates/kiro/",
+  );
+}
+
+/**
+ * @deprecated Use getKiroTemplatePath() instead.
+ */
+export function getKiroSourcePath(): string {
+  return getKiroTemplatePath();
+}
+
+/**
  * Read a file from the .trellis directory
  * @param relativePath - Path relative to .trellis/ (e.g., 'scripts/task.py')
  * @returns File content as string

@@ -488,7 +488,7 @@ function shouldExcludeFromBackup(relativePath: string): boolean {
 
 /**
  * Create complete snapshot backup of all managed directories
- * Backs up .trellis, .claude, .cursor, .iflow, .opencode directories entirely
+ * Backs up all managed platform/workflow directories entirely
  * (excluding user data like workspace/, tasks/, backlog/)
  */
 function createFullBackup(cwd: string): string | null {
@@ -862,11 +862,7 @@ export function cleanupEmptyDirs(cwd: string, dirPath: string): void {
       fs.rmdirSync(fullPath);
       // Recursively check parent (but stop at root directories)
       const parent = path.dirname(dirPath);
-      if (
-        parent !== "." &&
-        parent !== dirPath &&
-        !isManagedRootDir(parent)
-      ) {
+      if (parent !== "." && parent !== dirPath && !isManagedRootDir(parent)) {
         cleanupEmptyDirs(cwd, parent);
       }
     }
@@ -1324,7 +1320,7 @@ export async function update(options: UpdateOptions): Promise<void> {
       console.log(chalk.cyan("═".repeat(60)));
       console.log(
         chalk.bgRed.white.bold(" ⚠️  BREAKING CHANGES ") +
-          chalk.red.bold(" Review the changes above carefully!")
+          chalk.red.bold(" Review the changes above carefully!"),
       );
       if (preConfirmMetadata.changelog.length > 0) {
         console.log("");
@@ -1334,7 +1330,7 @@ export async function update(options: UpdateOptions): Promise<void> {
         console.log("");
         console.log(
           chalk.bgGreen.black.bold(" 💡 RECOMMENDED ") +
-            chalk.green.bold(" Run with --migrate to complete the migration")
+            chalk.green.bold(" Run with --migrate to complete the migration"),
         );
       }
       console.log(chalk.cyan("═".repeat(60)));
@@ -1363,7 +1359,7 @@ export async function update(options: UpdateOptions): Promise<void> {
     return;
   }
 
-  // Create complete backup of .trellis, .claude, .cursor, .iflow, .opencode directories
+  // Create complete backup of all managed platform/workflow directories
   const backupDir = createFullBackup(cwd);
 
   if (backupDir) {
@@ -1428,7 +1424,10 @@ export async function update(options: UpdateOptions): Promise<void> {
       fs.writeFileSync(file.path, file.newContent);
 
       // Make scripts executable
-      if (file.relativePath.endsWith(".sh") || file.relativePath.endsWith(".py")) {
+      if (
+        file.relativePath.endsWith(".sh") ||
+        file.relativePath.endsWith(".py")
+      ) {
         fs.chmodSync(file.path, "755");
       }
 
@@ -1444,7 +1443,10 @@ export async function update(options: UpdateOptions): Promise<void> {
       fs.writeFileSync(file.path, file.newContent);
 
       // Make scripts executable
-      if (file.relativePath.endsWith(".sh") || file.relativePath.endsWith(".py")) {
+      if (
+        file.relativePath.endsWith(".sh") ||
+        file.relativePath.endsWith(".py")
+      ) {
         fs.chmodSync(file.path, "755");
       }
 
@@ -1464,7 +1466,10 @@ export async function update(options: UpdateOptions): Promise<void> {
 
       if (action === "overwrite") {
         fs.writeFileSync(file.path, file.newContent);
-        if (file.relativePath.endsWith(".sh") || file.relativePath.endsWith(".py")) {
+        if (
+          file.relativePath.endsWith(".sh") ||
+          file.relativePath.endsWith(".py")
+        ) {
           fs.chmodSync(file.path, "755");
         }
         console.log(chalk.yellow(`  ✓ Overwritten: ${file.relativePath}`));
@@ -1608,7 +1613,11 @@ export async function update(options: UpdateOptions): Promise<void> {
         prdContent += `**Assignee**: ${currentDeveloper}\n\n`;
         prdContent += `## Status\n\n- [ ] Review migration guide\n- [ ] Update custom files\n- [ ] Run \`trellis update --migrate\`\n- [ ] Test workflows\n\n`;
 
-        for (const { version, guide, aiInstructions } of metadata.migrationGuides) {
+        for (const {
+          version,
+          guide,
+          aiInstructions,
+        } of metadata.migrationGuides) {
           prdContent += `---\n\n## v${version} Migration Guide\n\n`;
           prdContent += guide;
           prdContent += "\n\n";
@@ -1629,15 +1638,19 @@ export async function update(options: UpdateOptions): Promise<void> {
         console.log(chalk.bgCyan.black.bold(" 📋 MIGRATION TASK CREATED "));
         console.log(
           chalk.cyan(
-            `A task has been created to help you complete the migration:`
-          )
+            `A task has been created to help you complete the migration:`,
+          ),
         );
-        console.log(chalk.white(`   ${DIR_NAMES.WORKFLOW}/${DIR_NAMES.TASKS}/${taskDirName}/`));
+        console.log(
+          chalk.white(
+            `   ${DIR_NAMES.WORKFLOW}/${DIR_NAMES.TASKS}/${taskDirName}/`,
+          ),
+        );
         console.log("");
         console.log(
           chalk.gray(
-            "Use AI to help: Ask Claude/Cursor to read the task and fix your custom files."
-          )
+            "Use AI to help: Ask Claude/Cursor to read the task and fix your custom files.",
+          ),
         );
       }
     }
@@ -1654,7 +1667,7 @@ export async function update(options: UpdateOptions): Promise<void> {
       if (finalMetadata.breaking) {
         console.log(
           chalk.bgRed.white.bold(" ⚠️  BREAKING CHANGES ") +
-            chalk.red.bold(" This update contains breaking changes!")
+            chalk.red.bold(" This update contains breaking changes!"),
         );
         console.log("");
       }
@@ -1670,10 +1683,10 @@ export async function update(options: UpdateOptions): Promise<void> {
       if (finalMetadata.recommendMigrate && !options.migrate) {
         console.log(
           chalk.bgGreen.black.bold(" 💡 RECOMMENDED ") +
-            chalk.green.bold(" Run with --migrate to complete the migration")
+            chalk.green.bold(" Run with --migrate to complete the migration"),
         );
         console.log(
-          chalk.gray("   This will remove legacy files and apply all changes.")
+          chalk.gray("   This will remove legacy files and apply all changes."),
         );
         console.log("");
       }

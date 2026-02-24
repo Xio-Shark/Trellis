@@ -453,6 +453,11 @@ describe("regression: platform additions (beta.9, beta.13, beta.16)", () => {
     expect(AI_TOOLS.codex.configDir).toBe(".agents/skills");
   });
 
+  it("[kiro] Kiro platform is registered", () => {
+    expect(AI_TOOLS).toHaveProperty("kiro");
+    expect(AI_TOOLS.kiro.configDir).toBe(".kiro/skills");
+  });
+
   it("[beta.9] all platforms have consistent required fields", () => {
     for (const id of PLATFORM_IDS) {
       const tool = AI_TOOLS[id];
@@ -488,6 +493,11 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
     expect(commonCliAdapter).toContain(".agents");
   });
 
+  it("[kiro] cli_adapter.py supports kiro platform", () => {
+    expect(commonCliAdapter).toContain('"kiro"');
+    expect(commonCliAdapter).toContain(".kiro");
+  });
+
   it("[beta.9] cli_adapter.py has detect_platform function", () => {
     expect(commonCliAdapter).toContain("def detect_platform");
   });
@@ -505,6 +515,7 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
     expect(commonCliAdapter).toContain(".opencode");
     expect(commonCliAdapter).toContain(".iflow");
     expect(commonCliAdapter).toContain(".agents");
+    expect(commonCliAdapter).toContain(".kiro");
   });
 });
 

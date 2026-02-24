@@ -7,11 +7,13 @@ import {
   getOpenCodeTemplatePath,
   getIflowTemplatePath,
   getKiloTemplatePath,
+  getKiroTemplatePath,
   getTrellisSourcePath,
   getCursorSourcePath,
   getClaudeSourcePath,
   getIflowSourcePath,
   getOpenCodeSourcePath,
+  getKiroSourcePath,
   readTrellisFile,
   readTemplate,
   readScript,
@@ -62,6 +64,12 @@ describe("template path functions", () => {
     expect(fs.existsSync(p)).toBe(true);
     expect(fs.statSync(p).isDirectory()).toBe(true);
   });
+
+  it("getKiroTemplatePath returns existing directory", () => {
+    const p = getKiroTemplatePath();
+    expect(fs.existsSync(p)).toBe(true);
+    expect(fs.statSync(p).isDirectory()).toBe(true);
+  });
 });
 
 // =============================================================================
@@ -87,6 +95,10 @@ describe("deprecated source path aliases", () => {
 
   it("getOpenCodeSourcePath equals getOpenCodeTemplatePath", () => {
     expect(getOpenCodeSourcePath()).toBe(getOpenCodeTemplatePath());
+  });
+
+  it("getKiroSourcePath equals getKiroTemplatePath", () => {
+    expect(getKiroSourcePath()).toBe(getKiroTemplatePath());
   });
 });
 

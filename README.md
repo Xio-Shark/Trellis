@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-<strong>All-in-one AI framework & toolkit for Claude Code, Cursor, iFlow & Codex</strong><br/>
+<strong>All-in-one AI framework & toolkit for Claude Code, Cursor, iFlow, Codex & Kiro Code</strong><br/>
 <sub>Wild AI ships nothing.</sub>
 </p>
 
@@ -57,6 +57,9 @@ trellis init --codex -u your-name
 
 # Or include Kilo CLI support
 trellis init --kilo -u your-name
+
+# Or include Kiro Code skills support
+trellis init --kiro -u your-name
 
 # 3. Start Claude Code and begin working
 ```
@@ -140,7 +143,7 @@ Create commands like `/trellis:before-frontend-dev` that load component guidelin
 
 - [ ] **Better Code Review** — More thorough automated review workflow
 - [ ] **Skill Packs** — Pre-built workflow packs, plug and play
-- [ ] **Broader Tool Support** — Cursor, OpenCode, Codex integration
+- [ ] **Broader Tool Support** — Cursor, OpenCode, Codex, Kiro integration
 - [ ] **Stronger Session Continuity** — Autosave session-wide history
 - [ ] **Visual Parallel Sessions** — Real-time progress for each agent
 

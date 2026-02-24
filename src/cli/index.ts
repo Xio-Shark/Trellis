@@ -66,6 +66,7 @@ program
   .option("--opencode", "Include OpenCode commands")
   .option("--codex", "Include Codex skills")
   .option("--kilo", "Include Kilo CLI commands")
+  .option("--kiro", "Include Kiro Code skills")
   .option("-y, --yes", "Skip prompts and use defaults")
   .option(
     "-u, --user <name>",

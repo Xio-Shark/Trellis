@@ -13,7 +13,8 @@ export type AITool =
   | "opencode"
   | "iflow"
   | "codex"
-  | "kilo";
+  | "kilo"
+  | "kiro";
 
 /**
  * Template directory categories
@@ -25,10 +26,11 @@ export type TemplateDir =
   | "opencode"
   | "iflow"
   | "codex"
-  | "kilo";
+  | "kilo"
+  | "kiro";
 
 /**
- * CLI flag names for platform selection (e.g., --claude, --cursor, --kilo)
+ * CLI flag names for platform selection (e.g., --claude, --cursor, --kilo, --kiro)
  * Must match keys in InitOptions (src/commands/init.ts)
  */
 export type CliFlag =
@@ -37,7 +39,8 @@ export type CliFlag =
   | "opencode"
   | "iflow"
   | "codex"
-  | "kilo";
+  | "kilo"
+  | "kiro";
 
 /**
  * Configuration for an AI tool
@@ -114,6 +117,14 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     templateDirs: ["common", "kilo"],
     configDir: ".kilocode",
     cliFlag: "kilo",
+    defaultChecked: false,
+    hasPythonHooks: false,
+  },
+  kiro: {
+    name: "Kiro Code",
+    templateDirs: ["common", "kiro"],
+    configDir: ".kiro/skills",
+    cliFlag: "kiro",
     defaultChecked: false,
     hasPythonHooks: false,
   },
