@@ -29,9 +29,8 @@ Otherwise, if task-specific research is needed:
    - If `path` is a directory → Read all `.md` files in it
 
 Project spec locations for reference:
-- `.trellis/spec/shared/` - Cross-project common specs
-- `.trellis/spec/frontend/` - Frontend standards
 - `.trellis/spec/backend/` - Backend standards
+- `.trellis/spec/frontend/` - Frontend standards
 - `.trellis/spec/guides/` - Thinking guides
 - `.trellis/big-question/` - Known issues and pitfalls
 
