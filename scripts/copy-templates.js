@@ -12,7 +12,9 @@
  * - src/templates/iflow/ - iFlow CLI commands, agents, hooks
  * - src/templates/opencode/ - OpenCode commands, agents, hooks
  * - src/templates/codex/ - Codex skills
+ * - src/templates/kilo/ - Kilo CLI commands
  * - src/templates/kiro/ - Kiro Code skills
+ * - src/templates/gemini/ - Gemini CLI commands (TOML)
  * - src/templates/markdown/ - Markdown templates (spec, guides)
  *
  * Note: We NO LONGER copy from the project's own .trellis/, .cursor/, .claude/

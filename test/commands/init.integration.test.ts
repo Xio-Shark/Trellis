@@ -65,6 +65,7 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".agents", "skills"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".kiro", "skills"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".gemini"))).toBe(false);
 
     // Root files
     expect(fs.existsSync(path.join(tmpDir, "AGENTS.md"))).toBe(true);
@@ -79,6 +80,7 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".opencode"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".agents", "skills"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".kiro", "skills"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".gemini"))).toBe(false);
   });
 
   it("#3 multi platform creates all selected platform directories", async () => {
@@ -90,6 +92,7 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".iflow"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".agents", "skills"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".kiro", "skills"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".gemini"))).toBe(false);
   });
 
   it("#3b codex platform creates .agents/skills", async () => {
@@ -100,6 +103,7 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".agents", "skills", "parallel"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".gemini"))).toBe(false);
   });
 
   it("#3c kiro platform creates .kiro/skills", async () => {
@@ -108,6 +112,15 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".kiro", "skills"))).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".kiro", "skills", "start", "SKILL.md"))).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".kiro", "skills", "parallel"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".gemini"))).toBe(false);
+  });
+
+  it("#3e gemini platform creates .gemini/commands/trellis", async () => {
+    await init({ yes: true, gemini: true });
+    expect(fs.existsSync(path.join(tmpDir, ".gemini", "commands", "trellis"))).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, ".gemini", "commands", "trellis", "start.toml"))).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(false);
   });

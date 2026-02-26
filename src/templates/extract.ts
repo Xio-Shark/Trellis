@@ -264,6 +264,41 @@ export function readKiloFile(relativePath: string): string {
 }
 
 /**
+ * Get the path to the gemini templates directory.
+ *
+ * This reads from src/templates/gemini/ (development) or dist/templates/gemini/ (production).
+ * These are GENERIC templates, not the Trellis project's own .gemini/ configuration.
+ */
+export function getGeminiTemplatePath(): string {
+  const templatePath = path.join(__dirname, "gemini");
+  if (fs.existsSync(templatePath)) {
+    return templatePath;
+  }
+
+  throw new Error(
+    "Could not find gemini templates directory. Expected at templates/gemini/",
+  );
+}
+
+/**
+ * @deprecated Use getGeminiTemplatePath() instead.
+ */
+export function getGeminiSourcePath(): string {
+  return getGeminiTemplatePath();
+}
+
+/**
+ * Read a file from the .gemini directory (dogfooding)
+ * @param relativePath - Path relative to .gemini/ (e.g., 'commands/trellis/start.toml')
+ * @returns File content as string
+ */
+export function readGeminiFile(relativePath: string): string {
+  const geminiPath = getGeminiTemplatePath();
+  const filePath = path.join(geminiPath, relativePath);
+  return fs.readFileSync(filePath, "utf-8");
+}
+
+/**
  * Copy a directory from .trellis/ to target, making scripts executable
  * Uses writeFile to handle file conflicts with the global writeMode setting
  * @param srcRelativePath - Source path relative to .trellis/ (e.g., 'scripts')

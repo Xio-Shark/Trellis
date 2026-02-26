@@ -8,12 +8,14 @@ import {
   getIflowTemplatePath,
   getKiloTemplatePath,
   getKiroTemplatePath,
+  getGeminiTemplatePath,
   getTrellisSourcePath,
   getCursorSourcePath,
   getClaudeSourcePath,
   getIflowSourcePath,
   getOpenCodeSourcePath,
   getKiroSourcePath,
+  getGeminiSourcePath,
   readTrellisFile,
   readTemplate,
   readScript,
@@ -22,6 +24,7 @@ import {
   readClaudeFile,
   readOpenCodeFile,
   readKiloFile,
+  readGeminiFile,
 } from "../../src/templates/extract.js";
 
 // =============================================================================
@@ -70,6 +73,12 @@ describe("template path functions", () => {
     expect(fs.existsSync(p)).toBe(true);
     expect(fs.statSync(p).isDirectory()).toBe(true);
   });
+
+  it("getGeminiTemplatePath returns existing directory", () => {
+    const p = getGeminiTemplatePath();
+    expect(fs.existsSync(p)).toBe(true);
+    expect(fs.statSync(p).isDirectory()).toBe(true);
+  });
 });
 
 // =============================================================================
@@ -99,6 +108,10 @@ describe("deprecated source path aliases", () => {
 
   it("getKiroSourcePath equals getKiroTemplatePath", () => {
     expect(getKiroSourcePath()).toBe(getKiroTemplatePath());
+  });
+
+  it("getGeminiSourcePath equals getGeminiTemplatePath", () => {
+    expect(getGeminiSourcePath()).toBe(getGeminiTemplatePath());
   });
 });
 
@@ -223,5 +236,14 @@ describe("readKiloFile", () => {
         }
       }
     }
+  });
+});
+
+describe("readGeminiFile", () => {
+  it("reads a toml file from gemini templates", () => {
+    const content = readGeminiFile("commands/trellis/start.toml");
+    expect(typeof content).toBe("string");
+    expect(content.length).toBeGreaterThan(0);
+    expect(content).toContain("description = ");
   });
 });

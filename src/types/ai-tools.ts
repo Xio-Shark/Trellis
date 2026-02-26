@@ -14,7 +14,8 @@ export type AITool =
   | "iflow"
   | "codex"
   | "kilo"
-  | "kiro";
+  | "kiro"
+  | "gemini";
 
 /**
  * Template directory categories
@@ -27,7 +28,8 @@ export type TemplateDir =
   | "iflow"
   | "codex"
   | "kilo"
-  | "kiro";
+  | "kiro"
+  | "gemini";
 
 /**
  * CLI flag names for platform selection (e.g., --claude, --cursor, --kilo, --kiro)
@@ -40,7 +42,8 @@ export type CliFlag =
   | "iflow"
   | "codex"
   | "kilo"
-  | "kiro";
+  | "kiro"
+  | "gemini";
 
 /**
  * Configuration for an AI tool
@@ -125,6 +128,14 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     templateDirs: ["common", "kiro"],
     configDir: ".kiro/skills",
     cliFlag: "kiro",
+    defaultChecked: false,
+    hasPythonHooks: false,
+  },
+  gemini: {
+    name: "Gemini CLI",
+    templateDirs: ["common", "gemini"],
+    configDir: ".gemini",
+    cliFlag: "gemini",
     defaultChecked: false,
     hasPythonHooks: false,
   },

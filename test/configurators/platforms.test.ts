@@ -11,6 +11,7 @@ import { AI_TOOLS } from "../../src/types/ai-tools.js";
 import { setWriteMode } from "../../src/utils/file-writer.js";
 import { getAllSkills } from "../../src/templates/codex/index.js";
 import { getAllSkills as getAllKiroSkills } from "../../src/templates/kiro/index.js";
+import { getAllCommands as getAllGeminiCommands } from "../../src/templates/gemini/index.js";
 
 // =============================================================================
 // getConfiguredPlatforms — detects existing platform directories
@@ -66,6 +67,12 @@ describe("getConfiguredPlatforms", () => {
     fs.mkdirSync(path.join(tmpDir, ".kiro", "skills"), { recursive: true });
     const result = getConfiguredPlatforms(tmpDir);
     expect(result.has("kiro")).toBe(true);
+  });
+
+  it("detects .gemini directory as gemini", () => {
+    fs.mkdirSync(path.join(tmpDir, ".gemini"), { recursive: true });
+    const result = getConfiguredPlatforms(tmpDir);
+    expect(result.has("gemini")).toBe(true);
   });
 
   it("detects multiple platforms simultaneously", () => {
@@ -180,6 +187,54 @@ describe("configurePlatform", () => {
       const skillPath = path.join(skillsRoot, skill.name, "SKILL.md");
       expect(fs.existsSync(skillPath)).toBe(true);
       expect(fs.readFileSync(skillPath, "utf-8")).toBe(skill.content);
+    }
+  });
+
+  it("configurePlatform('gemini') creates .gemini directory", async () => {
+    await configurePlatform("gemini", tmpDir);
+    expect(fs.existsSync(path.join(tmpDir, ".gemini"))).toBe(true);
+  });
+
+  it("configurePlatform('gemini') writes all command templates as .toml", async () => {
+    await configurePlatform("gemini", tmpDir);
+
+    const expectedCommands = getAllGeminiCommands();
+    const expectedNames = expectedCommands.map((cmd) => cmd.name).sort();
+
+    const commandsDir = path.join(tmpDir, ".gemini", "commands", "trellis");
+    expect(fs.existsSync(commandsDir)).toBe(true);
+
+    const actualFiles = fs.readdirSync(commandsDir).sort();
+    const actualNames = actualFiles.map((f) => f.replace(".toml", "")).sort();
+
+    expect(actualNames).toEqual(expectedNames);
+
+    for (const cmd of expectedCommands) {
+      const filePath = path.join(commandsDir, `${cmd.name}.toml`);
+      expect(fs.existsSync(filePath)).toBe(true);
+      expect(fs.readFileSync(filePath, "utf-8")).toBe(cmd.content);
+    }
+  });
+
+  it("configurePlatform('gemini') does not include compiled artifacts", async () => {
+    await configurePlatform("gemini", tmpDir);
+
+    const walk = (dir: string): string[] => {
+      const files: string[] = [];
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) files.push(...walk(full));
+        else files.push(entry.name);
+      }
+      return files;
+    };
+
+    const allFiles = walk(path.join(tmpDir, ".gemini"));
+    for (const file of allFiles) {
+      expect(file).not.toMatch(/\.js$/);
+      expect(file).not.toMatch(/\.d\.ts$/);
+      expect(file).not.toMatch(/\.js\.map$/);
+      expect(file).not.toMatch(/\.d\.ts\.map$/);
     }
   });
 

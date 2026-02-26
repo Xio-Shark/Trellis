@@ -93,6 +93,37 @@ When you've made similar changes to multiple files:
 
 ---
 
+## Gotcha: Python if/elif/else Exhaustive Check
+
+**Problem**: Python's if/elif/else chains have no compile-time exhaustive check. When you add a new value to a `Literal` type (e.g., `Platform`), existing if/elif/else chains silently fall through to `else` with wrong defaults.
+
+**Symptom**: New platform works partially — some methods return Claude defaults instead of platform-specific values. No error is raised.
+
+**Example** (`cli_adapter.py`):
+```python
+# BAD: "gemini" falls through to else, returns "claude"
+@property
+def cli_name(self) -> str:
+    if self.platform == "opencode":
+        return "opencode"
+    else:
+        return "claude"  # gemini silently gets "claude"!
+
+# GOOD: explicit branch for every platform
+@property
+def cli_name(self) -> str:
+    if self.platform == "opencode":
+        return "opencode"
+    elif self.platform == "gemini":
+        return "gemini"
+    else:
+        return "claude"
+```
+
+**Prevention**: When adding a new value to a Python `Literal` type, search for ALL if/elif/else chains that switch on that type and add explicit branches. Don't rely on `else` being correct for new values.
+
+---
+
 ## Template File Registration (Trellis-specific)
 
 When adding new files to `src/templates/trellis/scripts/`:
