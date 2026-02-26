@@ -79,7 +79,7 @@
     "dist",
     "bin",
     "README.md",
-    "LICENSE.md"
+    "LICENSE"
   ],
   "repository": {
     "type": "git",
