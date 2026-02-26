@@ -86,25 +86,135 @@ Ready for your task. What would you like to work on?
 
 ---
 
-## Working on Tasks
+## Task Classification
 
-### For Simple Tasks
+When user describes a task, classify it:
 
-1. Read relevant code-spec docs based on task type `[AI]`
-2. Implement the task directly `[AI]`
-3. Remind user to run `/trellis-finish-work` before committing `[USER]`
+| Type | Criteria | Workflow |
+|------|----------|----------|
+| **Question** | User asks about code, architecture, or how something works | Answer directly |
+| **Trivial Fix** | Typo fix, comment update, single-line change, < 5 minutes | Direct Edit |
+| **Simple Task** | Clear goal, 1-2 files, well-defined scope | Quick confirm → Task Workflow |
+| **Complex Task** | Vague goal, multiple files, architectural decisions | **Brainstorm → Task Workflow** |
 
-### For Complex Tasks (Vague or Multi-Step)
+### Decision Rule
+
+> **If in doubt, use Brainstorm + Task Workflow.**
+>
+> Task Workflow ensures code-specs are injected to the right context, resulting in higher quality code.
+> The overhead is minimal, but the benefit is significant.
+
+---
+
+## Question / Trivial Fix
+
+For questions or trivial fixes, work directly:
+
+1. Answer question or make the fix
+2. If code was changed, remind user to run `/trellis-finish-work`
+
+---
+
+## Simple Task
+
+For simple, well-defined tasks:
+
+1. Quick confirm: "I understand you want to [goal]. Ready to proceed?"
+2. If yes, proceed to **Task Workflow Phase 1 Path B** (create task, write PRD, then research)
+3. If no, clarify and confirm again
+
+---
+
+## Complex Task - Brainstorm First
 
 For complex or vague tasks, use `/trellis-brainstorm` first to clarify requirements before implementation.
 
-#### Step 1: Create Task `[AI]`
+Summary:
 
-```bash
-python3 ./.trellis/scripts/task.py create "<title>" --slug <name>
+1. **Acknowledge and classify** - State your understanding
+2. **Create task directory** - Track evolving requirements in `prd.md`
+3. **Ask questions one at a time** - Update PRD after each answer
+4. **Propose approaches** - For architectural decisions
+5. **Confirm final requirements** - Get explicit approval
+6. **Proceed to Task Workflow** - With clear requirements in PRD
+
+---
+
+## Task Workflow (Development Tasks)
+
+**Why this workflow?**
+- Run a dedicated research pass before coding
+- Configure specs in jsonl context files
+- Implement using injected context
+- Verify with a separate check pass
+- Result: Code that follows project conventions automatically
+
+### Overview: Two Entry Points
+
+```
+From Brainstorm (Complex Task):
+  PRD confirmed → Research → Configure Context → Activate → Implement → Check → Complete
+
+From Simple Task:
+  Confirm → Create Task → Write PRD → Research → Configure Context → Activate → Implement → Check → Complete
 ```
 
-#### Step 1.5: Code-Spec Depth Requirement (CRITICAL) `[AI]`
+**Key principle: Research happens AFTER requirements are clear (PRD exists).**
+
+---
+
+### Phase 1: Establish Requirements
+
+#### Path A: From Brainstorm (skip to Phase 2)
+
+PRD and task directory already exist from brainstorm. Skip directly to Phase 2.
+
+#### Path B: From Simple Task
+
+**Step 1: Confirm Understanding** `[AI]`
+
+Quick confirm:
+- What is the goal?
+- What type of development? (frontend / backend / fullstack)
+- Any specific requirements or constraints?
+
+If unclear, ask clarifying questions.
+
+**Step 2: Create Task Directory** `[AI]`
+
+```bash
+TASK_DIR=$(python3 ./.trellis/scripts/task.py create "<title>" --slug <name>)
+```
+
+**Step 3: Write PRD** `[AI]`
+
+Create `prd.md` in the task directory with:
+
+```markdown
+# <Task Title>
+
+## Goal
+<What we're trying to achieve>
+
+## Requirements
+- <Requirement 1>
+- <Requirement 2>
+
+## Acceptance Criteria
+- [ ] <Criterion 1>
+- [ ] <Criterion 2>
+
+## Technical Notes
+<Any technical decisions or constraints>
+```
+
+---
+
+### Phase 2: Prepare for Implementation (shared)
+
+> Both paths converge here. PRD and task directory must exist before proceeding.
+
+**Step 4: Code-Spec Depth Check** `[AI]`
 
 If the task touches infra or cross-layer contracts, do not start implementation until code-spec depth is defined.
 
@@ -114,28 +224,86 @@ Trigger this requirement when the change includes any of:
 - Infra integrations (storage, queue, cache, secrets, env contracts)
 - Cross-layer payload transformations
 
-Must-have before implementation:
+Must-have before proceeding:
 - [ ] Target code-spec files to update are identified
 - [ ] Concrete contract is defined (signature, fields, env keys)
 - [ ] Validation and error matrix is defined
 - [ ] At least one Good/Base/Bad case is defined
 
-#### Step 2: Implement and Verify `[AI]`
+**Step 5: Research the Codebase** `[AI]`
 
-1. Read relevant code-spec docs
-2. Implement the task
-3. Run lint and type checks
+Based on the confirmed PRD, run a focused research pass and produce:
 
-#### Step 3: Complete
+1. Relevant spec files in `.trellis/spec/`
+2. Existing code patterns to follow (2-3 examples)
+3. Files that will likely need modification
 
-1. Verify typecheck and lint pass `[AI]`
-2. Remind user to test
-3. Remind user to commit
-4. Remind user to run `/trellis-record-session` `[USER]`
-5. Archive task `[AI]`:
-   ```bash
-   python3 ./.trellis/scripts/task.py archive <task-name>
-   ```
+Use this output format:
+
+```markdown
+## Relevant Specs
+- <path>: <why it's relevant>
+
+## Code Patterns Found
+- <pattern>: <example file path>
+
+## Files to Modify
+- <path>: <what change>
+```
+
+**Step 6: Configure Context** `[AI]`
+
+Initialize default context:
+
+```bash
+python3 ./.trellis/scripts/task.py init-context "$TASK_DIR" <type>
+# type: backend | frontend | fullstack
+```
+
+Add specs found in your research pass:
+
+```bash
+# For each relevant spec and code pattern:
+python3 ./.trellis/scripts/task.py add-context "$TASK_DIR" implement "<path>" "<reason>"
+python3 ./.trellis/scripts/task.py add-context "$TASK_DIR" check "<path>" "<reason>"
+```
+
+**Step 7: Activate Task** `[AI]`
+
+```bash
+python3 ./.trellis/scripts/task.py start "$TASK_DIR"
+```
+
+This sets `.current-task` so hooks can inject context.
+
+---
+
+### Phase 3: Execute (shared)
+
+**Step 8: Implement** `[AI]`
+
+Implement the task described in `prd.md`.
+
+- Follow all specs injected into implement context
+- Keep changes scoped to requirements
+- Run lint and typecheck before finishing
+
+**Step 9: Check Quality** `[AI]`
+
+Run a quality pass against check context:
+
+- Review all code changes against the specs
+- Fix issues directly
+- Ensure lint and typecheck pass
+
+**Step 10: Complete** `[AI]`
+
+1. Verify lint and typecheck pass
+2. Report what was implemented
+3. Remind user to:
+   - Test the changes
+   - Commit when ready
+   - Run `/trellis-record-session` to record this session
 
 ---
 

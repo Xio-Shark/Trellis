@@ -85,6 +85,16 @@ For questions or trivial fixes, work directly:
 
 ---
 
+## Simple Task
+
+For simple, well-defined tasks:
+
+1. Quick confirm: "I understand you want to [goal]. Ready to proceed?"
+2. If yes, proceed to **Task Workflow Phase 1 Path B** (create task, write PRD, then research)
+3. If no, clarify and confirm again
+
+---
+
 ## Complex Task - Brainstorm First
 
 For complex or vague tasks, use the brainstorm process to clarify requirements.
@@ -109,84 +119,44 @@ See `$brainstorm` for the full process. Summary:
 - Verify with a separate check pass
 - Result: Code that follows project conventions automatically
 
-### Step 1: Understand the Task `[AI]`
+### Overview: Two Entry Points
 
-**If coming from Brainstorm:** Skip this step - requirements are already in PRD.
+```
+From Brainstorm (Complex Task):
+  PRD confirmed → Research → Configure Context → Activate → Implement → Check → Complete
 
-**If Simple Task:** Quick confirm understanding:
+From Simple Task:
+  Confirm → Create Task → Write PRD → Research → Configure Context → Activate → Implement → Check → Complete
+```
+
+**Key principle: Research happens AFTER requirements are clear (PRD exists).**
+
+---
+
+### Phase 1: Establish Requirements
+
+#### Path A: From Brainstorm (skip to Phase 2)
+
+PRD and task directory already exist from brainstorm. Skip directly to Phase 2.
+
+#### Path B: From Simple Task
+
+**Step 1: Confirm Understanding** `[AI]`
+
+Quick confirm:
 - What is the goal?
 - What type of development? (frontend / backend / fullstack)
 - Any specific requirements or constraints?
 
 If unclear, ask clarifying questions.
 
-### Step 1.5: Code-Spec Depth Requirement (CRITICAL) `[AI]`
-
-If the task touches infra or cross-layer contracts, do not start implementation until code-spec depth is defined.
-
-Trigger this requirement when the change includes any of:
-- New or changed command/API signatures
-- Database schema or migration changes
-- Infra integrations (storage, queue, cache, secrets, env contracts)
-- Cross-layer payload transformations
-
-Must-have before implementation:
-- [ ] Target code-spec files to update are identified
-- [ ] Concrete contract is defined (signature, fields, env keys)
-- [ ] Validation and error matrix is defined
-- [ ] At least one Good/Base/Bad case is defined
-
-### Step 2: Research the Codebase `[AI]`
-
-Run a focused research pass and produce:
-
-1. Relevant spec files in `.trellis/spec/`
-2. Existing code patterns to follow (2-3 examples)
-3. Files that will likely need modification
-4. Suggested task slug
-
-Use this output format:
-
-```markdown
-## Relevant Specs
-- <path>: <why it's relevant>
-
-## Code Patterns Found
-- <pattern>: <example file path>
-
-## Files to Modify
-- <path>: <what change>
-
-## Suggested Task Name
-- <short-slug-name>
-```
-
-### Step 3: Create Task Directory `[AI]`
-
-Based on research results:
+**Step 2: Create Task Directory** `[AI]`
 
 ```bash
-TASK_DIR=$(python3 ./.trellis/scripts/task.py create "<title from research>" --slug <suggested-slug>)
+TASK_DIR=$(python3 ./.trellis/scripts/task.py create "<title>" --slug <name>)
 ```
 
-### Step 4: Configure Context `[AI]`
-
-Initialize default context:
-
-```bash
-python3 ./.trellis/scripts/task.py init-context "$TASK_DIR" <type>
-# type: backend | frontend | fullstack
-```
-
-Add specs found in your research pass:
-
-```bash
-# For each relevant spec and code pattern:
-python3 ./.trellis/scripts/task.py add-context "$TASK_DIR" implement "<path>" "<reason>"
-python3 ./.trellis/scripts/task.py add-context "$TASK_DIR" check "<path>" "<reason>"
-```
-
-### Step 5: Write Requirements `[AI]`
+**Step 3: Write PRD** `[AI]`
 
 Create `prd.md` in the task directory with:
 
@@ -208,7 +178,67 @@ Create `prd.md` in the task directory with:
 <Any technical decisions or constraints>
 ```
 
-### Step 6: Activate Task `[AI]`
+---
+
+### Phase 2: Prepare for Implementation (shared)
+
+> Both paths converge here. PRD and task directory must exist before proceeding.
+
+**Step 4: Code-Spec Depth Check** `[AI]`
+
+If the task touches infra or cross-layer contracts, do not start implementation until code-spec depth is defined.
+
+Trigger this requirement when the change includes any of:
+- New or changed command/API signatures
+- Database schema or migration changes
+- Infra integrations (storage, queue, cache, secrets, env contracts)
+- Cross-layer payload transformations
+
+Must-have before proceeding:
+- [ ] Target code-spec files to update are identified
+- [ ] Concrete contract is defined (signature, fields, env keys)
+- [ ] Validation and error matrix is defined
+- [ ] At least one Good/Base/Bad case is defined
+
+**Step 5: Research the Codebase** `[AI]`
+
+Based on the confirmed PRD, run a focused research pass and produce:
+
+1. Relevant spec files in `.trellis/spec/`
+2. Existing code patterns to follow (2-3 examples)
+3. Files that will likely need modification
+
+Use this output format:
+
+```markdown
+## Relevant Specs
+- <path>: <why it's relevant>
+
+## Code Patterns Found
+- <pattern>: <example file path>
+
+## Files to Modify
+- <path>: <what change>
+```
+
+**Step 6: Configure Context** `[AI]`
+
+Initialize default context:
+
+```bash
+python3 ./.trellis/scripts/task.py init-context "$TASK_DIR" <type>
+# type: backend | frontend | fullstack
+```
+
+Add specs found in your research pass:
+
+```bash
+# For each relevant spec and code pattern:
+python3 ./.trellis/scripts/task.py add-context "$TASK_DIR" implement "<path>" "<reason>"
+python3 ./.trellis/scripts/task.py add-context "$TASK_DIR" check "<path>" "<reason>"
+```
+
+**Step 7: Activate Task** `[AI]`
 
 ```bash
 python3 ./.trellis/scripts/task.py start "$TASK_DIR"
@@ -216,7 +246,11 @@ python3 ./.trellis/scripts/task.py start "$TASK_DIR"
 
 This sets `.current-task` so hooks can inject context.
 
-### Step 7: Implement `[AI]`
+---
+
+### Phase 3: Execute (shared)
+
+**Step 8: Implement** `[AI]`
 
 Implement the task described in `prd.md`.
 
@@ -224,7 +258,7 @@ Implement the task described in `prd.md`.
 - Keep changes scoped to requirements
 - Run lint and typecheck before finishing
 
-### Step 8: Check Quality `[AI]`
+**Step 9: Check Quality** `[AI]`
 
 Run a quality pass against check context:
 
@@ -232,7 +266,7 @@ Run a quality pass against check context:
 - Fix issues directly
 - Ensure lint and typecheck pass
 
-### Step 9: Complete `[AI]`
+**Step 10: Complete** `[AI]`
 
 1. Verify lint and typecheck pass
 2. Report what was implemented
