@@ -14,7 +14,7 @@
   ".trellis/scripts/add-session.sh": "a8341a5cb45cb3282ab62ac55f74c8db04064d060faa0e60d2420fa760ca4f55",
   ".trellis/scripts/create-bootstrap.sh": "932a83a2e98f1d8feebec2e7166c5e1aabbd9700eea7a22ccde377b018fe6fce",
   ".trellis/worktree.yaml": "c57de79e40d5f748f099625ed4a17d5f0afbf25cac598aced0b3c964e7b7c226",
-  ".trellis/.gitignore": "f032dbd3b6ac929914b945e9655161499a3512debd5932e8df6523c022b1377e",
+  ".trellis/.gitignore": "c549b846e9ce389521afe4738a1dc3ea5531f762d98413d41ed2c3651b2f09ca",
   ".trellis/workflow.md": "028891d1fe839a266f0fc4d3b219b19d21791ae57cd65a21e0699f3f9fb5536f",
   ".claude/commands/before-backend-dev.md": "7e35444de2a5779ef39944f17f566ea21d2ed7f4994246f4cfe6ebf9a11dd3e3",
   ".claude/commands/before-frontend-dev.md": "a6225f9d123dbd4a7aec822652030cae50be3f5b308297015e04d42b23a27b2a",
@@ -56,10 +56,12 @@
   ".trellis/spec/guides/index.md": "c41ea8dd33dc9ae01b376f2bf66c6b2f80e699d84a895ca87d55c7a44368d2d5",
   ".trellis/spec/guides/cross-layer-thinking-guide.md": "b89b09d8356f9985a838613d425e15e97bd4b5b9e8640cfe0c941d97fb152ef6",
   ".trellis/spec/guides/code-reuse-thinking-guide.md": "e768d4937198ccfacfb927a27e6ee731766a7dd2de0d770a3d7293ea6e3f19d5",
-  ".trellis/scripts/common/cli_adapter.py": "fa5df20e22f323d67ea7a9d0d9432ec0523496b143f86c89b3eac7adea78bdfe",
+  ".trellis/scripts/common/cli_adapter.py": "786f9a39fc68d7ce642641f457cdd531fee9265c1a9344d3f506b941ee404a47",
   ".trellis/scripts/multi_agent/start.py": "786ec4a97a7f149697c9b4e9807443a583901f1af35acc9bac0c48734fc39399",
   ".trellis/scripts/multi_agent/plan.py": "25f59dca80e3932a71dd5e7d6e62a3a1ece45538e902bfee88657159dc80f53b",
   ".cursor/commands/trellis-integrate-skill.md": "bb15144c308939abfd41cb008da71088910b6ec432c763ab4c0762dd6f0819e8",
   ".cursor/commands/trellis-onboard.md": "ebfbe707f428f036b7d716061dfc33187b940ef9acdf3f824d1c43d1e2035ecb",
-  ".trellis/scripts/common/registry.py": "19ae676b713e93e630f9ee78e3703b717aefc0cc2287fa11d999943257b42f35"
+  ".trellis/scripts/common/registry.py": "6c65db45a487ef839b0a4b5b20abe201547269c20c7257254293a89dc01b56dc",
+  ".cursor/commands/trellis-brainstorm.md": "719aa93f3f0d21daa04c5b204c2314186d48bc5f2a9d7db2f299bb5a5d2c950d",
+  ".trellis/scripts/task.py": "f1427f7015ad22020731af44e7c992308f563fe8f60b6943956612c9f85c9af1"
 }

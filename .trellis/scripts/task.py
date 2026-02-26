@@ -147,7 +147,6 @@ def get_implement_base() -> list[dict]:
     """Get base implement context entries."""
     return [
         {"file": f"{DIR_WORKFLOW}/workflow.md", "reason": "Project workflow and conventions"},
-        {"file": f"{DIR_WORKFLOW}/{DIR_SPEC}/shared/index.md", "reason": "Shared coding standards"},
     ]
 
 
@@ -155,8 +154,6 @@ def get_implement_backend() -> list[dict]:
     """Get backend implement context entries."""
     return [
         {"file": f"{DIR_WORKFLOW}/{DIR_SPEC}/backend/index.md", "reason": "Backend development guide"},
-        {"file": f"{DIR_WORKFLOW}/{DIR_SPEC}/backend/api-module.md", "reason": "API module conventions"},
-        {"file": f"{DIR_WORKFLOW}/{DIR_SPEC}/backend/quality.md", "reason": "Code quality requirements"},
     ]
 
 
@@ -164,7 +161,6 @@ def get_implement_frontend() -> list[dict]:
     """Get frontend implement context entries."""
     return [
         {"file": f"{DIR_WORKFLOW}/{DIR_SPEC}/frontend/index.md", "reason": "Frontend development guide"},
-        {"file": f"{DIR_WORKFLOW}/{DIR_SPEC}/frontend/components.md", "reason": "Component conventions"},
     ]
 
 
@@ -174,7 +170,6 @@ def get_check_context(dev_type: str, repo_root: Path) -> list[dict]:
 
     entries = [
         {"file": adapter.get_trellis_command_path("finish-work"), "reason": "Finish work checklist"},
-        {"file": f"{DIR_WORKFLOW}/{DIR_SPEC}/shared/index.md", "reason": "Shared coding standards"},
     ]
 
     if dev_type in ("backend", "fullstack"):
@@ -189,9 +184,7 @@ def get_debug_context(dev_type: str, repo_root: Path) -> list[dict]:
     """Get debug context entries."""
     adapter = get_cli_adapter_auto(repo_root)
 
-    entries = [
-        {"file": f"{DIR_WORKFLOW}/{DIR_SPEC}/shared/index.md", "reason": "Shared coding standards"},
-    ]
+    entries: list[dict] = []
 
     if dev_type in ("backend", "fullstack"):
         entries.append({"file": adapter.get_trellis_command_path("check-backend"), "reason": "Backend check spec"})
