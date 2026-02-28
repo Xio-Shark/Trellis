@@ -261,4 +261,17 @@ describe("update() integration", () => {
     // Version updated to current
     expect(fs.readFileSync(versionPath, "utf-8")).toBe(VERSION);
   });
+
+  it("#12 prerelease→stable upgrade with no file changes still updates .version", async () => {
+    await setupProject();
+
+    // Simulate a project at rc.6 (identical templates, just different version stamp)
+    const versionPath = path.join(tmpDir, DIR_NAMES.WORKFLOW, ".version");
+    fs.writeFileSync(versionPath, "0.3.0-rc.6");
+
+    await update({});
+
+    // .version must be updated to the current CLI version
+    expect(fs.readFileSync(versionPath, "utf-8")).toBe(VERSION);
+  });
 });

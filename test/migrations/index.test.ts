@@ -109,6 +109,22 @@ describe("getMigrationsForVersion", () => {
     const migrations = getMigrationsForVersion("0.0.1", "0.0.2");
     expect(migrations).toEqual([]);
   });
+
+  it("returns empty array for prerelease→stable when all migrations already applied", () => {
+    // rc.6 users already have all beta.0 migrations applied
+    const migrations = getMigrationsForVersion("0.3.0-rc.6", "0.3.0");
+    expect(migrations).toEqual([]);
+  });
+
+  it("returns beta.0 migrations for 0.2.x→0.3.0 stable upgrade", () => {
+    const migrations = getMigrationsForVersion("0.2.15", "0.3.0");
+    // Should include the beta.0 shell→python migrations (renames + deletes)
+    expect(migrations.length).toBeGreaterThan(0);
+    const renames = migrations.filter((m) => m.type === "rename");
+    const deletes = migrations.filter((m) => m.type === "delete");
+    expect(renames.length).toBeGreaterThan(0);
+    expect(deletes.length).toBeGreaterThan(0);
+  });
 });
 
 // =============================================================================
@@ -177,6 +193,12 @@ describe("getMigrationMetadata", () => {
     expect(metadata.breaking).toBe(false);
     expect(metadata.recommendMigrate).toBe(false);
     expect(metadata.migrationGuides).toEqual([]);
+  });
+
+  it("returns breaking=true for 0.2.x→0.3.0 upgrade", () => {
+    const metadata = getMigrationMetadata("0.2.15", "0.3.0");
+    expect(metadata.breaking).toBe(true);
+    expect(metadata.recommendMigrate).toBe(true);
   });
 
   it("migration guides have version and guide fields", () => {

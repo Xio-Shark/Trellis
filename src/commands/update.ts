@@ -1292,12 +1292,22 @@ export async function update(options: UpdateOptions): Promise<void> {
   ) {
     if (isSameVersion) {
       console.log(chalk.green("✓ Already up to date!"));
-    } else if (isUpgrade) {
-      console.log(
-        chalk.green(
-          `✓ No file changes needed for ${projectVersion} → ${cliVersion}`,
-        ),
-      );
+    } else {
+      // Version changed but no file changes needed — still update the version stamp
+      updateVersionFile(cwd);
+      if (isUpgrade) {
+        console.log(
+          chalk.green(
+            `✓ No file changes needed for ${projectVersion} → ${cliVersion}`,
+          ),
+        );
+      } else if (isDowngrade) {
+        console.log(
+          chalk.green(
+            `✓ No file changes needed for ${projectVersion} → ${cliVersion} (downgrade)`,
+          ),
+        );
+      }
     }
     return;
   }

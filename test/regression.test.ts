@@ -572,6 +572,27 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
 // 6. Cross-version Migration Consistency
 // =============================================================================
 
+describe("regression: prerelease→stable version stamp (rc.6→0.3.0)", () => {
+  it("[0.3.0] rc→stable upgrade returns no migrations (all already applied)", () => {
+    const migrations = getMigrationsForVersion("0.3.0-rc.6", "0.3.0");
+    expect(migrations).toEqual([]);
+  });
+
+  it("[0.3.0] 0.3.0 manifest exists and is well-formed", () => {
+    const versions = getAllMigrationVersions();
+    expect(versions).toContain("0.3.0");
+  });
+
+  it("[0.3.0] prerelease sorts before stable in version ordering", () => {
+    const versions = getAllMigrationVersions();
+    const rcIdx = versions.indexOf("0.3.0-rc.6");
+    const stableIdx = versions.indexOf("0.3.0");
+    expect(rcIdx).not.toBe(-1);
+    expect(stableIdx).not.toBe(-1);
+    expect(rcIdx).toBeLessThan(stableIdx);
+  });
+});
+
 describe("regression: migration manifest consistency", () => {
   it("all manifest JSON files are loaded", () => {
     const manifestDir = path.join(
