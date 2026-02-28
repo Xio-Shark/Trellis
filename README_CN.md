@@ -20,9 +20,11 @@
 <a href="https://github.com/mindfold-ai/Trellis/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-green.svg?style=flat-square" alt="license" /></a>
 <a href="https://github.com/mindfold-ai/Trellis/stargazers"><img src="https://img.shields.io/github/stars/mindfold-ai/Trellis?style=flat-square&color=yellow" alt="stars" /></a>
 <a href="https://discord.com/invite/tWcCZ3aRHc"><img src="https://img.shields.io/badge/Discord-Join-7289DA?style=flat-square&logo=discord&logoColor=white" alt="Discord" /></a>
+<a href="https://docs.trytrellis.app/zh"><img src="https://img.shields.io/badge/文档-trytrellis.app-8B5CF6?style=flat-square" alt="文档" /></a>
 </p>
 
 <p align="center">
+<a href="https://docs.trytrellis.app/zh">文档</a> •
 <a href="#快速开始">快速开始</a> •
 <a href="#为什么要用-trellis">为什么要用 Trellis</a> •
 <a href="#使用场景">使用场景</a> •
@@ -196,6 +198,7 @@ Skills 是可选的——AI 可能跳过，导致质量不稳定。Trellis 通�
 
 ## 详细文档
 
+- [官方文档](https://docs.trytrellis.app/zh) — 完整指南、教程与参考
 - [完整使用指南](docs/guide-zh.md) — 系统架构、工作流、CLI 命令参考
 - [用 K8s 理解 Trellis](docs/use-k8s-to-know-trellis-zh.md) — 如果你熟悉 Kubernetes，这篇文章可以帮你快速理解设计思想
 

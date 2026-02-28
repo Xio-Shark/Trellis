@@ -20,9 +20,11 @@
 <a href="https://github.com/mindfold-ai/Trellis/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-green.svg?style=flat-square" alt="license" /></a>
 <a href="https://github.com/mindfold-ai/Trellis/stargazers"><img src="https://img.shields.io/github/stars/mindfold-ai/Trellis?style=flat-square&color=yellow" alt="stars" /></a>
 <a href="https://discord.com/invite/tWcCZ3aRHc"><img src="https://img.shields.io/badge/Discord-Join-7289DA?style=flat-square&logo=discord&logoColor=white" alt="Discord" /></a>
+<a href="https://docs.trytrellis.app/"><img src="https://img.shields.io/badge/Docs-trytrellis.app-8B5CF6?style=flat-square" alt="Docs" /></a>
 </p>
 
 <p align="center">
+<a href="https://docs.trytrellis.app/">Docs</a> •
 <a href="#quick-start">Quick Start</a> •
 <a href="#why-trellis">Why Trellis</a> •
 <a href="#use-cases">Use Cases</a> •
@@ -196,6 +198,7 @@ Use `/trellis:record-session` at the end of each conversation. AI writes a sessi
 
 ## Community
 
+- [Documentation](https://docs.trytrellis.app/) — Full guides, API reference & tutorials
 - [Discord](https://discord.com/invite/tWcCZ3aRHc) — Join the conversation
 - [GitHub Issues](https://github.com/mindfold-ai/Trellis/issues) — Report bugs & request features
 
