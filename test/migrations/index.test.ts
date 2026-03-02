@@ -118,12 +118,12 @@ describe("getMigrationsForVersion", () => {
 
   it("returns beta.0 migrations for 0.2.x→0.3.0 stable upgrade", () => {
     const migrations = getMigrationsForVersion("0.2.15", "0.3.0");
-    // Should include the beta.0 shell→python migrations (renames + deletes)
+    // Should include the beta.0 shell→python migrations (all renames, no deletes)
     expect(migrations.length).toBeGreaterThan(0);
     const renames = migrations.filter((m) => m.type === "rename");
     const deletes = migrations.filter((m) => m.type === "delete");
     expect(renames.length).toBeGreaterThan(0);
-    expect(deletes.length).toBeGreaterThan(0);
+    expect(deletes.length).toBe(0);
   });
 });
 

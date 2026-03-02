@@ -423,6 +423,43 @@ describe("regression: hook JSON format (beta.7)", () => {
   });
 });
 
+describe("regression: SessionStart reinject on clear/compact (MIN-231)", () => {
+  it("[MIN-231] Claude SessionStart hooks cover startup, clear, and compact", () => {
+    const settings = JSON.parse(claudeSettingsTemplate);
+    const matchers = settings.hooks.SessionStart.map(
+      (e: { matcher: string }) => e.matcher,
+    );
+    expect(matchers).toEqual(
+      expect.arrayContaining(["startup", "clear", "compact"]),
+    );
+  });
+
+  it("[MIN-231] iFlow SessionStart hooks cover startup, clear, and compact", () => {
+    const settings = JSON.parse(iflowSettingsTemplate);
+    const matchers = settings.hooks.SessionStart.map(
+      (e: { matcher: string }) => e.matcher,
+    );
+    expect(matchers).toEqual(
+      expect.arrayContaining(["startup", "clear", "compact"]),
+    );
+  });
+
+  it("[MIN-231] all SessionStart matchers invoke session-start.py", () => {
+    for (const [label, template] of [
+      ["claude", claudeSettingsTemplate],
+      ["iflow", iflowSettingsTemplate],
+    ] as const) {
+      const settings = JSON.parse(template);
+      for (const entry of settings.hooks.SessionStart) {
+        expect(
+          entry.hooks[0].command,
+          `${label} ${entry.matcher} should invoke session-start.py`,
+        ).toContain("session-start.py");
+      }
+    }
+  });
+});
+
 describe("regression: backslash in markdown templates (beta.12)", () => {
   it("[beta.12] Claude command templates do not contain problematic backslash sequences", () => {
     const commands = getClaudeCommands();
@@ -639,12 +676,47 @@ describe("regression: migration manifest consistency", () => {
     }
   });
 
-  it("[beta.0] shell-to-python migration has both renames and deletes", () => {
+  it("[beta.0] shell-to-python migration uses only renames (no deletes)", () => {
     const migrations = getMigrationsForVersion("0.2.15", "0.3.0-beta.0");
     const renames = migrations.filter((m) => m.type === "rename");
     const deletes = migrations.filter((m) => m.type === "delete");
     expect(renames.length).toBeGreaterThan(0);
-    expect(deletes.length).toBeGreaterThan(0);
+    expect(deletes.length).toBe(0);
+  });
+
+  it("[#57] shell archive migrations use rename type with correct from/to paths", () => {
+    const migrations = getMigrationsForVersion("0.2.15", "0.3.0-beta.0");
+    const shellArchives = migrations.filter(
+      (m) => m.to?.includes("scripts-shell-archive"),
+    );
+    // 19 shell scripts should be archived
+    expect(shellArchives.length).toBe(19);
+    for (const m of shellArchives) {
+      expect(m.type).toBe("rename");
+      expect(m.from).toMatch(/\.trellis\/scripts\/.*\.sh$/);
+      expect(m.to).toMatch(/\.trellis\/scripts-shell-archive\/.*\.sh$/);
+      // The filename should be preserved
+      const fromFile = m.from.split("/").pop();
+      const toFile = (m.to as string).split("/").pop();
+      expect(toFile).toBe(fromFile);
+    }
+  });
+
+  it("[#57] shell archive covers all three subdirectories", () => {
+    const migrations = getMigrationsForVersion("0.2.15", "0.3.0-beta.0");
+    const shellArchives = migrations.filter(
+      (m) => m.to?.includes("scripts-shell-archive"),
+    );
+    const topLevel = shellArchives.filter(
+      (m) => !m.from.includes("/common/") && !m.from.includes("/multi-agent/"),
+    );
+    const common = shellArchives.filter((m) => m.from.includes("/common/"));
+    const multiAgent = shellArchives.filter((m) =>
+      m.from.includes("/multi-agent/"),
+    );
+    expect(topLevel.length).toBe(6);
+    expect(common.length).toBe(8);
+    expect(multiAgent.length).toBe(5);
   });
 
   it("[0.2.14] command namespace migration renames exist", () => {
