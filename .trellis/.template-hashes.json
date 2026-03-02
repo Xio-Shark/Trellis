@@ -63,5 +63,6 @@
   ".cursor/commands/trellis-onboard.md": "ebfbe707f428f036b7d716061dfc33187b940ef9acdf3f824d1c43d1e2035ecb",
   ".trellis/scripts/common/registry.py": "6c65db45a487ef839b0a4b5b20abe201547269c20c7257254293a89dc01b56dc",
   ".cursor/commands/trellis-brainstorm.md": "719aa93f3f0d21daa04c5b204c2314186d48bc5f2a9d7db2f299bb5a5d2c950d",
-  ".trellis/scripts/task.py": "f1427f7015ad22020731af44e7c992308f563fe8f60b6943956612c9f85c9af1"
+  ".trellis/scripts/task.py": "f1427f7015ad22020731af44e7c992308f563fe8f60b6943956612c9f85c9af1",
+  ".claude/settings.json": "bb541b0fd6ede50323414f9499dc219d429c1c8ac18f0b4c834a1f3c2091740f"
 }
