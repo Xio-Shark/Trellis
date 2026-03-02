@@ -108,7 +108,7 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
       const files = new Map<string, string>();
       // Commands
       for (const cmd of getIflowCommands()) {
-        files.set(`.iflow/commands/${cmd.name}.md`, cmd.content);
+        files.set(`.iflow/commands/trellis/${cmd.name}.md`, cmd.content);
       }
       // Agents
       for (const agent of getIflowAgents()) {

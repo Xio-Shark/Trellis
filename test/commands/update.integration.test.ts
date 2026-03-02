@@ -274,4 +274,50 @@ describe("update() integration", () => {
     // .version must be updated to the current CLI version
     expect(fs.readFileSync(versionPath, "utf-8")).toBe(VERSION);
   });
+
+  it("#13 update does not recreate removed spec/frontend dir (backend-only project)", async () => {
+    await setupProject();
+
+    // Simulate user deleted frontend spec (backend-only project)
+    const frontendSpecDir = path.join(tmpDir, PATHS.SPEC, "frontend");
+    fs.rmSync(frontendSpecDir, { recursive: true, force: true });
+
+    // Remove frontend hashes so update doesn't think they're "deleted files"
+    const hashFile = path.join(tmpDir, DIR_NAMES.WORKFLOW, ".template-hashes.json");
+    const hashes = JSON.parse(fs.readFileSync(hashFile, "utf-8")) as Record<string, string>;
+    const filtered = Object.fromEntries(
+      Object.entries(hashes).filter(([key]) => !key.includes("spec/frontend/")),
+    );
+    fs.writeFileSync(hashFile, JSON.stringify(filtered, null, 2));
+
+    await update({ force: true });
+
+    // Frontend spec dir should NOT be recreated
+    expect(fs.existsSync(frontendSpecDir)).toBe(false);
+    // Backend spec should still exist
+    expect(fs.existsSync(path.join(tmpDir, PATHS.SPEC, "backend"))).toBe(true);
+  });
+
+  it("#14 update does not recreate removed spec/backend dir (frontend-only project)", async () => {
+    await setupProject();
+
+    // Simulate user deleted backend spec (frontend-only project)
+    const backendSpecDir = path.join(tmpDir, PATHS.SPEC, "backend");
+    fs.rmSync(backendSpecDir, { recursive: true, force: true });
+
+    // Remove backend hashes
+    const hashFile = path.join(tmpDir, DIR_NAMES.WORKFLOW, ".template-hashes.json");
+    const hashes = JSON.parse(fs.readFileSync(hashFile, "utf-8")) as Record<string, string>;
+    const filtered = Object.fromEntries(
+      Object.entries(hashes).filter(([key]) => !key.includes("spec/backend/")),
+    );
+    fs.writeFileSync(hashFile, JSON.stringify(filtered, null, 2));
+
+    await update({ force: true });
+
+    // Backend spec dir should NOT be recreated
+    expect(fs.existsSync(backendSpecDir)).toBe(false);
+    // Frontend spec should still exist
+    expect(fs.existsSync(path.join(tmpDir, PATHS.SPEC, "frontend"))).toBe(true);
+  });
 });

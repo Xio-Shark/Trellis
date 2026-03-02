@@ -135,7 +135,9 @@ Integration tests are effective at finding **cross-module inconsistencies**:
 
 2. **Template list mismatch**: `update` listed files not created by `init`, causing phantom "new file" detections on same-version update.
 
-Both bugs were invisible to unit tests (which test modules in isolation) but immediately surfaced when testing the full init→update flow.
+3. **Project-type-conditional templates ignored**: `createSpecTemplates()` accepted `projectType` but ignored it (`_projectType`), always creating both backend + frontend specs. `collectTemplateFiles()` unconditionally included all spec files regardless of which dirs existed. Pure backend projects got empty frontend spec dirs on init, and update always tracked frontend files even when the dir was removed.
+
+All three bugs were invisible to unit tests (which test modules in isolation) but immediately surfaced when testing the full init→update flow.
 
 ---
 

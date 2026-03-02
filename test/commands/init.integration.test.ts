@@ -252,4 +252,33 @@ describe("init() integration", () => {
     );
     expect(fs.existsSync(path.join(specDir, "guides", "index.md"))).toBe(true);
   });
+
+  it("#11 backend project init skips frontend spec templates", async () => {
+    // go.mod triggers detectProjectType → "backend"
+    fs.writeFileSync(path.join(tmpDir, "go.mod"), "module example.com/app\n");
+
+    await init({ yes: true });
+
+    const specDir = path.join(tmpDir, PATHS.SPEC);
+    expect(fs.existsSync(path.join(specDir, "backend", "index.md"))).toBe(true);
+    expect(fs.existsSync(path.join(specDir, "frontend"))).toBe(false);
+    expect(fs.existsSync(path.join(specDir, "guides", "index.md"))).toBe(true);
+  });
+
+  it("#12 frontend project init skips backend spec templates", async () => {
+    // vite.config.ts triggers detectProjectType → "frontend"
+    fs.writeFileSync(
+      path.join(tmpDir, "vite.config.ts"),
+      "export default {}\n",
+    );
+
+    await init({ yes: true });
+
+    const specDir = path.join(tmpDir, PATHS.SPEC);
+    expect(fs.existsSync(path.join(specDir, "frontend", "index.md"))).toBe(
+      true,
+    );
+    expect(fs.existsSync(path.join(specDir, "backend"))).toBe(false);
+    expect(fs.existsSync(path.join(specDir, "guides", "index.md"))).toBe(true);
+  });
 });

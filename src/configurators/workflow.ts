@@ -124,7 +124,7 @@ export async function createWorkflowStructure(
 
 async function createSpecTemplates(
   cwd: string,
-  _projectType: ProjectType,
+  projectType: ProjectType,
 ): Promise<void> {
   // Ensure spec directory exists
   ensureDir(path.join(cwd, PATHS.SPEC));
@@ -150,64 +150,68 @@ async function createSpecTemplates(
     );
   }
 
-  // Always create backend spec
-  ensureDir(path.join(cwd, `${PATHS.SPEC}/backend`));
-  const backendDocs: DocDefinition[] = [
-    { name: "index.md", content: backendIndexContent },
-    {
-      name: "directory-structure.md",
-      content: backendDirectoryStructureContent,
-    },
-    {
-      name: "database-guidelines.md",
-      content: backendDatabaseGuidelinesContent,
-    },
-    {
-      name: "logging-guidelines.md",
-      content: backendLoggingGuidelinesContent,
-    },
-    {
-      name: "quality-guidelines.md",
-      content: backendQualityGuidelinesContent,
-    },
-    { name: "error-handling.md", content: backendErrorHandlingContent },
-  ];
+  // Backend spec - created for backend, fullstack, and unknown project types
+  if (projectType !== "frontend") {
+    ensureDir(path.join(cwd, `${PATHS.SPEC}/backend`));
+    const backendDocs: DocDefinition[] = [
+      { name: "index.md", content: backendIndexContent },
+      {
+        name: "directory-structure.md",
+        content: backendDirectoryStructureContent,
+      },
+      {
+        name: "database-guidelines.md",
+        content: backendDatabaseGuidelinesContent,
+      },
+      {
+        name: "logging-guidelines.md",
+        content: backendLoggingGuidelinesContent,
+      },
+      {
+        name: "quality-guidelines.md",
+        content: backendQualityGuidelinesContent,
+      },
+      { name: "error-handling.md", content: backendErrorHandlingContent },
+    ];
 
-  for (const doc of backendDocs) {
-    await writeFile(
-      path.join(cwd, `${PATHS.SPEC}/backend`, doc.name),
-      doc.content,
-    );
+    for (const doc of backendDocs) {
+      await writeFile(
+        path.join(cwd, `${PATHS.SPEC}/backend`, doc.name),
+        doc.content,
+      );
+    }
   }
 
-  // Always create frontend spec
-  ensureDir(path.join(cwd, `${PATHS.SPEC}/frontend`));
-  const frontendDocs: DocDefinition[] = [
-    { name: "index.md", content: frontendIndexContent },
-    {
-      name: "directory-structure.md",
-      content: frontendDirectoryStructureContent,
-    },
-    { name: "type-safety.md", content: frontendTypeSafetyContent },
-    { name: "hook-guidelines.md", content: frontendHookGuidelinesContent },
-    {
-      name: "component-guidelines.md",
-      content: frontendComponentGuidelinesContent,
-    },
-    {
-      name: "quality-guidelines.md",
-      content: frontendQualityGuidelinesContent,
-    },
-    {
-      name: "state-management.md",
-      content: frontendStateManagementContent,
-    },
-  ];
+  // Frontend spec - created for frontend, fullstack, and unknown project types
+  if (projectType !== "backend") {
+    ensureDir(path.join(cwd, `${PATHS.SPEC}/frontend`));
+    const frontendDocs: DocDefinition[] = [
+      { name: "index.md", content: frontendIndexContent },
+      {
+        name: "directory-structure.md",
+        content: frontendDirectoryStructureContent,
+      },
+      { name: "type-safety.md", content: frontendTypeSafetyContent },
+      { name: "hook-guidelines.md", content: frontendHookGuidelinesContent },
+      {
+        name: "component-guidelines.md",
+        content: frontendComponentGuidelinesContent,
+      },
+      {
+        name: "quality-guidelines.md",
+        content: frontendQualityGuidelinesContent,
+      },
+      {
+        name: "state-management.md",
+        content: frontendStateManagementContent,
+      },
+    ];
 
-  for (const doc of frontendDocs) {
-    await writeFile(
-      path.join(cwd, `${PATHS.SPEC}/frontend`, doc.name),
-      doc.content,
-    );
+    for (const doc of frontendDocs) {
+      await writeFile(
+        path.join(cwd, `${PATHS.SPEC}/frontend`, doc.name),
+        doc.content,
+      );
+    }
   }
 }

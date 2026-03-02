@@ -188,52 +188,61 @@ function collectTemplateFiles(cwd: string): Map<string, string> {
     guidesCodeReuseThinkingGuideContent,
   );
 
-  // Spec - backend (created if missing, protected by hash tracking if modified)
-  files.set(`${PATHS.SPEC}/backend/index.md`, backendIndexContent);
-  files.set(
-    `${PATHS.SPEC}/backend/directory-structure.md`,
-    backendDirectoryStructureContent,
-  );
-  files.set(
-    `${PATHS.SPEC}/backend/database-guidelines.md`,
-    backendDatabaseGuidelinesContent,
-  );
-  files.set(
-    `${PATHS.SPEC}/backend/logging-guidelines.md`,
-    backendLoggingGuidelinesContent,
-  );
-  files.set(
-    `${PATHS.SPEC}/backend/quality-guidelines.md`,
-    backendQualityGuidelinesContent,
-  );
-  files.set(
-    `${PATHS.SPEC}/backend/error-handling.md`,
-    backendErrorHandlingContent,
-  );
+  // Spec - backend (only if spec/backend/ exists)
+  const backendSpecDir = path.join(cwd, `${PATHS.SPEC}/backend`);
+  if (fs.existsSync(backendSpecDir)) {
+    files.set(`${PATHS.SPEC}/backend/index.md`, backendIndexContent);
+    files.set(
+      `${PATHS.SPEC}/backend/directory-structure.md`,
+      backendDirectoryStructureContent,
+    );
+    files.set(
+      `${PATHS.SPEC}/backend/database-guidelines.md`,
+      backendDatabaseGuidelinesContent,
+    );
+    files.set(
+      `${PATHS.SPEC}/backend/logging-guidelines.md`,
+      backendLoggingGuidelinesContent,
+    );
+    files.set(
+      `${PATHS.SPEC}/backend/quality-guidelines.md`,
+      backendQualityGuidelinesContent,
+    );
+    files.set(
+      `${PATHS.SPEC}/backend/error-handling.md`,
+      backendErrorHandlingContent,
+    );
+  }
 
-  // Spec - frontend (created if missing, protected by hash tracking if modified)
-  files.set(`${PATHS.SPEC}/frontend/index.md`, frontendIndexContent);
-  files.set(
-    `${PATHS.SPEC}/frontend/directory-structure.md`,
-    frontendDirectoryStructureContent,
-  );
-  files.set(`${PATHS.SPEC}/frontend/type-safety.md`, frontendTypeSafetyContent);
-  files.set(
-    `${PATHS.SPEC}/frontend/hook-guidelines.md`,
-    frontendHookGuidelinesContent,
-  );
-  files.set(
-    `${PATHS.SPEC}/frontend/component-guidelines.md`,
-    frontendComponentGuidelinesContent,
-  );
-  files.set(
-    `${PATHS.SPEC}/frontend/quality-guidelines.md`,
-    frontendQualityGuidelinesContent,
-  );
-  files.set(
-    `${PATHS.SPEC}/frontend/state-management.md`,
-    frontendStateManagementContent,
-  );
+  // Spec - frontend (only if spec/frontend/ exists)
+  const frontendSpecDir = path.join(cwd, `${PATHS.SPEC}/frontend`);
+  if (fs.existsSync(frontendSpecDir)) {
+    files.set(`${PATHS.SPEC}/frontend/index.md`, frontendIndexContent);
+    files.set(
+      `${PATHS.SPEC}/frontend/directory-structure.md`,
+      frontendDirectoryStructureContent,
+    );
+    files.set(
+      `${PATHS.SPEC}/frontend/type-safety.md`,
+      frontendTypeSafetyContent,
+    );
+    files.set(
+      `${PATHS.SPEC}/frontend/hook-guidelines.md`,
+      frontendHookGuidelinesContent,
+    );
+    files.set(
+      `${PATHS.SPEC}/frontend/component-guidelines.md`,
+      frontendComponentGuidelinesContent,
+    );
+    files.set(
+      `${PATHS.SPEC}/frontend/quality-guidelines.md`,
+      frontendQualityGuidelinesContent,
+    );
+    files.set(
+      `${PATHS.SPEC}/frontend/state-management.md`,
+      frontendStateManagementContent,
+    );
+  }
 
   // Platform-specific templates (only for configured platforms)
   for (const platformId of platforms) {
