@@ -1,6 +1,8 @@
 <p align="center">
 <picture>
-<img src="./trellis.png" alt="Trellis" width="520">
+<source srcset="assets/trellis.png" media="(prefers-color-scheme: dark)">
+<source srcset="assets/trellis.png" media="(prefers-color-scheme: light)">
+<img src="assets/trellis.png" alt="Trellis Logo" width="500" style="image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges;">
 </picture>
 </p>
 
