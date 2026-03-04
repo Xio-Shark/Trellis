@@ -66,24 +66,6 @@ import {
 } from "../templates/trellis/index.js";
 
 import {
-  guidesIndexContent,
-  guidesCrossLayerThinkingGuideContent,
-  guidesCodeReuseThinkingGuideContent,
-  // Backend structure (multi-doc)
-  backendIndexContent,
-  backendDirectoryStructureContent,
-  backendDatabaseGuidelinesContent,
-  backendLoggingGuidelinesContent,
-  backendQualityGuidelinesContent,
-  backendErrorHandlingContent,
-  // Frontend structure (multi-doc)
-  frontendIndexContent,
-  frontendDirectoryStructureContent,
-  frontendTypeSafetyContent,
-  frontendHookGuidelinesContent,
-  frontendComponentGuidelinesContent,
-  frontendQualityGuidelinesContent,
-  frontendStateManagementContent,
   // Workspace
   workspaceIndexContent,
 } from "../templates/markdown/index.js";
@@ -123,11 +105,11 @@ interface ChangeAnalysis {
 type ConflictAction = "overwrite" | "skip" | "create-new";
 
 // Paths that should never be touched (true user data)
-// Note: frontend/backend spec dirs removed - they should be created if missing,
-// and existing files are protected by hash-based modification tracking
+// spec/ is user-customized content created during init; update should never modify it
 const PROTECTED_PATHS = [
   `${DIR_NAMES.WORKFLOW}/${DIR_NAMES.WORKSPACE}`, // workspace/
   `${DIR_NAMES.WORKFLOW}/${DIR_NAMES.TASKS}`, // tasks/
+  `${DIR_NAMES.WORKFLOW}/${DIR_NAMES.SPEC}`, // spec/
   `${DIR_NAMES.WORKFLOW}/.developer`,
   `${DIR_NAMES.WORKFLOW}/.current-task`,
 ];
@@ -180,73 +162,6 @@ function collectTemplateFiles(cwd: string): Map<string, string> {
 
   // Workspace index (template file, not user data)
   files.set(`${PATHS.WORKSPACE}/index.md`, workspaceIndexContent);
-
-  // Spec - guides
-  files.set(`${PATHS.SPEC}/guides/index.md`, guidesIndexContent);
-  files.set(
-    `${PATHS.SPEC}/guides/cross-layer-thinking-guide.md`,
-    guidesCrossLayerThinkingGuideContent,
-  );
-  files.set(
-    `${PATHS.SPEC}/guides/code-reuse-thinking-guide.md`,
-    guidesCodeReuseThinkingGuideContent,
-  );
-
-  // Spec - backend (only if spec/backend/ exists)
-  const backendSpecDir = path.join(cwd, `${PATHS.SPEC}/backend`);
-  if (fs.existsSync(backendSpecDir)) {
-    files.set(`${PATHS.SPEC}/backend/index.md`, backendIndexContent);
-    files.set(
-      `${PATHS.SPEC}/backend/directory-structure.md`,
-      backendDirectoryStructureContent,
-    );
-    files.set(
-      `${PATHS.SPEC}/backend/database-guidelines.md`,
-      backendDatabaseGuidelinesContent,
-    );
-    files.set(
-      `${PATHS.SPEC}/backend/logging-guidelines.md`,
-      backendLoggingGuidelinesContent,
-    );
-    files.set(
-      `${PATHS.SPEC}/backend/quality-guidelines.md`,
-      backendQualityGuidelinesContent,
-    );
-    files.set(
-      `${PATHS.SPEC}/backend/error-handling.md`,
-      backendErrorHandlingContent,
-    );
-  }
-
-  // Spec - frontend (only if spec/frontend/ exists)
-  const frontendSpecDir = path.join(cwd, `${PATHS.SPEC}/frontend`);
-  if (fs.existsSync(frontendSpecDir)) {
-    files.set(`${PATHS.SPEC}/frontend/index.md`, frontendIndexContent);
-    files.set(
-      `${PATHS.SPEC}/frontend/directory-structure.md`,
-      frontendDirectoryStructureContent,
-    );
-    files.set(
-      `${PATHS.SPEC}/frontend/type-safety.md`,
-      frontendTypeSafetyContent,
-    );
-    files.set(
-      `${PATHS.SPEC}/frontend/hook-guidelines.md`,
-      frontendHookGuidelinesContent,
-    );
-    files.set(
-      `${PATHS.SPEC}/frontend/component-guidelines.md`,
-      frontendComponentGuidelinesContent,
-    );
-    files.set(
-      `${PATHS.SPEC}/frontend/quality-guidelines.md`,
-      frontendQualityGuidelinesContent,
-    );
-    files.set(
-      `${PATHS.SPEC}/frontend/state-management.md`,
-      frontendStateManagementContent,
-    );
-  }
 
   // Platform-specific templates (only for configured platforms)
   for (const platformId of platforms) {
@@ -483,6 +398,7 @@ const BACKUP_EXCLUDE_PATTERNS = [
   ".backup-", // Previous backups
   "/workspace/", // Developer workspace (user data)
   "/tasks/", // Task data (user data)
+  "/spec/", // Spec files (user-customized content)
   "/backlog/", // Backlog data (user data)
   "/agent-traces/", // Agent traces (user data, legacy name)
 ];

@@ -417,4 +417,22 @@ describe("initializeHashes", () => {
     expect(hashes).not.toHaveProperty(".trellis/tasks/task.json");
     expect(count).toBe(0);
   });
+
+  it("excludes spec/ directory files from hashing", () => {
+    fs.mkdirSync(path.join(tmpDir, ".trellis", "spec", "guides"), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, ".trellis", "spec", "frontend"), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, ".trellis", "spec", "backend"), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, ".trellis", "spec", "guides", "index.md"), "# Guides");
+    fs.writeFileSync(path.join(tmpDir, ".trellis", "spec", "frontend", "index.md"), "# Frontend");
+    fs.writeFileSync(path.join(tmpDir, ".trellis", "spec", "backend", "index.md"), "# Backend");
+
+    const count = initializeHashes(tmpDir);
+    const hashes = loadHashes(tmpDir);
+
+    // All spec/ files should be excluded
+    expect(hashes).not.toHaveProperty(".trellis/spec/guides/index.md");
+    expect(hashes).not.toHaveProperty(".trellis/spec/frontend/index.md");
+    expect(hashes).not.toHaveProperty(".trellis/spec/backend/index.md");
+    expect(count).toBe(0);
+  });
 });
