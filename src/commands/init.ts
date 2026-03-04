@@ -29,6 +29,8 @@ import { initializeHashes } from "../utils/template-hash.js";
 import {
   fetchTemplateIndex,
   downloadTemplateById,
+  TIMEOUTS,
+  TEMPLATE_INDEX_URL,
   type SpecTemplate,
   type TemplateStrategy,
 } from "../utils/template-fetcher.js";
@@ -472,8 +474,22 @@ export async function init(options: InitOptions): Promise<void> {
     selectedTemplate = options.template;
   } else if (!options.yes) {
     // Interactive mode: show template selection
-    console.log(chalk.gray("   Fetching available templates..."));
+    const timeoutSec = TIMEOUTS.INDEX_FETCH_MS / 1000;
+    console.log(
+      chalk.gray(`   Fetching available templates from ${TEMPLATE_INDEX_URL}`),
+    );
+    let elapsed = 0;
+    const ticker = setInterval(() => {
+      elapsed++;
+      process.stdout.write(
+        `\r${chalk.gray(`   Loading... ${elapsed}s/${timeoutSec}s`)}`,
+      );
+    }, 1000);
+    process.stdout.write(chalk.gray(`   Loading... 0s/${timeoutSec}s`));
     const templates = await fetchTemplateIndex();
+    clearInterval(ticker);
+    // Clear the loading line
+    process.stdout.write("\r\x1b[2K");
     fetchedTemplates = templates;
 
     if (templates.length === 0) {

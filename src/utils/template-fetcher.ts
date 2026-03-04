@@ -14,7 +14,7 @@ import { downloadTemplate } from "giget";
 // Constants
 // =============================================================================
 
-const TEMPLATE_INDEX_URL =
+export const TEMPLATE_INDEX_URL =
   "https://raw.githubusercontent.com/mindfold-ai/docs/main/marketplace/index.json";
 
 const TEMPLATE_REPO = "gh:mindfold-ai/docs";
@@ -30,7 +30,7 @@ const INSTALL_PATHS: Record<string, string> = {
 /** Timeout constants for network operations */
 export const TIMEOUTS = {
   /** Timeout for fetching the template index (ms) */
-  INDEX_FETCH_MS: 15_000,
+  INDEX_FETCH_MS: 5_000,
   /** Timeout for downloading a template via giget (ms) */
   DOWNLOAD_MS: 30_000,
 } as const;
