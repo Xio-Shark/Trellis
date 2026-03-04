@@ -71,6 +71,16 @@ function getArgValue(args, flag) {
   return idx !== -1 && idx + 1 < args.length ? args[idx + 1] : null;
 }
 
+/**
+ * Unescape literal \n and \t sequences in a string.
+ * When passing multi-line text via CLI flags (e.g. --changelog "line1\nline2"),
+ * the shell delivers literal backslash + n characters. This function converts
+ * them to real newlines so JSON.stringify produces correct \n escapes.
+ */
+function unescapeLiterals(str) {
+  return str.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+}
+
 function askQuestion(rl, question, defaultValue = "") {
   const prompt = defaultValue ? `${question} [${defaultValue}]: ` : `${question}: `;
   return new Promise((resolve) => {
@@ -103,14 +113,16 @@ async function main() {
 
     const manifest = {
       version,
-      description: descriptionArg,
+      description: unescapeLiterals(descriptionArg),
       breaking: isBreaking,
       recommendMigrate: isBreaking,
-      changelog: changelogArg,
+      changelog: unescapeLiterals(changelogArg),
       migrations: [],
-      notes: notesArg || (isBreaking
-        ? "Review changelog and run with --migrate if needed."
-        : "No migration required."),
+      notes: notesArg
+        ? unescapeLiterals(notesArg)
+        : (isBreaking
+          ? "Review changelog and run with --migrate if needed."
+          : "No migration required."),
     };
 
     fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
