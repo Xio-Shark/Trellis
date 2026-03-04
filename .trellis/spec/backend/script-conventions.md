@@ -211,11 +211,13 @@ def run_command(
 
 ## Cross-Platform Compatibility
 
-### CRITICAL: Windows stdout Encoding
+### CRITICAL: Windows stdio Encoding (stdout + stdin)
 
-On Windows, Python's stdout defaults to the system code page (e.g., GBK/CP936 in China, CP1252 in Western locales). This causes `UnicodeEncodeError` when printing non-ASCII characters.
+On Windows, Python's stdout AND stdin default to the system code page (e.g., GBK/CP936 in China, CP1252 in Western locales). This causes:
+- `UnicodeEncodeError` when **printing** non-ASCII characters (stdout)
+- `UnicodeDecodeError` when **reading piped** UTF-8 content (stdin), e.g. Chinese text via `cat << EOF | python3 script.py`
 
-**The Problem Chain**:
+**The Problem Chain (stdout)**:
 
 ```
 Windows code page = GBK (936)
@@ -229,60 +231,64 @@ json.dumps(ensure_ascii=False) → print()
 GBK cannot encode \ufffd → UnicodeEncodeError: 'gbk' codec can't encode character
 ```
 
-**Root Cause**: Even if you set `PYTHONIOENCODING` in subprocess calls, the **parent process's stdout** still uses the system code page. The error occurs when `print()` tries to write to stdout.
+**The Problem Chain (stdin)**:
+
+```
+AI agent pipes UTF-8 content via heredoc: cat << 'EOF' | python3 add_session.py ...
+    ↓
+Python stdin defaults to GBK encoding (PowerShell default code page)
+    ↓
+sys.stdin.read() decodes bytes as GBK, not UTF-8
+    ↓
+Chinese text garbled or UnicodeDecodeError
+```
+
+**Root Cause**: Even if you set `PYTHONIOENCODING` in subprocess calls, the **parent process's stdio** still uses the system code page.
 
 ---
 
-#### GOOD: Use `sys.stdout.reconfigure()` (Python 3.7+)
+#### GOOD: Centralize encoding fix in `common/__init__.py`
 
-```python
-import sys
-
-# MUST be at the top of the script, before any print() calls
-if sys.platform == "win32":
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-```
-
-**Why this works**: `reconfigure()` modifies the existing stream **in-place**, changing its encoding settings directly. This affects all subsequent writes to stdout.
-
-**Best Practice**: Add this to `common/__init__.py` so all scripts that `from common import ...` automatically get the fix:
+All stdio encoding is handled in one place. Scripts that `from common import ...` automatically get the fix:
 
 ```python
 # common/__init__.py
+import io
 import sys
 
-if sys.platform == "win32":
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+def _configure_stream(stream):
+    """Configure a stream for UTF-8 encoding on Windows."""
+    if hasattr(stream, "reconfigure"):
+        stream.reconfigure(encoding="utf-8", errors="replace")
+        return stream
+    elif hasattr(stream, "detach"):
+        return io.TextIOWrapper(stream.detach(), encoding="utf-8", errors="replace")
+    return stream
 
-# ... rest of exports
+if sys.platform == "win32":
+    sys.stdout = _configure_stream(sys.stdout)
+    sys.stderr = _configure_stream(sys.stderr)
+    sys.stdin = _configure_stream(sys.stdin)    # Don't forget stdin!
 ```
 
 ---
 
-#### BAD: Do NOT use `io.TextIOWrapper`
+#### DON'T: Inline encoding code in individual scripts
 
 ```python
-# BAD - This does NOT reliably fix the encoding issue!
+# BAD - Duplicated in every script, easy to forget stdin
 import sys
-import io
-
 if sys.platform == "win32":
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    # Forgot stdin! Piped Chinese text will break.
 ```
 
-**Why this fails**:
+**Why this is bad**:
+1. **Easy to forget streams**: stdout was fixed but stdin was missed in multiple scripts, causing real user bugs
+2. **Duplicated code**: Same logic copy-pasted across `add_session.py`, `git_context.py`, etc.
+3. **Inconsistent coverage**: Some scripts fix stdout only, others fix stdout+stderr, none fixed stdin
 
-1. **Creates a new wrapper, doesn't fix the underlying issue**: `TextIOWrapper` wraps `sys.stdout.buffer`, but the original stdout object and its encoding settings may still interfere in some code paths.
-
-2. **Loses original stdout properties**: The new wrapper may not preserve all attributes of the original `sys.stdout` (like `isatty()`, line buffering behavior).
-
-3. **Race condition with buffering**: If any output was buffered before the replacement, it may still be encoded with the old encoding.
-
-4. **Not idempotent**: Calling this multiple times creates nested wrappers, while `reconfigure()` is safe to call multiple times.
-
-**Real-world failure case**: Users reported that `io.TextIOWrapper` did not fix the `UnicodeEncodeError` on Windows, while `sys.stdout.reconfigure()` worked immediately.
+**Real-world failure**: Users on Windows reported garbled Chinese text when using `cat << EOF | python3 add_session.py`. Root cause: stdin was never reconfigured to UTF-8.
 
 ---
 
@@ -290,7 +296,8 @@ if sys.platform == "win32":
 
 | Method | Works? | Reason |
 |--------|--------|--------|
-| `sys.stdout.reconfigure(encoding="utf-8")` | ✅ Yes | Modifies stream in-place |
+| `common/__init__.py` centralized fix | ✅ Yes | All streams, all scripts, one place |
+| `sys.stdout.reconfigure(encoding="utf-8")` | ⚠️ Partial | Only stdout; easy to forget stdin/stderr |
 | `io.TextIOWrapper(sys.stdout.buffer, ...)` | ❌ No | Creates wrapper, doesn't fix underlying encoding |
 | `PYTHONIOENCODING=utf-8` env var | ⚠️ Partial | Only works if set **before** Python starts |
 
