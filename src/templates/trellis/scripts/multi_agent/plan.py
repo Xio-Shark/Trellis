@@ -173,6 +173,9 @@ def main() -> int:
     env["http_proxy"] = http_proxy
     env["all_proxy"] = all_proxy
 
+    # Clear nested-session detection so the new CLI process can start
+    env.pop("CLAUDECODE", None)
+
     # Set non-interactive env var based on platform
     env.update(adapter.get_non_interactive_env())
 
