@@ -1,6 +1,6 @@
 # Platform Integration Guide
 
-How to add support for a new AI CLI platform (like Claude Code, Cursor, Gemini CLI, OpenCode, iFlow, Codex, Kilo, Kiro).
+How to add support for a new AI CLI platform (like Claude Code, Cursor, Gemini CLI, OpenCode, iFlow, Codex, Kilo, Kiro, Qoder).
 
 ---
 
@@ -74,7 +74,7 @@ When adding a new platform `{platform}`, update the following:
 
 > Note: OpenCode uses JS plugins instead of Python hooks, has no `index.ts` template module, and has no `collectTemplates` — so `trellis update` does not track OpenCode template files. If a new platform uses JS plugins, follow this pattern.
 
-**Skills pattern** (Codex, Kiro):
+**Skills pattern** (Codex, Kiro, Qoder):
 
 | Directory | Contents |
 |-----------|----------|
@@ -82,7 +82,7 @@ When adding a new platform `{platform}`, update the following:
 | `src/templates/{platform}/index.ts` | Export functions for listing skills |
 | `src/templates/{platform}/skills/<skill-name>/SKILL.md` | Skill definitions |
 
-> Note: Codex/Kiro use skills (not slash commands). Skill content should use `$<skill-name>` / `/skills` semantics, not `/trellis:*` syntax.
+> Note: Codex/Kiro/Qoder use skills (not slash commands). Skill content should use `$<skill-name>` / `/skills` semantics, not `/trellis:*` syntax. Qoder skills use YAML frontmatter (`---\nname: ...\n---`) at the top of each SKILL.md.
 
 **Commands-only pattern** (Cursor, Kilo):
 
@@ -163,8 +163,8 @@ When adding a new platform `{platform}`, update the following:
 | `detect_platform()` | Directory detection logic | Check `.gemini/` exists |
 | `get_commands_path()` | Command directory structure | `commands/trellis/` or `workflows/` |
 | `src/templates/trellis/scripts/common/registry.py` | Update default platform if needed |
-| `src/templates/trellis/scripts/multi_agent/plan.py` | Add to `--platform` choices (only if this platform supports multi-agent runtime) |
-| `src/templates/trellis/scripts/multi_agent/start.py` | Add to `--platform` choices (only if this platform supports multi-agent runtime) |
+| `src/templates/trellis/scripts/multi_agent/plan.py` | Add to `--platform` choices **only if** `build_run_command()` returns a valid command (not `raise ValueError`) |
+| `src/templates/trellis/scripts/multi_agent/start.py` | Add to `--platform` choices **only if** `build_run_command()` returns a valid command (not `raise ValueError`) |
 | `src/templates/trellis/scripts/multi_agent/status.py` | Add platform-specific behavior if needed (only if supported) |
 
 > Note: Python scripts run in user projects at runtime — they cannot import from the TS registry and maintain their own registry in `cli_adapter.py`.
@@ -245,6 +245,7 @@ These are now **automatically derived** from the registry:
 | Kilo | `/trellis:xxx` | Markdown (`.md`) | `/trellis:start` |
 | Codex | `$<skill-name>` / `/skills` | Markdown (`SKILL.md`) | `$start` |
 | Kiro | `$<skill-name>` / `/skills` | Markdown (`SKILL.md`) | `$start` |
+| Qoder | `$<skill-name>` / `/skills` | Markdown (`SKILL.md`) | `$start` |
 | Antigravity | `/<workflow-name>` | Markdown (`.md`) | `/start` |
 
 When creating platform templates, ensure references match the platform's interaction format and file format.
@@ -357,7 +358,41 @@ if sys.platform == "win32":
 
 **Status**: Fixed — `getAllCommands()` now reads from correct subdirectory.
 
-### collectTemplates path drift after directory migration (0.3.1)
+### PRD assumed platform capabilities without research
+
+**Symptom**: Implementation builds the wrong abstraction (e.g., commands instead of skills, or vice versa). Requires major rework after discovery.
+
+**Cause**: PRD was written based on assumptions about how a platform works (e.g., "Trae uses commands like Kilo") without verifying against official documentation or GitHub repos.
+
+**Fix**: Before writing the PRD for a new platform, research the platform's actual extension mechanism:
+- Check official docs for supported formats (skills, commands, rules, workflows)
+- Check the platform's GitHub repo for directory structure conventions
+- Verify how users invoke extensions (slash command, AI-automatic matching, manual mention)
+
+**Prevention**: Add a "Research" step before PRD finalization. The PRD should cite sources for platform capability claims.
+
+### Added IDE-only platform to multi-agent --platform choices
+
+**Symptom**: `python3 plan.py --platform {platform}` accepts the value but fails at `build_run_command()` because the platform has no CLI executable.
+
+**Cause**: Platform was added to `plan.py`/`start.py` `--platform` choices without checking if it supports CLI agents. IDE-only platforms (e.g., Trae, Codex, Kiro) cannot run headless CLI agents.
+
+**Fix**: Only add platforms to `--platform` choices in `plan.py`/`start.py` if they have `supports_cli_agents: true` (i.e., `build_run_command` does NOT raise `ValueError`).
+
+**Rule**: The `--platform` choices in multi-agent scripts should match platforms where `build_run_command()` returns a valid command, not all platforms in the registry.
+
+### Stale platform references in copied templates
+
+**Symptom**: A Qoder skill references "Claude Code" syntax or a Kiro-specific invocation pattern.
+
+**Cause**: When creating templates for a new platform by copying from an existing one, platform-specific references (command syntax, platform names, invocation instructions) weren't updated.
+
+**Fix**: After copying templates, search-and-replace all references to the source platform. Check for:
+- Platform name mentions (e.g., "Claude Code", "Kiro")
+- Command invocation syntax (e.g., `/trellis:xxx` vs `$skill-name`)
+- Config directory references (e.g., `.claude/` vs `.qoder/`)
+
+
 
 **Symptom**: `trellis update` creates iFlow commands at `.iflow/commands/{name}.md` (flat) instead of `.iflow/commands/trellis/{name}.md` (correct).
 
@@ -378,3 +413,4 @@ if sys.platform == "win32":
 | #22 | iFlow CLI | Standard (hooks + agents) | Full platform with Python hooks |
 | feat/gemini branch | Gemini CLI | TOML commands-only | First non-Markdown command format, Cursor-level minimal |
 | main | Antigravity | Workflows (derived from Codex) | No physical templates — runtime adaptation from Codex skills |
+| #71 | Qoder | Skills (like Codex/Kiro) | Skills with YAML frontmatter; Trae was dropped (IDE-only, no deterministic invocation trigger) |

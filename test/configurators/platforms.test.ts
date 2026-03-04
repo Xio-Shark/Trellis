@@ -13,6 +13,7 @@ import { getAllSkills } from "../../src/templates/codex/index.js";
 import { getAllWorkflows as getAllAntigravityWorkflows } from "../../src/templates/antigravity/index.js";
 import { getAllSkills as getAllKiroSkills } from "../../src/templates/kiro/index.js";
 import { getAllCommands as getAllGeminiCommands } from "../../src/templates/gemini/index.js";
+import { getAllSkills as getAllQoderSkills } from "../../src/templates/qoder/index.js";
 
 // =============================================================================
 // getConfiguredPlatforms — detects existing platform directories
@@ -82,6 +83,12 @@ describe("getConfiguredPlatforms", () => {
     fs.mkdirSync(path.join(tmpDir, ".gemini"), { recursive: true });
     const result = getConfiguredPlatforms(tmpDir);
     expect(result.has("gemini")).toBe(true);
+  });
+
+  it("detects .qoder directory as qoder", () => {
+    fs.mkdirSync(path.join(tmpDir, ".qoder"), { recursive: true });
+    const result = getConfiguredPlatforms(tmpDir);
+    expect(result.has("qoder")).toBe(true);
   });
 
   it("detects multiple platforms simultaneously", () => {
@@ -276,6 +283,57 @@ describe("configurePlatform", () => {
       const workflowPath = path.join(workflowsRoot, `${workflow.name}.md`);
       expect(fs.existsSync(workflowPath)).toBe(true);
       expect(fs.readFileSync(workflowPath, "utf-8")).toBe(workflow.content);
+    }
+  });
+
+  it("configurePlatform('qoder') creates .qoder directory", async () => {
+    await configurePlatform("qoder", tmpDir);
+    expect(fs.existsSync(path.join(tmpDir, ".qoder"))).toBe(true);
+  });
+
+  it("configurePlatform('qoder') writes all skill templates", async () => {
+    await configurePlatform("qoder", tmpDir);
+
+    const expectedSkills = getAllQoderSkills();
+    const expectedNames = expectedSkills.map((s) => s.name).sort();
+
+    const skillsDir = path.join(tmpDir, ".qoder", "skills");
+    expect(fs.existsSync(skillsDir)).toBe(true);
+
+    const actualDirs = fs
+      .readdirSync(skillsDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .sort();
+
+    expect(actualDirs).toEqual(expectedNames);
+
+    for (const skill of expectedSkills) {
+      const filePath = path.join(skillsDir, skill.name, "SKILL.md");
+      expect(fs.existsSync(filePath)).toBe(true);
+      expect(fs.readFileSync(filePath, "utf-8")).toBe(skill.content);
+    }
+  });
+
+  it("configurePlatform('qoder') does not include compiled artifacts", async () => {
+    await configurePlatform("qoder", tmpDir);
+
+    const walk = (dir: string): string[] => {
+      const files: string[] = [];
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) files.push(...walk(full));
+        else files.push(entry.name);
+      }
+      return files;
+    };
+
+    const allFiles = walk(path.join(tmpDir, ".qoder"));
+    for (const file of allFiles) {
+      expect(file).not.toMatch(/\.js$/);
+      expect(file).not.toMatch(/\.d\.ts$/);
+      expect(file).not.toMatch(/\.js\.map$/);
+      expect(file).not.toMatch(/\.d\.ts\.map$/);
     }
   });
 
