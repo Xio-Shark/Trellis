@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-<strong>Trellis is an open-source AI coding workflow framework that injects your project standards and task context into every session so AI tools work like they actually know your codebase.</strong><br/>
+<strong>A multi-platform AI coding framework that rules</strong><br/>
 <sub>Supports Claude Code, Cursor, OpenCode, iFlow, Codex, Kilo, Kiro, Gemini CLI, and Antigravity.</sub>
 </p>
 

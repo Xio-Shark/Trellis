@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-<strong>Trellis 是一个开源 AI 编程工作流框架，它会把项目规范和任务上下文注入到每次会话里，让 AI 工具真正按你的代码库方式工作。</strong><br/>
+<strong>给 AI 立规矩的开源框架</strong><br/>
 <sub>支持 Claude Code、Cursor、OpenCode、iFlow、Codex、Kilo、Kiro、Gemini CLI 和 Antigravity。</sub>
 </p>
 
