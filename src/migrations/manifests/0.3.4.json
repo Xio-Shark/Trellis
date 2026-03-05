@@ -13,7 +13,7 @@
     },
     {
       "type": "delete",
-      "path": ".kilocode/commands",
+      "from": ".kilocode/commands",
       "description": "Remove empty commands/ directory after workflow migration"
     }
   ],
