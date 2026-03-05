@@ -104,6 +104,10 @@ When user describes a task, classify it:
 > Task Workflow ensures code-specs are injected to the right context, resulting in higher quality code.
 > The overhead is minimal, but the benefit is significant.
 
+> **Subtask Decomposition**: If brainstorm reveals multiple independent work items,
+> consider creating subtasks using `--parent` flag or `add-subtask` command.
+> See `/trellis:brainstorm` Step 8 for details.
+
 ---
 
 ## Question / Trivial Fix

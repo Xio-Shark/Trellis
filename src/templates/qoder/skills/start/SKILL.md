@@ -73,6 +73,10 @@ When user describes a task, classify it:
 > Task Workflow ensures specs are injected to agents, resulting in higher quality code.
 > The overhead is minimal, but the benefit is significant.
 
+> **Subtask Decomposition**: If a task has multiple independent work items,
+> consider creating subtasks using `--parent` flag or `add-subtask` command.
+> See the brainstorm skill's Step 8 for details.
+
 ---
 
 ## Question / Trivial Fix

@@ -100,6 +100,10 @@ From Simple Task:
 
 **Key principle: Research happens AFTER requirements are clear (PRD exists).**
 
+> **Subtask Decomposition**: For complex tasks with multiple independent work items,
+> consider creating subtasks using `--parent` flag or `add-subtask` command.
+> See `/trellis:brainstorm` Step 8 for details.
+
 ---
 
 ### Phase 1: Establish Requirements

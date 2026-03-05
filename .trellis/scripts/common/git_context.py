@@ -11,7 +11,6 @@ Provides:
 from __future__ import annotations
 
 import json
-import sys
 import subprocess
 from pathlib import Path
 
@@ -127,6 +126,8 @@ def get_context_json(repo_root: Path | None = None) -> dict:
                                 "dir": d.name,
                                 "name": data.get("name") or data.get("id") or "unknown",
                                 "status": data.get("status", "unknown"),
+                                "children": data.get("children", []),
+                                "parent": data.get("parent"),
                             }
                         )
 
@@ -263,6 +264,8 @@ def get_context_text(repo_root: Path | None = None) -> str:
     tasks_dir = get_tasks_dir(repo_root)
     task_count = 0
 
+    # Collect all task data for hierarchy display
+    all_task_data: dict[str, dict] = {}
     if tasks_dir.is_dir():
         for d in sorted(tasks_dir.iterdir()):
             if d.is_dir() and d.name != "archive":
@@ -270,15 +273,47 @@ def get_context_text(repo_root: Path | None = None) -> str:
                 t_json = d / FILE_TASK_JSON
                 status = "unknown"
                 assignee = "-"
+                children: list[str] = []
+                parent: str | None = None
 
                 if t_json.is_file():
                     data = _read_json_file(t_json)
                     if data:
                         status = data.get("status", "unknown")
                         assignee = data.get("assignee", "-")
+                        children = data.get("children", [])
+                        parent = data.get("parent")
 
-                lines.append(f"- {dir_name}/ ({status}) @{assignee}")
-                task_count += 1
+                all_task_data[dir_name] = {
+                    "status": status,
+                    "assignee": assignee,
+                    "children": children,
+                    "parent": parent,
+                }
+
+    def _children_progress(children_list: list[str]) -> str:
+        if not children_list:
+            return ""
+        done = 0
+        for c in children_list:
+            if c in all_task_data and all_task_data[c]["status"] in ("completed", "done"):
+                done += 1
+        return f" [{done}/{len(children_list)} done]"
+
+    def _print_task_tree(name: str, indent: int = 0) -> None:
+        nonlocal task_count
+        info = all_task_data[name]
+        progress = _children_progress(info["children"]) if info["children"] else ""
+        prefix = "  " * indent
+        lines.append(f"{prefix}- {name}/ ({info['status']}){progress} @{info['assignee']}")
+        task_count += 1
+        for child in info["children"]:
+            if child in all_task_data:
+                _print_task_tree(child, indent + 1)
+
+    for dir_name in sorted(all_task_data.keys()):
+        if not all_task_data[dir_name]["parent"]:
+            _print_task_tree(dir_name)
 
     if task_count == 0:
         lines.append("(no active tasks)")
@@ -302,7 +337,9 @@ def get_context_text(repo_root: Path | None = None) -> str:
                         if assignee == developer and status != "done":
                             title = data.get("title") or data.get("name") or "unknown"
                             priority = data.get("priority", "P2")
-                            lines.append(f"- [{priority}] {title} ({status})")
+                            children_list = data.get("children", [])
+                            progress = _children_progress(children_list) if children_list else ""
+                            lines.append(f"- [{priority}] {title} ({status}){progress}")
                             my_task_count += 1
 
     if my_task_count == 0:
@@ -333,6 +370,91 @@ def get_context_text(repo_root: Path | None = None) -> str:
     lines.append("========================================")
 
     return "\n".join(lines)
+
+
+def get_context_record_json(repo_root: Path | None = None) -> dict:
+    """Get record-mode context as a dictionary.
+
+    Focused on: my active tasks, git status, current task.
+    """
+    if repo_root is None:
+        repo_root = get_repo_root()
+
+    developer = get_developer(repo_root)
+    tasks_dir = get_tasks_dir(repo_root)
+
+    # Git info
+    _, branch_out, _ = _run_git_command(["branch", "--show-current"], cwd=repo_root)
+    branch = branch_out.strip() or "unknown"
+
+    _, status_out, _ = _run_git_command(["status", "--porcelain"], cwd=repo_root)
+    git_status_count = len([line for line in status_out.splitlines() if line.strip()])
+
+    _, log_out, _ = _run_git_command(["log", "--oneline", "-5"], cwd=repo_root)
+    commits = []
+    for line in log_out.splitlines():
+        if line.strip():
+            parts = line.split(" ", 1)
+            if len(parts) >= 2:
+                commits.append({"hash": parts[0], "message": parts[1]})
+
+    # My tasks
+    my_tasks = []
+    all_task_statuses: dict[str, str] = {}
+    if tasks_dir.is_dir():
+        for d in sorted(tasks_dir.iterdir()):
+            if d.is_dir() and d.name != "archive":
+                t_json = d / FILE_TASK_JSON
+                if t_json.is_file():
+                    data = _read_json_file(t_json)
+                    if data:
+                        all_task_statuses[d.name] = data.get("status", "unknown")
+
+    if tasks_dir.is_dir():
+        for d in sorted(tasks_dir.iterdir()):
+            if d.is_dir() and d.name != "archive":
+                t_json = d / FILE_TASK_JSON
+                if t_json.is_file():
+                    data = _read_json_file(t_json)
+                    if data and data.get("assignee") == developer:
+                        children_list = data.get("children", [])
+                        done = sum(1 for c in children_list if all_task_statuses.get(c) in ("completed", "done"))
+                        my_tasks.append({
+                            "dir": d.name,
+                            "title": data.get("title") or data.get("name") or "unknown",
+                            "status": data.get("status", "unknown"),
+                            "priority": data.get("priority", "P2"),
+                            "children": children_list,
+                            "childrenDone": done,
+                            "parent": data.get("parent"),
+                            "meta": data.get("meta", {}),
+                        })
+
+    # Current task
+    current_task_info = None
+    current_task = get_current_task(repo_root)
+    if current_task:
+        task_json_path = (repo_root / current_task) / FILE_TASK_JSON
+        if task_json_path.is_file():
+            data = _read_json_file(task_json_path)
+            if data:
+                current_task_info = {
+                    "path": current_task,
+                    "name": data.get("name") or data.get("id") or "unknown",
+                    "status": data.get("status", "unknown"),
+                }
+
+    return {
+        "developer": developer or "",
+        "git": {
+            "branch": branch,
+            "isClean": git_status_count == 0,
+            "uncommittedChanges": git_status_count,
+            "recentCommits": commits,
+        },
+        "myTasks": my_tasks,
+        "currentTask": current_task_info,
+    }
 
 
 def get_context_text_record(repo_root: Path | None = None) -> str:
@@ -371,6 +493,26 @@ def get_context_text_record(repo_root: Path | None = None) -> str:
     tasks_dir = get_tasks_dir(repo_root)
     my_task_count = 0
 
+    # Collect task data for children progress
+    all_task_statuses: dict[str, str] = {}
+    if tasks_dir.is_dir():
+        for d in sorted(tasks_dir.iterdir()):
+            if d.is_dir() and d.name != "archive":
+                t_json = d / FILE_TASK_JSON
+                if t_json.is_file():
+                    data = _read_json_file(t_json)
+                    if data:
+                        all_task_statuses[d.name] = data.get("status", "unknown")
+
+    def _record_children_progress(children_list: list[str]) -> str:
+        if not children_list:
+            return ""
+        done = 0
+        for c in children_list:
+            if all_task_statuses.get(c) in ("completed", "done"):
+                done += 1
+        return f" [{done}/{len(children_list)} done]"
+
     if tasks_dir.is_dir():
         for d in sorted(tasks_dir.iterdir()):
             if d.is_dir() and d.name != "archive":
@@ -384,7 +526,9 @@ def get_context_text_record(repo_root: Path | None = None) -> str:
                         if assignee == developer:
                             title = data.get("title") or data.get("name") or "unknown"
                             priority = data.get("priority", "P2")
-                            lines.append(f"- [{priority}] {title} ({status}) — {d.name}")
+                            children_list = data.get("children", [])
+                            progress = _record_children_progress(children_list) if children_list else ""
+                            lines.append(f"- [{priority}] {title} ({status}){progress} — {d.name}")
                             my_task_count += 1
 
     if my_task_count == 0:
@@ -469,7 +613,7 @@ def main() -> None:
         "--json",
         "-j",
         action="store_true",
-        help="Output context in JSON format",
+        help="Output in JSON format (works with any --mode)",
     )
     parser.add_argument(
         "--mode",
@@ -481,12 +625,16 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if args.json:
-        output_json()
-    elif args.mode == "record":
-        print(get_context_text_record())
+    if args.mode == "record":
+        if args.json:
+            print(json.dumps(get_context_record_json(), indent=2, ensure_ascii=False))
+        else:
+            print(get_context_text_record())
     else:
-        output_text()
+        if args.json:
+            output_json()
+        else:
+            output_text()
 
 
 if __name__ == "__main__":
