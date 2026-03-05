@@ -23,8 +23,11 @@ All workflow scripts are written in **Python 3.10+** for cross-platform compatib
 │   ├── task_utils.py     # Task helper functions
 │   ├── phase.py          # Multi-agent phase tracking
 │   ├── registry.py       # Agent registry management
-│   ├── worktree.py       # Git worktree utilities
+│   ├── config.py         # Config reader (config.yaml, hooks)
+│   ├── worktree.py       # Git worktree utilities + YAML parser
 │   └── git_context.py    # Git/session context
+├── hooks/                # Lifecycle hook scripts (project-specific)
+│   └── linear_sync.py    # Example: sync tasks to Linear
 ├── multi_agent/          # Multi-agent pipeline scripts
 │   ├── __init__.py
 │   ├── start.py          # Start worktree agent
@@ -332,6 +335,107 @@ path = Path(".trellis") / "scripts" / "task.py"
 
 # Bad - Unix-only
 path = ".trellis/scripts/task.py"
+```
+
+---
+
+## Task Lifecycle Hooks
+
+### Scope / Trigger
+
+Task lifecycle events (`after_create`, `after_start`, `after_finish`, `after_archive`) execute user-defined shell commands configured in `config.yaml`.
+
+### Signatures
+
+```python
+# config.py — read hook commands from config
+def get_hooks(event: str, repo_root: Path | None = None) -> list[str]
+
+# task.py — execute hooks (never blocks main operation)
+def _run_hooks(event: str, task_json_path: Path, repo_root: Path) -> None
+```
+
+### Contracts
+
+**Config format** (`config.yaml`):
+```yaml
+hooks:
+  after_create:
+    - "python3 .trellis/scripts/hooks/my_hook.py create"
+  after_start:
+    - "python3 .trellis/scripts/hooks/my_hook.py start"
+  after_archive:
+    - "python3 .trellis/scripts/hooks/my_hook.py archive"
+```
+
+**Environment variables passed to hooks**:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `TASK_JSON_PATH` | Absolute path string | Path to the task's `task.json` |
+
+- `cwd` is set to `repo_root`
+- Hooks inherit the parent process environment + `TASK_JSON_PATH`
+
+### Subprocess Execution
+
+```python
+import os
+import subprocess
+
+env = {**os.environ, "TASK_JSON_PATH": str(task_json_path)}
+
+result = subprocess.run(
+    cmd,
+    shell=True,
+    cwd=repo_root,
+    env=env,
+    capture_output=True,
+    text=True,
+    encoding="utf-8",    # REQUIRED: cross-platform
+    errors="replace",    # REQUIRED: cross-platform
+)
+```
+
+### Validation & Error Matrix
+
+| Condition | Behavior |
+|-----------|----------|
+| No `hooks` key in config | No-op (empty list) |
+| `hooks` is not a dict | No-op (empty list) |
+| Event key missing | No-op (empty list) |
+| Hook command exits non-zero | `[WARN]` to stderr, continues to next hook |
+| Hook command throws exception | `[WARN]` to stderr, continues to next hook |
+| `linearis` not installed | Hook fails with warning, task operation succeeds |
+
+### Wrong vs Correct
+
+#### Wrong — blocking on hook failure
+```python
+result = subprocess.run(cmd, shell=True, check=True)  # Raises on failure!
+```
+
+#### Correct — warn and continue
+```python
+try:
+    result = subprocess.run(cmd, shell=True, ...)
+    if result.returncode != 0:
+        print(f"[WARN] Hook failed: {cmd}", file=sys.stderr)
+except Exception as e:
+    print(f"[WARN] Hook error: {cmd} — {e}", file=sys.stderr)
+```
+
+### Hook Script Pattern
+
+Hook scripts that need project-specific config (API keys, user IDs) should:
+1. Store config in a **gitignored** local file (e.g., `.trellis/hooks.local.json`)
+2. Read config at startup, fail with clear message if missing
+3. Keep the script itself committable (no hardcoded secrets)
+
+```python
+# .trellis/scripts/hooks/my_hook.py — committable, no secrets
+CONFIG = _load_config()  # reads from .trellis/hooks.local.json (gitignored)
+TEAM = CONFIG.get("linear", {}).get("team", "")
 ```
 
 ---

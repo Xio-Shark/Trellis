@@ -44,7 +44,7 @@ EOF
 ## Archive Completed Task (if any)
 
 Archive tasks whose work is **actually done** — judge by work status, not the `status` field in task.json:
-- Code committed and PR created/merged? → Archive it
+- Code committed? → Archive it (don't wait for PR)
 - All acceptance criteria met? → Archive it
 - Don't skip archiving just because `status` still says `planning` or `in_progress`
 

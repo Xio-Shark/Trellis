@@ -23,8 +23,11 @@ All workflow scripts are written in **Python 3.10+** for cross-platform compatib
 │   ├── task_utils.py     # Task helper functions
 │   ├── phase.py          # Multi-agent phase tracking
 │   ├── registry.py       # Agent registry management
-│   ├── worktree.py       # Git worktree utilities
+│   ├── config.py         # Config reader (config.yaml, hooks)
+│   ├── worktree.py       # Git worktree utilities + YAML parser
 │   └── git_context.py    # Git/session context
+├── hooks/                # Lifecycle hook scripts (project-specific)
+│   └── linear_sync.py    # Example: sync tasks to Linear
 ├── multi_agent/          # Multi-agent pipeline scripts
 │   ├── __init__.py
 │   ├── start.py          # Start worktree agent
@@ -81,10 +84,19 @@ Task Management Script.
 
 Usage:
     python3 task.py create "<title>" [--slug <name>]
-    python3 task.py list [--mine] [--status <status>]
+    python3 task.py init-context <dir> <dev_type>
+    python3 task.py add-context <dir> <file> <reason>
+    python3 task.py validate <dir>
+    python3 task.py list-context <dir>
     python3 task.py start <dir>
     python3 task.py finish
+    python3 task.py set-branch <dir> <branch>
+    python3 task.py set-base-branch <dir> <branch>
+    python3 task.py set-scope <dir> <scope>
+    python3 task.py create-pr [dir] [--dry-run]
     python3 task.py archive <task-name>
+    python3 task.py list [--mine] [--status <status>]
+    python3 task.py list-archive [YYYY-MM]
 """
 
 from __future__ import annotations
@@ -202,11 +214,13 @@ def run_command(
 
 ## Cross-Platform Compatibility
 
-### CRITICAL: Windows stdout Encoding
+### CRITICAL: Windows stdio Encoding (stdout + stdin)
 
-On Windows, Python's stdout defaults to the system code page (e.g., GBK/CP936 in China, CP1252 in Western locales). This causes `UnicodeEncodeError` when printing non-ASCII characters.
+On Windows, Python's stdout AND stdin default to the system code page (e.g., GBK/CP936 in China, CP1252 in Western locales). This causes:
+- `UnicodeEncodeError` when **printing** non-ASCII characters (stdout)
+- `UnicodeDecodeError` when **reading piped** UTF-8 content (stdin), e.g. Chinese text via `cat << EOF | python3 script.py`
 
-**The Problem Chain**:
+**The Problem Chain (stdout)**:
 
 ```
 Windows code page = GBK (936)
@@ -220,60 +234,64 @@ json.dumps(ensure_ascii=False) → print()
 GBK cannot encode \ufffd → UnicodeEncodeError: 'gbk' codec can't encode character
 ```
 
-**Root Cause**: Even if you set `PYTHONIOENCODING` in subprocess calls, the **parent process's stdout** still uses the system code page. The error occurs when `print()` tries to write to stdout.
+**The Problem Chain (stdin)**:
+
+```
+AI agent pipes UTF-8 content via heredoc: cat << 'EOF' | python3 add_session.py ...
+    ↓
+Python stdin defaults to GBK encoding (PowerShell default code page)
+    ↓
+sys.stdin.read() decodes bytes as GBK, not UTF-8
+    ↓
+Chinese text garbled or UnicodeDecodeError
+```
+
+**Root Cause**: Even if you set `PYTHONIOENCODING` in subprocess calls, the **parent process's stdio** still uses the system code page.
 
 ---
 
-#### GOOD: Use `sys.stdout.reconfigure()` (Python 3.7+)
+#### GOOD: Centralize encoding fix in `common/__init__.py`
 
-```python
-import sys
-
-# MUST be at the top of the script, before any print() calls
-if sys.platform == "win32":
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-```
-
-**Why this works**: `reconfigure()` modifies the existing stream **in-place**, changing its encoding settings directly. This affects all subsequent writes to stdout.
-
-**Best Practice**: Add this to `common/__init__.py` so all scripts that `from common import ...` automatically get the fix:
+All stdio encoding is handled in one place. Scripts that `from common import ...` automatically get the fix:
 
 ```python
 # common/__init__.py
+import io
 import sys
 
-if sys.platform == "win32":
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+def _configure_stream(stream):
+    """Configure a stream for UTF-8 encoding on Windows."""
+    if hasattr(stream, "reconfigure"):
+        stream.reconfigure(encoding="utf-8", errors="replace")
+        return stream
+    elif hasattr(stream, "detach"):
+        return io.TextIOWrapper(stream.detach(), encoding="utf-8", errors="replace")
+    return stream
 
-# ... rest of exports
+if sys.platform == "win32":
+    sys.stdout = _configure_stream(sys.stdout)
+    sys.stderr = _configure_stream(sys.stderr)
+    sys.stdin = _configure_stream(sys.stdin)    # Don't forget stdin!
 ```
 
 ---
 
-#### BAD: Do NOT use `io.TextIOWrapper`
+#### DON'T: Inline encoding code in individual scripts
 
 ```python
-# BAD - This does NOT reliably fix the encoding issue!
+# BAD - Duplicated in every script, easy to forget stdin
 import sys
-import io
-
 if sys.platform == "win32":
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    # Forgot stdin! Piped Chinese text will break.
 ```
 
-**Why this fails**:
+**Why this is bad**:
+1. **Easy to forget streams**: stdout was fixed but stdin was missed in multiple scripts, causing real user bugs
+2. **Duplicated code**: Same logic copy-pasted across `add_session.py`, `git_context.py`, etc.
+3. **Inconsistent coverage**: Some scripts fix stdout only, others fix stdout+stderr, none fixed stdin
 
-1. **Creates a new wrapper, doesn't fix the underlying issue**: `TextIOWrapper` wraps `sys.stdout.buffer`, but the original stdout object and its encoding settings may still interfere in some code paths.
-
-2. **Loses original stdout properties**: The new wrapper may not preserve all attributes of the original `sys.stdout` (like `isatty()`, line buffering behavior).
-
-3. **Race condition with buffering**: If any output was buffered before the replacement, it may still be encoded with the old encoding.
-
-4. **Not idempotent**: Calling this multiple times creates nested wrappers, while `reconfigure()` is safe to call multiple times.
-
-**Real-world failure case**: Users reported that `io.TextIOWrapper` did not fix the `UnicodeEncodeError` on Windows, while `sys.stdout.reconfigure()` worked immediately.
+**Real-world failure**: Users on Windows reported garbled Chinese text when using `cat << EOF | python3 add_session.py`. Root cause: stdin was never reconfigured to UTF-8.
 
 ---
 
@@ -281,7 +299,8 @@ if sys.platform == "win32":
 
 | Method | Works? | Reason |
 |--------|--------|--------|
-| `sys.stdout.reconfigure(encoding="utf-8")` | ✅ Yes | Modifies stream in-place |
+| `common/__init__.py` centralized fix | ✅ Yes | All streams, all scripts, one place |
+| `sys.stdout.reconfigure(encoding="utf-8")` | ⚠️ Partial | Only stdout; easy to forget stdin/stderr |
 | `io.TextIOWrapper(sys.stdout.buffer, ...)` | ❌ No | Creates wrapper, doesn't fix underlying encoding |
 | `PYTHONIOENCODING=utf-8` env var | ⚠️ Partial | Only works if set **before** Python starts |
 
@@ -317,6 +336,169 @@ path = Path(".trellis") / "scripts" / "task.py"
 # Bad - Unix-only
 path = ".trellis/scripts/task.py"
 ```
+
+---
+
+## Task Lifecycle Hooks
+
+### Scope / Trigger
+
+Task lifecycle events (`after_create`, `after_start`, `after_finish`, `after_archive`) execute user-defined shell commands configured in `config.yaml`.
+
+### Signatures
+
+```python
+# config.py — read hook commands from config
+def get_hooks(event: str, repo_root: Path | None = None) -> list[str]
+
+# task.py — execute hooks (never blocks main operation)
+def _run_hooks(event: str, task_json_path: Path, repo_root: Path) -> None
+```
+
+### Contracts
+
+**Config format** (`config.yaml`):
+```yaml
+hooks:
+  after_create:
+    - "python3 .trellis/scripts/hooks/my_hook.py create"
+  after_start:
+    - "python3 .trellis/scripts/hooks/my_hook.py start"
+  after_archive:
+    - "python3 .trellis/scripts/hooks/my_hook.py archive"
+```
+
+**Environment variables passed to hooks**:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `TASK_JSON_PATH` | Absolute path string | Path to the task's `task.json` |
+
+- `cwd` is set to `repo_root`
+- Hooks inherit the parent process environment + `TASK_JSON_PATH`
+
+### Subprocess Execution
+
+```python
+import os
+import subprocess
+
+env = {**os.environ, "TASK_JSON_PATH": str(task_json_path)}
+
+result = subprocess.run(
+    cmd,
+    shell=True,
+    cwd=repo_root,
+    env=env,
+    capture_output=True,
+    text=True,
+    encoding="utf-8",    # REQUIRED: cross-platform
+    errors="replace",    # REQUIRED: cross-platform
+)
+```
+
+### Validation & Error Matrix
+
+| Condition | Behavior |
+|-----------|----------|
+| No `hooks` key in config | No-op (empty list) |
+| `hooks` is not a dict | No-op (empty list) |
+| Event key missing | No-op (empty list) |
+| Hook command exits non-zero | `[WARN]` to stderr, continues to next hook |
+| Hook command throws exception | `[WARN]` to stderr, continues to next hook |
+| `linearis` not installed | Hook fails with warning, task operation succeeds |
+
+### Wrong vs Correct
+
+#### Wrong — blocking on hook failure
+```python
+result = subprocess.run(cmd, shell=True, check=True)  # Raises on failure!
+```
+
+#### Correct — warn and continue
+```python
+try:
+    result = subprocess.run(cmd, shell=True, ...)
+    if result.returncode != 0:
+        print(f"[WARN] Hook failed: {cmd}", file=sys.stderr)
+except Exception as e:
+    print(f"[WARN] Hook error: {cmd} — {e}", file=sys.stderr)
+```
+
+### Hook Script Pattern
+
+Hook scripts that need project-specific config (API keys, user IDs) should:
+1. Store config in a **gitignored** local file (e.g., `.trellis/hooks.local.json`)
+2. Read config at startup, fail with clear message if missing
+3. Keep the script itself committable (no hardcoded secrets)
+
+```python
+# .trellis/scripts/hooks/my_hook.py — committable, no secrets
+CONFIG = _load_config()  # reads from .trellis/hooks.local.json (gitignored)
+TEAM = CONFIG.get("linear", {}).get("team", "")
+```
+
+---
+
+## Auto-Commit Pattern
+
+Scripts that modify `.trellis/` tracked files should auto-commit their changes to keep the workspace clean. Use a `--no-commit` flag for opt-out.
+
+### Convention: Auto-Commit After Mutation
+
+```python
+def _auto_commit(scope: str, message: str, repo_root: Path) -> None:
+    """Stage and commit changes in a specific .trellis/ subdirectory."""
+    subprocess.run(["git", "add", "-A", scope], cwd=repo_root, capture_output=True)
+    # Check if there are staged changes
+    result = subprocess.run(
+        ["git", "diff", "--cached", "--quiet", "--", scope],
+        cwd=repo_root,
+    )
+    if result.returncode == 0:
+        print("[OK] No changes to commit.", file=sys.stderr)
+        return
+    commit_result = subprocess.run(
+        ["git", "commit", "-m", message],
+        cwd=repo_root, capture_output=True, text=True,
+    )
+    if commit_result.returncode == 0:
+        print(f"[OK] Auto-committed: {message}", file=sys.stderr)
+    else:
+        print(f"[WARN] Auto-commit failed: {commit_result.stderr.strip()}", file=sys.stderr)
+```
+
+**Scripts using this pattern**:
+- `add_session.py` — commits `.trellis/workspace` + `.trellis/tasks` after recording a session
+- `task.py archive` — commits `.trellis/tasks` after archiving a task
+
+**Always add `--no-commit` flag** for scripts that auto-commit, so users can opt out.
+
+---
+
+## CLI Mode Extension Pattern
+
+### Design Decision: `--mode` for Context-Dependent Output
+
+When a script needs different output for different use cases, use `--mode` (not separate scripts or additional flags).
+
+**Example**: `get_context.py` serves two modes:
+- `--mode default` — full session context (DEVELOPER, GIT STATUS, RECENT COMMITS, CURRENT TASK, ACTIVE TASKS, MY TASKS, JOURNAL, PATHS)
+- `--mode record` — focused output for record-session (MY ACTIVE TASKS first with emphasis, GIT STATUS, RECENT COMMITS, CURRENT TASK)
+
+```python
+parser.add_argument(
+    "--mode", "-m",
+    choices=["default", "record"],
+    default="default",
+    help="Output mode: default (full context) or record (for record-session)",
+)
+```
+
+**When to add a new mode** (not a new script):
+- Output is a subset/reordering of the same data
+- The underlying data sources are shared
+- The difference is in presentation, not in data fetching
 
 ---
 

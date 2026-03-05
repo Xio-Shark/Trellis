@@ -147,6 +147,7 @@ vite.config.ts.timestamp-*
 # Trellis local state (should not be committed)
 .trellis/.current-task
 .trellis/.developer
+.trellis/hooks.local.json
 
 # Multi-agent temp files
 .session-id

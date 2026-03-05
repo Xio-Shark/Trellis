@@ -62,6 +62,7 @@ from common.task_utils import (
     find_task_by_name,
     archive_task_complete,
 )
+from common.config import get_hooks
 
 
 # =============================================================================
@@ -80,6 +81,53 @@ class Colors:
 def colored(text: str, color: str) -> str:
     """Apply color to text."""
     return f"{color}{text}{Colors.NC}"
+
+
+# =============================================================================
+# Lifecycle Hooks
+# =============================================================================
+
+def _run_hooks(event: str, task_json_path: Path, repo_root: Path) -> None:
+    """Run lifecycle hooks for an event.
+
+    Args:
+        event: Event name (e.g. "after_create").
+        task_json_path: Absolute path to the task's task.json.
+        repo_root: Repository root for cwd and config lookup.
+    """
+    import os
+    import subprocess
+
+    commands = get_hooks(event, repo_root)
+    if not commands:
+        return
+
+    env = {**os.environ, "TASK_JSON_PATH": str(task_json_path)}
+
+    for cmd in commands:
+        try:
+            result = subprocess.run(
+                cmd,
+                shell=True,
+                cwd=repo_root,
+                env=env,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if result.returncode != 0:
+                print(
+                    colored(f"[WARN] Hook failed ({event}): {cmd}", Colors.YELLOW),
+                    file=sys.stderr,
+                )
+                if result.stderr.strip():
+                    print(f"  {result.stderr.strip()}", file=sys.stderr)
+        except Exception as e:
+            print(
+                colored(f"[WARN] Hook error ({event}): {cmd} — {e}", Colors.YELLOW),
+                file=sys.stderr,
+            )
 
 
 # =============================================================================
@@ -337,6 +385,8 @@ def cmd_create(args: argparse.Namespace) -> int:
 
     # Output relative path for script chaining
     print(f"{DIR_WORKFLOW}/{DIR_TASKS}/{dir_name}")
+
+    _run_hooks("after_create", task_json_path, repo_root)
     return 0
 
 
@@ -618,6 +668,9 @@ def cmd_start(args: argparse.Namespace) -> int:
         print(colored(f"✓ Current task set to: {task_dir}", Colors.GREEN))
         print()
         print(colored("The hook will now inject context from this task's jsonl files.", Colors.BLUE))
+
+        task_json_path = full_path / FILE_TASK_JSON
+        _run_hooks("after_start", task_json_path, repo_root)
         return 0
     else:
         print(colored("Error: Failed to set current task", Colors.RED))
@@ -633,8 +686,14 @@ def cmd_finish(args: argparse.Namespace) -> int:
         print(colored("No current task set", Colors.YELLOW))
         return 0
 
+    # Resolve task.json path before clearing
+    task_json_path = repo_root / current / FILE_TASK_JSON
+
     clear_current_task(repo_root)
     print(colored(f"✓ Cleared current task (was: {current})", Colors.GREEN))
+
+    if task_json_path.is_file():
+        _run_hooks("after_finish", task_json_path, repo_root)
     return 0
 
 
@@ -722,6 +781,10 @@ def cmd_archive(args: argparse.Namespace) -> int:
 
         # Return the archive path
         print(f"{DIR_WORKFLOW}/{DIR_TASKS}/{DIR_ARCHIVE}/{year_month}/{dir_name}")
+
+        # Run hooks with the archived path
+        archived_json = archive_dest / FILE_TASK_JSON
+        _run_hooks("after_archive", archived_json, repo_root)
         return 0
 
     return 1
