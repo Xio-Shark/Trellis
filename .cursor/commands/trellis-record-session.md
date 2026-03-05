@@ -43,7 +43,10 @@ EOF
 
 ## Archive Completed Task (if any)
 
-If a task was completed this session:
+Archive tasks whose work is **actually done** — judge by work status, not the `status` field in task.json:
+- Code committed and PR created/merged? → Archive it
+- All acceptance criteria met? → Archive it
+- Don't skip archiving just because `status` still says `planning` or `in_progress`
 
 ```bash
 python3 ./.trellis/scripts/task.py archive <task-name>

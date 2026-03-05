@@ -17,7 +17,10 @@ description: "Record work progress after human has tested and committed code"
 python3 ./.trellis/scripts/get_context.py --mode record
 ```
 
-[!] If MY ACTIVE TASKS shows any completed tasks, archive them FIRST:
+[!] Archive tasks whose work is **actually done** — judge by work status, not the `status` field in task.json:
+- Code committed and PR created/merged? → Archive it
+- All acceptance criteria met? → Archive it
+- Don't skip archiving just because `status` still says `planning` or `in_progress`
 
 ```bash
 python3 ./.trellis/scripts/task.py archive <task-name>
