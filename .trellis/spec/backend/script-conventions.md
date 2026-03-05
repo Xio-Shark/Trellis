@@ -336,6 +336,68 @@ path = ".trellis/scripts/task.py"
 
 ---
 
+## Auto-Commit Pattern
+
+Scripts that modify `.trellis/` tracked files should auto-commit their changes to keep the workspace clean. Use a `--no-commit` flag for opt-out.
+
+### Convention: Auto-Commit After Mutation
+
+```python
+def _auto_commit(scope: str, message: str, repo_root: Path) -> None:
+    """Stage and commit changes in a specific .trellis/ subdirectory."""
+    subprocess.run(["git", "add", "-A", scope], cwd=repo_root, capture_output=True)
+    # Check if there are staged changes
+    result = subprocess.run(
+        ["git", "diff", "--cached", "--quiet", "--", scope],
+        cwd=repo_root,
+    )
+    if result.returncode == 0:
+        print("[OK] No changes to commit.", file=sys.stderr)
+        return
+    commit_result = subprocess.run(
+        ["git", "commit", "-m", message],
+        cwd=repo_root, capture_output=True, text=True,
+    )
+    if commit_result.returncode == 0:
+        print(f"[OK] Auto-committed: {message}", file=sys.stderr)
+    else:
+        print(f"[WARN] Auto-commit failed: {commit_result.stderr.strip()}", file=sys.stderr)
+```
+
+**Scripts using this pattern**:
+- `add_session.py` — commits `.trellis/workspace` + `.trellis/tasks` after recording a session
+- `task.py archive` — commits `.trellis/tasks` after archiving a task
+
+**Always add `--no-commit` flag** for scripts that auto-commit, so users can opt out.
+
+---
+
+## CLI Mode Extension Pattern
+
+### Design Decision: `--mode` for Context-Dependent Output
+
+When a script needs different output for different use cases, use `--mode` (not separate scripts or additional flags).
+
+**Example**: `get_context.py` serves two modes:
+- `--mode default` — full session context (DEVELOPER, GIT STATUS, RECENT COMMITS, CURRENT TASK, ACTIVE TASKS, MY TASKS, JOURNAL, PATHS)
+- `--mode record` — focused output for record-session (MY ACTIVE TASKS first with emphasis, GIT STATUS, RECENT COMMITS, CURRENT TASK)
+
+```python
+parser.add_argument(
+    "--mode", "-m",
+    choices=["default", "record"],
+    default="default",
+    help="Output mode: default (full context) or record (for record-session)",
+)
+```
+
+**When to add a new mode** (not a new script):
+- Output is a subset/reordering of the same data
+- The underlying data sources are shared
+- The difference is in presentation, not in data fetching
+
+---
+
 ## Error Handling
 
 ### Exit Codes

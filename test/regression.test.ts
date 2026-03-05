@@ -38,7 +38,6 @@ import {
 } from "../src/templates/iflow/index.js";
 import {
   commonInit,
-  commonGitContext,
   taskScript,
   addSessionScript,
   multiAgentPlan,
@@ -100,18 +99,14 @@ describe("regression: Windows encoding (beta.10, beta.11, beta.16)", () => {
     expect(reconfigureIndex).toBeLessThan(detachIndex);
   });
 
-  it("[beta.10] task.py has inline encoding fix before imports", () => {
-    // Encoding fix must come before other imports to prevent early UnicodeEncodeError
-    const encodingFixIndex = taskScript.indexOf('sys.platform == "win32"');
-    const commonImportIndex = taskScript.indexOf("from common");
-    expect(encodingFixIndex).toBeGreaterThan(-1);
-    expect(commonImportIndex).toBeGreaterThan(-1);
-    expect(encodingFixIndex).toBeLessThan(commonImportIndex);
+  it("[beta.10] common/__init__.py has centralized encoding fix", () => {
+    // Encoding fix was centralized from individual scripts to common/__init__.py (#67)
+    expect(commonInit).toContain('sys.platform == "win32"');
+    expect(commonInit).toContain("reconfigure");
   });
 
-  it("[beta.10] add_session.py has inline encoding fix", () => {
-    expect(addSessionScript).toContain('sys.platform == "win32"');
-    expect(addSessionScript).toContain("reconfigure");
+  it("[beta.10] task.py imports from common (gets encoding fix via __init__.py)", () => {
+    expect(taskScript).toContain("from common");
   });
 
   it("[rc.2] add_session.py table separator matching tolerates formatted markdown", () => {
@@ -119,11 +114,6 @@ describe("regression: Windows encoding (beta.10, beta.11, beta.16)", () => {
     // Fix: use re.match(r"^\\|\\s*-", line) to allow optional whitespace
     expect(addSessionScript).not.toContain('startswith("|---")');
     expect(addSessionScript).toContain(String.raw`re.match(r"^\|\s*-", line)`);
-  });
-
-  it("[beta.10] git_context.py has inline encoding fix", () => {
-    expect(commonGitContext).toContain('sys.platform == "win32"');
-    expect(commonGitContext).toContain("reconfigure");
   });
 });
 

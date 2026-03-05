@@ -335,6 +335,117 @@ def get_context_text(repo_root: Path | None = None) -> str:
     return "\n".join(lines)
 
 
+def get_context_text_record(repo_root: Path | None = None) -> str:
+    """Get context as formatted text for record-session mode.
+
+    Focused output: MY ACTIVE TASKS first (with [!!!] emphasis),
+    then GIT STATUS, RECENT COMMITS, CURRENT TASK.
+
+    Args:
+        repo_root: Repository root path. Defaults to auto-detected.
+
+    Returns:
+        Formatted text output for record-session.
+    """
+    if repo_root is None:
+        repo_root = get_repo_root()
+
+    lines: list[str] = []
+    lines.append("========================================")
+    lines.append("SESSION CONTEXT (RECORD MODE)")
+    lines.append("========================================")
+    lines.append("")
+
+    developer = get_developer(repo_root)
+    if not developer:
+        lines.append(
+            f"ERROR: Not initialized. Run: python3 ./{DIR_WORKFLOW}/{DIR_SCRIPTS}/init_developer.py <name>"
+        )
+        return "\n".join(lines)
+
+    # MY ACTIVE TASKS — first and prominent
+    lines.append(f"## [!!!] MY ACTIVE TASKS (Assigned to {developer})")
+    lines.append("[!] Review whether any should be archived before recording this session.")
+    lines.append("")
+
+    tasks_dir = get_tasks_dir(repo_root)
+    my_task_count = 0
+
+    if tasks_dir.is_dir():
+        for d in sorted(tasks_dir.iterdir()):
+            if d.is_dir() and d.name != "archive":
+                t_json = d / FILE_TASK_JSON
+                if t_json.is_file():
+                    data = _read_json_file(t_json)
+                    if data:
+                        assignee = data.get("assignee", "")
+                        status = data.get("status", "planning")
+
+                        if assignee == developer:
+                            title = data.get("title") or data.get("name") or "unknown"
+                            priority = data.get("priority", "P2")
+                            lines.append(f"- [{priority}] {title} ({status}) — {d.name}")
+                            my_task_count += 1
+
+    if my_task_count == 0:
+        lines.append("(no active tasks assigned to you)")
+    lines.append("")
+
+    # GIT STATUS
+    lines.append("## GIT STATUS")
+    _, branch_out, _ = _run_git_command(["branch", "--show-current"], cwd=repo_root)
+    branch = branch_out.strip() or "unknown"
+    lines.append(f"Branch: {branch}")
+
+    _, status_out, _ = _run_git_command(["status", "--porcelain"], cwd=repo_root)
+    status_lines = [line for line in status_out.splitlines() if line.strip()]
+    status_count = len(status_lines)
+
+    if status_count == 0:
+        lines.append("Working directory: Clean")
+    else:
+        lines.append(f"Working directory: {status_count} uncommitted change(s)")
+        lines.append("")
+        lines.append("Changes:")
+        _, short_out, _ = _run_git_command(["status", "--short"], cwd=repo_root)
+        for line in short_out.splitlines()[:10]:
+            lines.append(line)
+    lines.append("")
+
+    # RECENT COMMITS
+    lines.append("## RECENT COMMITS")
+    _, log_out, _ = _run_git_command(["log", "--oneline", "-5"], cwd=repo_root)
+    if log_out.strip():
+        for line in log_out.splitlines():
+            lines.append(line)
+    else:
+        lines.append("(no commits)")
+    lines.append("")
+
+    # CURRENT TASK
+    lines.append("## CURRENT TASK")
+    current_task = get_current_task(repo_root)
+    if current_task:
+        current_task_dir = repo_root / current_task
+        task_json_path = current_task_dir / FILE_TASK_JSON
+        lines.append(f"Path: {current_task}")
+
+        if task_json_path.is_file():
+            data = _read_json_file(task_json_path)
+            if data:
+                t_name = data.get("name") or data.get("id") or "unknown"
+                t_status = data.get("status", "unknown")
+                lines.append(f"Name: {t_name}")
+                lines.append(f"Status: {t_status}")
+    else:
+        lines.append("(none)")
+    lines.append("")
+
+    lines.append("========================================")
+
+    return "\n".join(lines)
+
+
 def output_text(repo_root: Path | None = None) -> None:
     """Output context in text format.
 
@@ -360,11 +471,20 @@ def main() -> None:
         action="store_true",
         help="Output context in JSON format",
     )
+    parser.add_argument(
+        "--mode",
+        "-m",
+        choices=["default", "record"],
+        default="default",
+        help="Output mode: default (full context) or record (for record-session)",
+    )
 
     args = parser.parse_args()
 
     if args.json:
         output_json()
+    elif args.mode == "record":
+        print(get_context_text_record())
     else:
         output_text()
 

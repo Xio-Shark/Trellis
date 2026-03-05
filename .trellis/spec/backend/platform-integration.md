@@ -381,6 +381,25 @@ if sys.platform == "win32":
 
 **Rule**: The `--platform` choices in multi-agent scripts should match platforms where `build_run_command()` returns a valid command, not all platforms in the registry.
 
+### Updated command content but forgot other platforms
+
+**Symptom**: After updating `record-session.md` in Claude's template, other platforms (iFlow, Kilo, OpenCode, Gemini) still use old content (e.g., missing `--mode record` flag, outdated command reference table).
+
+**Cause**: Command templates with identical content exist across multiple platforms. Updating one platform's version without syncing others leaves them inconsistent.
+
+**Fix**: After modifying any command template content, check ALL platforms that have the same command:
+
+```bash
+# Find all platforms with this command
+find src/templates/*/commands/trellis/ -name "record-session.*"
+```
+
+**Key distinction**:
+- "Add new command to all platforms" → covered by the Required Commands table above
+- "Update existing command content across platforms" → THIS mistake. Content changes (new flags, rewritten steps, updated reference tables) must propagate to every platform's copy.
+
+**Note**: Gemini uses `.toml` format — content must be adapted (triple-quoted strings, `\\` line continuations). All other platforms use `.md`.
+
 ### Stale platform references in copied templates
 
 **Symptom**: A Qoder skill references "Claude Code" syntax or a Kiro-specific invocation pattern.

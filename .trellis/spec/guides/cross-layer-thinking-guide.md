@@ -85,6 +85,21 @@ After implementation:
 
 ---
 
+## Cross-Platform Template Consistency
+
+In Trellis, command templates (e.g., `record-session.md`) exist in **multiple platforms** with identical or near-identical content. This is a cross-layer boundary.
+
+### Checklist: After Modifying Any Command Template
+
+- [ ] Find all platforms with the same command: `find src/templates/*/commands/trellis/ -name "<command>.*"`
+- [ ] Update all platform copies (Markdown `.md` and TOML `.toml`)
+- [ ] For Gemini TOML: adapt line continuations (`\\` vs `\`) and triple-quoted strings
+- [ ] Run `/trellis:check-cross-layer` to verify nothing was missed
+
+**Real-world example**: Updated `record-session.md` in Claude to use `--mode record`, but forgot iFlow, Kilo, OpenCode, and Gemini — caught by cross-layer check.
+
+---
+
 ## When to Create Flow Documentation
 
 Create detailed flow docs when:
