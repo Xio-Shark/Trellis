@@ -28,11 +28,15 @@ import {
 import { initializeHashes } from "../utils/template-hash.js";
 import {
   fetchTemplateIndex,
+  probeRegistryIndex,
   downloadTemplateById,
+  downloadRegistryDirect,
+  parseRegistrySource,
   TIMEOUTS,
   TEMPLATE_INDEX_URL,
   type SpecTemplate,
   type TemplateStrategy,
+  type RegistrySource,
 } from "../utils/template-fetcher.js";
 import { setupProxy, maskProxyUrl } from "../utils/proxy.js";
 
@@ -331,6 +335,7 @@ interface InitOptions {
   template?: string;
   overwrite?: boolean;
   append?: boolean;
+  registry?: string;
 }
 
 // Compile-time check: every CliFlag must be a key of InitOptions.
@@ -473,8 +478,28 @@ export async function init(options: InitOptions): Promise<void> {
     templateStrategy = "append";
   }
 
+  // Parse custom registry source if provided
+  let registry: RegistrySource | undefined;
+  if (options.registry) {
+    try {
+      registry = parseRegistrySource(options.registry);
+    } catch (error) {
+      console.log(
+        chalk.red(
+          error instanceof Error ? error.message : "Invalid registry source",
+        ),
+      );
+      return;
+    }
+  }
+
   // Pre-fetched templates list (used to pass selected SpecTemplate to downloadTemplateById)
   let fetchedTemplates: SpecTemplate[] = [];
+
+  // Determine the index URL based on registry
+  const indexUrl = registry
+    ? `${registry.rawBaseUrl}/index.json`
+    : TEMPLATE_INDEX_URL;
 
   if (options.template) {
     // Template specified via --template flag
@@ -482,8 +507,9 @@ export async function init(options: InitOptions): Promise<void> {
   } else if (!options.yes) {
     // Interactive mode: show template selection
     const timeoutSec = TIMEOUTS.INDEX_FETCH_MS / 1000;
+    const sourceLabel = registry ? registry.gigetSource : TEMPLATE_INDEX_URL;
     console.log(
-      chalk.gray(`   Fetching available templates from ${TEMPLATE_INDEX_URL}`),
+      chalk.gray(`   Fetching available templates from ${sourceLabel}`),
     );
     let elapsed = 0;
     const ticker = setInterval(() => {
@@ -493,13 +519,36 @@ export async function init(options: InitOptions): Promise<void> {
       );
     }, 1000);
     process.stdout.write(chalk.gray(`   Loading... 0s/${timeoutSec}s`));
-    const templates = await fetchTemplateIndex();
+    let templates: SpecTemplate[];
+    let registryProbeNotFound = false;
+    if (registry) {
+      const probeResult = await probeRegistryIndex(indexUrl);
+      templates = probeResult.templates;
+      registryProbeNotFound = probeResult.isNotFound;
+    } else {
+      templates = await fetchTemplateIndex(indexUrl);
+    }
     clearInterval(ticker);
     // Clear the loading line
     process.stdout.write("\r\x1b[2K");
     fetchedTemplates = templates;
 
-    if (templates.length === 0) {
+    if (templates.length === 0 && registry && registryProbeNotFound) {
+      // Custom registry: confirmed no index.json — will try direct download later
+      console.log(
+        chalk.gray(
+          "   No index.json found at registry. Will download as direct spec template.",
+        ),
+      );
+    } else if (templates.length === 0 && registry) {
+      // Custom registry: transient error (not a 404) — abort, don't misclassify
+      console.log(
+        chalk.red(
+          "   Could not reach registry (network issue). Check your connection and try again.",
+        ),
+      );
+      return;
+    } else if (templates.length === 0) {
       console.log(
         chalk.gray(
           "   Could not fetch templates (offline or server unavailable).",
@@ -509,65 +558,209 @@ export async function init(options: InitOptions): Promise<void> {
     }
 
     if (templates.length > 0) {
-      // Build template choices with "blank" as first (default)
-      const templateChoices = [
-        {
-          name: "blank (default - empty templates)",
-          value: "blank",
-        },
-        ...templates
-          .filter((t) => t.type === "spec") // MVP: only spec templates
-          .map((t) => ({
-            name: `${t.id} (${t.name})`,
-            value: t.id,
-          })),
-      ];
+      // Build template choices
+      const specTemplates = templates
+        .filter((t) => t.type === "spec")
+        .map((t) => ({
+          name: `${t.id} (${t.name})`,
+          value: t.id,
+        }));
 
-      const templateAnswer = await inquirer.prompt<{ template: string }>([
-        {
-          type: "list",
-          name: "template",
-          message: "Select a spec template:",
-          choices: templateChoices,
-          default: "blank",
-        },
-      ]);
-
-      if (templateAnswer.template !== "blank") {
-        selectedTemplate = templateAnswer.template;
-
-        // Check if spec directory already exists and ask what to do
-        const specDir = path.join(cwd, PATHS.SPEC);
-        if (fs.existsSync(specDir) && !options.overwrite && !options.append) {
-          const actionAnswer = await inquirer.prompt<{
-            action: TemplateStrategy;
-          }>([
+      const templateChoices = registry
+        ? specTemplates
+        : [
             {
-              type: "list",
-              name: "action",
-              message: `Directory ${PATHS.SPEC} already exists. What do you want to do?`,
-              choices: [
-                { name: "Skip (keep existing)", value: "skip" },
-                { name: "Overwrite (replace all)", value: "overwrite" },
-                { name: "Append (add missing files only)", value: "append" },
-              ],
-              default: "skip",
+              name: "blank (default - empty templates)",
+              value: "blank",
             },
-          ]);
-          templateStrategy = actionAnswer.action;
+            ...specTemplates,
+            {
+              name: "custom (enter a registry source)",
+              value: "__custom__",
+            },
+          ];
+
+      // Loop to allow returning from custom source input back to the picker
+      let templatePicked = false;
+      while (templateChoices.length > 0 && !templatePicked) {
+        const templateAnswer = await inquirer.prompt<{ template: string }>([
+          {
+            type: "list",
+            name: "template",
+            message: "Select a spec template:",
+            choices: templateChoices,
+            default: registry ? undefined : "blank",
+          },
+        ]);
+
+        if (templateAnswer.template === "__custom__") {
+          // Prompt for custom registry source (empty → back to picker)
+          const customSource = await askInput(
+            "Enter registry source (e.g., gh:myorg/myrepo/specs), or press Enter to go back: ",
+          );
+          if (!customSource) {
+            continue; // Back to picker
+          }
+          try {
+            registry = parseRegistrySource(customSource);
+            fetchedTemplates = []; // Reset so direct-download guard works correctly
+            // Probe index.json to detect marketplace vs direct download
+            const customIndexUrl = `${registry.rawBaseUrl}/index.json`;
+            console.log(
+              chalk.gray(
+                `   Checking for templates at ${registry.gigetSource}...`,
+              ),
+            );
+            const customProbe = await probeRegistryIndex(customIndexUrl);
+            const customTemplates = customProbe.templates;
+            if (customTemplates.length > 0) {
+              // Marketplace mode: show picker with custom templates
+              fetchedTemplates = customTemplates;
+              const customChoices = customTemplates
+                .filter((t) => t.type === "spec")
+                .map((t) => ({
+                  name: `${t.id} (${t.name})`,
+                  value: t.id,
+                }));
+              if (customChoices.length > 0) {
+                const customAnswer = await inquirer.prompt<{
+                  template: string;
+                }>([
+                  {
+                    type: "list",
+                    name: "template",
+                    message: "Select a spec template:",
+                    choices: customChoices,
+                  },
+                ]);
+                selectedTemplate = customAnswer.template;
+
+                // Check if spec directory already exists and ask what to do
+                const specDir = path.join(cwd, PATHS.SPEC);
+                if (
+                  fs.existsSync(specDir) &&
+                  !options.overwrite &&
+                  !options.append
+                ) {
+                  const actionAnswer = await inquirer.prompt<{
+                    action: TemplateStrategy;
+                  }>([
+                    {
+                      type: "list",
+                      name: "action",
+                      message: `Directory ${PATHS.SPEC} already exists. What do you want to do?`,
+                      choices: [
+                        { name: "Skip (keep existing)", value: "skip" },
+                        {
+                          name: "Overwrite (replace all)",
+                          value: "overwrite",
+                        },
+                        {
+                          name: "Append (add missing files only)",
+                          value: "append",
+                        },
+                      ],
+                      default: "skip",
+                    },
+                  ]);
+                  templateStrategy = actionAnswer.action;
+                }
+              }
+              templatePicked = true;
+            } else if (customProbe.isNotFound) {
+              // No index.json → direct download mode
+              templatePicked = true;
+            } else {
+              // Transient error (not 404) — loop back, don't misclassify
+              console.log(
+                chalk.yellow(
+                  "   Could not reach registry (network issue). Try again or enter a different source.",
+                ),
+              );
+              registry = undefined; // Reset so we don't fall through to direct download
+            }
+          } catch (error) {
+            console.log(
+              chalk.red(
+                error instanceof Error
+                  ? error.message
+                  : "Invalid registry source",
+              ),
+            );
+            // Loop back to picker
+          }
+        } else {
+          templatePicked = true;
+          if (templateAnswer.template !== "blank") {
+            selectedTemplate = templateAnswer.template;
+
+            // Check if spec directory already exists and ask what to do
+            const specDir = path.join(cwd, PATHS.SPEC);
+            if (
+              fs.existsSync(specDir) &&
+              !options.overwrite &&
+              !options.append
+            ) {
+              const actionAnswer = await inquirer.prompt<{
+                action: TemplateStrategy;
+              }>([
+                {
+                  type: "list",
+                  name: "action",
+                  message: `Directory ${PATHS.SPEC} already exists. What do you want to do?`,
+                  choices: [
+                    { name: "Skip (keep existing)", value: "skip" },
+                    { name: "Overwrite (replace all)", value: "overwrite" },
+                    {
+                      name: "Append (add missing files only)",
+                      value: "append",
+                    },
+                  ],
+                  default: "skip",
+                },
+              ]);
+              templateStrategy = actionAnswer.action;
+            }
+          }
         }
       }
     }
   }
-  // If -y flag: selectedTemplate stays null, use blank templates
+  // -y mode with --registry (no --template): probe index.json to detect mode
+  if (options.yes && registry && !selectedTemplate) {
+    const probeResult = await probeRegistryIndex(
+      `${registry.rawBaseUrl}/index.json`,
+    );
+    if (probeResult.templates.length > 0) {
+      // Marketplace mode requires interactive selection — can't auto-select
+      console.log(
+        chalk.red(
+          "Error: Registry is a marketplace with multiple templates. " +
+            "Use --template <id> to specify which one, or remove -y for interactive selection.",
+        ),
+      );
+      return;
+    }
+    if (!probeResult.isNotFound) {
+      // Transient error (not 404) — abort, don't misclassify as direct-download
+      console.log(
+        chalk.red(
+          "Error: Could not reach registry (network issue). Check your connection and try again.",
+        ),
+      );
+      return;
+    }
+    // isNotFound=true → no index.json, proceed with direct download (fetchedTemplates stays empty)
+  }
 
   // ==========================================================================
-  // Download Remote Template (if selected)
+  // Download Remote Template (if selected or direct registry download)
   // ==========================================================================
 
   let useRemoteTemplate = false;
 
   if (selectedTemplate) {
+    // Marketplace mode: download specific template by ID
     console.log(chalk.blue(`📦 Downloading template "${selectedTemplate}"...`));
     console.log(chalk.gray("   This may take a moment on slow connections."));
 
@@ -579,6 +772,58 @@ export async function init(options: InitOptions): Promise<void> {
       selectedTemplate,
       templateStrategy,
       prefetched,
+      registry,
+    );
+
+    if (result.success) {
+      if (result.skipped) {
+        console.log(chalk.gray(`   ${result.message}`));
+      } else {
+        console.log(chalk.green(`   ${result.message}`));
+        useRemoteTemplate = true;
+      }
+    } else {
+      console.log(chalk.yellow(`   ${result.message}`));
+      console.log(chalk.gray("   Falling back to blank templates..."));
+      const retryCmd = registry
+        ? `trellis init --registry ${registry.gigetSource} --template ${selectedTemplate}`
+        : `trellis init --template ${selectedTemplate}`;
+      console.log(chalk.gray(`   You can retry later: ${retryCmd}`));
+    }
+  } else if (registry && fetchedTemplates.length === 0) {
+    // Direct download mode: registry has no index.json, download directory directly
+    console.log(
+      chalk.blue(`📦 Downloading spec from ${registry.gigetSource}...`),
+    );
+    console.log(chalk.gray("   This may take a moment on slow connections."));
+
+    // Ask about existing spec dir in interactive mode
+    if (!options.yes && !options.overwrite && !options.append) {
+      const specDir = path.join(cwd, PATHS.SPEC);
+      if (fs.existsSync(specDir)) {
+        const actionAnswer = await inquirer.prompt<{
+          action: TemplateStrategy;
+        }>([
+          {
+            type: "list",
+            name: "action",
+            message: `Directory ${PATHS.SPEC} already exists. What do you want to do?`,
+            choices: [
+              { name: "Skip (keep existing)", value: "skip" },
+              { name: "Overwrite (replace all)", value: "overwrite" },
+              { name: "Append (add missing files only)", value: "append" },
+            ],
+            default: "skip",
+          },
+        ]);
+        templateStrategy = actionAnswer.action;
+      }
+    }
+
+    const result = await downloadRegistryDirect(
+      cwd,
+      registry,
+      templateStrategy,
     );
 
     if (result.success) {
@@ -593,7 +838,7 @@ export async function init(options: InitOptions): Promise<void> {
       console.log(chalk.gray("   Falling back to blank templates..."));
       console.log(
         chalk.gray(
-          `   You can retry later: trellis init --template ${selectedTemplate}`,
+          `   You can retry later: trellis init --registry ${registry.gigetSource}`,
         ),
       );
     }

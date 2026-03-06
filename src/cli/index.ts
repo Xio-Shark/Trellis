@@ -86,6 +86,10 @@ program
     "Overwrite existing spec directory when using template",
   )
   .option("--append", "Only add missing files when using template")
+  .option(
+    "-r, --registry <source>",
+    "Use a custom template registry (e.g., gh:myorg/myrepo/specs)",
+  )
   .action(async (options: Record<string, unknown>) => {
     try {
       await init(options);
