@@ -100,6 +100,7 @@ At a high level, the workflow is simple:
 
 ## What's New
 
+- **v0.3.6**: task lifecycle hooks, custom template registries (`--registry`), parent-child subtasks, fix PreToolUse hook for CC v2.1.63+.
 - **v0.3.5**: hotfix for delete migration manifest field name (Kilo workflows).
 - **v0.3.4**: Qoder platform support, Kilo workflows migration, record-session task awareness.
 - **v0.3.1**: background watch mode for `trellis update`, improved `.gitignore` handling, docs refresh.
