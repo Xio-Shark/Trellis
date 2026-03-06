@@ -100,9 +100,10 @@ At a high level, the workflow is simple:
 
 ## What's New
 
-- **v0.3.1**: adds background watch mode for `trellis update`, improves behavior in repos with existing `.gitignore`, and refreshes the docs set.
-- **v0.3.0**: expands support from 2 platforms to 9, adds Windows compatibility, remote spec template fetching, and `/trellis:brainstorm`.
-- **Docs refresh**: the official docs now cover quick start, architecture, commands, customization, real-world scenarios, and ongoing changelog entries.
+- **v0.3.5**: hotfix for delete migration manifest field name (Kilo workflows).
+- **v0.3.4**: Qoder platform support, Kilo workflows migration, record-session task awareness.
+- **v0.3.1**: background watch mode for `trellis update`, improved `.gitignore` handling, docs refresh.
+- **v0.3.0**: platform support expanded from 2 to 10, Windows compatibility, remote spec templates, `/trellis:brainstorm`.
 
 ## FAQ
 
@@ -144,7 +145,7 @@ Yes. Personal workspace journals stay separate per developer, while shared specs
 - [Quick Start](https://docs.trytrellis.app/guide/ch02-quick-start) - Get Trellis running in a repo fast
 - [Supported Platforms](https://docs.trytrellis.app/guide/ch13-multi-platform) - Platform-specific setup and command details
 - [Real-World Scenarios](https://docs.trytrellis.app/guide/ch08-real-world) - See how the workflow plays out in practice
-- [Changelog](https://docs.trytrellis.app/changelog/v0.3.1) - Track current releases and updates
+- [Changelog](https://docs.trytrellis.app/changelog/v0.3.5) - Track current releases and updates
 - [Tech Blog](https://docs.trytrellis.app/blog) - Product thinking and technical writeups
 - [GitHub Issues](https://github.com/mindfold-ai/Trellis/issues) - Report bugs or request features
 - [Discord](https://discord.com/invite/tWcCZ3aRHc) - Join the community
