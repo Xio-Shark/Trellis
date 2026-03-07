@@ -98,6 +98,17 @@ At a high level, the workflow is simple:
 3. Let Trellis inject the right context for the current task.
 4. Use checks, journals, and worktrees to keep quality and continuity intact.
 
+## Spec Templates & Marketplace
+
+Specs ship as empty templates by default — they are meant to be customized for your project's stack and conventions. You can fill them from scratch, or start from a community template:
+
+```bash
+# Fetch templates from a custom registry
+trellis init --registry https://github.com/your-org/your-spec-templates
+```
+
+Browse available templates and learn how to publish your own on the [Spec Templates page](https://docs.trytrellis.app/templates/specs-index).
+
 ## What's New
 
 - **v0.3.6**: task lifecycle hooks, custom template registries (`--registry`), parent-child subtasks, fix PreToolUse hook for CC v2.1.63+.
@@ -146,7 +157,7 @@ Yes. Personal workspace journals stay separate per developer, while shared specs
 - [Quick Start](https://docs.trytrellis.app/guide/ch02-quick-start) - Get Trellis running in a repo fast
 - [Supported Platforms](https://docs.trytrellis.app/guide/ch13-multi-platform) - Platform-specific setup and command details
 - [Real-World Scenarios](https://docs.trytrellis.app/guide/ch08-real-world) - See how the workflow plays out in practice
-- [Changelog](https://docs.trytrellis.app/changelog/v0.3.5) - Track current releases and updates
+- [Changelog](https://docs.trytrellis.app/changelog/v0.3.6) - Track current releases and updates
 - [Tech Blog](https://docs.trytrellis.app/blog) - Product thinking and technical writeups
 - [GitHub Issues](https://github.com/mindfold-ai/Trellis/issues) - Report bugs or request features
 - [Discord](https://discord.com/invite/tWcCZ3aRHc) - Join the community
