@@ -4,8 +4,8 @@
 Task Management Script for Multi-Agent Pipeline.
 
 Usage:
-    python3 task.py create "<title>" [--slug <name>] [--assignee <dev>] [--priority P0|P1|P2|P3] [--parent <dir>]
-    python3 task.py init-context <dir> <type>   # Initialize jsonl files
+    python3 task.py create "<title>" [--slug <name>] [--assignee <dev>] [--priority P0|P1|P2|P3] [--package <pkg>] [--parent <dir>]
+    python3 task.py init-context <dir> <type> [--package <pkg>]  # Initialize jsonl files
     python3 task.py add-context <dir> <file> <path> [reason] # Add jsonl entry
     python3 task.py validate <dir>              # Validate jsonl files
     python3 task.py list-context <dir>          # List jsonl entries
@@ -62,7 +62,7 @@ from common.task_utils import (
     find_task_by_name,
     archive_task_complete,
 )
-from common.config import get_hooks
+from common.config import get_default_package, get_hooks
 
 
 # =============================================================================
@@ -200,46 +200,39 @@ def get_implement_base() -> list[dict]:
     ]
 
 
-def get_implement_backend() -> list[dict]:
+def get_implement_backend(package: str = "cli") -> list[dict]:
     """Get backend implement context entries."""
     return [
-        {"file": f"{DIR_WORKFLOW}/{DIR_SPEC}/cli/backend/index.md", "reason": "Backend development guide"},
+        {"file": f"{DIR_WORKFLOW}/{DIR_SPEC}/{package}/backend/index.md", "reason": "Backend development guide"},
     ]
 
 
-def get_implement_frontend() -> list[dict]:
+def get_implement_frontend(package: str = "cli") -> list[dict]:
     """Get frontend implement context entries."""
     return [
-        {"file": f"{DIR_WORKFLOW}/{DIR_SPEC}/cli/frontend/index.md", "reason": "Frontend development guide"},
+        {"file": f"{DIR_WORKFLOW}/{DIR_SPEC}/{package}/frontend/index.md", "reason": "Frontend development guide"},
     ]
 
 
-def get_check_context(dev_type: str, repo_root: Path) -> list[dict]:
+def get_check_context(repo_root: Path) -> list[dict]:
     """Get check context entries."""
     adapter = get_cli_adapter_auto(repo_root)
 
     entries = [
         {"file": adapter.get_trellis_command_path("finish-work"), "reason": "Finish work checklist"},
+        {"file": adapter.get_trellis_command_path("check"), "reason": "Code quality check spec"},
     ]
-
-    if dev_type in ("backend", "fullstack"):
-        entries.append({"file": adapter.get_trellis_command_path("check-backend"), "reason": "Backend check spec"})
-    if dev_type in ("frontend", "fullstack"):
-        entries.append({"file": adapter.get_trellis_command_path("check-frontend"), "reason": "Frontend check spec"})
 
     return entries
 
 
-def get_debug_context(dev_type: str, repo_root: Path) -> list[dict]:
+def get_debug_context(repo_root: Path) -> list[dict]:
     """Get debug context entries."""
     adapter = get_cli_adapter_auto(repo_root)
 
-    entries: list[dict] = []
-
-    if dev_type in ("backend", "fullstack"):
-        entries.append({"file": adapter.get_trellis_command_path("check-backend"), "reason": "Backend check spec"})
-    if dev_type in ("frontend", "fullstack"):
-        entries.append({"file": adapter.get_trellis_command_path("check-frontend"), "reason": "Frontend check spec"})
+    entries: list[dict] = [
+        {"file": adapter.get_trellis_command_path("check"), "reason": "Code quality check spec"},
+    ]
 
     return entries
 
@@ -324,6 +317,7 @@ def cmd_create(args: argparse.Namespace) -> int:
         "title": args.title,
         "description": args.description or "",
         "status": "planning",
+        "package": args.package or None,
         "dev_type": None,
         "scope": None,
         "priority": args.priority,
@@ -399,11 +393,13 @@ def cmd_init_context(args: argparse.Namespace) -> int:
     repo_root = get_repo_root()
     target_dir = _resolve_task_dir(args.dir, repo_root)
     dev_type = args.type
+    package = getattr(args, "package", None) or "cli"
 
     if not dev_type:
         print(colored("Error: Missing arguments", Colors.RED))
-        print("Usage: python3 task.py init-context <task-dir> <dev_type>")
+        print("Usage: python3 task.py init-context <task-dir> <dev_type> [--package <name>]")
         print("  dev_type: backend | frontend | fullstack | test | docs")
+        print("  package:  spec package name (default: cli)")
         return 1
 
     if not target_dir.is_dir():
@@ -413,18 +409,19 @@ def cmd_init_context(args: argparse.Namespace) -> int:
     print(colored("=== Initializing Agent Context Files ===", Colors.BLUE))
     print(f"Target dir: {target_dir}")
     print(f"Dev type: {dev_type}")
+    print(f"Package: {package}")
     print()
 
     # implement.jsonl
     print(colored("Creating implement.jsonl...", Colors.CYAN))
     implement_entries = get_implement_base()
     if dev_type in ("backend", "test"):
-        implement_entries.extend(get_implement_backend())
+        implement_entries.extend(get_implement_backend(package))
     elif dev_type == "frontend":
-        implement_entries.extend(get_implement_frontend())
+        implement_entries.extend(get_implement_frontend(package))
     elif dev_type == "fullstack":
-        implement_entries.extend(get_implement_backend())
-        implement_entries.extend(get_implement_frontend())
+        implement_entries.extend(get_implement_backend(package))
+        implement_entries.extend(get_implement_frontend(package))
 
     implement_file = target_dir / "implement.jsonl"
     _write_jsonl(implement_file, implement_entries)
@@ -432,14 +429,14 @@ def cmd_init_context(args: argparse.Namespace) -> int:
 
     # check.jsonl
     print(colored("Creating check.jsonl...", Colors.CYAN))
-    check_entries = get_check_context(dev_type, repo_root)
+    check_entries = get_check_context(repo_root)
     check_file = target_dir / "check.jsonl"
     _write_jsonl(check_file, check_entries)
     print(f"  {colored('✓', Colors.GREEN)} {len(check_entries)} entries")
 
     # debug.jsonl
     print(colored("Creating debug.jsonl...", Colors.CYAN))
-    debug_entries = get_debug_context(dev_type, repo_root)
+    debug_entries = get_debug_context(repo_root)
     debug_file = target_dir / "debug.jsonl"
     _write_jsonl(debug_file, debug_entries)
     print(f"  {colored('✓', Colors.GREEN)} {len(debug_entries)} entries")
@@ -964,6 +961,7 @@ def cmd_list(args: argparse.Namespace) -> int:
             assignee = "-"
             children: list[str] = []
             parent: str | None = None
+            package: str | None = None
 
             if task_json.is_file():
                 data = _read_json_file(task_json)
@@ -972,12 +970,14 @@ def cmd_list(args: argparse.Namespace) -> int:
                     assignee = data.get("assignee", "-")
                     children = data.get("children", [])
                     parent = data.get("parent")
+                    package = data.get("package")
 
             all_tasks[dir_name] = {
                 "status": status,
                 "assignee": assignee,
                 "children": children,
                 "parent": parent,
+                "package": package,
             }
 
     # Second pass: display tasks hierarchically
@@ -989,6 +989,7 @@ def cmd_list(args: argparse.Namespace) -> int:
         status = info["status"]
         assignee = info["assignee"]
         children = info["children"]
+        pkg = info.get("package")
 
         # Apply --mine filter
         if filter_mine and assignee != developer:
@@ -1006,12 +1007,15 @@ def cmd_list(args: argparse.Namespace) -> int:
         # Children progress
         progress = _get_children_progress(children, tasks_dir) if children else ""
 
+        # Package tag
+        pkg_tag = f" @{pkg}" if pkg else ""
+
         prefix = "  " * indent + "  - "
 
         if filter_mine:
-            print(f"{prefix}{dir_name}/ ({status}){progress}{marker}")
+            print(f"{prefix}{dir_name}/ ({status}){progress}{pkg_tag}{marker}")
         else:
-            print(f"{prefix}{dir_name}/ ({status}){progress} [{colored(assignee, Colors.CYAN)}]{marker}")
+            print(f"{prefix}{dir_name}/ ({status}){progress}{pkg_tag} [{colored(assignee, Colors.CYAN)}]{marker}")
         count += 1
 
         # Print children indented
@@ -1261,12 +1265,15 @@ def main() -> int:
     p_create.add_argument("--assignee", "-a", help="Assignee developer")
     p_create.add_argument("--priority", "-p", default="P2", help="Priority (P0-P3)")
     p_create.add_argument("--description", "-d", help="Task description")
+    p_create.add_argument("--package", help="Package name for monorepo (e.g., cli, docs-site)")
     p_create.add_argument("--parent", help="Parent task directory (establishes subtask link)")
 
     # init-context
     p_init = subparsers.add_parser("init-context", help="Initialize context files")
     p_init.add_argument("dir", help="Task directory")
     p_init.add_argument("type", help="Dev type: backend|frontend|fullstack|test|docs")
+    _default_pkg = get_default_package() or "cli"
+    p_init.add_argument("--package", default=_default_pkg, help=f"Package name for spec resolution (default: {_default_pkg})")
 
     # add-context
     p_add = subparsers.add_parser("add-context", help="Add context entry")

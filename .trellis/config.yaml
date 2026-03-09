@@ -15,6 +15,23 @@ session_commit_message: "chore: record journal"
 max_journal_lines: 2000
 
 #-------------------------------------------------------------------------------
+# Packages (Monorepo)
+#-------------------------------------------------------------------------------
+
+# Declare packages in this project and their source code paths.
+# If omitted, Trellis assumes a single-repo layout (spec/backend/, spec/frontend/).
+#
+packages:
+  cli:
+    path: packages/cli
+  docs-site:
+    path: docs-site
+    type: submodule
+
+# Default package used when --package is not specified.
+default_package: cli
+
+#-------------------------------------------------------------------------------
 # Task Lifecycle Hooks
 #-------------------------------------------------------------------------------
 

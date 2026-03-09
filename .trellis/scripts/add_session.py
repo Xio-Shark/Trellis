@@ -4,7 +4,7 @@
 Add a new session to journal file and update index.md.
 
 Usage:
-    python3 add_session.py --title "Title" --commit "hash" --summary "Summary"
+    python3 add_session.py --title "Title" --commit "hash" --summary "Summary" [--package cli]
     echo "content" | python3 add_session.py --title "Title" --commit "hash"
 """
 
@@ -123,7 +123,8 @@ def generate_session_content(
     commit: str,
     summary: str,
     extra_content: str,
-    today: str
+    today: str,
+    package: str | None = None,
 ) -> str:
     """Generate session content."""
     if commit and commit != "-":
@@ -135,12 +136,14 @@ def generate_session_content(
     else:
         commit_table = "(No commits - planning session)"
 
+    package_line = f"\n**Package**: {package}" if package else ""
+
     return f"""
 
 ## Session {session_num}: {title}
 
 **Date**: {today}
-**Task**: {title}
+**Task**: {title}{package_line}
 
 ### Summary
 
@@ -305,6 +308,7 @@ def add_session(
     summary: str = "(Add summary)",
     extra_content: str = "(Add details)",
     auto_commit: bool = True,
+    package: str | None = None,
 ) -> int:
     """Add a new session."""
     repo_root = get_repo_root()
@@ -330,7 +334,7 @@ def add_session(
     new_session = current_session + 1
 
     session_content = generate_session_content(
-        new_session, title, commit, summary, extra_content, today
+        new_session, title, commit, summary, extra_content, today, package
     )
     content_lines = len(session_content.splitlines())
 
@@ -400,6 +404,7 @@ def main() -> int:
     parser.add_argument("--commit", default="-", help="Comma-separated commit hashes")
     parser.add_argument("--summary", default="(Add summary)", help="Brief summary")
     parser.add_argument("--content-file", help="Path to file with detailed content")
+    parser.add_argument("--package", help="Package name tag (e.g., cli, docs-site)")
     parser.add_argument("--no-commit", action="store_true",
                         help="Skip auto-commit of workspace changes")
 
@@ -416,6 +421,7 @@ def main() -> int:
     return add_session(
         args.title, args.commit, args.summary, extra_content,
         auto_commit=not args.no_commit,
+        package=args.package,
     )
 
 

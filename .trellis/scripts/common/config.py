@@ -52,6 +52,53 @@ def get_max_journal_lines(repo_root: Path | None = None) -> int:
         return DEFAULT_MAX_JOURNAL_LINES
 
 
+def get_packages(repo_root: Path | None = None) -> dict[str, dict]:
+    """Get monorepo package declarations.
+
+    Returns:
+        Dict mapping package name to its config (path, type, etc.).
+        Empty dict if no packages configured (single-repo mode).
+
+    Example return:
+        {"cli": {"path": "packages/cli"}, "docs-site": {"path": "docs-site", "type": "submodule"}}
+    """
+    config = _load_config(repo_root)
+    packages = config.get("packages")
+    if not isinstance(packages, dict):
+        return {}
+    # Ensure each value is a dict
+    return {k: v for k, v in packages.items() if isinstance(v, dict)}
+
+
+def get_default_package(repo_root: Path | None = None) -> str | None:
+    """Get the default package name from config.
+
+    Returns:
+        Package name string, or None if not configured.
+    """
+    config = _load_config(repo_root)
+    value = config.get("default_package")
+    return str(value) if value else None
+
+
+def get_submodule_packages(repo_root: Path | None = None) -> dict[str, str]:
+    """Get packages that are git submodules.
+
+    Returns:
+        Dict mapping package name to its path for submodule-type packages.
+        Empty dict if none configured.
+
+    Example return:
+        {"docs-site": "docs-site"}
+    """
+    packages = get_packages(repo_root)
+    return {
+        name: cfg.get("path", name)
+        for name, cfg in packages.items()
+        if cfg.get("type") == "submodule"
+    }
+
+
 def get_hooks(event: str, repo_root: Path | None = None) -> list[str]:
     """Get hook commands for a lifecycle event.
 
