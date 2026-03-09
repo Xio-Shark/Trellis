@@ -15,9 +15,9 @@ import { downloadTemplate } from "giget";
 // =============================================================================
 
 export const TEMPLATE_INDEX_URL =
-  "https://raw.githubusercontent.com/mindfold-ai/docs/main/marketplace/index.json";
+  "https://raw.githubusercontent.com/mindfold-ai/Trellis/main/marketplace/index.json";
 
-const TEMPLATE_REPO = "gh:mindfold-ai/docs";
+const TEMPLATE_REPO = "gh:mindfold-ai/Trellis";
 
 /** Map template type to installation path */
 const INSTALL_PATHS: Record<string, string> = {

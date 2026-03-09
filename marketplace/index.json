@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "electron-fullstack",
+      "type": "spec",
+      "name": "Electron + React + TypeScript",
+      "description": "Full-stack Electron desktop app with React frontend and SQLite backend",
+      "path": "marketplace/specs/electron-fullstack",
+      "tags": ["electron", "react", "typescript", "sqlite"]
+    },
+    {
+      "id": "trellis-meta",
+      "type": "skill",
+      "name": "Trellis Meta Skill",
+      "description": "Meta-skill for understanding and customizing Trellis workflows",
+      "path": "marketplace/skills/trellis-meta",
+      "tags": ["trellis", "meta", "workflow", "customization"]
+    }
+  ]
+}
