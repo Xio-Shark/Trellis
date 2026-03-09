@@ -33,6 +33,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from common.cli_adapter import CLIAdapter, get_cli_adapter
+from common.config import get_submodule_packages
 from common.git_context import _run_git_command
 from common.paths import (
     DIR_WORKFLOW,
@@ -293,6 +294,35 @@ def main() -> int:
             shutil.rmtree(str(task_target_dir))
         shutil.copytree(str(task_dir_abs), str(task_target_dir))
         log_success("Task directory copied to worktree")
+
+        # ----- Initialize submodules (selective) -----
+        submodule_pkgs = get_submodule_packages(project_root)
+        if submodule_pkgs:
+            task_package = task_data.get("package") or ""
+            # Determine which submodules to init: only those matching task's target package(s)
+            to_init = {}
+            if task_package:
+                # task_package could be comma-separated for multi-package tasks
+                target_names = {p.strip() for p in task_package.split(",")}
+                to_init = {
+                    name: path
+                    for name, path in submodule_pkgs.items()
+                    if name in target_names
+                }
+
+            if to_init:
+                log_info(f"Initializing submodule(s): {', '.join(to_init.keys())}...")
+                for name, path in to_init.items():
+                    ret, _, err = _run_git_command(
+                        ["submodule", "update", "--init", path],
+                        cwd=Path(worktree_path),
+                    )
+                    if ret != 0:
+                        log_error(f"Failed to init submodule {name}: {err}")
+                    else:
+                        log_success(f"Submodule initialized: {name} ({path})")
+            else:
+                log_info("Task target is not a submodule, skipping submodule init")
 
         # ----- Run post_create hooks -----
         log_info("Running post_create hooks...")

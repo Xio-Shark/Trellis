@@ -26,6 +26,7 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from common.config import get_submodule_packages
 from common.git_context import _run_git_command
 from common.paths import (
     DIR_WORKFLOW,
@@ -34,6 +35,105 @@ from common.paths import (
     get_repo_root,
 )
 from common.phase import get_phase_for_action
+
+
+# =============================================================================
+# Submodule Helpers
+# =============================================================================
+
+
+def _has_submodule_changes(submodule_path: Path) -> bool:
+    """Check if a submodule has uncommitted changes."""
+    if not submodule_path.is_dir():
+        return False
+    ret, _, _ = _run_git_command(
+        ["status", "--porcelain"], cwd=submodule_path
+    )
+    if ret != 0:
+        return False
+    _, status_out, _ = _run_git_command(
+        ["status", "--porcelain"], cwd=submodule_path
+    )
+    return bool(status_out.strip())
+
+
+def _commit_and_push_submodule(
+    submodule_path: Path,
+    branch: str,
+    commit_msg: str,
+    dry_run: bool = False,
+) -> tuple[bool, str]:
+    """Commit and push changes inside a submodule.
+
+    Returns:
+        (success, pr_url) tuple.
+    """
+    name = submodule_path.name
+
+    # Create and checkout branch
+    ret, _, _ = _run_git_command(
+        ["checkout", "-B", branch], cwd=submodule_path
+    )
+    if ret != 0:
+        print(f"{Colors.RED}  Failed to checkout branch in {name}{Colors.NC}")
+        return False, ""
+
+    # Stage all changes
+    _run_git_command(["add", "-A"], cwd=submodule_path)
+
+    # Check if there are staged changes
+    ret, _, _ = _run_git_command(
+        ["diff", "--cached", "--quiet"], cwd=submodule_path
+    )
+    if ret == 0:
+        print(f"  No staged changes in {name}")
+        return True, ""
+
+    if dry_run:
+        _, staged_out, _ = _run_git_command(
+            ["diff", "--cached", "--name-only"], cwd=submodule_path
+        )
+        print(f"  [DRY-RUN] Would commit in {name}:")
+        for line in staged_out.splitlines():
+            print(f"    - {line}")
+        return True, "DRY-RUN"
+
+    # Commit
+    _run_git_command(["commit", "-m", commit_msg], cwd=submodule_path)
+    print(f"{Colors.GREEN}  Committed in {name}: {commit_msg}{Colors.NC}")
+
+    # Push
+    ret, _, err = _run_git_command(
+        ["push", "-u", "origin", branch], cwd=submodule_path
+    )
+    if ret != 0:
+        print(f"{Colors.RED}  Failed to push {name}: {err}{Colors.NC}")
+        return False, ""
+    print(f"{Colors.GREEN}  Pushed {name} to origin/{branch}{Colors.NC}")
+
+    # Create PR
+    result = subprocess.run(
+        ["gh", "pr", "list", "--head", branch, "--json", "url", "--jq", ".[0].url"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        cwd=str(submodule_path),
+    )
+    existing_pr = result.stdout.strip()
+    if existing_pr:
+        print(f"{Colors.YELLOW}  PR already exists for {name}: {existing_pr}{Colors.NC}")
+        return True, existing_pr
+
+    result = subprocess.run(
+        ["gh", "pr", "create", "--draft", "--title", commit_msg, "--body", ""],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        cwd=str(submodule_path),
+    )
+    if result.returncode != 0:
+        print(f"{Colors.RED}  Failed to create PR for {name}: {result.stderr}{Colors.NC}")
+        return False, ""
+
+    pr_url = result.stdout.strip()
+    print(f"{Colors.GREEN}  PR created for {name}: {pr_url}{Colors.NC}")
+    return True, pr_url
 
 # =============================================================================
 # Colors
@@ -162,10 +262,39 @@ def main() -> int:
     current_branch = branch_out.strip()
     print(f"Current branch: {current_branch}")
 
+    # =============================================================================
+    # Handle Submodule Changes (before main repo staging)
+    # =============================================================================
+    submodule_pr_urls: list[str] = []
+    submodule_pkgs = get_submodule_packages(repo_root)
+
+    if submodule_pkgs:
+        print(f"{Colors.YELLOW}Checking submodules for changes...{Colors.NC}")
+        for pkg_name, pkg_path in submodule_pkgs.items():
+            sub_path = repo_root / pkg_path
+            if _has_submodule_changes(sub_path):
+                print(f"  Changes detected in submodule: {pkg_name} ({pkg_path})")
+                sub_commit_msg = f"{commit_prefix}({scope}): {task_name}"
+                ok, sub_pr_url = _commit_and_push_submodule(
+                    sub_path, current_branch, sub_commit_msg, dry_run=args.dry_run
+                )
+                if not ok:
+                    print(f"{Colors.RED}Failed to process submodule {pkg_name}{Colors.NC}")
+                    return 1
+                if sub_pr_url:
+                    submodule_pr_urls.append(sub_pr_url)
+            else:
+                print(f"  No changes in submodule: {pkg_name}")
+        print()
+
+    # =============================================================================
+    # Main Repo Changes
+    # =============================================================================
+
     # Check for changes
     print(f"{Colors.YELLOW}Checking for changes...{Colors.NC}")
 
-    # Stage changes
+    # Stage changes (including updated submodule refs)
     _run_git_command(["add", "-A"])
 
     # Exclude workspace and temp files
@@ -307,6 +436,8 @@ def main() -> int:
 
         task_data["status"] = "completed"
         task_data["pr_url"] = pr_url
+        if submodule_pr_urls:
+            task_data["submodule_pr_urls"] = submodule_pr_urls
         task_data["current_phase"] = create_pr_phase
 
         _write_json_file(task_json, task_data)
@@ -321,6 +452,8 @@ def main() -> int:
     print()
     print(f"{Colors.GREEN}=== PR Created Successfully ==={Colors.NC}")
     print(f"PR URL: {pr_url}")
+    if submodule_pr_urls:
+        print(f"Submodule PRs: {', '.join(submodule_pr_urls)}")
 
     return 0
 
