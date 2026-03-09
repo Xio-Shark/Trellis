@@ -61,7 +61,7 @@ What broader problems does this bug reveal?
 Solidify insights into the system:
 
 - [ ] Update `.trellis/spec/guides/` thinking guides
-- [ ] Update `.trellis/spec/backend/` or `frontend/` docs
+- [ ] Update `.trellis/spec/cli/backend/` or `cli/frontend/` docs
 - [ ] Create issue record (if applicable)
 - [ ] Create feature ticket for root fix
 - [ ] Update check commands if needed
@@ -121,7 +121,7 @@ Three levels of insight:
    - If it's a cross-platform issue → update `cross-platform-thinking-guide.md`
    - If it's a cross-layer issue → update `cross-layer-thinking-guide.md`
    - If it's a code reuse issue → update `code-reuse-thinking-guide.md`
-   - If it's domain-specific → update `backend/*.md` or `frontend/*.md`
+   - If it's domain-specific → update `cli/backend/*.md` or `cli/frontend/*.md`
 
 2. **Sync templates** - After updating `.trellis/spec/`, sync to `src/templates/markdown/spec/`
 

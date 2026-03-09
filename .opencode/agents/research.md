@@ -30,8 +30,8 @@ Otherwise, if task-specific research is needed:
 
 Project spec locations for reference:
 - `.trellis/spec/shared/` - Cross-project common specs
-- `.trellis/spec/frontend/` - Frontend standards
-- `.trellis/spec/backend/` - Backend standards
+- `.trellis/spec/cli/frontend/` - Frontend standards
+- `.trellis/spec/cli/backend/` - Backend standards
 - `.trellis/spec/guides/` - Thinking guides
 - `.trellis/big-question/` - Known issues and pitfalls
 

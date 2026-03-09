@@ -46,8 +46,8 @@ python3 ./.trellis/scripts/get_context.py
 ### Step 3: Read Project Guidelines `[AI]`
 
 ```bash
-cat .trellis/spec/frontend/index.md  # Frontend guidelines index
-cat .trellis/spec/backend/index.md   # Backend guidelines index
+cat .trellis/spec/cli/frontend/index.md  # Frontend guidelines index
+cat .trellis/spec/cli/backend/index.md   # Backend guidelines index
 cat .trellis/spec/guides/index.md    # Thinking guides
 ```
 

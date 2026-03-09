@@ -54,11 +54,11 @@ Read and follow all instructions below carefully.
   parts.push("<guidelines>")
 
   parts.push("## Frontend")
-  const frontendIndex = ctx.readProjectFile(".trellis/spec/frontend/index.md")
+  const frontendIndex = ctx.readProjectFile(".trellis/spec/cli/frontend/index.md")
   parts.push(frontendIndex || "Not configured")
 
   parts.push("\n## Backend")
-  const backendIndex = ctx.readProjectFile(".trellis/spec/backend/index.md")
+  const backendIndex = ctx.readProjectFile(".trellis/spec/cli/backend/index.md")
   parts.push(backendIndex || "Not configured")
 
   parts.push("\n## Guides")

@@ -203,14 +203,14 @@ def get_implement_base() -> list[dict]:
 def get_implement_backend() -> list[dict]:
     """Get backend implement context entries."""
     return [
-        {"file": f"{DIR_WORKFLOW}/{DIR_SPEC}/backend/index.md", "reason": "Backend development guide"},
+        {"file": f"{DIR_WORKFLOW}/{DIR_SPEC}/cli/backend/index.md", "reason": "Backend development guide"},
     ]
 
 
 def get_implement_frontend() -> list[dict]:
     """Get frontend implement context entries."""
     return [
-        {"file": f"{DIR_WORKFLOW}/{DIR_SPEC}/frontend/index.md", "reason": "Frontend development guide"},
+        {"file": f"{DIR_WORKFLOW}/{DIR_SPEC}/cli/frontend/index.md", "reason": "Frontend development guide"},
     ]
 
 
@@ -1227,7 +1227,7 @@ Examples:
   python3 task.py create "Add login feature" --slug add-login
   python3 task.py create "Child task" --slug child --parent .trellis/tasks/01-21-parent
   python3 task.py init-context .trellis/tasks/01-21-add-login backend
-  python3 task.py add-context <dir> implement .trellis/spec/backend/auth.md "Auth guidelines"
+  python3 task.py add-context <dir> implement .trellis/spec/cli/backend/auth.md "Auth guidelines"
   python3 task.py set-branch <dir> task/add-login
   python3 task.py start .trellis/tasks/01-21-add-login
   python3 task.py create-pr                          # Uses current task

@@ -8,21 +8,26 @@ Maintain coding standards that guide AI development.
 
 ```
 .trellis/spec/
-├── frontend/                   # Frontend guidelines
-│   ├── index.md                # Overview and quick reference
-│   ├── component-guidelines.md
-│   ├── hook-guidelines.md
-│   ├── state-management.md
-│   └── ...
+├── cli/                        # Per-package specs (e.g. packages/cli/)
+│   ├── frontend/               # Frontend guidelines
+│   │   ├── index.md
+│   │   ├── component-guidelines.md
+│   │   ├── hook-guidelines.md
+│   │   ├── state-management.md
+│   │   └── ...
+│   │
+│   ├── backend/                # Backend guidelines
+│   │   ├── index.md
+│   │   ├── directory-structure.md
+│   │   ├── error-handling.md
+│   │   ├── api-patterns.md
+│   │   └── ...
+│   │
+│   └── unit-test/              # Unit test guidelines
+│       ├── index.md
+│       └── ...
 │
-├── backend/                    # Backend guidelines
-│   ├── index.md
-│   ├── directory-structure.md
-│   ├── error-handling.md
-│   ├── api-patterns.md
-│   └── ...
-│
-└── guides/                     # Thinking guides
+└── guides/                     # Thinking guides (cross-package)
     ├── index.md
     ├── cross-layer-thinking-guide.md
     ├── code-reuse-thinking-guide.md
@@ -33,7 +38,7 @@ Maintain coding standards that guide AI development.
 
 ## Spec Categories
 
-### Frontend (`frontend/`)
+### Frontend (`cli/frontend/`)
 
 UI and client-side patterns:
 - Component structure
@@ -42,7 +47,7 @@ UI and client-side patterns:
 - Styling conventions
 - Accessibility
 
-### Backend (`backend/`)
+### Backend (`cli/backend/`)
 
 Server-side patterns:
 - Directory structure
@@ -128,8 +133,8 @@ Detailed explanation...
 Reference specs in task context:
 
 ```jsonl
-{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend overview"}
-{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Component patterns"}
+{"file": ".trellis/spec/cli/frontend/index.md", "reason": "Frontend overview"}
+{"file": ".trellis/spec/cli/frontend/component-guidelines.md", "reason": "Component patterns"}
 ```
 
 ### Manual Reading (Cursor)
@@ -154,7 +159,7 @@ Read specs at session start:
 ### 2. Create Spec File
 
 ```bash
-touch .trellis/spec/frontend/new-pattern.md
+touch .trellis/spec/cli/frontend/new-pattern.md
 ```
 
 ### 3. Follow Format

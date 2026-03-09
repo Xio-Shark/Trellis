@@ -58,10 +58,10 @@ git status && git log --oneline -10              # Git state
 
 ```bash
 # Read frontend guidelines index (if applicable)
-cat .trellis/spec/frontend/index.md
+cat .trellis/spec/cli/frontend/index.md
 
 # Read backend guidelines index (if applicable)
-cat .trellis/spec/backend/index.md
+cat .trellis/spec/cli/backend/index.md
 ```
 
 **Why read both?**
@@ -76,16 +76,16 @@ Based on your task, read the **detailed** guidelines:
 
 **Frontend Task**:
 ```bash
-cat .trellis/spec/frontend/hook-guidelines.md      # For hooks
-cat .trellis/spec/frontend/component-guidelines.md # For components
-cat .trellis/spec/frontend/type-safety.md          # For types
+cat .trellis/spec/cli/frontend/hook-guidelines.md      # For hooks
+cat .trellis/spec/cli/frontend/component-guidelines.md # For components
+cat .trellis/spec/cli/frontend/type-safety.md          # For types
 ```
 
 **Backend Task**:
 ```bash
-cat .trellis/spec/backend/database-guidelines.md   # For DB operations
-cat .trellis/spec/backend/type-safety.md           # For types
-cat .trellis/spec/backend/logging-guidelines.md    # For logging
+cat .trellis/spec/cli/backend/database-guidelines.md   # For DB operations
+cat .trellis/spec/cli/backend/type-safety.md           # For types
+cat .trellis/spec/cli/backend/logging-guidelines.md    # For logging
 ```
 
 ---
@@ -132,12 +132,13 @@ cat .trellis/spec/backend/logging-guidelines.md    # For logging
 |   +-- {MM}-{DD}-{name}/
 |       +-- task.json
 |-- spec/                # [!] MUST READ before coding
-|   |-- frontend/        # Frontend guidelines (if applicable)
-|   |   |-- index.md               # Start here - guidelines index
-|   |   +-- *.md                   # Topic-specific docs
-|   |-- backend/         # Backend guidelines (if applicable)
-|   |   |-- index.md               # Start here - guidelines index
-|   |   +-- *.md                   # Topic-specific docs
+|   |-- cli/             # Package-scoped guidelines
+|   |   |-- frontend/    # Frontend guidelines (if applicable)
+|   |   |   |-- index.md           # Start here - guidelines index
+|   |   |   +-- *.md               # Topic-specific docs
+|   |   +-- backend/     # Backend guidelines (if applicable)
+|   |       |-- index.md           # Start here - guidelines index
+|   |       +-- *.md               # Topic-specific docs
 |   +-- guides/          # Thinking guides
 |       |-- index.md                      # Guides index
 |       |-- cross-layer-thinking-guide.md # Pre-implementation checklist
@@ -170,13 +171,13 @@ Based on what you'll develop, read the corresponding guidelines:
 **Frontend Development** (if applicable):
 ```bash
 # Read index first, then specific docs based on task
-cat .trellis/spec/frontend/index.md
+cat .trellis/spec/cli/frontend/index.md
 ```
 
 **Backend Development** (if applicable):
 ```bash
 # Read index first, then specific docs based on task
-cat .trellis/spec/backend/index.md
+cat .trellis/spec/cli/backend/index.md
 ```
 
 **Cross-Layer Features**:
@@ -232,8 +233,8 @@ python3 ./.trellis/scripts/task.py create "<title>" --slug <task-name>
 - [OK] Manual feature testing passes
 
 **Project-specific checks**:
-- See `.trellis/spec/frontend/quality-guidelines.md` for frontend
-- See `.trellis/spec/backend/quality-guidelines.md` for backend
+- See `.trellis/spec/cli/frontend/quality-guidelines.md` for frontend
+- See `.trellis/spec/cli/backend/quality-guidelines.md` for backend
 
 ---
 
@@ -294,13 +295,14 @@ workspace/
 **Structure** (Multi-doc format):
 ```
 spec/
-|-- frontend/           # Frontend docs (if applicable)
-|   |-- index.md        # Start here
-|   +-- *.md            # Topic-specific docs
-|-- backend/            # Backend docs (if applicable)
-|   |-- index.md        # Start here
-|   +-- *.md            # Topic-specific docs
-+-- guides/             # Thinking guides
+|-- cli/                # Package-scoped docs
+|   |-- frontend/       # Frontend docs (if applicable)
+|   |   |-- index.md    # Start here
+|   |   +-- *.md        # Topic-specific docs
+|   +-- backend/        # Backend docs (if applicable)
+|       |-- index.md    # Start here
+|       +-- *.md        # Topic-specific docs
++-- guides/             # Thinking guides (cross-package)
     |-- index.md        # Start here
     +-- *.md            # Guide-specific docs
 ```
@@ -371,8 +373,8 @@ python3 ./.trellis/scripts/task.py list-archive    # List archived tasks
 
 | Task Type | Must-read Document |
 |-----------|-------------------|
-| Frontend work | `frontend/index.md` → relevant docs |
-| Backend work | `backend/index.md` → relevant docs |
+| Frontend work | `cli/frontend/index.md` → relevant docs |
+| Backend work | `cli/backend/index.md` → relevant docs |
 | Cross-Layer Feature | `guides/cross-layer-thinking-guide.md` |
 
 ### Commit Convention

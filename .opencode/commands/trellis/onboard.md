@@ -132,7 +132,7 @@ AI needs the same onboarding - but compressed into seconds at session start.
 AI models have "pre-trained knowledge" - general patterns from millions of codebases. But YOUR project has specific conventions that differ from generic patterns.
 
 **WHAT IT ACTUALLY DOES**:
-1. Reads `.trellis/spec/frontend/` or `.trellis/spec/backend/`
+1. Reads `.trellis/spec/cli/frontend/` or `.trellis/spec/cli/backend/`
 2. Loads project-specific patterns into AI's working context:
    - Component naming conventions
    - State management patterns
@@ -272,8 +272,8 @@ Check if `.trellis/spec/` contains empty templates or customized guidelines:
 
 ```bash
 # Check if files are still empty templates (look for placeholder text)
-grep -l "To be filled by the team" .trellis/spec/backend/*.md 2>/dev/null | wc -l
-grep -l "To be filled by the team" .trellis/spec/frontend/*.md 2>/dev/null | wc -l
+grep -l "To be filled by the team" .trellis/spec/cli/backend/*.md 2>/dev/null | wc -l
+grep -l "To be filled by the team" .trellis/spec/cli/frontend/*.md 2>/dev/null | wc -l
 ```
 
 ## Step 2: Determine Situation
@@ -294,7 +294,7 @@ The templates contain placeholder text that needs to be replaced with YOUR proje
 2. Identify the patterns and conventions already in use
 3. Document them in the guideline files
 
-For example, for `.trellis/spec/backend/database-guidelines.md`:
+For example, for `.trellis/spec/cli/backend/database-guidelines.md`:
 - What ORM/query library does your project use?
 - How are migrations managed?
 - What naming conventions for tables/columns?

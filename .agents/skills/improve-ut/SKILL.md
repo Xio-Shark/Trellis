@@ -17,10 +17,10 @@ $improve-ut
 
 Read and follow these specs first:
 
-1. `.trellis/spec/unit-test/index.md`
-2. `.trellis/spec/unit-test/conventions.md`
-3. `.trellis/spec/unit-test/integration-patterns.md`
-4. `.trellis/spec/unit-test/mock-strategies.md`
+1. `.trellis/spec/cli/unit-test/index.md`
+2. `.trellis/spec/cli/unit-test/conventions.md`
+3. `.trellis/spec/cli/unit-test/integration-patterns.md`
+4. `.trellis/spec/cli/unit-test/mock-strategies.md`
 
 > If this skill conflicts with the unit-test specs, the specs win.
 

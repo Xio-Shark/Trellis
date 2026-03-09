@@ -45,8 +45,8 @@ This shows: developer identity, git status, current task (if any), active tasks.
 ### Step 3: Read Guidelines Index
 
 ```bash
-cat .trellis/spec/frontend/index.md  # Frontend guidelines
-cat .trellis/spec/backend/index.md   # Backend guidelines
+cat .trellis/spec/cli/frontend/index.md  # Frontend guidelines
+cat .trellis/spec/cli/backend/index.md   # Backend guidelines
 cat .trellis/spec/guides/index.md    # Thinking guides
 ```
 

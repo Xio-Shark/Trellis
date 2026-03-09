@@ -26,7 +26,7 @@ pnpm test
 
 ### 1.5. Test Coverage
 
-Check if your change needs new or updated tests (see `.trellis/spec/unit-test/conventions.md`):
+Check if your change needs new or updated tests (see `.trellis/spec/cli/unit-test/conventions.md`):
 
 - [ ] New pure function → unit test added?
 - [ ] Bug fix → regression test added in `test/regression.test.ts`?
@@ -36,9 +36,9 @@ Check if your change needs new or updated tests (see `.trellis/spec/unit-test/co
 ### 2. Code-Spec Sync
 
 **Code-Spec Docs**:
-- [ ] Does `.trellis/spec/backend/` need updates?
+- [ ] Does `.trellis/spec/cli/backend/` need updates?
   - New patterns, new modules, new conventions
-- [ ] Does `.trellis/spec/frontend/` need updates?
+- [ ] Does `.trellis/spec/cli/frontend/` need updates?
   - New components, new hooks, new patterns
 - [ ] Does `.trellis/spec/guides/` need updates?
   - New cross-layer flows, lessons from bugs

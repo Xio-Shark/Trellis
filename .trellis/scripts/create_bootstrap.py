@@ -78,11 +78,11 @@ def write_prd_backend_section() -> str:
 
 | File | What to Document |
 |------|------------------|
-| `.trellis/spec/backend/directory-structure.md` | Where different file types go (routes, services, utils) |
-| `.trellis/spec/backend/database-guidelines.md` | ORM, migrations, query patterns, naming conventions |
-| `.trellis/spec/backend/error-handling.md` | How errors are caught, logged, and returned |
-| `.trellis/spec/backend/logging-guidelines.md` | Log levels, format, what to log |
-| `.trellis/spec/backend/quality-guidelines.md` | Code review standards, testing requirements |
+| `.trellis/spec/cli/backend/directory-structure.md` | Where different file types go (routes, services, utils) |
+| `.trellis/spec/cli/backend/database-guidelines.md` | ORM, migrations, query patterns, naming conventions |
+| `.trellis/spec/cli/backend/error-handling.md` | How errors are caught, logged, and returned |
+| `.trellis/spec/cli/backend/logging-guidelines.md` | Log levels, format, what to log |
+| `.trellis/spec/cli/backend/quality-guidelines.md` | Code review standards, testing requirements |
 """
 
 
@@ -94,12 +94,12 @@ def write_prd_frontend_section() -> str:
 
 | File | What to Document |
 |------|------------------|
-| `.trellis/spec/frontend/directory-structure.md` | Component/page/hook organization |
-| `.trellis/spec/frontend/component-guidelines.md` | Component patterns, props conventions |
-| `.trellis/spec/frontend/hook-guidelines.md` | Custom hook naming, patterns |
-| `.trellis/spec/frontend/state-management.md` | State library, patterns, what goes where |
-| `.trellis/spec/frontend/type-safety.md` | TypeScript conventions, type organization |
-| `.trellis/spec/frontend/quality-guidelines.md` | Linting, testing, accessibility |
+| `.trellis/spec/cli/frontend/directory-structure.md` | Component/page/hook organization |
+| `.trellis/spec/cli/frontend/component-guidelines.md` | Component patterns, props conventions |
+| `.trellis/spec/cli/frontend/hook-guidelines.md` | Custom hook naming, patterns |
+| `.trellis/spec/cli/frontend/state-management.md` | State library, patterns, what goes where |
+| `.trellis/spec/cli/frontend/type-safety.md` | TypeScript conventions, type organization |
+| `.trellis/spec/cli/frontend/quality-guidelines.md` | Linting, testing, accessibility |
 """
 
 
@@ -200,20 +200,20 @@ def write_task_json(task_dir: Path, developer: str, project_type: str) -> None:
             {"name": "Fill frontend guidelines", "status": "pending"},
             {"name": "Add code examples", "status": "pending"},
         ]
-        related_files = [".trellis/spec/frontend/"]
+        related_files = [".trellis/spec/cli/frontend/"]
     elif project_type == "backend":
         subtasks = [
             {"name": "Fill backend guidelines", "status": "pending"},
             {"name": "Add code examples", "status": "pending"},
         ]
-        related_files = [".trellis/spec/backend/"]
+        related_files = [".trellis/spec/cli/backend/"]
     else:  # fullstack
         subtasks = [
             {"name": "Fill backend guidelines", "status": "pending"},
             {"name": "Fill frontend guidelines", "status": "pending"},
             {"name": "Add code examples", "status": "pending"},
         ]
-        related_files = [".trellis/spec/backend/", ".trellis/spec/frontend/"]
+        related_files = [".trellis/spec/cli/backend/", ".trellis/spec/cli/frontend/"]
 
     task_data = {
         "id": TASK_NAME,

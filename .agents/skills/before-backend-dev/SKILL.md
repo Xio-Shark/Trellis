@@ -6,12 +6,12 @@ description: "Read the backend development guidelines before starting your devel
 Read the backend development guidelines before starting your development task.
 
 Execute these steps:
-1. Read `.trellis/spec/backend/index.md` to understand available guidelines
+1. Read `.trellis/spec/cli/backend/index.md` to understand available guidelines
 2. Based on your task, read the relevant guideline files:
-   - Database work → `.trellis/spec/backend/database-guidelines.md`
-   - Error handling → `.trellis/spec/backend/error-handling.md`
-   - Logging → `.trellis/spec/backend/logging-guidelines.md`
-   - Type questions → `.trellis/spec/backend/type-safety.md`
+   - Database work → `.trellis/spec/cli/backend/database-guidelines.md`
+   - Error handling → `.trellis/spec/cli/backend/error-handling.md`
+   - Logging → `.trellis/spec/cli/backend/logging-guidelines.md`
+   - Type questions → `.trellis/spec/cli/backend/type-safety.md`
 3. Understand the coding standards and patterns you need to follow
 4. Then proceed with your development plan
 

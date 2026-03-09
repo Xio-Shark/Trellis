@@ -268,7 +268,7 @@ inject-subagent-context.py runs
             ├── Find task directory
             │
             ├── Load implement.jsonl
-            │   {"file": ".trellis/spec/backend/index.md", "reason": "..."}
+            │   {"file": ".trellis/spec/cli/backend/index.md", "reason": "..."}
             │   {"file": "src/services/auth.ts", "reason": "..."}
             │
             ├── Read each file content
@@ -276,7 +276,7 @@ inject-subagent-context.py runs
             └── Build new prompt:
                 # Implement Agent Task
                 ## Your Context
-                === .trellis/spec/backend/index.md ===
+                === .trellis/spec/cli/backend/index.md ===
                 [content]
                 === src/services/auth.ts ===
                 [content]

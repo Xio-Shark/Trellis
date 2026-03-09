@@ -43,10 +43,10 @@ Based on skill type, determine which guidelines to update:
 
 | Skill Category | Integration Target |
 |----------------|-------------------|
-| UI/Frontend (`frontend-design`, `web-artifacts-builder`) | `.trellis/spec/frontend/` |
-| Backend/API (`mcp-builder`) | `.trellis/spec/backend/` |
+| UI/Frontend (`frontend-design`, `web-artifacts-builder`) | `.trellis/spec/cli/frontend/` |
+| Backend/API (`mcp-builder`) | `.trellis/spec/cli/backend/` |
 | Documentation (`doc-coauthoring`, `docx`, `pdf`) | `.trellis/` or create dedicated guidelines |
-| Testing (`webapp-testing`) | `.trellis/spec/frontend/` (E2E) |
+| Testing (`webapp-testing`) | `.trellis/spec/cli/frontend/` (E2E) |
 
 ### 3. Analyze Skill Content
 
@@ -186,7 +186,7 @@ If this skill is frequently used, create a shortcut command:
 ### Directory Structure
 
 ```
-.trellis/spec/backend/
+.trellis/spec/cli/backend/
 |-- doc.md                           # Add MCP section
 |-- index.md                         # Add index entry
 \-- examples/

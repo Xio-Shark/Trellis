@@ -32,9 +32,9 @@ pnpm test
 ### 2. Code-Spec Sync
 
 **Code-Spec Docs**:
-- [ ] Does `.trellis/spec/backend/` need updates?
+- [ ] Does `.trellis/spec/cli/backend/` need updates?
   - New patterns, new modules, new conventions
-- [ ] Does `.trellis/spec/frontend/` need updates?
+- [ ] Does `.trellis/spec/cli/frontend/` need updates?
   - New components, new hooks, new patterns
 - [ ] Does `.trellis/spec/guides/` need updates?
   - New cross-layer flows, lessons from bugs

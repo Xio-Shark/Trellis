@@ -82,13 +82,13 @@ Your job is to catch what linters and typecheckers CANNOT catch.
 ## Project Specs (for context)
 
 ### Backend Guidelines
-$(cat .trellis/spec/backend/index.md)
+$(cat .trellis/spec/cli/backend/index.md)
 
 ### Thinking Guides
 $(cat .trellis/spec/guides/index.md)
 
 ### Unit Test Guidelines
-$(cat .trellis/spec/unit-test/index.md)
+$(cat .trellis/spec/cli/unit-test/index.md)
 
 ## Review Focus
 

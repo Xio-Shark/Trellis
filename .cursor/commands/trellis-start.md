@@ -44,12 +44,12 @@ Based on the upcoming task, read appropriate code-spec docs:
 
 **For Frontend Work**:
 ```bash
-cat .trellis/spec/frontend/index.md
+cat .trellis/spec/cli/frontend/index.md
 ```
 
 **For Backend Work**:
 ```bash
-cat .trellis/spec/backend/index.md
+cat .trellis/spec/cli/backend/index.md
 ```
 
 **For Cross-Layer Features**:

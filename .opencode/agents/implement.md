@@ -65,8 +65,8 @@ Before implementing, read:
 
 Read relevant specs based on task type:
 
-- Backend: `.trellis/spec/backend/`
-- Frontend: `.trellis/spec/frontend/`
+- Backend: `.trellis/spec/cli/backend/`
+- Frontend: `.trellis/spec/cli/frontend/`
 - Shared: `.trellis/spec/shared/`
 
 ### 2. Understand Requirements

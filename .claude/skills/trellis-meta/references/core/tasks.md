@@ -137,7 +137,7 @@ List files to inject as context for each phase.
 ### Format
 
 ```jsonl
-{"file": ".trellis/spec/backend/index.md", "reason": "Backend guidelines"}
+{"file": ".trellis/spec/cli/backend/index.md", "reason": "Backend guidelines"}
 {"file": "src/services/auth.ts", "reason": "Existing auth service"}
 {"file": ".trellis/tasks/01-31-add-login/prd.md", "reason": "Requirements"}
 ```
