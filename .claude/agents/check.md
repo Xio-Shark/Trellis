@@ -81,14 +81,11 @@ Your job is to catch what linters and typecheckers CANNOT catch.
 
 ## Project Specs (for context)
 
-### Backend Guidelines
-$(cat .trellis/spec/cli/backend/index.md)
+### Package Specs
+$(python3 ./.trellis/scripts/get_context.py --mode packages)
 
 ### Thinking Guides
 $(cat .trellis/spec/guides/index.md)
-
-### Unit Test Guidelines
-$(cat .trellis/spec/cli/unit-test/index.md)
 
 ## Review Focus
 

@@ -132,10 +132,8 @@ When adding a new platform `{platform}`, update the following:
 | `brainstorm` | Requirements discovery | Yes |
 | `break-loop` | Post-debug analysis | Yes |
 | `record-session` | Session recording | Yes |
-| `before-backend-dev` | Read backend guidelines | Yes |
-| `before-frontend-dev` | Read frontend guidelines | Yes |
-| `check-backend` | Check backend code quality | Yes |
-| `check-frontend` | Check frontend code quality | Yes |
+| `before-dev` | Read development guidelines (auto-discovers package specs) | Yes |
+| `check` | Check code quality (auto-discovers relevant specs) | Yes |
 | `check-cross-layer` | Cross-layer verification | Yes |
 | `create-command` | Create new slash command | Yes |
 | `integrate-skill` | Integrate external skill | Yes |

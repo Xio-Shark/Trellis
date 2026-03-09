@@ -94,23 +94,26 @@ Read and follow all instructions below carefully.
 
     output.write("<guidelines>\n")
 
-    output.write("## Frontend\n")
-    frontend_index = read_file(
-        trellis_dir / "spec" / "frontend" / "index.md", "Not configured"
-    )
-    output.write(frontend_index)
-    output.write("\n\n")
-
-    output.write("## Backend\n")
-    backend_index = read_file(
-        trellis_dir / "spec" / "backend" / "index.md", "Not configured"
-    )
-    output.write(backend_index)
-    output.write("\n\n")
+    spec_dir = trellis_dir / "spec"
+    if spec_dir.is_dir():
+        for pkg_dir in sorted(spec_dir.iterdir()):
+            if not pkg_dir.is_dir():
+                continue
+            pkg_name = pkg_dir.name
+            if pkg_name == "guides":
+                continue  # guides handled separately below
+            for layer_dir in sorted(pkg_dir.iterdir()):
+                if not layer_dir.is_dir():
+                    continue
+                layer_name = layer_dir.name
+                index_file = layer_dir / "index.md"
+                output.write(f"## {pkg_name}/{layer_name}\n")
+                output.write(read_file(index_file, "Not configured"))
+                output.write("\n\n")
 
     output.write("## Guides\n")
     guides_index = read_file(
-        trellis_dir / "spec" / "guides" / "index.md", "Not configured"
+        spec_dir / "guides" / "index.md", "Not configured"
     )
     output.write(guides_index)
 

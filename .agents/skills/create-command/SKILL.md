@@ -106,8 +106,8 @@ Description:
 | Command Type | Prefix | Example |
 |--------------|--------|---------|
 | Session Start | `start` | `start` |
-| Pre-development | `before-` | `before-frontend-dev` |
-| Check | `check-` | `check-frontend` |
+| Pre-development | `before-` | `before-dev` |
+| Check | `check-` | `check`, `check-cross-layer` |
 | Record | `record-` | `record-session` |
 | Generate | `generate-` | `generate-api-doc` |
 | Update | `update-` | `update-changelog` |

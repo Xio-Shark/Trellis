@@ -63,11 +63,15 @@ Before implementing, read:
 
 ### 1. Understand Specs
 
-Read relevant specs based on task type:
+Discover packages and read relevant specs:
 
-- Backend: `.trellis/spec/cli/backend/`
-- Frontend: `.trellis/spec/cli/frontend/`
-- Shared: `.trellis/spec/shared/`
+```bash
+python3 ./.trellis/scripts/get_context.py --mode packages
+```
+
+Then read the spec index for the target package and layer:
+- `.trellis/spec/<package>/<layer>/index.md`
+- `.trellis/spec/guides/index.md` (shared guides)
 
 ### 2. Understand Requirements
 

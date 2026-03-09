@@ -46,9 +46,17 @@ python3 ./.trellis/scripts/get_context.py
 ### Step 3: Read Project Guidelines `[AI]`
 
 ```bash
-cat .trellis/spec/cli/frontend/index.md  # Frontend guidelines index
-cat .trellis/spec/cli/backend/index.md   # Backend guidelines index
-cat .trellis/spec/guides/index.md    # Thinking guides
+# Discover packages and their spec layers
+python3 ./.trellis/scripts/get_context.py --mode packages
+```
+
+Read the spec index for the package you'll work on:
+
+```bash
+cat .trellis/spec/<package>/<layer>/index.md
+
+# Always read shared thinking guides
+cat .trellis/spec/guides/index.md
 ```
 
 ### Step 4: Ask User for Requirements

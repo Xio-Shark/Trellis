@@ -40,22 +40,15 @@ This returns:
 
 ### Step 3: Read Project Code-Spec Index `[AI]`
 
-Based on the upcoming task, read appropriate code-spec docs:
-
-**For Frontend Work**:
 ```bash
-cat .trellis/spec/cli/frontend/index.md
-```
+# Discover packages and their spec layers
+python3 ./.trellis/scripts/get_context.py --mode packages
 
-**For Backend Work**:
-```bash
-cat .trellis/spec/cli/backend/index.md
-```
+# Read index.md for the package you'll work on (e.g., cli, docs-site)
+cat .trellis/spec/<package>/<layer>/index.md
 
-**For Cross-Layer Features**:
-```bash
+# Always read shared thinking guides
 cat .trellis/spec/guides/index.md
-cat .trellis/spec/guides/cross-layer-thinking-guide.md
 ```
 
 ### Step 4: Check Active Tasks `[AI]`
@@ -319,10 +312,8 @@ The following slash commands are for users (not AI):
 |---------|-------------|
 | `/trellis-start` | Start development session (this command) |
 | `/trellis-brainstorm` | Clarify vague requirements before implementation |
-| `/trellis-before-frontend-dev` | Read frontend guidelines |
-| `/trellis-before-backend-dev` | Read backend guidelines |
-| `/trellis-check-frontend` | Check frontend code |
-| `/trellis-check-backend` | Check backend code |
+| `/trellis-before-dev` | Read development guidelines |
+| `/trellis-check` | Check code quality |
 | `/trellis-check-cross-layer` | Cross-layer verification |
 | `/trellis-finish-work` | Pre-commit checklist |
 | `/trellis-record-session` | Record session progress |

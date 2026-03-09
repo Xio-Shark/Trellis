@@ -119,8 +119,7 @@ function getCheckContext(ctx, taskDir) {
     const checkFiles = [
       [".opencode/commands/trellis/finish-work.md", "Finish work checklist"],
       [".opencode/commands/trellis/check-cross-layer.md", "Cross-layer check spec"],
-      [".opencode/commands/trellis/check-backend.md", "Backend check spec"],
-      [".opencode/commands/trellis/check-frontend.md", "Frontend check spec"],
+      [".opencode/commands/trellis/check.md", "Check spec"],
     ]
     for (const [f, description] of checkFiles) {
       const content = ctx.readProjectFile(f)
@@ -202,8 +201,7 @@ function getDebugContext(ctx, taskDir) {
     }
 
     const checkFiles = [
-      [".opencode/commands/trellis/check-backend.md", "Backend check spec"],
-      [".opencode/commands/trellis/check-frontend.md", "Frontend check spec"],
+      [".opencode/commands/trellis/check.md", "Check spec"],
       [".opencode/commands/trellis/check-cross-layer.md", "Cross-layer check spec"],
     ]
     for (const [f, description] of checkFiles) {

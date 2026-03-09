@@ -61,4 +61,28 @@ Do **not** maintain a manual coverage table — always run `pnpm test:coverage` 
 
 ---
 
+## Pre-Development Checklist
+
+Before writing or improving tests:
+
+1. Read [conventions.md](./conventions.md) — file naming, structure, assertion patterns, when to write tests
+2. Read [mock-strategies.md](./mock-strategies.md) — what to mock, how, minimal mocking principle
+3. For command-level tests, read [integration-patterns.md](./integration-patterns.md)
+
+---
+
+## Quality Check
+
+After writing tests:
+
+1. Ensure tests follow conventions (naming, structure, assertions)
+2. Verify mocking is minimal — prefer real code paths
+3. Run validation:
+   ```bash
+   pnpm lint && pnpm typecheck && pnpm test
+   ```
+4. Check coverage decisions — report any gaps with rationale
+
+---
+
 **Language**: All documentation should be written in **English**.

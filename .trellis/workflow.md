@@ -57,36 +57,21 @@ git status && git log --oneline -10              # Git state
 **CRITICAL**: Read guidelines before writing any code:
 
 ```bash
-# Read frontend guidelines index (if applicable)
-cat .trellis/spec/cli/frontend/index.md
+# Discover packages and their spec layers
+python3 ./.trellis/scripts/get_context.py --mode packages
 
-# Read backend guidelines index (if applicable)
-cat .trellis/spec/cli/backend/index.md
+# Read index.md for the package you'll work on
+cat .trellis/spec/<package>/<layer>/index.md
+
+# Always read shared thinking guides
+cat .trellis/spec/guides/index.md
 ```
 
-**Why read both?**
-- Understand the full project architecture
-- Know coding standards for the entire codebase
-- See how frontend and backend interact
-- Learn the overall code quality requirements
+Each `index.md` contains a **Pre-Development Checklist** listing the specific guideline files to read for that module. Follow it.
 
 ### Step 3: Before Coding - Read Specific Guidelines (Required)
 
-Based on your task, read the **detailed** guidelines:
-
-**Frontend Task**:
-```bash
-cat .trellis/spec/cli/frontend/hook-guidelines.md      # For hooks
-cat .trellis/spec/cli/frontend/component-guidelines.md # For components
-cat .trellis/spec/cli/frontend/type-safety.md          # For types
-```
-
-**Backend Task**:
-```bash
-cat .trellis/spec/cli/backend/database-guidelines.md   # For DB operations
-cat .trellis/spec/cli/backend/type-safety.md           # For types
-cat .trellis/spec/cli/backend/logging-guidelines.md    # For logging
-```
+Based on your task, follow the Pre-Development Checklist in the relevant spec `index.md`. It will point you to the exact guideline files for your work type (hooks, components, database, types, etc.).
 
 ---
 
@@ -132,17 +117,13 @@ cat .trellis/spec/cli/backend/logging-guidelines.md    # For logging
 |   +-- {MM}-{DD}-{name}/
 |       +-- task.json
 |-- spec/                # [!] MUST READ before coding
-|   |-- cli/             # Package-scoped guidelines
-|   |   |-- frontend/    # Frontend guidelines (if applicable)
-|   |   |   |-- index.md           # Start here - guidelines index
-|   |   |   +-- *.md               # Topic-specific docs
-|   |   +-- backend/     # Backend guidelines (if applicable)
-|   |       |-- index.md           # Start here - guidelines index
-|   |       +-- *.md               # Topic-specific docs
-|   +-- guides/          # Thinking guides
-|       |-- index.md                      # Guides index
-|       |-- cross-layer-thinking-guide.md # Pre-implementation checklist
-|       +-- *.md                          # Other guides
+|   |-- <package>/       # Per-package specs (e.g., cli/, docs-site/)
+|   |   +-- <layer>/     # Per-layer (e.g., backend/, frontend/, unit-test/)
+|   |       |-- index.md # Start here — Pre-Dev Checklist & Quality Check
+|   |       +-- *.md     # Topic-specific docs
+|   +-- guides/          # Cross-package thinking guides
+|       |-- index.md     # Guides index
+|       +-- *.md         # Guide-specific docs
 +-- workflow.md             # This document
 ```
 
@@ -168,23 +149,18 @@ python3 ./.trellis/scripts/get_context.py --json
 
 Based on what you'll develop, read the corresponding guidelines:
 
-**Frontend Development** (if applicable):
 ```bash
-# Read index first, then specific docs based on task
-cat .trellis/spec/cli/frontend/index.md
+# Discover packages and their spec layers
+python3 ./.trellis/scripts/get_context.py --mode packages
+
+# Read the index for your target package and layer
+cat .trellis/spec/<package>/<layer>/index.md
+
+# Always read shared thinking guides
+cat .trellis/spec/guides/index.md
 ```
 
-**Backend Development** (if applicable):
-```bash
-# Read index first, then specific docs based on task
-cat .trellis/spec/cli/backend/index.md
-```
-
-**Cross-Layer Features**:
-```bash
-# For features spanning multiple layers
-cat .trellis/spec/guides/cross-layer-thinking-guide.md
-```
+Each `index.md` contains a **Pre-Development Checklist** that lists the specific guideline files to read. Follow it for your work type.
 
 ### Step 3: Select Task to Develop
 
@@ -233,8 +209,8 @@ python3 ./.trellis/scripts/task.py create "<title>" --slug <task-name>
 - [OK] Manual feature testing passes
 
 **Project-specific checks**:
-- See `.trellis/spec/cli/frontend/quality-guidelines.md` for frontend
-- See `.trellis/spec/cli/backend/quality-guidelines.md` for backend
+- Run `/trellis:check` — it auto-discovers relevant spec modules based on changed files
+- Or manually check the **Quality Check** section in the relevant `spec/<package>/<layer>/index.md`
 
 ---
 
@@ -292,20 +268,20 @@ workspace/
 
 **Purpose**: Documented standards for consistent development
 
-**Structure** (Multi-doc format):
+**Structure** (Package-scoped, auto-discoverable):
 ```
 spec/
-|-- cli/                # Package-scoped docs
-|   |-- frontend/       # Frontend docs (if applicable)
-|   |   |-- index.md    # Start here
-|   |   +-- *.md        # Topic-specific docs
-|   +-- backend/        # Backend docs (if applicable)
-|       |-- index.md    # Start here
-|       +-- *.md        # Topic-specific docs
-+-- guides/             # Thinking guides (cross-package)
-    |-- index.md        # Start here
+|-- <package>/          # One per package (e.g., cli/, docs-site/)
+|   |-- <layer>/        # One per layer (e.g., backend/, frontend/, unit-test/)
+|   |   |-- index.md    # Start here — has Pre-Dev Checklist & Quality Check
+|   |   +-- *.md        # Topic-specific guideline docs
+|   +-- ...
++-- guides/             # Cross-package thinking guides (always read)
+    |-- index.md        # Guides index
     +-- *.md            # Guide-specific docs
 ```
+
+**Discovery**: `python3 ./.trellis/scripts/get_context.py --mode packages` lists all packages, their paths, types, and spec layers. Adding a new package only requires updating `config.yaml` and creating `spec/<package>/`.
 
 **When to update**:
 - [OK] New pattern discovered
@@ -371,11 +347,10 @@ python3 ./.trellis/scripts/task.py list-archive    # List archived tasks
 
 ### Must-read Before Development
 
-| Task Type | Must-read Document |
-|-----------|-------------------|
-| Frontend work | `cli/frontend/index.md` → relevant docs |
-| Backend work | `cli/backend/index.md` → relevant docs |
-| Cross-Layer Feature | `guides/cross-layer-thinking-guide.md` |
+1. Discover packages: `python3 ./.trellis/scripts/get_context.py --mode packages`
+2. Read `spec/<package>/<layer>/index.md` for your target package
+3. Follow its **Pre-Development Checklist**
+4. Always read `spec/guides/index.md` for cross-cutting concerns
 
 ### Commit Convention
 

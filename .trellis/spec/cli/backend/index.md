@@ -38,4 +38,37 @@ The goal is to help AI assistants and new team members understand how YOUR proje
 
 ---
 
+## Pre-Development Checklist
+
+Before writing backend code, read the relevant guidelines based on your task:
+
+- Database work → [database-guidelines.md](./database-guidelines.md)
+- Error handling → [error-handling.md](./error-handling.md)
+- Logging → [logging-guidelines.md](./logging-guidelines.md)
+- Adding a platform → [platform-integration.md](./platform-integration.md)
+- Script work → [script-conventions.md](./script-conventions.md)
+- Migration system → [migrations.md](./migrations.md)
+
+Also read [unit-test/conventions.md](../unit-test/conventions.md) — specifically the "When to Write Tests" section.
+
+---
+
+## Quality Check
+
+After writing code, verify against these guidelines:
+
+1. Run `git diff --name-only` to see what you changed
+2. Read the relevant guidelines above for each changed area
+3. Always check [quality-guidelines.md](./quality-guidelines.md)
+4. Check if tests need to be added or updated:
+   - New pure function → needs unit test
+   - Bug fix → needs regression test
+   - Changed init/update behavior → needs integration test update
+5. Run lint and typecheck:
+   ```bash
+   pnpm lint && pnpm typecheck
+   ```
+
+---
+
 **Language**: All documentation should be written in **English**.

@@ -45,9 +45,14 @@ This shows: developer identity, git status, current task (if any), active tasks.
 ### Step 3: Read Guidelines Index
 
 ```bash
-cat .trellis/spec/cli/frontend/index.md  # Frontend guidelines
-cat .trellis/spec/cli/backend/index.md   # Backend guidelines
-cat .trellis/spec/guides/index.md    # Thinking guides
+# Discover available spec modules
+python3 ./.trellis/scripts/get_context.py --mode packages
+
+# Read index.md for the package you'll work on (e.g., cli, docs-site)
+cat .trellis/spec/<package>/<layer>/index.md
+
+# Always read shared thinking guides
+cat .trellis/spec/guides/index.md
 ```
 
 ### Step 4: Report and Ask

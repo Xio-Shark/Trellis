@@ -36,4 +36,26 @@ The goal is to help AI assistants and new team members understand how YOUR proje
 
 ---
 
+## Pre-Development Checklist
+
+Before writing frontend code, read the relevant guidelines based on your task:
+
+- Component work → [component-guidelines.md](./component-guidelines.md)
+- Hook work → [hook-guidelines.md](./hook-guidelines.md)
+- State management → [state-management.md](./state-management.md)
+- Type questions → [type-safety.md](./type-safety.md)
+
+---
+
+## Quality Check
+
+After writing code, verify against these guidelines:
+
+1. Run `git diff --name-only` to see what you changed
+2. Read the relevant guidelines above for each changed area
+3. Always check [quality-guidelines.md](./quality-guidelines.md)
+4. Run lint and typecheck
+
+---
+
 **Language**: All documentation should be written in **English**.

@@ -10,12 +10,15 @@ Use this command to improve test coverage after code changes.
 
 ## Source of Truth
 
-Read and follow these specs first:
+Discover and read unit-test specs:
 
-1. `.trellis/spec/cli/unit-test/index.md`
-2. `.trellis/spec/cli/unit-test/conventions.md`
-3. `.trellis/spec/cli/unit-test/integration-patterns.md`
-4. `.trellis/spec/cli/unit-test/mock-strategies.md`
+```bash
+python3 ./.trellis/scripts/get_context.py --mode packages
+```
+
+Look for packages with `unit-test` spec layer in the output.
+
+For each found module, read its `index.md` and follow the **"Pre-Development Checklist"** section. Read all guideline files listed in the index.
 
 > If this command conflicts with the unit-test specs, the specs win.
 

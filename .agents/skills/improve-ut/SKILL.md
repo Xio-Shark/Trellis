@@ -15,12 +15,14 @@ $improve-ut
 
 ## Source of Truth
 
-Read and follow these specs first:
+Discover and read unit-test specs dynamically:
 
-1. `.trellis/spec/cli/unit-test/index.md`
-2. `.trellis/spec/cli/unit-test/conventions.md`
-3. `.trellis/spec/cli/unit-test/integration-patterns.md`
-4. `.trellis/spec/cli/unit-test/mock-strategies.md`
+```bash
+# Discover available packages and their spec layers
+python3 ./.trellis/scripts/get_context.py --mode packages
+```
+
+Look for packages with `unit-test` spec layer in the output. For each discovered `unit-test/` directory, read all spec files inside it (e.g., `index.md`, `conventions.md`, `integration-patterns.md`, `mock-strategies.md`).
 
 > If this skill conflicts with the unit-test specs, the specs win.
 

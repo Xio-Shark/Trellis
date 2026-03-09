@@ -12,7 +12,12 @@
 
 import { existsSync } from "fs"
 import { join } from "path"
+import { execSync } from "child_process"
+import { platform } from "os"
 import { TrellisContext, contextCollector, debugLog } from "../lib/trellis-context.js"
+
+// Python command: Windows uses 'python', macOS/Linux use 'python3'
+const PYTHON_CMD = platform() === "win32" ? "python" : "python3"
 
 /**
  * Build session context for injection
@@ -53,13 +58,23 @@ Read and follow all instructions below carefully.
   // 4. Guidelines Index
   parts.push("<guidelines>")
 
-  parts.push("## Frontend")
-  const frontendIndex = ctx.readProjectFile(".trellis/spec/cli/frontend/index.md")
-  parts.push(frontendIndex || "Not configured")
-
-  parts.push("\n## Backend")
-  const backendIndex = ctx.readProjectFile(".trellis/spec/cli/backend/index.md")
-  parts.push(backendIndex || "Not configured")
+  parts.push("## Packages")
+  // Dynamic package discovery instead of hardcoded spec paths
+  let packagesInfo = ""
+  try {
+    const scriptPath = join(trellisDir, "scripts", "get_context.py")
+    if (existsSync(scriptPath)) {
+      packagesInfo = execSync(`${PYTHON_CMD} "${scriptPath}" --mode packages`, {
+        cwd: directory,
+        timeout: 10000,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"]
+      }) || ""
+    }
+  } catch {
+    // Ignore execution errors
+  }
+  parts.push(packagesInfo || "Not configured")
 
   parts.push("\n## Guides")
   const guidesIndex = ctx.readProjectFile(".trellis/spec/guides/index.md")

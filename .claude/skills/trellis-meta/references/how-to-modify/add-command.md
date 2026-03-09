@@ -51,7 +51,7 @@ What the command produces.
 ### Command Name Convention
 
 - Use kebab-case: `my-command`, not `myCommand`
-- Prefix with category if needed: `check-backend`, `before-frontend-dev`
+- Prefix with category if needed: `check-cross-layer`, `before-dev`
 
 ---
 
