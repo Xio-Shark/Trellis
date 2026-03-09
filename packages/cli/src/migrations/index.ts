@@ -37,7 +37,9 @@ function loadManifests(): Record<string, MigrationManifest> {
   }
 
   // Load all JSON files from manifests directory
-  const files = fs.readdirSync(MANIFESTS_DIR).filter((f) => f.endsWith(".json"));
+  const files = fs
+    .readdirSync(MANIFESTS_DIR)
+    .filter((f) => f.endsWith(".json"));
 
   for (const file of files) {
     try {
@@ -68,7 +70,7 @@ function loadManifests(): Record<string, MigrationManifest> {
  */
 export function getMigrationsForVersion(
   fromVersion: string,
-  toVersion: string
+  toVersion: string,
 ): MigrationItem[] {
   const manifests = loadManifests();
 
@@ -99,7 +101,7 @@ export function getMigrationsForVersion(
  */
 export function hasPendingMigrations(
   fromVersion: string,
-  toVersion: string
+  toVersion: string,
 ): boolean {
   return getMigrationsForVersion(fromVersion, toVersion).length > 0;
 }
@@ -109,7 +111,7 @@ export function hasPendingMigrations(
  */
 export function getMigrationSummary(
   fromVersion: string,
-  toVersion: string
+  toVersion: string,
 ): { renames: number; deletes: number } {
   const migrations = getMigrationsForVersion(fromVersion, toVersion);
   return {
@@ -152,12 +154,16 @@ export function clearManifestCache(): void {
  */
 export function getMigrationMetadata(
   fromVersion: string,
-  toVersion: string
+  toVersion: string,
 ): {
   changelog: string[];
   breaking: boolean;
   recommendMigrate: boolean;
-  migrationGuides: { version: string; guide: string; aiInstructions?: string }[];
+  migrationGuides: {
+    version: string;
+    guide: string;
+    aiInstructions?: string;
+  }[];
 } {
   const manifests = loadManifests();
   const versions = Object.keys(manifests).sort(compareVersions);
@@ -173,7 +179,11 @@ export function getMigrationMetadata(
     changelog: [] as string[],
     breaking: false,
     recommendMigrate: false,
-    migrationGuides: [] as { version: string; guide: string; aiInstructions?: string }[],
+    migrationGuides: [] as {
+      version: string;
+      guide: string;
+      aiInstructions?: string;
+    }[],
   };
 
   for (const version of applicableVersions) {

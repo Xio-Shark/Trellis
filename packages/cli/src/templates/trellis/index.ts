@@ -50,7 +50,9 @@ export const multiAgentInit = readTemplate("scripts/multi_agent/__init__.py");
 export const multiAgentStart = readTemplate("scripts/multi_agent/start.py");
 export const multiAgentCleanup = readTemplate("scripts/multi_agent/cleanup.py");
 export const multiAgentStatus = readTemplate("scripts/multi_agent/status.py");
-export const multiAgentCreatePr = readTemplate("scripts/multi_agent/create_pr.py");
+export const multiAgentCreatePr = readTemplate(
+  "scripts/multi_agent/create_pr.py",
+);
 export const multiAgentPlan = readTemplate("scripts/multi_agent/plan.py");
 
 // Python scripts - main
@@ -59,7 +61,9 @@ export const initDeveloperScript = readTemplate("scripts/init_developer.py");
 export const taskScript = readTemplate("scripts/task.py");
 export const getContextScript = readTemplate("scripts/get_context.py");
 export const addSessionScript = readTemplate("scripts/add_session.py");
-export const createBootstrapScript = readTemplate("scripts/create_bootstrap.py");
+export const createBootstrapScript = readTemplate(
+  "scripts/create_bootstrap.py",
+);
 
 // Configuration files
 export const workflowMdTemplate = readTemplate("workflow.md");

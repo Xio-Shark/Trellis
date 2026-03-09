@@ -165,6 +165,7 @@ def cmd_start() -> None:
         return
     _linearis("issues", "update", issue, "-s", STATUS_IN_PROGRESS)
     print(f"Updated {issue} -> {STATUS_IN_PROGRESS}")
+    cmd_sync()
 
 
 def cmd_archive() -> None:
