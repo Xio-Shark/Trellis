@@ -239,7 +239,7 @@ Templates use `.txt` extension to:
 ```typescript
 import { downloadTemplate } from "giget";
 
-await downloadTemplate("gh:mindfold-ai/docs/marketplace/specs/electron-fullstack", {
+await downloadTemplate("gh:mindfold-ai/Trellis/marketplace/specs/electron-fullstack", {
   dir: destDir,
   preferOffline: true,
 });

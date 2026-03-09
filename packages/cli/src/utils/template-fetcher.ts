@@ -1,8 +1,8 @@
 /**
  * Remote template fetcher for Trellis CLI
  *
- * Fetches spec templates from the official docs repository:
- * https://github.com/mindfold-ai/docs/tree/main/marketplace
+ * Fetches spec templates from the official marketplace:
+ * https://github.com/mindfold-ai/Trellis/tree/main/marketplace
  */
 
 import fs from "node:fs";
