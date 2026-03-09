@@ -73,8 +73,8 @@ These directories are copied to `dist/` during build and used as templates:
 ├── workspace/           # Developer progress tracking
 │   └── index.md         # Index template (dogfooded)
 ├── spec/                # Project guidelines (NOT dogfooded)
-│   ├── backend/         # Backend development docs
-│   ├── frontend/        # Frontend development docs
+│   ├── cli/             # CLI package specs (backend/, unit-test/)
+│   ├── docs-site/       # Docs package specs (docs/)
 │   └── guides/          # Thinking guides
 ├── workflow.md          # Workflow documentation (dogfooded)
 ├── worktree.yaml        # Worktree config (Trellis-specific)

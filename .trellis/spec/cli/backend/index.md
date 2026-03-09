@@ -21,28 +21,12 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | Done |
 | [Migrations](./migrations.md) | Version migration system for template files | Done |
 | [Platform Integration](./platform-integration.md) | How to add support for new AI CLI platforms | Done |
-| [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | N/A (CLI project) |
-
----
-
-## How to Fill These Guidelines
-
-For each guideline file:
-
-1. Document your project's **actual conventions** (not ideals)
-2. Include **code examples** from your codebase
-3. List **forbidden patterns** and why
-4. Add **common mistakes** your team has made
-
-The goal is to help AI assistants and new team members understand how YOUR project works.
-
 ---
 
 ## Pre-Development Checklist
 
 Before writing backend code, read the relevant guidelines based on your task:
 
-- Database work → [database-guidelines.md](./database-guidelines.md)
 - Error handling → [error-handling.md](./error-handling.md)
 - Logging → [logging-guidelines.md](./logging-guidelines.md)
 - Adding a platform → [platform-integration.md](./platform-integration.md)

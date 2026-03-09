@@ -418,10 +418,15 @@ def main() -> int:
     elif not sys.stdin.isatty():
         extra_content = sys.stdin.read()
 
+    package = args.package
+    if not package:
+        from common.config import get_default_package
+        package = get_default_package()
+
     return add_session(
         args.title, args.commit, args.summary, extra_content,
         auto_commit=not args.no_commit,
-        package=args.package,
+        package=package,
     )
 
 

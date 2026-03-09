@@ -163,6 +163,7 @@ opencode.json
 # Python cache
 __pycache__/
 *.pyc
+.pytest_cache/
 
 .reference
 
