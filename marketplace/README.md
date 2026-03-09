@@ -14,10 +14,10 @@ marketplace/
 
 ## Usage
 
-### Install via Claude Code
+### Install via npx skills
 
-```
-/plugin marketplace add mindfoldhq/trellis-docs
+```bash
+npx skills add mindfold-ai/Trellis/marketplace
 ```
 
 ### Manual Installation
