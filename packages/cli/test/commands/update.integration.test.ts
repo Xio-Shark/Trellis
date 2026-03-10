@@ -35,6 +35,11 @@ import { computeHash } from "../../src/utils/template-hash.js";
 // A managed template file that update always handles (Python script)
 const MANAGED_FILE = `${PATHS.SCRIPTS}/get_context.py`;
 
+/** Remove a key from a hash object (avoids eslint no-dynamic-delete) */
+function removeHashEntry(obj: Record<string, unknown>, key: string): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(obj).filter(([k]) => k !== key));
+}
+
 describe("update() integration", () => {
   let tmpDir: string;
 
@@ -116,8 +121,11 @@ describe("update() integration", () => {
   it("#2 dry run makes no file changes even when changes exist", async () => {
     await setupProject();
 
-    // Delete a file to create a "new file" change
+    // Delete hash + file to simulate a truly new template file
     const target = path.join(tmpDir, MANAGED_FILE);
+    const hashFile = path.join(tmpDir, DIR_NAMES.WORKFLOW, ".template-hashes.json");
+    const hashes = removeHashEntry(JSON.parse(fs.readFileSync(hashFile, "utf-8")), MANAGED_FILE);
+    fs.writeFileSync(hashFile, JSON.stringify(hashes, null, 2));
     fs.unlinkSync(target);
 
     await update({ dryRun: true });
@@ -129,17 +137,20 @@ describe("update() integration", () => {
     expect(entries.filter((e) => e.startsWith(".backup-")).length).toBe(0);
   });
 
-  it("#3 recreates deleted template file as new", async () => {
+  it("#3 user-deleted file (with stored hash) is not re-added on update", async () => {
     await setupProject();
 
     const target = path.join(tmpDir, MANAGED_FILE);
-    const originalContent = fs.readFileSync(target, "utf-8");
+    expect(fs.existsSync(target)).toBe(true);
+
+    // Delete it (simulating user deletion; hash still exists in .template-hashes.json)
     fs.unlinkSync(target);
+    expect(fs.existsSync(target)).toBe(false);
 
     await update({ force: true });
 
-    expect(fs.existsSync(target)).toBe(true);
-    expect(fs.readFileSync(target, "utf-8")).toBe(originalContent);
+    // File should NOT be re-created (user deleted it, hash still exists)
+    expect(fs.existsSync(target)).toBe(false);
   });
 
   it("#4 auto-updates file when template changed but user did not modify", async () => {
@@ -213,19 +224,24 @@ describe("update() integration", () => {
     const versionPath = path.join(tmpDir, DIR_NAMES.WORKFLOW, ".version");
     fs.writeFileSync(versionPath, "0.0.1");
 
-    // Delete a file so there is a change to trigger the full flow
-    fs.unlinkSync(path.join(tmpDir, MANAGED_FILE));
-
     await update({ force: true });
 
+    // Version is updated even when no file changes are needed
     expect(fs.readFileSync(versionPath, "utf-8")).toBe(VERSION);
   });
 
   it("#9 creates backup directory before applying changes", async () => {
     await setupProject();
 
-    // Delete a file to trigger the full update flow
-    fs.unlinkSync(path.join(tmpDir, MANAGED_FILE));
+    // Simulate "old template version": change file + update hash to match
+    // This triggers auto-update (template changed, user didn't modify)
+    const targetFull = path.join(tmpDir, MANAGED_FILE);
+    const oldContent = "# Old version of script\n";
+    fs.writeFileSync(targetFull, oldContent);
+    const hashFile = path.join(tmpDir, DIR_NAMES.WORKFLOW, ".template-hashes.json");
+    const hashes = JSON.parse(fs.readFileSync(hashFile, "utf-8"));
+    hashes[MANAGED_FILE] = computeHash(oldContent);
+    fs.writeFileSync(hashFile, JSON.stringify(hashes, null, 2));
 
     await update({ force: true });
 
@@ -253,13 +269,16 @@ describe("update() integration", () => {
     const versionPath = path.join(tmpDir, DIR_NAMES.WORKFLOW, ".version");
     fs.writeFileSync(versionPath, "99.99.99");
 
-    // Delete a file so there is a change
+    // Remove hash entry + file to simulate a truly new template file
     const target = path.join(tmpDir, MANAGED_FILE);
+    const hashFile = path.join(tmpDir, DIR_NAMES.WORKFLOW, ".template-hashes.json");
+    const hashes = removeHashEntry(JSON.parse(fs.readFileSync(hashFile, "utf-8")), MANAGED_FILE);
+    fs.writeFileSync(hashFile, JSON.stringify(hashes, null, 2));
     fs.unlinkSync(target);
 
     await update({ allowDowngrade: true, force: true });
 
-    // File recreated
+    // File recreated (truly new — no stored hash)
     expect(fs.existsSync(target)).toBe(true);
     // Version updated to current
     expect(fs.readFileSync(versionPath, "utf-8")).toBe(VERSION);
@@ -305,5 +324,66 @@ describe("update() integration", () => {
 
     // spec/ directory should NOT be recreated by update
     expect(fs.existsSync(specDir)).toBe(false);
+  });
+
+  it("#15 truly new file (no stored hash) is still added", async () => {
+    await setupProject();
+
+    // The hash file should exist
+    const hashFile = path.join(tmpDir, DIR_NAMES.WORKFLOW, ".template-hashes.json");
+    const hashes = removeHashEntry(JSON.parse(fs.readFileSync(hashFile, "utf-8")), MANAGED_FILE);
+
+    // Remove a hash entry AND the file (simulates a truly new template)
+    const targetPath = path.join(tmpDir, MANAGED_FILE);
+    fs.writeFileSync(hashFile, JSON.stringify(hashes, null, 2));
+    fs.unlinkSync(targetPath);
+
+    // Run update
+    await update({ force: true });
+
+    // File SHOULD be created (no hash = truly new)
+    expect(fs.existsSync(targetPath)).toBe(true);
+  });
+
+  it("#16 config.yaml update.skip prevents file from being updated", async () => {
+    await setupProject();
+
+    // Pick a managed template file
+    const targetPath = path.join(tmpDir, MANAGED_FILE);
+
+    // Add skip config
+    const configPath = path.join(tmpDir, DIR_NAMES.WORKFLOW, "config.yaml");
+    const configContent = fs.readFileSync(configPath, "utf-8");
+    fs.writeFileSync(configPath, configContent + `\nupdate:\n  skip:\n    - ${MANAGED_FILE}\n`);
+
+    // Modify the file so it would normally trigger a change
+    fs.writeFileSync(targetPath, "# modified by user\n");
+
+    // Run update
+    await update({ force: true });
+
+    // File should NOT be overwritten (it's in skip list)
+    expect(fs.readFileSync(targetPath, "utf-8")).toBe("# modified by user\n");
+  });
+
+  it("#17 config.yaml update.skip with directory path skips all files under it", async () => {
+    await setupProject();
+
+    // Add skip config for the scripts/common/ directory
+    const configPath = path.join(tmpDir, DIR_NAMES.WORKFLOW, "config.yaml");
+    const configContent = fs.readFileSync(configPath, "utf-8");
+    const skipDir = `${PATHS.SCRIPTS}/common/`;
+    fs.writeFileSync(configPath, configContent + `\nupdate:\n  skip:\n    - ${skipDir}\n`);
+
+    // Modify a file under the skipped directory
+    const targetPath = path.join(tmpDir, PATHS.SCRIPTS, "common", "paths.py");
+    expect(fs.existsSync(targetPath)).toBe(true);
+    fs.writeFileSync(targetPath, "# user modified paths.py\n");
+
+    // Run update
+    await update({ force: true });
+
+    // File should NOT be overwritten (its directory is in skip list)
+    expect(fs.readFileSync(targetPath, "utf-8")).toBe("# user modified paths.py\n");
   });
 });

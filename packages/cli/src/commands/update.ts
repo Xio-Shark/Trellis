@@ -94,6 +94,7 @@ interface ChangeAnalysis {
   unchangedFiles: FileChange[];
   autoUpdateFiles: FileChange[]; // Template updated, user didn't modify
   changedFiles: FileChange[]; // User modified, needs confirmation
+  userDeletedFiles: FileChange[]; // User deleted (hash exists but file missing)
   protectedPaths: string[];
 }
 
@@ -108,6 +109,76 @@ const PROTECTED_PATHS = [
   `${DIR_NAMES.WORKFLOW}/.developer`,
   `${DIR_NAMES.WORKFLOW}/.current-task`,
 ];
+
+/**
+ * Load update.skip paths from .trellis/config.yaml
+ *
+ * Parses simple YAML structure:
+ *   update:
+ *     skip:
+ *       - path1
+ *       - path2
+ *
+ * @internal Exported for testing only
+ */
+export function loadUpdateSkipPaths(cwd: string): string[] {
+  const configPath = path.join(cwd, DIR_NAMES.WORKFLOW, "config.yaml");
+  if (!fs.existsSync(configPath)) return [];
+
+  try {
+    const content = fs.readFileSync(configPath, "utf-8");
+    const lines = content.split("\n");
+    const paths: string[] = [];
+    let inUpdate = false;
+    let inSkip = false;
+
+    for (const line of lines) {
+      const trimmed = line.trimEnd();
+
+      // Check for "update:" section (no indentation or at root level)
+      if (/^update:\s*$/.test(trimmed)) {
+        inUpdate = true;
+        inSkip = false;
+        continue;
+      }
+
+      // Check for "skip:" under update (indented)
+      if (inUpdate && /^\s+skip:\s*$/.test(trimmed)) {
+        inSkip = true;
+        continue;
+      }
+
+      // Collect list items under skip
+      if (inSkip) {
+        const match = trimmed.match(/^\s+-\s+(.+)$/);
+        if (match) {
+          paths.push(match[1].trim());
+          continue;
+        }
+        // If line is non-empty and not a list item, we've left the skip section
+        if (trimmed !== "" && !trimmed.startsWith("#")) {
+          inSkip = false;
+          inUpdate = false;
+        }
+      }
+
+      // If we're in update but hit a non-indented line, we've left the update section
+      if (
+        inUpdate &&
+        trimmed !== "" &&
+        !trimmed.startsWith(" ") &&
+        !trimmed.startsWith("#")
+      ) {
+        inUpdate = false;
+        inSkip = false;
+      }
+    }
+
+    return paths;
+  } catch {
+    return [];
+  }
+}
 
 /**
  * Collect all template files that should be managed by update
@@ -165,6 +236,22 @@ function collectTemplateFiles(cwd: string): Map<string, string> {
     }
   }
 
+  // Apply update.skip from config.yaml
+  const skipPaths = loadUpdateSkipPaths(cwd);
+  if (skipPaths.length > 0) {
+    for (const [filePath] of [...files]) {
+      if (
+        skipPaths.some(
+          (skip) =>
+            filePath === skip ||
+            filePath.startsWith(skip.endsWith("/") ? skip : skip + "/"),
+        )
+      ) {
+        files.delete(filePath);
+      }
+    }
+  }
+
   return files;
 }
 
@@ -186,6 +273,7 @@ function analyzeChanges(
     unchangedFiles: [],
     autoUpdateFiles: [],
     changedFiles: [],
+    userDeletedFiles: [],
     protectedPaths: PROTECTED_PATHS,
   };
 
@@ -201,8 +289,14 @@ function analyzeChanges(
     };
 
     if (!exists) {
-      change.status = "new";
-      result.newFiles.push(change);
+      const storedHash = hashes[relativePath];
+      if (storedHash) {
+        // Previously installed but user deleted — respect deletion
+        result.userDeletedFiles.push(change);
+      } else {
+        change.status = "new";
+        result.newFiles.push(change);
+      }
     } else {
       const existingContent = fs.readFileSync(fullPath, "utf-8");
       if (existingContent === newContent) {
@@ -271,6 +365,14 @@ function printChangeSummary(changes: ChangeAnalysis): void {
     console.log(chalk.yellow("  Modified by you (need your decision):"));
     for (const file of changes.changedFiles) {
       console.log(chalk.yellow(`    ? ${file.relativePath}`));
+    }
+    console.log("");
+  }
+
+  if (changes.userDeletedFiles.length > 0) {
+    console.log(chalk.gray("  Deleted by you (preserved):"));
+    for (const file of changes.userDeletedFiles) {
+      console.log(chalk.gray(`    \u2715 ${file.relativePath}`));
     }
     console.log("");
   }

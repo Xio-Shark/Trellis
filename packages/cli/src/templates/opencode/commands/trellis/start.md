@@ -45,6 +45,10 @@ cat .trellis/spec/backend/index.md   # Backend guidelines
 cat .trellis/spec/guides/index.md    # Thinking guides
 ```
 
+> **Important**: The index files are navigation — they list the actual guideline files (e.g., `error-handling.md`, `conventions.md`, `mock-strategies.md`).
+> At this step, just read the indexes to understand what's available.
+> When you start actual development, you MUST go back and read the specific guideline files relevant to your task, as listed in the index's Pre-Development Checklist.
+
 ### Step 4: Report and Ask
 
 Report what you learned and ask: "What would you like to work on?"
@@ -82,7 +86,7 @@ For questions or trivial fixes, work directly:
 
 ## Complex Task - Brainstorm First
 
-For complex or vague tasks, use the brainstorm process to clarify requirements.
+For complex or vague tasks, **automatically start the brainstorm process** — do NOT skip directly to implementation.
 
 See `/trellis:brainstorm` for the full process. Summary:
 
