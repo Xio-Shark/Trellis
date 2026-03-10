@@ -31,7 +31,7 @@ python3 ./.trellis/scripts/add_session.py \
   --summary "Brief summary of what was done"
 
 # Method 2: Pass detailed content via stdin
-cat << 'EOF' | python3 ./.trellis/scripts/add_session.py --title "Title" --commit "hash"
+cat << 'EOF' | python3 ./.trellis/scripts/add_session.py --stdin --title "Title" --commit "hash"
 | Feature | Description |
 |---------|-------------|
 | New API | Added user authentication endpoint |

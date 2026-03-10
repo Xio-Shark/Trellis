@@ -5,7 +5,11 @@ Add a new session to journal file and update index.md.
 
 Usage:
     python3 add_session.py --title "Title" --commit "hash" --summary "Summary" [--package cli]
-    echo "content" | python3 add_session.py --title "Title" --commit "hash"
+
+    # Pipe detailed content via stdin (use --stdin to opt in):
+    cat << 'EOF' | python3 add_session.py --stdin --title "Title" --summary "Summary"
+    <session content here>
+    EOF
 """
 
 from __future__ import annotations
@@ -407,6 +411,8 @@ def main() -> int:
     parser.add_argument("--package", help="Package name tag (e.g., cli, docs-site)")
     parser.add_argument("--no-commit", action="store_true",
                         help="Skip auto-commit of workspace changes")
+    parser.add_argument("--stdin", action="store_true",
+                        help="Read extra content from stdin (explicit opt-in)")
 
     args = parser.parse_args()
 
@@ -415,7 +421,7 @@ def main() -> int:
         content_path = Path(args.content_file)
         if content_path.is_file():
             extra_content = content_path.read_text(encoding="utf-8")
-    elif not sys.stdin.isatty():
+    elif args.stdin:
         extra_content = sys.stdin.read()
 
     package = args.package
