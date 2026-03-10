@@ -3,13 +3,11 @@ import { getAllCommands } from "../../src/templates/gemini/index.js";
 
 // Gemini uses subdirectory namespacing: commands/trellis/<name>.toml (no parallel)
 const EXPECTED_COMMAND_NAMES = [
-  "before-backend-dev",
-  "before-frontend-dev",
+  "before-dev",
   "brainstorm",
   "break-loop",
-  "check-backend",
   "check-cross-layer",
-  "check-frontend",
+  "check",
   "create-command",
   "finish-work",
   "integrate-skill",

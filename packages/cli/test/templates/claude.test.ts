@@ -58,13 +58,11 @@ describe("settingsTemplate SessionStart matchers", () => {
 // =============================================================================
 
 const EXPECTED_COMMAND_NAMES = [
-  "before-backend-dev",
-  "before-frontend-dev",
+  "before-dev",
   "brainstorm",
   "break-loop",
-  "check-backend",
   "check-cross-layer",
-  "check-frontend",
+  "check",
   "create-command",
   "finish-work",
   "integrate-skill",
