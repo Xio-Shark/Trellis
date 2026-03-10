@@ -8,11 +8,16 @@ description: |
   - Submit a PR to this project
 ---
 
-# Contributing to Trellis Docs
+# Contributing to Trellis
 
-This skill guides you through contributing to the Trellis documentation project.
+Contributions are split across two repos:
 
-## Project Structure
+| What | Repo | Purpose |
+|------|------|---------|
+| Documentation pages | [mindfold-ai/docs](https://github.com/mindfold-ai/docs) | Mintlify doc site |
+| Skills + Spec templates | [mindfold-ai/Trellis](https://github.com/mindfold-ai/Trellis) | `marketplace/` directory |
+
+## Docs Repo Structure
 
 ```
 docs/
@@ -42,19 +47,27 @@ docs/
 ├── zh/contribute/         # Chinese contribution guide
 │
 ├── showcase/              # English showcase
-├── zh/showcase/           # Chinese showcase
-│
-├── plugins/               # Claude Code plugins (one plugin per skill)
-│   └── trellis-meta/
-│       ├── plugin.json
-│       └── skills/trellis-meta/
-│           └── SKILL.md
-│
-└── marketplace/           # Other downloadable assets
-    └── specs/             # Spec template directories
+└── zh/showcase/           # Chinese showcase
 ```
 
-**Note**: Plugin skills follow Claude Code plugin structure. Content in `marketplace/` is excluded from Mintlify rendering.
+## Trellis Main Repo Marketplace Structure
+
+```
+marketplace/
+├── index.json             # Template registry (lists all available templates)
+├── README.md              # Marketplace overview
+├── specs/                 # Spec templates
+│   └── electron-fullstack/
+│       ├── README.md
+│       ├── frontend/
+│       ├── backend/
+│       ├── guides/
+│       └── shared/
+└── skills/                # Skills
+    └── trellis-meta/
+        ├── SKILL.md
+        └── references/
+```
 
 ## Understanding docs.json
 
@@ -112,6 +125,8 @@ The navigation uses a **language-based structure**:
 
 ## Contributing a Spec Template
 
+Spec templates live in the **Trellis main repo** at `marketplace/specs/`.
+
 ### 1. Create template directory
 
 ```
@@ -131,7 +146,22 @@ marketplace/specs/your-template-name/
 
 Structure varies by stack. Include directories relevant to your template.
 
-### 2. Create documentation pages (both languages)
+### 2. Register in index.json
+
+Add your template to `marketplace/index.json` in the Trellis repo:
+
+```json
+{
+  "id": "your-template-id",
+  "type": "spec",
+  "name": "Your Template Name",
+  "description": "Brief description of the template",
+  "path": "marketplace/specs/your-template-name",
+  "tags": ["relevant", "tags"]
+}
+```
+
+### 3. Create documentation pages (both languages, in docs repo)
 
 **English**: `templates/specs-your-template.mdx`
 **Chinese**: `zh/templates/specs-your-template.mdx`
@@ -145,7 +175,7 @@ description: 'Brief description'
 ---
 ```
 
-### 3. Update navigation in docs.json
+### 4. Update navigation in docs.json
 
 Find the `Spec Templates` nested group and add your page:
 
@@ -171,7 +201,7 @@ Do the same for Chinese under `"language": "zh"`:
 }
 ```
 
-### 4. Update the overview page
+### 5. Update the overview page
 
 Add your template to the table in:
 
@@ -180,60 +210,56 @@ Add your template to the table in:
 
 ## Contributing a Skill
 
-### 1. Create plugin directory
+Skills live in the **Trellis main repo** at `marketplace/skills/`.
+
+### 1. Create skill directory
 
 ```
-plugins/your-plugin/
-├── plugin.json            # Plugin manifest
-└── skills/
-    └── your-skill/
-        ├── SKILL.md       # Skill definition (required)
-        └── references/    # Reference docs (optional)
+marketplace/skills/your-skill/
+├── SKILL.md               # Skill definition (required)
+└── references/            # Reference docs (optional)
 ```
 
-### 2. Create plugin.json
+See [Claude Code Skills documentation](https://code.claude.com/docs/en/skills) for SKILL.md format.
+
+### 2. Register in index.json
+
+Add your skill to `marketplace/index.json` in the Trellis repo:
 
 ```json
 {
-  "name": "your-plugin",
-  "version": "1.0.0",
-  "description": "Your plugin description",
-  "author": { "name": "Your Name" },
-  "skills": ["./skills/"]
+  "id": "your-skill-id",
+  "type": "skill",
+  "name": "Your Skill Name",
+  "description": "Brief description",
+  "path": "marketplace/skills/your-skill",
+  "tags": ["relevant", "tags"]
 }
 ```
 
-### 3. Register in marketplace.json
-
-Add your plugin to `.claude-plugin/marketplace.json`:
-
-```json
-{
-  "plugins": [
-    {
-      "name": "your-plugin",
-      "source": "./plugins/your-plugin",
-      "description": "Your plugin description"
-    }
-  ]
-}
-```
-
-### 4. Create documentation pages
+### 3. Create documentation pages (in docs repo)
 
 **English**: `skills-market/your-skill.mdx`
 **Chinese**: `zh/skills-market/your-skill.mdx`
 
-### 5. Update navigation in docs.json
+### 4. Update navigation in docs.json
 
 Find the `Skills` nested group and add your page to both languages.
 
-### 6. Update the overview page
+### 5. Update the overview page
 
 Add your skill to the table in:
 
 - `skills-market/index.mdx`
 - `zh/skills-market/index.mdx`
+
+### Installation
+
+Users install skills via:
+
+```bash
+npx skills add mindfold-ai/Trellis/marketplace -s your-skill
+```
 
 ## Contributing a Showcase Project
 
@@ -368,19 +394,30 @@ Inline HTML is allowed (MDX). See [Mintlify docs](https://mintlify.com/docs/comp
 
 ## Submitting a PR
 
-1. Fork the repo on GitHub: `https://github.com/mindfold-ai/docs`
-2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/docs.git`
-3. Install dependencies: `pnpm install`
-4. Create a branch: `git checkout -b feat/your-contribution`
+**For documentation changes** (docs repo):
+
+1. Fork: `https://github.com/mindfold-ai/docs`
+2. Clone: `git clone https://github.com/YOUR_USERNAME/docs.git`
+3. Install: `pnpm install`
+4. Branch: `git checkout -b feat/your-contribution`
 5. Make changes following this guide
-6. Test locally: `pnpm dev`
+6. Test: `pnpm dev`
 7. Commit with conventional message (e.g., `docs: add xxx template`)
-8. Push to your fork and create PR to original repo's `main` branch
+8. Push and create PR
+
+**For skills/spec templates** (Trellis repo):
+
+1. Fork: `https://github.com/mindfold-ai/Trellis`
+2. Clone: `git clone https://github.com/YOUR_USERNAME/Trellis.git`
+3. Add your skill/template under `marketplace/`
+4. Update `marketplace/index.json`
+5. Push and create PR
 
 ## Checklist Before PR
 
-- [ ] Both EN and ZH versions created
-- [ ] `docs.json` updated for both languages
+- [ ] Both EN and ZH versions created (for doc pages)
+- [ ] `docs.json` updated for both languages (for doc pages)
+- [ ] `marketplace/index.json` updated (for skills/templates)
 - [ ] Overview/index pages updated with new entries
 - [ ] Local preview tested (`pnpm dev`)
 - [ ] No broken links
