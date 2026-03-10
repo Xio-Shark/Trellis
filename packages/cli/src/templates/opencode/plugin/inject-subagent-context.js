@@ -9,7 +9,7 @@
  * - Otherwise, this plugin handles injection
  */
 
-import { existsSync, writeFileSync } from "fs"
+import { existsSync, writeFileSync, readdirSync } from "fs"
 import { join } from "path"
 import { TrellisContext, debugLog } from "../lib/trellis-context.js"
 
@@ -119,8 +119,7 @@ function getCheckContext(ctx, taskDir) {
     const checkFiles = [
       [".opencode/commands/trellis/finish-work.md", "Finish work checklist"],
       [".opencode/commands/trellis/check-cross-layer.md", "Cross-layer check spec"],
-      [".opencode/commands/trellis/check-backend.md", "Backend check spec"],
-      [".opencode/commands/trellis/check-frontend.md", "Frontend check spec"],
+      [".opencode/commands/trellis/check.md", "Check spec"],
     ]
     for (const [f, description] of checkFiles) {
       const content = ctx.readProjectFile(f)
@@ -202,8 +201,7 @@ function getDebugContext(ctx, taskDir) {
     }
 
     const checkFiles = [
-      [".opencode/commands/trellis/check-backend.md", "Backend check spec"],
-      [".opencode/commands/trellis/check-frontend.md", "Frontend check spec"],
+      [".opencode/commands/trellis/check.md", "Check spec"],
       [".opencode/commands/trellis/check-cross-layer.md", "Cross-layer check spec"],
     ]
     for (const [f, description] of checkFiles) {
@@ -229,17 +227,46 @@ function getDebugContext(ctx, taskDir) {
 function getResearchContext(ctx, taskDir) {
   const parts = []
 
-  parts.push(`## Project Spec Directory Structure
+  // Dynamic project structure (scan actual spec directory)
+  const specPath = ".trellis/spec"
+  const specFull = join(ctx.directory, specPath)
 
-\`\`\`
-.trellis/spec/
-├── shared/      # Cross-project common specs
-├── frontend/    # Frontend standards
-├── backend/     # Backend standards
-└── guides/      # Thinking guides
+  const structureLines = [`## Project Spec Directory Structure\n\n\`\`\`\n${specPath}/`]
+  if (existsSync(specFull)) {
+    try {
+      const entries = readdirSync(specFull, { withFileTypes: true })
+        .filter(d => d.isDirectory() && !d.name.startsWith("."))
+        .sort((a, b) => a.name.localeCompare(b.name))
 
-.trellis/big-question/  # Known issues and pitfalls
-\`\`\`
+      for (const entry of entries) {
+        const entryPath = join(specFull, entry.name)
+        // Check if this is a direct spec layer (has index.md)
+        if (existsSync(join(entryPath, "index.md"))) {
+          structureLines.push(`├── ${entry.name}/`)
+        } else {
+          // Check for nested package dirs (monorepo)
+          try {
+            const nested = readdirSync(entryPath, { withFileTypes: true })
+              .filter(d => d.isDirectory() && existsSync(join(entryPath, d.name, "index.md")))
+              .sort((a, b) => a.name.localeCompare(b.name))
+            if (nested.length > 0) {
+              structureLines.push(`├── ${entry.name}/`)
+              for (const n of nested) {
+                structureLines.push(`│   ├── ${n.name}/`)
+              }
+            }
+          } catch {
+            // Ignore nested read errors
+          }
+        }
+      }
+    } catch {
+      // Ignore read errors
+    }
+  }
+  structureLines.push("```")
+
+  parts.push(structureLines.join("\n") + `
 
 ## Search Tips
 
@@ -250,10 +277,10 @@ function getResearchContext(ctx, taskDir) {
 
   if (taskDir) {
     const jsonlPath = join(ctx.directory, taskDir, "research.jsonl")
-    const entries = ctx.readJsonlWithFiles(jsonlPath)
-    if (entries.length > 0) {
+    const researchEntries = ctx.readJsonlWithFiles(jsonlPath)
+    if (researchEntries.length > 0) {
       parts.push("\n## Additional Search Context\n")
-      parts.push(ctx.buildContextFromEntries(entries))
+      parts.push(ctx.buildContextFromEntries(researchEntries))
     }
   }
 

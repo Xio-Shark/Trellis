@@ -175,7 +175,7 @@ class CLIAdapter:
         """Get relative path to a trellis command file.
 
         Args:
-            name: Command name without extension (e.g., 'finish-work', 'check-backend')
+            name: Command name without extension (e.g., 'finish-work', 'check')
 
         Returns:
             Relative path string for use in JSONL entries

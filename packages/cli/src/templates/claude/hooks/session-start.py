@@ -180,7 +180,7 @@ Read and follow all instructions below carefully.
     output.write(start_md)
     output.write("\n</instructions>\n\n")
 
-    # R2: Check task status and inject structured tag
+    # Check task status and inject structured tag
     task_status = _get_task_status(trellis_dir)
     output.write(f"<task-status>\n{task_status}\n</task-status>\n\n")
 

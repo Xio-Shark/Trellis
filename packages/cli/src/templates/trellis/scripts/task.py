@@ -214,32 +214,25 @@ def get_implement_frontend() -> list[dict]:
     ]
 
 
-def get_check_context(dev_type: str, repo_root: Path) -> list[dict]:
+def get_check_context(repo_root: Path) -> list[dict]:
     """Get check context entries."""
     adapter = get_cli_adapter_auto(repo_root)
 
     entries = [
         {"file": adapter.get_trellis_command_path("finish-work"), "reason": "Finish work checklist"},
+        {"file": adapter.get_trellis_command_path("check"), "reason": "Code quality check spec"},
     ]
-
-    if dev_type in ("backend", "fullstack"):
-        entries.append({"file": adapter.get_trellis_command_path("check-backend"), "reason": "Backend check spec"})
-    if dev_type in ("frontend", "fullstack"):
-        entries.append({"file": adapter.get_trellis_command_path("check-frontend"), "reason": "Frontend check spec"})
 
     return entries
 
 
-def get_debug_context(dev_type: str, repo_root: Path) -> list[dict]:
+def get_debug_context(repo_root: Path) -> list[dict]:
     """Get debug context entries."""
     adapter = get_cli_adapter_auto(repo_root)
 
-    entries: list[dict] = []
-
-    if dev_type in ("backend", "fullstack"):
-        entries.append({"file": adapter.get_trellis_command_path("check-backend"), "reason": "Backend check spec"})
-    if dev_type in ("frontend", "fullstack"):
-        entries.append({"file": adapter.get_trellis_command_path("check-frontend"), "reason": "Frontend check spec"})
+    entries: list[dict] = [
+        {"file": adapter.get_trellis_command_path("check"), "reason": "Code quality check spec"},
+    ]
 
     return entries
 
@@ -432,14 +425,14 @@ def cmd_init_context(args: argparse.Namespace) -> int:
 
     # check.jsonl
     print(colored("Creating check.jsonl...", Colors.CYAN))
-    check_entries = get_check_context(dev_type, repo_root)
+    check_entries = get_check_context(repo_root)
     check_file = target_dir / "check.jsonl"
     _write_jsonl(check_file, check_entries)
     print(f"  {colored('✓', Colors.GREEN)} {len(check_entries)} entries")
 
     # debug.jsonl
     print(colored("Creating debug.jsonl...", Colors.CYAN))
-    debug_entries = get_debug_context(dev_type, repo_root)
+    debug_entries = get_debug_context(repo_root)
     debug_file = target_dir / "debug.jsonl"
     _write_jsonl(debug_file, debug_entries)
     print(f"  {colored('✓', Colors.GREEN)} {len(debug_entries)} entries")
