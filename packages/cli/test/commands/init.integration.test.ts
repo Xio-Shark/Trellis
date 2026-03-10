@@ -299,4 +299,177 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(specDir, "backend"))).toBe(false);
     expect(fs.existsSync(path.join(specDir, "guides", "index.md"))).toBe(true);
   });
+
+  // ===========================================================================
+  // Monorepo integration tests
+  // ===========================================================================
+
+  /** Helper: set up a pnpm workspace with two packages */
+  function setupPnpmWorkspace(
+    dir: string,
+    packages: { rel: string; name: string; files?: Record<string, string> }[],
+  ): void {
+    fs.writeFileSync(
+      path.join(dir, "pnpm-workspace.yaml"),
+      "packages:\n  - 'packages/*'\n",
+    );
+    for (const pkg of packages) {
+      const pkgDir = path.join(dir, pkg.rel);
+      fs.mkdirSync(pkgDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(pkgDir, "package.json"),
+        JSON.stringify({ name: pkg.name }),
+      );
+      if (pkg.files) {
+        for (const [name, content] of Object.entries(pkg.files)) {
+          fs.writeFileSync(path.join(pkgDir, name), content);
+        }
+      }
+    }
+  }
+
+  it("#13 monorepo: creates per-package spec directories", async () => {
+    // @app/web: vite.config.ts → frontend (package.json also present → still frontend)
+    // @app/api: package.json + go.mod → fullstack (both indicators present)
+    setupPnpmWorkspace(tmpDir, [
+      { rel: "packages/web", name: "@app/web", files: { "vite.config.ts": "" } },
+      { rel: "packages/api", name: "@app/api", files: { "go.mod": "" } },
+    ]);
+
+    await init({ yes: true });
+
+    const specDir = path.join(tmpDir, PATHS.SPEC);
+    // Per-package spec dirs created (NOT global backend/frontend)
+    expect(fs.existsSync(path.join(specDir, "@app/web"))).toBe(true);
+    expect(fs.existsSync(path.join(specDir, "@app/api"))).toBe(true);
+
+    // @app/web: frontend (vite.config.ts) → has frontend/, no backend/
+    expect(
+      fs.existsSync(path.join(specDir, "@app/web", "frontend", "index.md")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(specDir, "@app/web", "backend")),
+    ).toBe(false);
+
+    // @app/api: fullstack (package.json + go.mod) → has both backend/ and frontend/
+    expect(
+      fs.existsSync(path.join(specDir, "@app/api", "backend", "index.md")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(specDir, "@app/api", "frontend", "index.md")),
+    ).toBe(true);
+
+    // Guides still created (shared)
+    expect(fs.existsSync(path.join(specDir, "guides", "index.md"))).toBe(true);
+
+    // Global backend/frontend should NOT exist (monorepo mode)
+    expect(fs.existsSync(path.join(specDir, "backend"))).toBe(false);
+    expect(fs.existsSync(path.join(specDir, "frontend"))).toBe(false);
+  });
+
+  it("#14 monorepo: writes packages section to config.yaml", async () => {
+    setupPnpmWorkspace(tmpDir, [
+      { rel: "packages/cli", name: "@trellis/cli" },
+      { rel: "packages/docs", name: "@trellis/docs" },
+    ]);
+
+    await init({ yes: true });
+
+    const configPath = path.join(tmpDir, DIR_NAMES.WORKFLOW, "config.yaml");
+    expect(fs.existsSync(configPath)).toBe(true);
+
+    const configContent = fs.readFileSync(configPath, "utf-8");
+    expect(configContent).toContain("packages:");
+    expect(configContent).toContain("@trellis/cli:");
+    expect(configContent).toContain("path: packages/cli");
+    expect(configContent).toContain("@trellis/docs:");
+    expect(configContent).toContain("path: packages/docs");
+    expect(configContent).toContain("default_package:");
+  });
+
+  it("#15 monorepo: bootstrap task references per-package spec paths", async () => {
+    setupPnpmWorkspace(tmpDir, [
+      { rel: "packages/core", name: "core" },
+      { rel: "packages/ui", name: "ui" },
+    ]);
+
+    await init({ yes: true, user: "dev" });
+
+    const taskDir = path.join(tmpDir, PATHS.TASKS, "00-bootstrap-guidelines");
+    expect(fs.existsSync(taskDir)).toBe(true);
+
+    // task.json has per-package subtasks
+    const taskJson = JSON.parse(
+      fs.readFileSync(path.join(taskDir, "task.json"), "utf-8"),
+    );
+    const subtaskNames: string[] = taskJson.subtasks.map(
+      (s: { name: string }) => s.name,
+    );
+    expect(subtaskNames).toContain("Fill guidelines for core");
+    expect(subtaskNames).toContain("Fill guidelines for ui");
+
+    // relatedFiles point to spec/<name>/
+    expect(taskJson.relatedFiles).toContain(".trellis/spec/core/");
+    expect(taskJson.relatedFiles).toContain(".trellis/spec/ui/");
+
+    // prd.md mentions packages
+    const prd = fs.readFileSync(path.join(taskDir, "prd.md"), "utf-8");
+    expect(prd).toContain("core");
+    expect(prd).toContain("ui");
+    expect(prd).toContain("spec/");
+  });
+
+  it("#16 --no-monorepo skips detection even with workspace config", async () => {
+    setupPnpmWorkspace(tmpDir, [
+      { rel: "packages/a", name: "a" },
+    ]);
+
+    await init({ yes: true, monorepo: false });
+
+    const specDir = path.join(tmpDir, PATHS.SPEC);
+    // Single-repo spec (global backend + frontend), no per-package dirs
+    expect(fs.existsSync(path.join(specDir, "backend", "index.md"))).toBe(true);
+    expect(fs.existsSync(path.join(specDir, "frontend", "index.md"))).toBe(true);
+    expect(fs.existsSync(path.join(specDir, "a"))).toBe(false);
+
+    // config.yaml should NOT have packages: section
+    const configContent = fs.readFileSync(
+      path.join(tmpDir, DIR_NAMES.WORKFLOW, "config.yaml"),
+      "utf-8",
+    );
+    expect(configContent).not.toMatch(/^packages\s*:/m);
+  });
+
+  it("#17 --monorepo without workspace config exits with error", async () => {
+    // Empty directory — no workspace configs
+    const logSpy = vi.mocked(console.log);
+
+    await init({ yes: true, monorepo: true });
+
+    // Should log error about missing monorepo config
+    const errorCall = logSpy.mock.calls.find(
+      ([msg]) => typeof msg === "string" && msg.includes("no monorepo"),
+    );
+    expect(errorCall).toBeDefined();
+
+    // Should NOT create .trellis/ (early return)
+    expect(fs.existsSync(path.join(tmpDir, DIR_NAMES.WORKFLOW))).toBe(false);
+  });
+
+  it("#18 monorepo: re-init does not duplicate packages in config.yaml", async () => {
+    setupPnpmWorkspace(tmpDir, [
+      { rel: "packages/lib", name: "lib" },
+    ]);
+
+    await init({ yes: true, force: true });
+    await init({ yes: true, force: true });
+
+    const configContent = fs.readFileSync(
+      path.join(tmpDir, DIR_NAMES.WORKFLOW, "config.yaml"),
+      "utf-8",
+    );
+    // packages: should appear exactly once
+    const matches = configContent.match(/^packages\s*:/gm);
+    expect(matches).toHaveLength(1);
+  });
 });

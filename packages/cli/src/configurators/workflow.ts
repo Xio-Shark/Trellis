@@ -36,7 +36,10 @@ import {
 } from "../templates/markdown/index.js";
 
 import { writeFile, ensureDir } from "../utils/file-writer.js";
-import type { ProjectType } from "../utils/project-detector.js";
+import type {
+  ProjectType,
+  DetectedPackage,
+} from "../utils/project-detector.js";
 
 interface DocDefinition {
   name: string;
@@ -51,8 +54,12 @@ export interface WorkflowOptions {
   projectType: ProjectType;
   /** Enable multi-agent pipeline with worktree support */
   multiAgent?: boolean;
-  /** Skip creating local spec templates (when using remote template) */
+  /** Skip creating local spec templates (when using remote template) — single-repo mode */
   skipSpecTemplates?: boolean;
+  /** Detected monorepo packages (enables monorepo spec creation) */
+  packages?: DetectedPackage[];
+  /** Package names that use remote templates (skip blank spec for these) */
+  remoteSpecPackages?: Set<string>;
 }
 
 /**
@@ -76,6 +83,8 @@ export async function createWorkflowStructure(
   const projectType = options?.projectType ?? "fullstack";
   const multiAgent = options?.multiAgent ?? false;
   const skipSpecTemplates = options?.skipSpecTemplates ?? false;
+  const packages = options?.packages;
+  const remoteSpecPackages = options?.remoteSpecPackages;
 
   // Create base .trellis directory
   ensureDir(path.join(cwd, DIR_NAMES.WORKFLOW));
@@ -123,21 +132,96 @@ export async function createWorkflowStructure(
 
   // Create spec templates based on project type
   // These are NOT dogfooded - they are generic templates for new projects
-  // Skip if using remote template (already downloaded)
-  if (!skipSpecTemplates) {
+  if (packages && packages.length > 0) {
+    // Monorepo mode: create per-package spec directories
+    await createSpecTemplates(cwd, projectType, packages, remoteSpecPackages);
+  } else if (!skipSpecTemplates) {
+    // Single-repo mode: create global spec (skip if using remote template)
     await createSpecTemplates(cwd, projectType);
+  }
+}
+
+/**
+ * Write backend spec docs into a target spec directory.
+ */
+async function writeBackendDocs(specBase: string): Promise<void> {
+  const backendDir = path.join(specBase, "backend");
+  ensureDir(backendDir);
+  const docs: DocDefinition[] = [
+    { name: "index.md", content: backendIndexContent },
+    {
+      name: "directory-structure.md",
+      content: backendDirectoryStructureContent,
+    },
+    {
+      name: "database-guidelines.md",
+      content: backendDatabaseGuidelinesContent,
+    },
+    { name: "logging-guidelines.md", content: backendLoggingGuidelinesContent },
+    { name: "quality-guidelines.md", content: backendQualityGuidelinesContent },
+    { name: "error-handling.md", content: backendErrorHandlingContent },
+  ];
+  for (const doc of docs) {
+    await writeFile(path.join(backendDir, doc.name), doc.content);
+  }
+}
+
+/**
+ * Write frontend spec docs into a target spec directory.
+ */
+async function writeFrontendDocs(specBase: string): Promise<void> {
+  const frontendDir = path.join(specBase, "frontend");
+  ensureDir(frontendDir);
+  const docs: DocDefinition[] = [
+    { name: "index.md", content: frontendIndexContent },
+    {
+      name: "directory-structure.md",
+      content: frontendDirectoryStructureContent,
+    },
+    { name: "type-safety.md", content: frontendTypeSafetyContent },
+    { name: "hook-guidelines.md", content: frontendHookGuidelinesContent },
+    {
+      name: "component-guidelines.md",
+      content: frontendComponentGuidelinesContent,
+    },
+    {
+      name: "quality-guidelines.md",
+      content: frontendQualityGuidelinesContent,
+    },
+    { name: "state-management.md", content: frontendStateManagementContent },
+  ];
+  for (const doc of docs) {
+    await writeFile(path.join(frontendDir, doc.name), doc.content);
+  }
+}
+
+/**
+ * Write spec docs for a given project type into a target spec directory.
+ */
+async function writeSpecForType(
+  specBase: string,
+  projectType: ProjectType,
+): Promise<void> {
+  if (projectType !== "frontend") {
+    await writeBackendDocs(specBase);
+  }
+  if (projectType !== "backend") {
+    await writeFrontendDocs(specBase);
   }
 }
 
 async function createSpecTemplates(
   cwd: string,
   projectType: ProjectType,
+  packages?: DetectedPackage[],
+  remoteSpecPackages?: Set<string>,
 ): Promise<void> {
   // Ensure spec directory exists
   ensureDir(path.join(cwd, PATHS.SPEC));
 
-  // Guides - always created
-  ensureDir(path.join(cwd, `${PATHS.SPEC}/guides`));
+  // Guides - always created regardless of mode
+  const guidesDir = path.join(cwd, `${PATHS.SPEC}/guides`);
+  ensureDir(guidesDir);
   const guidesDocs: DocDefinition[] = [
     { name: "index.md", content: guidesIndexContent },
     {
@@ -149,76 +233,21 @@ async function createSpecTemplates(
       content: guidesCodeReuseThinkingGuideContent,
     },
   ];
-
   for (const doc of guidesDocs) {
-    await writeFile(
-      path.join(cwd, `${PATHS.SPEC}/guides`, doc.name),
-      doc.content,
-    );
+    await writeFile(path.join(guidesDir, doc.name), doc.content);
   }
 
-  // Backend spec - created for backend, fullstack, and unknown project types
-  if (projectType !== "frontend") {
-    ensureDir(path.join(cwd, `${PATHS.SPEC}/backend`));
-    const backendDocs: DocDefinition[] = [
-      { name: "index.md", content: backendIndexContent },
-      {
-        name: "directory-structure.md",
-        content: backendDirectoryStructureContent,
-      },
-      {
-        name: "database-guidelines.md",
-        content: backendDatabaseGuidelinesContent,
-      },
-      {
-        name: "logging-guidelines.md",
-        content: backendLoggingGuidelinesContent,
-      },
-      {
-        name: "quality-guidelines.md",
-        content: backendQualityGuidelinesContent,
-      },
-      { name: "error-handling.md", content: backendErrorHandlingContent },
-    ];
-
-    for (const doc of backendDocs) {
-      await writeFile(
-        path.join(cwd, `${PATHS.SPEC}/backend`, doc.name),
-        doc.content,
-      );
+  if (packages && packages.length > 0) {
+    // Monorepo mode: create spec/<name>/ for each package
+    for (const pkg of packages) {
+      if (remoteSpecPackages?.has(pkg.name)) continue;
+      const pkgSpecBase = path.join(cwd, `${PATHS.SPEC}/${pkg.name}`);
+      ensureDir(pkgSpecBase);
+      const pkgType = pkg.type === "unknown" ? "fullstack" : pkg.type;
+      await writeSpecForType(pkgSpecBase, pkgType);
     }
-  }
-
-  // Frontend spec - created for frontend, fullstack, and unknown project types
-  if (projectType !== "backend") {
-    ensureDir(path.join(cwd, `${PATHS.SPEC}/frontend`));
-    const frontendDocs: DocDefinition[] = [
-      { name: "index.md", content: frontendIndexContent },
-      {
-        name: "directory-structure.md",
-        content: frontendDirectoryStructureContent,
-      },
-      { name: "type-safety.md", content: frontendTypeSafetyContent },
-      { name: "hook-guidelines.md", content: frontendHookGuidelinesContent },
-      {
-        name: "component-guidelines.md",
-        content: frontendComponentGuidelinesContent,
-      },
-      {
-        name: "quality-guidelines.md",
-        content: frontendQualityGuidelinesContent,
-      },
-      {
-        name: "state-management.md",
-        content: frontendStateManagementContent,
-      },
-    ];
-
-    for (const doc of frontendDocs) {
-      await writeFile(
-        path.join(cwd, `${PATHS.SPEC}/frontend`, doc.name),
-        doc.content,
-      );
-    }
+  } else {
+    // Single-repo mode
+    await writeSpecForType(path.join(cwd, PATHS.SPEC), projectType);
   }
 }

@@ -77,6 +77,8 @@ program
   )
   .option("-f, --force", "Overwrite existing files without asking")
   .option("-s, --skip-existing", "Skip existing files without asking")
+  .option("--monorepo", "Force monorepo mode")
+  .option("--no-monorepo", "Skip monorepo detection")
   .option(
     "-t, --template <name>",
     "Use a remote spec template (e.g., electron-fullstack)",

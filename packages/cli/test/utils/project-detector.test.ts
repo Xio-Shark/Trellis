@@ -4,8 +4,19 @@ import path from "node:path";
 import os from "node:os";
 import {
   detectProjectType,
+  detectMonorepo,
   getProjectTypeDescription,
+  type DetectedPackage,
 } from "../../src/utils/project-detector.js";
+
+/** Assert result is non-null and return narrowed type for further assertions. */
+function assertPackages(result: DetectedPackage[] | null): DetectedPackage[] {
+  expect(result).not.toBeNull();
+  // After the assertion above, result is guaranteed non-null at runtime.
+  // Use type narrowing rather than the `!` operator.
+  if (result === null) throw new Error("unreachable");
+  return result;
+}
 
 // =============================================================================
 // getProjectTypeDescription — pure function (EASY)
@@ -163,5 +174,291 @@ describe("detectProjectType", () => {
       JSON.stringify({ name: "my-project" }),
     );
     expect(detectProjectType(tmpDir)).toBe("frontend");
+  });
+});
+
+// =============================================================================
+// detectMonorepo — needs temp directory with workspace configs
+// =============================================================================
+
+describe("detectMonorepo", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-monorepo-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  /** Create a subdirectory and optionally write a package.json with a name */
+  function mkPkg(relPath: string, name?: string): void {
+    const dir = path.join(tmpDir, relPath);
+    fs.mkdirSync(dir, { recursive: true });
+    if (name) {
+      fs.writeFileSync(
+        path.join(dir, "package.json"),
+        JSON.stringify({ name }),
+      );
+    }
+  }
+
+  it("returns null for empty directory", () => {
+    expect(detectMonorepo(tmpDir)).toBeNull();
+  });
+
+  it("returns null for a single-repo with package.json but no workspaces", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "package.json"),
+      JSON.stringify({ name: "my-project" }),
+    );
+    expect(detectMonorepo(tmpDir)).toBeNull();
+  });
+
+  // --- pnpm workspace ---
+
+  it("detects pnpm workspace", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "pnpm-workspace.yaml"),
+      "packages:\n  - 'packages/*'\n",
+    );
+    mkPkg("packages/foo", "@scope/foo");
+    mkPkg("packages/bar", "@scope/bar");
+
+    const result = assertPackages(detectMonorepo(tmpDir));
+    expect(result).toHaveLength(2);
+    expect(result.map((p) => p.name).sort()).toEqual(
+      ["@scope/bar", "@scope/foo"],
+    );
+    expect(result.every((p) => !p.isSubmodule)).toBe(true);
+  });
+
+  it("returns empty array when pnpm workspace glob matches nothing", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "pnpm-workspace.yaml"),
+      "packages:\n  - 'nonexistent/*'\n",
+    );
+    const result = assertPackages(detectMonorepo(tmpDir));
+    expect(result).toHaveLength(0);
+  });
+
+  // --- npm/yarn workspaces ---
+
+  it("detects npm workspaces (array form)", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "package.json"),
+      JSON.stringify({ workspaces: ["packages/*"] }),
+    );
+    mkPkg("packages/alpha", "alpha");
+
+    const result = assertPackages(detectMonorepo(tmpDir));
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("alpha");
+  });
+
+  it("detects yarn v1 workspaces (object form)", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "package.json"),
+      JSON.stringify({
+        workspaces: { packages: ["packages/*"], nohoist: ["**"] },
+      }),
+    );
+    mkPkg("packages/lib", "lib");
+
+    const result = assertPackages(detectMonorepo(tmpDir));
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("lib");
+  });
+
+  it("handles ! exclusion patterns in workspaces", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "package.json"),
+      JSON.stringify({ workspaces: ["packages/*", "!packages/excluded"] }),
+    );
+    mkPkg("packages/kept", "kept");
+    mkPkg("packages/excluded", "excluded");
+
+    const result = assertPackages(detectMonorepo(tmpDir));
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("kept");
+  });
+
+  // --- Cargo workspace ---
+
+  it("detects Cargo workspace", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "Cargo.toml"),
+      '[workspace]\nmembers = ["crates/*"]\n',
+    );
+    const crateDir = path.join(tmpDir, "crates", "my-crate");
+    fs.mkdirSync(crateDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(crateDir, "Cargo.toml"),
+      '[package]\nname = "my-crate"\nversion = "0.1.0"\n',
+    );
+
+    const result = assertPackages(detectMonorepo(tmpDir));
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("my-crate");
+  });
+
+  it("respects Cargo workspace exclude", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "Cargo.toml"),
+      '[workspace]\nmembers = ["crates/*"]\nexclude = ["crates/experimental"]\n',
+    );
+    mkPkg("crates/stable");
+    mkPkg("crates/experimental");
+
+    const result = assertPackages(detectMonorepo(tmpDir));
+    expect(result).toHaveLength(1);
+    expect(result[0].path).toBe("crates/stable");
+  });
+
+  // --- go.work ---
+
+  it("detects go.work (block form)", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "go.work"),
+      "go 1.21\n\nuse (\n    ./pkg/svc\n    ./pkg/lib\n)\n",
+    );
+    const svcDir = path.join(tmpDir, "pkg", "svc");
+    fs.mkdirSync(svcDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(svcDir, "go.mod"),
+      "module example.com/pkg/svc\n",
+    );
+    const libDir = path.join(tmpDir, "pkg", "lib");
+    fs.mkdirSync(libDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(libDir, "go.mod"),
+      "module example.com/pkg/lib\n",
+    );
+
+    const result = assertPackages(detectMonorepo(tmpDir));
+    expect(result).toHaveLength(2);
+    expect(result.map((p) => p.name).sort()).toEqual(["lib", "svc"]);
+  });
+
+  // --- uv workspace ---
+
+  it("detects uv workspace", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "pyproject.toml"),
+      '[tool.uv.workspace]\nmembers = ["packages/*"]\n',
+    );
+    const pyDir = path.join(tmpDir, "packages", "mylib");
+    fs.mkdirSync(pyDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(pyDir, "pyproject.toml"),
+      '[project]\nname = "mylib"\n',
+    );
+
+    const result = assertPackages(detectMonorepo(tmpDir));
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("mylib");
+  });
+
+  // --- .gitmodules ---
+
+  it("detects .gitmodules", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, ".gitmodules"),
+      '[submodule "docs-site"]\n\tpath = docs-site\n\turl = https://example.com/docs.git\n',
+    );
+    mkPkg("docs-site", "docs-site");
+
+    const result = assertPackages(detectMonorepo(tmpDir));
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("docs-site");
+    expect(result[0].isSubmodule).toBe(true);
+  });
+
+  it("keeps uninitialized submodule as unknown type", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, ".gitmodules"),
+      '[submodule "missing"]\n\tpath = missing\n\turl = https://example.com/missing.git\n',
+    );
+    // Don't create the directory — uninitialized
+
+    const result = assertPackages(detectMonorepo(tmpDir));
+    expect(result).toHaveLength(1);
+    expect(result[0].type).toBe("unknown");
+    expect(result[0].isSubmodule).toBe(true);
+  });
+
+  // --- Path normalization ---
+
+  it("normalizes paths and deduplicates", () => {
+    // pnpm workspace with ./packages/* (leading ./)
+    fs.writeFileSync(
+      path.join(tmpDir, "pnpm-workspace.yaml"),
+      "packages:\n  - './packages/*'\n",
+    );
+    // npm workspaces with packages/* (no leading ./)
+    fs.writeFileSync(
+      path.join(tmpDir, "package.json"),
+      JSON.stringify({ workspaces: ["packages/*"] }),
+    );
+    mkPkg("packages/dup", "dup");
+
+    const result = assertPackages(detectMonorepo(tmpDir));
+    // Should deduplicate to 1 package, not 2
+    expect(result).toHaveLength(1);
+  });
+
+  it("excludes root workspace entry (.)", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "pnpm-workspace.yaml"),
+      "packages:\n  - '.'\n  - 'packages/*'\n",
+    );
+    mkPkg("packages/a", "a");
+
+    const result = assertPackages(detectMonorepo(tmpDir));
+    // Only packages/a, not root
+    expect(result).toHaveLength(1);
+    expect(result[0].path).toBe("packages/a");
+  });
+
+  // --- Multi-manager merge ---
+
+  it("merges pnpm workspace + .gitmodules and marks submodule", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "pnpm-workspace.yaml"),
+      "packages:\n  - 'packages/*'\n  - 'docs-site'\n",
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, ".gitmodules"),
+      '[submodule "docs-site"]\n\tpath = docs-site\n\turl = https://example.com\n',
+    );
+    mkPkg("packages/cli", "@trellis/cli");
+    mkPkg("docs-site", "docs-site");
+
+    const result = assertPackages(detectMonorepo(tmpDir));
+    expect(result).toHaveLength(2);
+
+    const docsPkg = result.find((p) => p.path === "docs-site");
+    expect(docsPkg?.isSubmodule).toBe(true);
+
+    const cliPkg = result.find((p) => p.path === "packages/cli");
+    expect(cliPkg?.isSubmodule).toBe(false);
+  });
+
+  // --- Package name ---
+
+  it("falls back to directory name when no config files have name", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "pnpm-workspace.yaml"),
+      "packages:\n  - 'packages/*'\n",
+    );
+    // Create directory without package.json
+    fs.mkdirSync(path.join(tmpDir, "packages", "nameless"), {
+      recursive: true,
+    });
+
+    const result = assertPackages(detectMonorepo(tmpDir));
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("nameless");
   });
 });

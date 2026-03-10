@@ -394,6 +394,7 @@ export async function downloadTemplateById(
   strategy: TemplateStrategy,
   template?: SpecTemplate,
   registry?: RegistrySource,
+  destDirOverride?: string,
 ): Promise<{ success: boolean; message: string; skipped?: boolean }> {
   // Use pre-fetched template or find from index
   let resolved = template;
@@ -436,8 +437,8 @@ export async function downloadTemplateById(
     };
   }
 
-  // Get destination path
-  const destDir = getInstallPath(cwd, resolved.type);
+  // Get destination path (use override for monorepo per-package downloads)
+  const destDir = destDirOverride ?? getInstallPath(cwd, resolved.type);
 
   // Check if directory exists for skip strategy
   if (strategy === "skip" && fs.existsSync(destDir)) {
@@ -499,8 +500,9 @@ export async function downloadRegistryDirect(
   cwd: string,
   registry: RegistrySource,
   strategy: TemplateStrategy,
+  destDirOverride?: string,
 ): Promise<{ success: boolean; message: string; skipped?: boolean }> {
-  const destDir = getInstallPath(cwd, "spec");
+  const destDir = destDirOverride ?? getInstallPath(cwd, "spec");
 
   if (strategy === "skip" && fs.existsSync(destDir)) {
     return {
