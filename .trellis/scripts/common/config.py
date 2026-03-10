@@ -52,12 +52,37 @@ def get_max_journal_lines(repo_root: Path | None = None) -> int:
         return DEFAULT_MAX_JOURNAL_LINES
 
 
-def get_packages(repo_root: Path | None = None) -> dict[str, dict]:
+def get_hooks(event: str, repo_root: Path | None = None) -> list[str]:
+    """Get hook commands for a lifecycle event.
+
+    Args:
+        event: Event name (e.g. "after_create", "after_archive").
+        repo_root: Repository root path.
+
+    Returns:
+        List of shell commands to execute, empty if none configured.
+    """
+    config = _load_config(repo_root)
+    hooks = config.get("hooks")
+    if not isinstance(hooks, dict):
+        return []
+    commands = hooks.get(event)
+    if isinstance(commands, list):
+        return [str(c) for c in commands]
+    return []
+
+
+# =============================================================================
+# Monorepo / Packages
+# =============================================================================
+
+
+def get_packages(repo_root: Path | None = None) -> dict[str, dict] | None:
     """Get monorepo package declarations.
 
     Returns:
-        Dict mapping package name to its config (path, type, etc.).
-        Empty dict if no packages configured (single-repo mode).
+        Dict mapping package name to its config (path, type, etc.),
+        or None if not configured (single-repo mode).
 
     Example return:
         {"cli": {"path": "packages/cli"}, "docs-site": {"path": "docs-site", "type": "submodule"}}
@@ -65,9 +90,12 @@ def get_packages(repo_root: Path | None = None) -> dict[str, dict]:
     config = _load_config(repo_root)
     packages = config.get("packages")
     if not isinstance(packages, dict):
-        return {}
-    # Ensure each value is a dict
-    return {k: v for k, v in packages.items() if isinstance(v, dict)}
+        return None
+    # Ensure each value is a dict (filter out scalar entries)
+    filtered = {k: v for k, v in packages.items() if isinstance(v, dict)}
+    if not filtered:
+        return None
+    return filtered
 
 
 def get_default_package(repo_root: Path | None = None) -> str | None:
@@ -92,6 +120,8 @@ def get_submodule_packages(repo_root: Path | None = None) -> dict[str, str]:
         {"docs-site": "docs-site"}
     """
     packages = get_packages(repo_root)
+    if packages is None:
+        return {}
     return {
         name: cfg.get("path", name)
         for name, cfg in packages.items()
@@ -99,21 +129,18 @@ def get_submodule_packages(repo_root: Path | None = None) -> dict[str, str]:
     }
 
 
-def get_hooks(event: str, repo_root: Path | None = None) -> list[str]:
-    """Get hook commands for a lifecycle event.
+def is_monorepo(repo_root: Path | None = None) -> bool:
+    """Check if the project is configured as a monorepo (has packages in config)."""
+    return get_packages(repo_root) is not None
 
-    Args:
-        event: Event name (e.g. "after_create", "after_archive").
-        repo_root: Repository root path.
 
-    Returns:
-        List of shell commands to execute, empty if none configured.
+def get_spec_base(package: str | None = None, repo_root: Path | None = None) -> str:
+    """Get the spec directory base path relative to .trellis/.
+
+    Single-repo: returns "spec"
+    Monorepo with package: returns "spec/<package>"
+    Monorepo without package: returns "spec" (caller should specify package)
     """
-    config = _load_config(repo_root)
-    hooks = config.get("hooks")
-    if not isinstance(hooks, dict):
-        return []
-    commands = hooks.get(event)
-    if isinstance(commands, list):
-        return [str(c) for c in commands]
-    return []
+    if package and is_monorepo(repo_root):
+        return f"spec/{package}"
+    return "spec"

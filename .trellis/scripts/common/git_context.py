@@ -57,10 +57,32 @@ def _run_git_command(args: list[str], cwd: Path | None = None) -> tuple[int, str
         return 1, "", str(e)
 
 
+def _read_json_file(path: Path) -> dict | None:
+    """Read and parse a JSON file."""
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+
+
+def _scan_spec_layers(spec_dir: Path, package: str | None = None) -> list[str]:
+    """Scan spec directory for available layers (subdirectories).
+
+    For monorepo: scans spec/<package>/
+    For single-repo: scans spec/
+    """
+    target = spec_dir / package if package else spec_dir
+    if not target.is_dir():
+        return []
+    return sorted(
+        d.name for d in target.iterdir() if d.is_dir() and d.name != "guides"
+    )
+
+
 def _get_packages_info(repo_root: Path) -> list[dict]:
     """Get structured package info for monorepo projects.
 
-    Returns list of dicts with keys: name, path, type, default, spec_layers.
+    Returns list of dicts with keys: name, path, type, default, specLayers, isSubmodule.
     Returns empty list for single-repo projects.
     """
     packages = get_packages(repo_root)
@@ -72,34 +94,51 @@ def _get_packages_info(repo_root: Path) -> list[dict]:
     result = []
 
     for pkg_name, pkg_config in packages.items():
-        pkg_path = pkg_config.get("path", pkg_name)
-        pkg_type = pkg_config.get("type", "local")
-
-        # Discover spec layers for this package
-        spec_layers: list[str] = []
-        pkg_spec_dir = spec_dir / pkg_name
-        if pkg_spec_dir.is_dir():
-            for layer_dir in sorted(pkg_spec_dir.iterdir()):
-                if layer_dir.is_dir():
-                    spec_layers.append(layer_dir.name)
+        pkg_path = pkg_config.get("path", pkg_name) if isinstance(pkg_config, dict) else str(pkg_config)
+        pkg_type = pkg_config.get("type", "local") if isinstance(pkg_config, dict) else "local"
+        layers = _scan_spec_layers(spec_dir, pkg_name)
 
         result.append({
             "name": pkg_name,
             "path": pkg_path,
             "type": pkg_type,
             "default": pkg_name == default_pkg,
-            "spec_layers": spec_layers,
+            "specLayers": layers,
+            "isSubmodule": pkg_type == "submodule",
         })
 
     return result
 
 
-def _read_json_file(path: Path) -> dict | None:
-    """Read and parse a JSON file."""
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return None
+def _get_packages_section(repo_root: Path) -> str:
+    """Build the PACKAGES section for text output."""
+    spec_dir = repo_root / DIR_WORKFLOW / DIR_SPEC
+    pkg_info = _get_packages_info(repo_root)
+
+    lines: list[str] = []
+    lines.append("## PACKAGES")
+
+    if not pkg_info:
+        lines.append("(single-repo mode)")
+        layers = _scan_spec_layers(spec_dir)
+        if layers:
+            lines.append(f"Spec layers: {', '.join(layers)}")
+        return "\n".join(lines)
+
+    default_pkg = get_default_package(repo_root)
+
+    for pkg in pkg_info:
+        layers_str = f"  [{', '.join(pkg['specLayers'])}]" if pkg["specLayers"] else ""
+        submodule_tag = "  (submodule)" if pkg["isSubmodule"] else ""
+        default_tag = "  *" if pkg["default"] else ""
+        lines.append(
+            f"- {pkg['name']:<16} {pkg['path']:<20}{layers_str}{submodule_tag}{default_tag}"
+        )
+
+    if default_pkg:
+        lines.append(f"Default package: {default_pkg}")
+
+    return "\n".join(lines)
 
 
 # =============================================================================
@@ -398,15 +437,10 @@ def get_context_text(repo_root: Path | None = None) -> str:
         lines.append("No journal file found")
     lines.append("")
 
-    # Packages (monorepo)
-    pkg_info = _get_packages_info(repo_root)
-    if pkg_info:
-        lines.append("## PACKAGES")
-        for pkg in pkg_info:
-            default_tag = " (default)" if pkg["default"] else ""
-            type_tag = f" [{pkg['type']}]" if pkg["type"] != "local" else ""
-            layers = ", ".join(pkg["spec_layers"]) if pkg["spec_layers"] else "no spec"
-            lines.append(f"- {pkg['name']}{default_tag}{type_tag}: {pkg['path']} — spec: {layers}")
+    # Packages
+    packages_text = _get_packages_section(repo_root)
+    if packages_text:
+        lines.append(packages_text)
         lines.append("")
 
     # Paths
@@ -639,12 +673,8 @@ def get_context_text_record(repo_root: Path | None = None) -> str:
     return "\n".join(lines)
 
 
-def get_packages_text(repo_root: Path | None = None) -> str:
-    """Get packages overview as formatted text.
-
-    For monorepo: lists packages with paths, types, and spec layers.
-    For single-repo: shows single-repo message.
-    """
+def get_context_packages_text(repo_root: Path | None = None) -> str:
+    """Get packages context as formatted text (for --mode packages)."""
     if repo_root is None:
         repo_root = get_repo_root()
 
@@ -652,14 +682,12 @@ def get_packages_text(repo_root: Path | None = None) -> str:
     lines: list[str] = []
 
     if not pkg_info:
+        spec_dir = repo_root / DIR_WORKFLOW / DIR_SPEC
         lines.append("Single-repo project (no packages configured)")
         lines.append("")
-        # Show spec layers at root level
-        spec_dir = repo_root / DIR_WORKFLOW / DIR_SPEC
-        if spec_dir.is_dir():
-            layers = sorted(d.name for d in spec_dir.iterdir() if d.is_dir())
-            if layers:
-                lines.append(f"Spec layers: {', '.join(layers)}")
+        layers = _scan_spec_layers(spec_dir)
+        if layers:
+            lines.append(f"Spec layers: {', '.join(layers)}")
         return "\n".join(lines)
 
     lines.append("## PACKAGES")
@@ -669,9 +697,9 @@ def get_packages_text(repo_root: Path | None = None) -> str:
         type_tag = f" [{pkg['type']}]" if pkg["type"] != "local" else ""
         lines.append(f"### {pkg['name']}{default_tag}{type_tag}")
         lines.append(f"Path: {pkg['path']}")
-        if pkg["spec_layers"]:
-            lines.append(f"Spec layers: {', '.join(pkg['spec_layers'])}")
-            for layer in pkg["spec_layers"]:
+        if pkg["specLayers"]:
+            lines.append(f"Spec layers: {', '.join(pkg['specLayers'])}")
+            for layer in pkg["specLayers"]:
                 lines.append(f"  - .trellis/spec/{pkg['name']}/{layer}/index.md")
         else:
             lines.append("Spec: not configured")
@@ -687,18 +715,27 @@ def get_packages_text(repo_root: Path | None = None) -> str:
     return "\n".join(lines)
 
 
-def get_packages_json(repo_root: Path | None = None) -> dict:
-    """Get packages info as a dictionary."""
+def get_context_packages_json(repo_root: Path | None = None) -> dict:
+    """Get packages context as a dictionary (for --mode packages --json)."""
     if repo_root is None:
         repo_root = get_repo_root()
 
     pkg_info = _get_packages_info(repo_root)
+
+    if not pkg_info:
+        spec_dir = repo_root / DIR_WORKFLOW / DIR_SPEC
+        layers = _scan_spec_layers(spec_dir)
+        return {
+            "mode": "single-repo",
+            "specLayers": layers,
+        }
+
     default_pkg = get_default_package(repo_root)
 
     return {
-        "monorepo": len(pkg_info) > 0,
-        "default_package": default_pkg,
+        "mode": "monorepo",
         "packages": pkg_info,
+        "defaultPackage": default_pkg,
     }
 
 
@@ -732,21 +769,21 @@ def main() -> None:
         "-m",
         choices=["default", "record", "packages"],
         default="default",
-        help="Output mode: default (full context), record (for record-session), packages (monorepo info)",
+        help="Output mode: default (full context), record (for record-session), packages (package info only)",
     )
 
     args = parser.parse_args()
 
-    if args.mode == "packages":
-        if args.json:
-            print(json.dumps(get_packages_json(), indent=2, ensure_ascii=False))
-        else:
-            print(get_packages_text())
-    elif args.mode == "record":
+    if args.mode == "record":
         if args.json:
             print(json.dumps(get_context_record_json(), indent=2, ensure_ascii=False))
         else:
             print(get_context_text_record())
+    elif args.mode == "packages":
+        if args.json:
+            print(json.dumps(get_context_packages_json(), indent=2, ensure_ascii=False))
+        else:
+            print(get_context_packages_text())
     else:
         if args.json:
             output_json()

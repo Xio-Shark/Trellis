@@ -70,3 +70,77 @@ def get_hooks(event: str, repo_root: Path | None = None) -> list[str]:
     if isinstance(commands, list):
         return [str(c) for c in commands]
     return []
+
+
+# =============================================================================
+# Monorepo / Packages
+# =============================================================================
+
+
+def get_packages(repo_root: Path | None = None) -> dict[str, dict] | None:
+    """Get monorepo package declarations.
+
+    Returns:
+        Dict mapping package name to its config (path, type, etc.),
+        or None if not configured (single-repo mode).
+
+    Example return:
+        {"cli": {"path": "packages/cli"}, "docs-site": {"path": "docs-site", "type": "submodule"}}
+    """
+    config = _load_config(repo_root)
+    packages = config.get("packages")
+    if not isinstance(packages, dict):
+        return None
+    # Ensure each value is a dict (filter out scalar entries)
+    filtered = {k: v for k, v in packages.items() if isinstance(v, dict)}
+    if not filtered:
+        return None
+    return filtered
+
+
+def get_default_package(repo_root: Path | None = None) -> str | None:
+    """Get the default package name from config.
+
+    Returns:
+        Package name string, or None if not configured.
+    """
+    config = _load_config(repo_root)
+    value = config.get("default_package")
+    return str(value) if value else None
+
+
+def get_submodule_packages(repo_root: Path | None = None) -> dict[str, str]:
+    """Get packages that are git submodules.
+
+    Returns:
+        Dict mapping package name to its path for submodule-type packages.
+        Empty dict if none configured.
+
+    Example return:
+        {"docs-site": "docs-site"}
+    """
+    packages = get_packages(repo_root)
+    if packages is None:
+        return {}
+    return {
+        name: cfg.get("path", name)
+        for name, cfg in packages.items()
+        if cfg.get("type") == "submodule"
+    }
+
+
+def is_monorepo(repo_root: Path | None = None) -> bool:
+    """Check if the project is configured as a monorepo (has packages in config)."""
+    return get_packages(repo_root) is not None
+
+
+def get_spec_base(package: str | None = None, repo_root: Path | None = None) -> str:
+    """Get the spec directory base path relative to .trellis/.
+
+    Single-repo: returns "spec"
+    Monorepo with package: returns "spec/<package>"
+    Monorepo without package: returns "spec" (caller should specify package)
+    """
+    if package and is_monorepo(repo_root):
+        return f"spec/{package}"
+    return "spec"
