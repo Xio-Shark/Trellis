@@ -61,7 +61,7 @@ describe("getAllMigrations", () => {
   it("each migration has required type and from fields", () => {
     const migrations = getAllMigrations();
     for (const m of migrations) {
-      expect(["rename", "rename-dir", "delete"]).toContain(m.type);
+      expect(["rename", "rename-dir", "delete", "safe-file-delete"]).toContain(m.type);
       expect(typeof m.from).toBe("string");
       expect(m.from.length).toBeGreaterThan(0);
     }
@@ -147,30 +147,33 @@ describe("hasPendingMigrations", () => {
 // =============================================================================
 
 describe("getMigrationSummary", () => {
-  it("returns object with renames and deletes counts", () => {
+  it("returns object with renames, deletes, and safeFileDeletes counts", () => {
     const summary = getMigrationSummary("0.1.0", "99.0.0");
     expect(typeof summary.renames).toBe("number");
     expect(typeof summary.deletes).toBe("number");
+    expect(typeof summary.safeFileDeletes).toBe("number");
     expect(summary.renames).toBeGreaterThanOrEqual(0);
     expect(summary.deletes).toBeGreaterThanOrEqual(0);
+    expect(summary.safeFileDeletes).toBeGreaterThanOrEqual(0);
   });
 
   it("returns zero counts for same version", () => {
     const summary = getMigrationSummary("0.3.0-beta.16", "0.3.0-beta.16");
     expect(summary.renames).toBe(0);
     expect(summary.deletes).toBe(0);
+    expect(summary.safeFileDeletes).toBe(0);
   });
 
-  it("renames + deletes <= total migrations count (rename-dir counted separately)", () => {
+  it("counted types sum <= total migrations count", () => {
     const from = "0.1.0";
     const to = "99.0.0";
     const summary = getMigrationSummary(from, to);
     const migrations = getMigrationsForVersion(from, to);
-    // getMigrationSummary only counts type "rename" and "delete",
-    // not "rename-dir" — so renames + deletes may be less than total
-    expect(summary.renames + summary.deletes).toBeLessThanOrEqual(
-      migrations.length,
-    );
+    // getMigrationSummary counts "rename", "delete", and "safe-file-delete"
+    // but not "rename-dir" — so sum may be less than total
+    expect(
+      summary.renames + summary.deletes + summary.safeFileDeletes,
+    ).toBeLessThanOrEqual(migrations.length);
   });
 });
 

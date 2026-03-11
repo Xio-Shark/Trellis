@@ -267,9 +267,30 @@ describe("regression: migration data integrity (beta.14)", () => {
 
   it("[beta.14] all migrations have valid type field", () => {
     const allMigrations = getAllMigrations();
-    const validTypes = ["rename", "rename-dir", "delete"];
+    const validTypes = ["rename", "rename-dir", "delete", "safe-file-delete"];
     for (const m of allMigrations) {
       expect(validTypes).toContain(m.type);
+    }
+  });
+
+  it("[beta.1-040] safe-file-delete migrations have allowed_hashes", () => {
+    const allMigrations = getAllMigrations();
+    const safeDeletes = allMigrations.filter(
+      (m) => m.type === "safe-file-delete",
+    );
+    for (const m of safeDeletes) {
+      expect(
+        m.allowed_hashes,
+        `safe-file-delete for '${m.from}' should have allowed_hashes`,
+      ).toBeDefined();
+      expect(Array.isArray(m.allowed_hashes)).toBe(true);
+      expect(
+        (m.allowed_hashes as string[]).length,
+        `safe-file-delete for '${m.from}' should have at least one hash`,
+      ).toBeGreaterThan(0);
+      for (const hash of m.allowed_hashes as string[]) {
+        expect(hash).toMatch(/^[a-f0-9]{64}$/);
+      }
     }
   });
 

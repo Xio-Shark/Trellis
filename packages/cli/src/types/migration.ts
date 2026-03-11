@@ -10,13 +10,15 @@
  */
 export interface MigrationItem {
   /** Type of migration action */
-  type: "rename" | "rename-dir" | "delete";
+  type: "rename" | "rename-dir" | "delete" | "safe-file-delete";
   /** Source path (relative to project root) */
   from: string;
   /** Target path for renames (relative to project root) */
   to?: string;
   /** Human-readable description of the change */
   description?: string;
+  /** Known template hashes for safe-file-delete (only delete if content matches) */
+  allowed_hashes?: string[];
 }
 
 /**
