@@ -22,6 +22,7 @@ This script:
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import subprocess
 import sys
@@ -31,7 +32,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from common.git_context import _run_git_command
-from common.paths import get_repo_root
+from common.paths import FILE_TASK_JSON, get_repo_root
 from common.registry import (
     registry_get_file,
     registry_get_task_dir,
@@ -91,6 +92,26 @@ def confirm(prompt: str, skip_confirm: bool) -> bool:
     return response.lower() in ("y", "yes")
 
 
+def _warn_submodule_prs(task_dir_abs: Path) -> None:
+    """Print reminders for any open submodule PRs found in task.json."""
+    task_json = task_dir_abs / FILE_TASK_JSON
+    if not task_json.is_file():
+        return
+
+    try:
+        task_data = json.loads(task_json.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return
+
+    submodule_prs = task_data.get("submodule_prs")
+    if not isinstance(submodule_prs, dict) or not submodule_prs:
+        return
+
+    for name, url in submodule_prs.items():
+        log_warn(f"Submodule PR still open: {name} -> {url}")
+    log_info("Remember to close/merge submodule PRs before cleanup")
+
+
 # =============================================================================
 # Commands
 # =============================================================================
@@ -109,8 +130,6 @@ def cmd_list(repo_root: Path) -> int:
     if registry_file and registry_file.is_file():
         print(f"{Colors.BLUE}=== Registered Agents ==={Colors.NC}")
         print()
-
-        import json
 
         data = json.loads(registry_file.read_text(encoding="utf-8"))
         agents = data.get("agents", [])
@@ -165,10 +184,11 @@ def cleanup_registry_only(search: str, repo_root: Path, skip_confirm: bool) -> i
         log_info("Aborted")
         return 0
 
-    # Archive task directory if exists
+    # Check for submodule PRs and archive task directory
     if task_dir and is_safe_task_path(task_dir, repo_root):
         task_dir_abs = repo_root / task_dir
         if task_dir_abs.is_dir():
+            _warn_submodule_prs(task_dir_abs)
             result = archive_task_complete(task_dir_abs, repo_root)
             if "archived_to" in result:
                 dest = Path(result["archived_to"])
@@ -223,7 +243,12 @@ def cleanup_worktree(
         log_info("Aborted")
         return 0
 
-    # 1. Archive task
+    # 1. Archive task (and check for submodule PRs)
+    task_dir = registry_get_task_dir(worktree_path, repo_root)
+    if task_dir and is_safe_task_path(task_dir, repo_root):
+        task_dir_abs_for_warn = repo_root / task_dir
+        if task_dir_abs_for_warn.is_dir():
+            _warn_submodule_prs(task_dir_abs_for_warn)
     archive_task(worktree_path, repo_root)
 
     # 2. Remove from registry

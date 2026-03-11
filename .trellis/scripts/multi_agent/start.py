@@ -32,8 +32,7 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from common.cli_adapter import CLIAdapter, get_cli_adapter
-from common.config import get_submodule_packages
+from common.cli_adapter import get_cli_adapter
 from common.git_context import _run_git_command
 from common.paths import (
     DIR_WORKFLOW,
@@ -44,6 +43,12 @@ from common.paths import (
 from common.registry import (
     registry_add_agent,
     registry_get_file,
+)
+from common.config import (
+    get_default_package,
+    get_packages,
+    get_submodule_packages,
+    validate_package,
 )
 from common.worktree import (
     get_worktree_base_dir,
@@ -110,6 +115,112 @@ def _write_json_file(path: Path, data: dict) -> bool:
 # =============================================================================
 
 DEFAULT_PLATFORM = "claude"
+
+
+# =============================================================================
+# Submodule Init
+# =============================================================================
+
+
+def _init_submodules_for_task(
+    task_data: dict, worktree_path: str, project_root: Path
+) -> None:
+    """Initialize submodules in worktree based on task's target package.
+
+    Resolves the target package from task_data.package -> default_package -> None.
+    Only initializes submodule-type packages. Idempotent: skips already-initialized
+    submodules to avoid detaching HEAD on in-progress work.
+    """
+    # Skip if not a monorepo (no packages configured)
+    if get_packages(project_root) is None:
+        return
+
+    # Resolve package: task.package -> default_package -> None
+    task_package = task_data.get("package")
+    package = None
+
+    if task_package and isinstance(task_package, str):
+        if validate_package(task_package, project_root):
+            package = task_package
+        else:
+            log_warn(
+                f"package '{task_package}' not found in config.yaml, "
+                "skipping submodule init"
+            )
+            return
+    else:
+        # Fallback to default_package
+        default_pkg = get_default_package(project_root)
+        if default_pkg:
+            if validate_package(default_pkg, project_root):
+                package = default_pkg
+            else:
+                log_warn(
+                    f"package '{default_pkg}' not found in config.yaml, "
+                    "skipping submodule init"
+                )
+                return
+
+    if not package:
+        log_warn("no package specified, skipping submodule init")
+        return
+
+    # Check if this package is a submodule
+    submodule_packages = get_submodule_packages(project_root)
+    if package not in submodule_packages:
+        log_info(f"Package '{package}' is not a submodule, skipping submodule init")
+        return
+
+    submodule_path = submodule_packages[package]
+    log_info(f"Checking submodule status for '{package}' ({submodule_path})...")
+
+    # Run git submodule status in worktree directory
+    ret, status_out, status_err = _run_git_command(
+        ["submodule", "status", submodule_path], cwd=Path(worktree_path)
+    )
+
+    if ret != 0:
+        log_warn(
+            f"git submodule status failed for '{submodule_path}': {status_err.strip()}, "
+            "skipping submodule init"
+        )
+        return
+
+    # Parse the prefix character from submodule status output
+    # Format: "<prefix><sha1> <path> (<describe>)"
+    # Prefix: '-' (uninitialized), ' ' (normal), '+' (commit mismatch), 'U' (conflict)
+    status_line = status_out.strip()
+    if not status_line:
+        log_warn(f"Empty submodule status for '{submodule_path}', skipping")
+        return
+
+    prefix = status_line[0]
+
+    if prefix == "-":
+        # Uninitialized: run git submodule update --init
+        log_info(f"Initializing submodule '{submodule_path}'...")
+        ret, _, err = _run_git_command(
+            ["submodule", "update", "--init", submodule_path],
+            cwd=Path(worktree_path),
+        )
+        if ret != 0:
+            log_warn(f"Failed to initialize submodule '{submodule_path}': {err.strip()}")
+        else:
+            log_success(f"Submodule '{submodule_path}' initialized")
+    elif prefix == " ":
+        log_info(f"Submodule '{submodule_path}' already initialized, skipping")
+    elif prefix == "+":
+        log_warn(
+            f"submodule {submodule_path} has local changes, skipping update"
+        )
+    elif prefix == "U":
+        log_warn(
+            f"submodule {submodule_path} has conflicts, skipping"
+        )
+    else:
+        log_warn(
+            f"Unknown submodule status prefix '{prefix}' for '{submodule_path}', skipping"
+        )
 
 
 # =============================================================================
@@ -295,34 +406,8 @@ def main() -> int:
         shutil.copytree(str(task_dir_abs), str(task_target_dir))
         log_success("Task directory copied to worktree")
 
-        # ----- Initialize submodules (selective) -----
-        submodule_pkgs = get_submodule_packages(project_root)
-        if submodule_pkgs:
-            task_package = task_data.get("package") or ""
-            # Determine which submodules to init: only those matching task's target package(s)
-            to_init = {}
-            if task_package:
-                # task_package could be comma-separated for multi-package tasks
-                target_names = {p.strip() for p in task_package.split(",")}
-                to_init = {
-                    name: path
-                    for name, path in submodule_pkgs.items()
-                    if name in target_names
-                }
-
-            if to_init:
-                log_info(f"Initializing submodule(s): {', '.join(to_init.keys())}...")
-                for name, path in to_init.items():
-                    ret, _, err = _run_git_command(
-                        ["submodule", "update", "--init", path],
-                        cwd=Path(worktree_path),
-                    )
-                    if ret != 0:
-                        log_error(f"Failed to init submodule {name}: {err}")
-                    else:
-                        log_success(f"Submodule initialized: {name} ({path})")
-            else:
-                log_info("Task target is not a submodule, skipping submodule init")
+        # ----- Initialize submodules (before hooks, so hooks can use submodule content) -----
+        _init_submodules_for_task(task_data, worktree_path, project_root)
 
         # ----- Run post_create hooks -----
         log_info("Running post_create hooks...")
@@ -344,6 +429,9 @@ def main() -> int:
             log_success(f"Ran {hook_count} hook(s)")
     else:
         log_info(f"Step 1: Using existing worktree: {worktree_path}")
+
+        # ----- Initialize submodules (idempotent, for reused worktrees) -----
+        _init_submodules_for_task(task_data, worktree_path, project_root)
 
     # =============================================================================
     # Step 2: Set .current-task in Worktree

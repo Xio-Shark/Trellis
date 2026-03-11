@@ -42,6 +42,8 @@ import {
   addSessionScript,
   multiAgentPlan,
   multiAgentStart,
+  multiAgentCleanup,
+  multiAgentCreatePr,
   commonCliAdapter,
   getAllScripts,
 } from "../src/templates/trellis/index.js";
@@ -808,6 +810,51 @@ describe("regression: collectTemplates paths match init directory structure (0.3
 // =============================================================================
 // 8. Dead Code / Template Content Regressions
 // =============================================================================
+
+// =============================================================================
+// S4: Submodule + PR Awareness (beta.1)
+// =============================================================================
+
+describe("regression: submodule awareness in multi_agent scripts (beta.1)", () => {
+  it("[S4] start.py checks submodule status prefix before init (prevents detached HEAD)", () => {
+    // Critical: running `git submodule update --init` on already-initialized submodule
+    // detaches HEAD, destroying agent's in-progress work. Must check status prefix first.
+    expect(multiAgentStart).toContain("submodule status");
+    expect(multiAgentStart).toContain('prefix == "-"');
+    expect(multiAgentStart).toContain('prefix == "+"');
+  });
+
+  it("[S4] start.py imports submodule helpers from common.config", () => {
+    expect(multiAgentStart).toContain("get_submodule_packages");
+    expect(multiAgentStart).toContain("validate_package");
+  });
+
+  it("[S4] create_pr.py uses git symbolic-ref for portable base branch detection", () => {
+    // Must use `git symbolic-ref refs/remotes/origin/HEAD` (not grep + English output)
+    // for cross-platform / cross-locale compatibility
+    expect(multiAgentCreatePr).toContain("symbolic-ref");
+    expect(multiAgentCreatePr).toContain("refs/remotes/origin/HEAD");
+  });
+
+  it("[S4] create_pr.py guards submodule_prs read with isinstance", () => {
+    // Prevents TypeError crash when task.json has submodule_prs: null or non-dict
+    expect(multiAgentCreatePr).toContain("isinstance(raw_prs, dict)");
+  });
+
+  it("[S4] create_pr.py has squash-merge warning for submodule PRs", () => {
+    expect(multiAgentCreatePr).toContain("_SUBMODULE_SQUASH_WARNING_MARKER");
+    expect(multiAgentCreatePr).toContain("squash-merged");
+  });
+
+  it("[S4] cleanup.py defines AND calls _warn_submodule_prs", () => {
+    // Bug found during review: function was defined but never called.
+    // Verify both definition and at least one call site exist.
+    expect(multiAgentCleanup).toContain("def _warn_submodule_prs(");
+    // Count occurrences: 1 def + at least 2 calls = at least 3
+    const occurrences = multiAgentCleanup.split("_warn_submodule_prs").length - 1;
+    expect(occurrences).toBeGreaterThanOrEqual(3);
+  });
+});
 
 describe("regression: cross-platform-thinking-guide dead code removed (0.3.1)", () => {
   it("[0.3.1] guidesCrossPlatformThinkingGuideContent is not exported from markdown/index", () => {
