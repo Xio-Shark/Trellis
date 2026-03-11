@@ -4,7 +4,7 @@
 Task Management Script for Multi-Agent Pipeline.
 
 Usage:
-    python3 task.py create "<title>" [--slug <name>] [--assignee <dev>] [--priority P0|P1|P2|P3] [--package <pkg>] [--parent <dir>]
+    python3 task.py create "<title>" [--slug <name>] [--assignee <dev>] [--priority P0|P1|P2|P3] [--parent <dir>] [--package <pkg>]
     python3 task.py init-context <dir> <type> [--package <pkg>]  # Initialize jsonl files
     python3 task.py add-context <dir> <file> <path> [reason] # Add jsonl entry
     python3 task.py validate <dir>              # Validate jsonl files
@@ -62,7 +62,13 @@ from common.task_utils import (
     find_task_by_name,
     archive_task_complete,
 )
-from common.config import get_default_package, get_hooks
+from common.config import (
+    get_hooks,
+    get_packages,
+    is_monorepo,
+    resolve_package,
+    validate_package,
+)
 
 
 # =============================================================================
@@ -200,17 +206,19 @@ def get_implement_base() -> list[dict]:
     ]
 
 
-def get_implement_backend(package: str = "cli") -> list[dict]:
+def get_implement_backend(package: str | None = None) -> list[dict]:
     """Get backend implement context entries."""
+    spec_base = f"{DIR_SPEC}/{package}" if package else DIR_SPEC
     return [
-        {"file": f"{DIR_WORKFLOW}/{DIR_SPEC}/{package}/backend/index.md", "reason": "Backend development guide"},
+        {"file": f"{DIR_WORKFLOW}/{spec_base}/backend/index.md", "reason": "Backend development guide"},
     ]
 
 
-def get_implement_frontend(package: str = "cli") -> list[dict]:
+def get_implement_frontend(package: str | None = None) -> list[dict]:
     """Get frontend implement context entries."""
+    spec_base = f"{DIR_SPEC}/{package}" if package else DIR_SPEC
     return [
-        {"file": f"{DIR_WORKFLOW}/{DIR_SPEC}/{package}/frontend/index.md", "reason": "Frontend development guide"},
+        {"file": f"{DIR_WORKFLOW}/{spec_base}/frontend/index.md", "reason": "Frontend development guide"},
     ]
 
 
@@ -274,6 +282,23 @@ def cmd_create(args: argparse.Namespace) -> int:
         print(colored("Error: title is required", Colors.RED), file=sys.stderr)
         return 1
 
+    # Validate --package (CLI source: fail-fast)
+    package: str | None = getattr(args, "package", None)
+    if not is_monorepo(repo_root):
+        # Single-repo: ignore --package, no package prefix
+        if package:
+            print(colored(f"Warning: --package ignored in single-repo project", Colors.YELLOW), file=sys.stderr)
+        package = None
+    elif package:
+        if not validate_package(package, repo_root):
+            packages = get_packages(repo_root)
+            available = ", ".join(sorted(packages.keys())) if packages else "(none)"
+            print(colored(f"Error: unknown package '{package}'. Available: {available}", Colors.RED), file=sys.stderr)
+            return 1
+    else:
+        # Inferred: default_package → None (no task.json yet for create)
+        package = resolve_package(repo_root=repo_root)
+
     # Default assignee to current developer
     assignee = args.assignee
     if not assignee:
@@ -317,9 +342,9 @@ def cmd_create(args: argparse.Namespace) -> int:
         "title": args.title,
         "description": args.description or "",
         "status": "planning",
-        "package": args.package or None,
         "dev_type": None,
         "scope": None,
+        "package": package,
         "priority": args.priority,
         "creator": creator,
         "assignee": assignee,
@@ -393,23 +418,58 @@ def cmd_init_context(args: argparse.Namespace) -> int:
     repo_root = get_repo_root()
     target_dir = _resolve_task_dir(args.dir, repo_root)
     dev_type = args.type
-    package = getattr(args, "package", None) or "cli"
 
     if not dev_type:
         print(colored("Error: Missing arguments", Colors.RED))
-        print("Usage: python3 task.py init-context <task-dir> <dev_type> [--package <name>]")
+        print("Usage: python3 task.py init-context <task-dir> <dev_type>")
         print("  dev_type: backend | frontend | fullstack | test | docs")
-        print("  package:  spec package name (default: cli)")
         return 1
 
     if not target_dir.is_dir():
         print(colored(f"Error: Directory not found: {target_dir}", Colors.RED))
         return 1
 
+    # Resolve package: --package CLI → task.json.package → default_package
+    cli_package: str | None = getattr(args, "package", None)
+    package: str | None = None
+    if not is_monorepo(repo_root):
+        # Single-repo: ignore --package, no package prefix
+        if cli_package:
+            print(colored("Warning: --package ignored in single-repo project", Colors.YELLOW), file=sys.stderr)
+    elif cli_package:
+        if not validate_package(cli_package, repo_root):
+            packages = get_packages(repo_root)
+            available = ", ".join(sorted(packages.keys())) if packages else "(none)"
+            print(colored(f"Error: unknown package '{cli_package}'. Available: {available}", Colors.RED), file=sys.stderr)
+            return 1
+        package = cli_package
+    else:
+        # Read task.json.package as inferred source
+        task_json_path = target_dir / FILE_TASK_JSON
+        task_pkg_value = None
+        if task_json_path.is_file():
+            task_data = _read_json_file(task_json_path)
+            if isinstance(task_data, dict):
+                task_pkg_value = task_data.get("package")
+        # Only pass string values to resolve_package (guard against malformed JSON)
+        task_package = task_pkg_value if isinstance(task_pkg_value, str) else None
+        package = resolve_package(task_package=task_package, repo_root=repo_root)
+
+        # Monorepo fallback prohibition
+        if package is None:
+            packages = get_packages(repo_root)
+            available = ", ".join(sorted(packages.keys())) if packages else "(none)"
+            print(colored(
+                f"Error: monorepo project requires --package (or set default_package in config.yaml). Available: {available}",
+                Colors.RED,
+            ), file=sys.stderr)
+            return 1
+
     print(colored("=== Initializing Agent Context Files ===", Colors.BLUE))
     print(f"Target dir: {target_dir}")
     print(f"Dev type: {dev_type}")
-    print(f"Package: {package}")
+    if package:
+        print(f"Package: {package}")
     print()
 
     # implement.jsonl
@@ -440,6 +500,15 @@ def cmd_init_context(args: argparse.Namespace) -> int:
     debug_file = target_dir / "debug.jsonl"
     _write_jsonl(debug_file, debug_entries)
     print(f"  {colored('✓', Colors.GREEN)} {len(debug_entries)} entries")
+
+    # Update task.json dev_type and package
+    task_json_path = target_dir / FILE_TASK_JSON
+    if task_json_path.is_file():
+        task_data = _read_json_file(task_json_path)
+        if isinstance(task_data, dict):
+            task_data["dev_type"] = dev_type
+            task_data["package"] = package  # Always sync to match resolved value
+            _write_json_file(task_json_path, task_data)
 
     print()
     print(colored("✓ All context files created", Colors.GREEN))
@@ -959,25 +1028,25 @@ def cmd_list(args: argparse.Namespace) -> int:
             task_json = d / FILE_TASK_JSON
             status = "unknown"
             assignee = "-"
+            package: str | None = None
             children: list[str] = []
             parent: str | None = None
-            package: str | None = None
 
             if task_json.is_file():
                 data = _read_json_file(task_json)
                 if data:
                     status = data.get("status", "unknown")
                     assignee = data.get("assignee", "-")
+                    package = data.get("package")
                     children = data.get("children", [])
                     parent = data.get("parent")
-                    package = data.get("package")
 
             all_tasks[dir_name] = {
                 "status": status,
                 "assignee": assignee,
+                "package": package,
                 "children": children,
                 "parent": parent,
-                "package": package,
             }
 
     # Second pass: display tasks hierarchically
@@ -988,8 +1057,8 @@ def cmd_list(args: argparse.Namespace) -> int:
         info = all_tasks[dir_name]
         status = info["status"]
         assignee = info["assignee"]
-        children = info["children"]
         pkg = info.get("package")
+        children = info["children"]
 
         # Apply --mine filter
         if filter_mine and assignee != developer:
@@ -1013,9 +1082,9 @@ def cmd_list(args: argparse.Namespace) -> int:
         prefix = "  " * indent + "  - "
 
         if filter_mine:
-            print(f"{prefix}{dir_name}/ ({status}){progress}{pkg_tag}{marker}")
+            print(f"{prefix}{dir_name}/ ({status}){pkg_tag}{progress}{marker}")
         else:
-            print(f"{prefix}{dir_name}/ ({status}){progress}{pkg_tag} [{colored(assignee, Colors.CYAN)}]{marker}")
+            print(f"{prefix}{dir_name}/ ({status}){pkg_tag}{progress} [{colored(assignee, Colors.CYAN)}]{marker}")
         count += 1
 
         # Print children indented
@@ -1204,8 +1273,10 @@ def show_usage() -> None:
 
 Usage:
   python3 task.py create <title>                     Create new task directory
+  python3 task.py create <title> --package <pkg>     Create task for a specific package
   python3 task.py create <title> --parent <dir>      Create task as child of parent
   python3 task.py init-context <dir> <dev_type>      Initialize jsonl files
+  python3 task.py init-context <dir> <type> --package <pkg>  With explicit package
   python3 task.py add-context <dir> <jsonl> <path> [reason]  Add entry to jsonl
   python3 task.py validate <dir>                     Validate jsonl files
   python3 task.py list-context <dir>                 List jsonl entries
@@ -1223,14 +1294,19 @@ Usage:
 Arguments:
   dev_type: backend | frontend | fullstack | test | docs
 
+Monorepo options:
+  --package <pkg>      Package name (validated against config.yaml packages)
+
 List options:
   --mine, -m           Show only tasks assigned to current developer
   --status, -s <s>     Filter by status (planning, in_progress, review, completed)
 
 Examples:
   python3 task.py create "Add login feature" --slug add-login
+  python3 task.py create "Add login feature" --slug add-login --package cli
   python3 task.py create "Child task" --slug child --parent .trellis/tasks/01-21-parent
   python3 task.py init-context .trellis/tasks/01-21-add-login backend
+  python3 task.py init-context .trellis/tasks/01-21-add-login backend --package cli
   python3 task.py add-context <dir> implement .trellis/spec/cli/backend/auth.md "Auth guidelines"
   python3 task.py set-branch <dir> task/add-login
   python3 task.py start .trellis/tasks/01-21-add-login
@@ -1265,15 +1341,14 @@ def main() -> int:
     p_create.add_argument("--assignee", "-a", help="Assignee developer")
     p_create.add_argument("--priority", "-p", default="P2", help="Priority (P0-P3)")
     p_create.add_argument("--description", "-d", help="Task description")
-    p_create.add_argument("--package", help="Package name for monorepo (e.g., cli, docs-site)")
     p_create.add_argument("--parent", help="Parent task directory (establishes subtask link)")
+    p_create.add_argument("--package", help="Package name for monorepo projects")
 
     # init-context
     p_init = subparsers.add_parser("init-context", help="Initialize context files")
     p_init.add_argument("dir", help="Task directory")
     p_init.add_argument("type", help="Dev type: backend|frontend|fullstack|test|docs")
-    _default_pkg = get_default_package() or "cli"
-    p_init.add_argument("--package", default=_default_pkg, help=f"Package name for spec resolution (default: {_default_pkg})")
+    p_init.add_argument("--package", help="Package name for monorepo projects")
 
     # add-context
     p_add = subparsers.add_parser("add-context", help="Add context entry")

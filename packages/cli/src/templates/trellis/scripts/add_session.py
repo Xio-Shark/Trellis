@@ -4,7 +4,7 @@
 Add a new session to journal file and update index.md.
 
 Usage:
-    python3 add_session.py --title "Title" --commit "hash" --summary "Summary"
+    python3 add_session.py --title "Title" --commit "hash" --summary "Summary" [--package cli]
 
     # Pipe detailed content via stdin (use --stdin to opt in):
     cat << 'EOF' | python3 add_session.py --stdin --title "Title" --summary "Summary"
@@ -15,6 +15,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -24,11 +25,19 @@ from pathlib import Path
 from common.paths import (
     FILE_JOURNAL_PREFIX,
     get_repo_root,
+    get_current_task,
     get_developer,
     get_workspace_dir,
 )
 from common.developer import ensure_developer
-from common.config import get_session_commit_message, get_max_journal_lines
+from common.config import (
+    get_packages,
+    get_session_commit_message,
+    get_max_journal_lines,
+    is_monorepo,
+    resolve_package,
+    validate_package,
+)
 
 
 # =============================================================================
@@ -127,7 +136,8 @@ def generate_session_content(
     commit: str,
     summary: str,
     extra_content: str,
-    today: str
+    today: str,
+    package: str | None = None,
 ) -> str:
     """Generate session content."""
     if commit and commit != "-":
@@ -139,12 +149,14 @@ def generate_session_content(
     else:
         commit_table = "(No commits - planning session)"
 
+    package_line = f"\n**Package**: {package}" if package else ""
+
     return f"""
 
 ## Session {session_num}: {title}
 
 **Date**: {today}
-**Task**: {title}
+**Task**: {title}{package_line}
 
 ### Summary
 
@@ -309,6 +321,7 @@ def add_session(
     summary: str = "(Add summary)",
     extra_content: str = "(Add details)",
     auto_commit: bool = True,
+    package: str | None = None,
 ) -> int:
     """Add a new session."""
     repo_root = get_repo_root()
@@ -334,7 +347,7 @@ def add_session(
     new_session = current_session + 1
 
     session_content = generate_session_content(
-        new_session, title, commit, summary, extra_content, today
+        new_session, title, commit, summary, extra_content, today, package
     )
     content_lines = len(session_content.splitlines())
 
@@ -404,6 +417,7 @@ def main() -> int:
     parser.add_argument("--commit", default="-", help="Comma-separated commit hashes")
     parser.add_argument("--summary", default="(Add summary)", help="Brief summary")
     parser.add_argument("--content-file", help="Path to file with detailed content")
+    parser.add_argument("--package", help="Package name tag (e.g., cli, docs-site)")
     parser.add_argument("--no-commit", action="store_true",
                         help="Skip auto-commit of workspace changes")
     parser.add_argument("--stdin", action="store_true",
@@ -419,9 +433,40 @@ def main() -> int:
     elif args.stdin:
         extra_content = sys.stdin.read()
 
+    # Resolve package: CLI → active task → default_package → None
+    repo_root = get_repo_root()
+    package = args.package
+    if package:
+        # CLI source: fail-fast in monorepo, ignore in single-repo
+        if not is_monorepo(repo_root):
+            print("Warning: --package ignored in single-repo project", file=sys.stderr)
+            package = None
+        elif not validate_package(package, repo_root):
+            packages = get_packages(repo_root)
+            available = ", ".join(sorted(packages.keys())) if packages else "(none)"
+            print(f"Error: unknown package '{package}'. Available: {available}", file=sys.stderr)
+            return 1
+    else:
+        # Inferred: active task's task.json.package → default_package → None
+        task_package = None
+        current = get_current_task(repo_root)
+        if current:
+            task_json_path = repo_root / current / "task.json"
+            if task_json_path.is_file():
+                try:
+                    data = json.loads(task_json_path.read_text(encoding="utf-8"))
+                    if isinstance(data, dict):
+                        tp = data.get("package")
+                        if isinstance(tp, str) and tp:
+                            task_package = tp
+                except (json.JSONDecodeError, OSError):
+                    pass
+        package = resolve_package(task_package, repo_root)
+
     return add_session(
         args.title, args.commit, args.summary, extra_content,
         auto_commit=not args.no_commit,
+        package=package,
     )
 
 
