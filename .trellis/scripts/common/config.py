@@ -7,6 +7,7 @@ Reads settings from .trellis/config.yaml with sensible defaults.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from .paths import DIR_WORKFLOW, get_repo_root
@@ -144,3 +145,80 @@ def get_spec_base(package: str | None = None, repo_root: Path | None = None) -> 
     if package and is_monorepo(repo_root):
         return f"spec/{package}"
     return "spec"
+
+
+def validate_package(package: str, repo_root: Path | None = None) -> bool:
+    """Check if a package name is valid in this project.
+
+    Single-repo (no packages configured): always returns True.
+    Monorepo: returns True only if package exists in config.yaml packages.
+    """
+    packages = get_packages(repo_root)
+    if packages is None:
+        return True  # Single-repo, no validation needed
+    return package in packages
+
+
+def resolve_package(
+    task_package: str | None = None,
+    repo_root: Path | None = None,
+) -> str | None:
+    """Resolve package from inferred sources with validation.
+
+    Checks in order: task_package → default_package.
+    Invalid inferred values print a warning to stderr and are skipped.
+
+    Returns:
+        Resolved package name, or None if no valid package found.
+
+    Note:
+        CLI --package should be validated separately by the caller
+        (fail-fast with available packages list on error).
+    """
+    packages = get_packages(repo_root)
+    if packages is None:
+        return None  # Single-repo, no package needed
+
+    # Try task_package (guard against non-string values from malformed JSON)
+    if task_package and isinstance(task_package, str):
+        if task_package in packages:
+            return task_package
+        print(
+            f"Warning: task.json package '{task_package}' not found in config, skipping",
+            file=sys.stderr,
+        )
+
+    # Try default_package
+    default = get_default_package(repo_root)
+    if default:
+        if default in packages:
+            return default
+        print(
+            f"Warning: default_package '{default}' not found in config, skipping",
+            file=sys.stderr,
+        )
+
+    return None
+
+
+def get_spec_scope(repo_root: Path | None = None) -> list[str] | str | None:
+    """Get session.spec_scope configuration.
+
+    Returns:
+        list[str]: Package names to include in spec scanning.
+        str: "active_task" to use current task's package.
+        None: No scope configured (scan all packages).
+    """
+    config = _load_config(repo_root)
+    session = config.get("session")
+    if not isinstance(session, dict):
+        return None
+
+    scope = session.get("spec_scope")
+    if scope is None:
+        return None
+    if isinstance(scope, str):
+        return scope  # e.g. "active_task"
+    if isinstance(scope, list):
+        return [str(s) for s in scope]
+    return None

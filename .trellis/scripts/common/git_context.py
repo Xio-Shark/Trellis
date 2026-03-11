@@ -14,7 +14,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from .config import get_default_package, get_packages
+from .config import get_default_package, get_packages, get_spec_scope
 from .paths import (
     DIR_SCRIPTS,
     DIR_SPEC,
@@ -673,6 +673,40 @@ def get_context_text_record(repo_root: Path | None = None) -> str:
     return "\n".join(lines)
 
 
+def _resolve_scope_set(
+    packages: dict,
+    spec_scope,
+    task_pkg: str | None,
+    default_pkg: str | None,
+) -> set | None:
+    """Resolve spec_scope to a set of allowed package names, or None for full scan."""
+    if not packages:
+        return None
+
+    if spec_scope is None:
+        return None
+
+    if isinstance(spec_scope, str) and spec_scope == "active_task":
+        if task_pkg and task_pkg in packages:
+            return {task_pkg}
+        if default_pkg and default_pkg in packages:
+            return {default_pkg}
+        return None
+
+    if isinstance(spec_scope, list):
+        valid = {e for e in spec_scope if e in packages}
+        if valid:
+            return valid
+        # All invalid: fallback
+        if task_pkg and task_pkg in packages:
+            return {task_pkg}
+        if default_pkg and default_pkg in packages:
+            return {default_pkg}
+        return None
+
+    return None
+
+
 def get_context_packages_text(repo_root: Path | None = None) -> str:
     """Get packages context as formatted text (for --mode packages)."""
     if repo_root is None:
@@ -690,12 +724,25 @@ def get_context_packages_text(repo_root: Path | None = None) -> str:
             lines.append(f"Spec layers: {', '.join(layers)}")
         return "\n".join(lines)
 
+    # Resolve scope for annotations
+    packages_dict = get_packages(repo_root) or {}
+    default_pkg = get_default_package(repo_root)
+    spec_scope = get_spec_scope(repo_root)
+    task_pkg = _get_active_task_package(repo_root)
+    scope_set = _resolve_scope_set(packages_dict, spec_scope, task_pkg, default_pkg)
+
     lines.append("## PACKAGES")
     lines.append("")
     for pkg in pkg_info:
         default_tag = " (default)" if pkg["default"] else ""
         type_tag = f" [{pkg['type']}]" if pkg["type"] != "local" else ""
-        lines.append(f"### {pkg['name']}{default_tag}{type_tag}")
+
+        # Scope annotation
+        scope_tag = ""
+        if scope_set is not None and pkg["name"] not in scope_set:
+            scope_tag = " (out of scope)"
+
+        lines.append(f"### {pkg['name']}{default_tag}{type_tag}{scope_tag}")
         lines.append(f"Path: {pkg['path']}")
         if pkg["specLayers"]:
             lines.append(f"Spec layers: {', '.join(pkg['specLayers'])}")
@@ -708,11 +755,26 @@ def get_context_packages_text(repo_root: Path | None = None) -> str:
     # Also show shared guides
     guides_dir = repo_root / DIR_WORKFLOW / DIR_SPEC / "guides"
     if guides_dir.is_dir():
-        lines.append("### Shared Guides")
+        lines.append("### Shared Guides (always included)")
         lines.append("Path: .trellis/spec/guides/index.md")
         lines.append("")
 
     return "\n".join(lines)
+
+
+def _get_active_task_package(repo_root: Path) -> str | None:
+    """Get the package field from the active task's task.json."""
+    current = get_current_task(repo_root)
+    if not current:
+        return None
+    task_json_path = repo_root / current / FILE_TASK_JSON
+    if not task_json_path.is_file():
+        return None
+    data = _read_json_file(task_json_path)
+    if not isinstance(data, dict):
+        return None
+    tp = data.get("package")
+    return tp if isinstance(tp, str) and tp else None
 
 
 def get_context_packages_json(repo_root: Path | None = None) -> dict:
@@ -731,11 +793,15 @@ def get_context_packages_json(repo_root: Path | None = None) -> dict:
         }
 
     default_pkg = get_default_package(repo_root)
+    spec_scope = get_spec_scope(repo_root)
+    task_pkg = _get_active_task_package(repo_root)
 
     return {
         "mode": "monorepo",
         "packages": pkg_info,
         "defaultPackage": default_pkg,
+        "specScope": spec_scope,
+        "activeTaskPackage": task_pkg,
     }
 
 

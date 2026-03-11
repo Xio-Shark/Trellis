@@ -12,7 +12,11 @@
 
 import { existsSync, readFileSync, readdirSync, statSync } from "fs"
 import { join } from "path"
+import { execFileSync } from "child_process"
+import { platform } from "os"
 import { TrellisContext, contextCollector, debugLog } from "../lib/trellis-context.js"
+
+const PYTHON_CMD = platform() === "win32" ? "python" : "python3"
 
 
 /**
@@ -102,6 +106,124 @@ function getTaskStatus(directory) {
 }
 
 /**
+ * Load Trellis config for session-start decisions.
+ * Calls get_context.py --mode packages --json for reliable config data.
+ */
+function loadTrellisConfig(directory) {
+  const scriptPath = join(directory, ".trellis", "scripts", "get_context.py")
+  if (!existsSync(scriptPath)) {
+    return { isMonorepo: false, packages: {}, specScope: null, activeTaskPackage: null, defaultPackage: null }
+  }
+  try {
+    const output = execFileSync(PYTHON_CMD, [scriptPath, "--mode", "packages", "--json"], {
+      cwd: directory,
+      timeout: 5000,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    })
+    const data = JSON.parse(output)
+    if (data.mode !== "monorepo") {
+      return { isMonorepo: false, packages: {}, specScope: null, activeTaskPackage: null, defaultPackage: null }
+    }
+    // Convert packages array to dict keyed by name
+    const pkgDict = {}
+    for (const pkg of (data.packages || [])) {
+      pkgDict[pkg.name] = pkg
+    }
+    return {
+      isMonorepo: true,
+      packages: pkgDict,
+      specScope: data.specScope || null,
+      activeTaskPackage: data.activeTaskPackage || null,
+      defaultPackage: data.defaultPackage || null,
+    }
+  } catch (e) {
+    debugLog("session", "loadTrellisConfig error:", e.message)
+    return { isMonorepo: false, packages: {}, specScope: null, activeTaskPackage: null, defaultPackage: null }
+  }
+}
+
+
+/**
+ * Check for legacy spec directory structure in monorepo.
+ */
+function checkLegacySpec(directory, config) {
+  if (!config.isMonorepo || Object.keys(config.packages).length === 0) {
+    return null
+  }
+
+  const specDir = join(directory, ".trellis", "spec")
+  if (!existsSync(specDir)) return null
+
+  // Check for legacy flat spec dirs
+  let hasLegacy = false
+  for (const name of ["backend", "frontend"]) {
+    if (existsSync(join(specDir, name, "index.md"))) {
+      hasLegacy = true
+      break
+    }
+  }
+  if (!hasLegacy) return null
+
+  // Check which packages are missing spec/<pkg>/ directory
+  const pkgNames = Object.keys(config.packages).sort()
+  const missing = pkgNames.filter(name => !existsSync(join(specDir, name)))
+
+  if (missing.length === 0) return null
+
+  if (missing.length === pkgNames.length) {
+    return (
+      `[!] Legacy spec structure detected: found \`spec/backend/\` or \`spec/frontend/\` ` +
+      `but no package-scoped \`spec/<package>/\` directories.\n` +
+      `Monorepo packages: ${pkgNames.join(", ")}\n` +
+      `Please reorganize: \`spec/backend/\` -> \`spec/<package>/backend/\``
+    )
+  }
+  return (
+    `[!] Partial spec migration detected: packages ${missing.join(", ")} ` +
+    `still missing \`spec/<pkg>/\` directory.\n` +
+    `Please complete migration for all packages.`
+  )
+}
+
+
+/**
+ * Resolve which packages should have their specs injected.
+ * Returns a Set of allowed package names, or null for full scan.
+ */
+function resolveSpecScope(config) {
+  if (!config.isMonorepo || Object.keys(config.packages).length === 0) {
+    return null
+  }
+
+  const { specScope, activeTaskPackage, defaultPackage, packages } = config
+  if (specScope == null) return null
+
+  if (specScope === "active_task") {
+    if (activeTaskPackage && activeTaskPackage in packages) return new Set([activeTaskPackage])
+    if (defaultPackage && defaultPackage in packages) return new Set([defaultPackage])
+    return null
+  }
+
+  if (Array.isArray(specScope)) {
+    const valid = new Set()
+    for (const entry of specScope) {
+      if (entry in packages) {
+        valid.add(entry)
+      }
+    }
+    if (valid.size > 0) return valid
+    // All invalid: fallback
+    if (activeTaskPackage && activeTaskPackage in packages) return new Set([activeTaskPackage])
+    if (defaultPackage && defaultPackage in packages) return new Set([defaultPackage])
+    return null
+  }
+
+  return null
+}
+
+
+/**
  * Build session context for injection
  */
 function buildSessionContext(ctx) {
@@ -110,6 +232,10 @@ function buildSessionContext(ctx) {
   const claudeDir = join(directory, ".claude")
   const opencodeDir = join(directory, ".opencode")
 
+  // Load config for scope filtering and legacy detection
+  const config = loadTrellisConfig(directory)
+  const allowedPkgs = resolveSpecScope(config)
+
   const parts = []
 
   // 1. Header
@@ -117,6 +243,12 @@ function buildSessionContext(ctx) {
 You are starting a new session in a Trellis-managed project.
 Read and follow all instructions below carefully.
 </trellis-context>`)
+
+  // Legacy migration warning
+  const legacyWarning = checkLegacySpec(directory, config)
+  if (legacyWarning) {
+    parts.push(`<migration-warning>\n${legacyWarning}\n</migration-warning>`)
+  }
 
   // 2. Current Context (dynamic)
   const contextScript = join(trellisDir, "scripts", "get_context.py")
@@ -155,15 +287,31 @@ Read and follow all instructions below carefully.
       }).sort()
 
       for (const sub of subs) {
+        // Always include guides/ regardless of scope
+        if (sub === "guides") {
+          const indexFile = join(specDir, sub, "index.md")
+          if (existsSync(indexFile)) {
+            const content = ctx.readFile(indexFile)
+            if (content) {
+              parts.push(`## ${sub}\n${content}\n`)
+            }
+          }
+          continue
+        }
+
         const indexFile = join(specDir, sub, "index.md")
         if (existsSync(indexFile)) {
-          // Flat spec dir: spec/<layer>/index.md
+          // Flat spec dir: spec/<layer>/index.md (single-repo)
           const content = ctx.readFile(indexFile)
           if (content) {
             parts.push(`## ${sub}\n${content}\n`)
           }
         } else {
           // Nested package dirs (monorepo): spec/<pkg>/<layer>/index.md
+          // Apply scope filter
+          if (allowedPkgs !== null && !allowedPkgs.has(sub)) {
+            continue
+          }
           try {
             const nested = readdirSync(join(specDir, sub)).filter(name => {
               try {
