@@ -333,6 +333,10 @@ export function loadUpdateSkipPaths(cwd: string): string[] {
 
     return paths;
   } catch {
+    // Config exists but failed to parse — warn user that skip rules won't apply
+    console.warn(
+      `Warning: failed to parse ${configPath}, update.skip rules will not be applied`,
+    );
     return [];
   }
 }
@@ -847,12 +851,19 @@ function classifyMigrations(
     // safe-file-delete handled separately (not via --migrate)
     if (item.type === "safe-file-delete") continue;
 
-    // Enforce PROTECTED_PATHS — never migrate files under protected paths
+    // Enforce PROTECTED_PATHS — never migrate FROM protected paths (prevents moving/deleting user data)
     if (isProtectedPath(item.from)) {
       result.skip.push(item);
       continue;
     }
-    if (item.to && isProtectedPath(item.to)) {
+    // For non-rename types, also block writing TO protected paths
+    // rename/rename-dir are allowed to target protected paths (e.g., 0.2.0 renames into .trellis/workspace)
+    if (
+      item.to &&
+      isProtectedPath(item.to) &&
+      item.type !== "rename" &&
+      item.type !== "rename-dir"
+    ) {
       result.skip.push(item);
       continue;
     }
