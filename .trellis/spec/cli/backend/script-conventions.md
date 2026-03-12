@@ -16,26 +16,38 @@ All workflow scripts are written in **Python 3.10+** for cross-platform compatib
 .trellis/scripts/
 ├── __init__.py           # Package init
 ├── common/               # Shared modules
-│   ├── __init__.py
+│   ├── __init__.py       # Windows encoding fix (centralized)
 │   ├── paths.py          # Path constants and functions
 │   ├── developer.py      # Developer identity management
+│   ├── io.py             # read_json / write_json
+│   ├── log.py            # Colors class + log_info/log_error/log_warn/log_success
+│   ├── git.py            # run_git() — git command wrapper
+│   ├── types.py          # TaskData (TypedDict), TaskInfo (dataclass), AgentRecord
+│   ├── tasks.py          # load_task(), iter_active_tasks() — typed task access
+│   ├── task_utils.py     # resolve_task_dir(), run_task_hooks()
+│   ├── task_store.py     # Task CRUD (create, archive, set-branch, etc.)
+│   ├── task_context.py   # JSONL context management (init-context, add-context)
 │   ├── task_queue.py     # Task queue CRUD
-│   ├── task_utils.py     # Task helper functions
 │   ├── phase.py          # Multi-agent phase tracking
 │   ├── registry.py       # Agent registry management
 │   ├── config.py         # Config reader (config.yaml, hooks)
 │   ├── worktree.py       # Git worktree utilities + YAML parser
-│   └── git_context.py    # Git/session context
+│   ├── cli_adapter.py    # Multi-platform CLI abstraction
+│   ├── git_context.py    # Entry shim → session_context + packages_context
+│   ├── session_context.py    # Session context generation (text/json/record)
+│   └── packages_context.py  # Package discovery and context
 ├── hooks/                # Lifecycle hook scripts (project-specific)
 │   └── linear_sync.py    # Example: sync tasks to Linear
 ├── multi_agent/          # Multi-agent pipeline scripts
 │   ├── __init__.py
 │   ├── start.py          # Start worktree agent
-│   ├── status.py         # Monitor agent status
+│   ├── status.py         # Entry shim → status_display + status_monitor
+│   ├── status_display.py # Agent status formatting and display
+│   ├── status_monitor.py # Log parsing and process monitoring
 │   ├── plan.py           # Start plan agent
 │   ├── cleanup.py        # Cleanup worktree
 │   └── create_pr.py      # Create PR from task
-├── task.py               # Main task management CLI
+├── task.py               # Entry shim → task_store + task_context
 ├── get_context.py        # Session context retrieval
 ├── init_developer.py     # Developer initialization
 ├── get_developer.py      # Get current developer
@@ -51,75 +63,56 @@ All workflow scripts are written in **Python 3.10+** for cross-platform compatib
 
 Shared utilities imported by other scripts. **Never run directly.**
 
-```python
-# common/paths.py - Example library module
+Three tiers:
 
-from __future__ import annotations
+| Tier | Modules | Role |
+|------|---------|------|
+| **Foundation** | `io.py`, `log.py`, `git.py`, `paths.py` | Zero internal deps, used by everything |
+| **Domain** | `types.py`, `tasks.py`, `task_store.py`, `task_context.py`, `task_utils.py` | Task data model and operations |
+| **Infra** | `phase.py`, `registry.py`, `config.py`, `worktree.py`, `cli_adapter.py` | Multi-agent pipeline support |
+| **Context** | `session_context.py`, `packages_context.py`, `git_context.py` (shim) | Output generation |
 
-from pathlib import Path
-
-# Constants
-DIR_WORKFLOW = ".trellis"
-DIR_SCRIPTS = "scripts"
-DIR_TASKS = "tasks"
-
-def get_repo_root() -> Path | None:
-    """Find repository root by looking for .trellis directory."""
-    current = Path.cwd().resolve()
-    while current != current.parent:
-        if (current / DIR_WORKFLOW).is_dir():
-            return current
-        current = current.parent
-    return None
-```
-
-### Entry Scripts (`*.py`)
+### Entry Scripts (`*.py`, `multi_agent/*.py`)
 
 CLI tools that users run directly. Include docstring with usage.
 
 ```python
 #!/usr/bin/env python3
-"""
-Task Management Script.
+"""Short description.
 
 Usage:
-    python3 task.py create "<title>" [--slug <name>]
-    python3 task.py init-context <dir> <dev_type>
-    python3 task.py add-context <dir> <file> <reason>
-    python3 task.py validate <dir>
-    python3 task.py list-context <dir>
-    python3 task.py start <dir>
-    python3 task.py finish
-    python3 task.py set-branch <dir> <branch>
-    python3 task.py set-base-branch <dir> <branch>
-    python3 task.py set-scope <dir> <scope>
-    python3 task.py create-pr [dir] [--dry-run]
-    python3 task.py archive <task-name>
-    python3 task.py list [--mine] [--status <status>]
-    python3 task.py list-archive [YYYY-MM]
+    python3 script.py <command> [options]
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
 
-from common.paths import get_repo_root, DIR_WORKFLOW
-
+from common.paths import get_repo_root
 
 def main() -> int:
-    """Main entry point."""
-    parser = argparse.ArgumentParser(description="Task management")
-    # ... argument setup
+    parser = argparse.ArgumentParser(...)
     args = parser.parse_args()
-    # ... command dispatch
+    # ... dispatch
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())
 ```
+
+### Bootstrap Shim (`multi_agent/_bootstrap.py`)
+
+Scripts in `multi_agent/` can't directly `from common.xxx import yyy` because Python's module resolution doesn't know about the parent `scripts/` directory. The `_bootstrap.py` shim adds it to `sys.path`:
+
+```python
+# Every multi_agent script must start with this:
+import _bootstrap  # noqa: F401 — adds parent scripts/ dir to sys.path
+
+from common.paths import get_repo_root  # now works
+```
+
+**Why not `sys.path.insert` inline?** The bootstrap shim is a single file, tested once, imported everywhere. Inline `sys.path.insert` was duplicated in every `multi_agent/*.py` file and easy to get wrong.
 
 ---
 
@@ -209,6 +202,103 @@ def run_command(
     )
     return result.returncode, result.stdout, result.stderr
 ```
+
+---
+
+## Shared Module API Reference
+
+### `common/io.py` — JSON File I/O
+
+The single source of truth for all JSON file operations. Replaces 8 duplicated `_read_json_file` and 5 duplicated `_write_json_file` functions.
+
+| Function | Signature | Returns | Error Behavior |
+|----------|-----------|---------|----------------|
+| `read_json` | `(path: Path) -> dict \| None` | Parsed dict, or `None` | Returns `None` on `FileNotFoundError`, `JSONDecodeError`, `OSError` |
+| `write_json` | `(path: Path, data: dict) -> bool` | `True` on success | Returns `False` on `OSError`, `IOError` |
+
+**Contracts**:
+- Always uses `encoding="utf-8"` and `ensure_ascii=False`
+- `write_json` outputs with `indent=2` (pretty-printed)
+- Callers must check return value — no exceptions are raised
+
+### `common/log.py` — Terminal Output
+
+| Export | Type | Description |
+|--------|------|-------------|
+| `Colors` | class | ANSI codes: `RED`, `GREEN`, `YELLOW`, `BLUE`, `CYAN`, `DIM`, `NC` |
+| `colored(text, color)` | function | Wrap text with color + reset |
+| `log_info(msg)` | function | `[INFO]` prefix (blue) |
+| `log_success(msg)` | function | `[SUCCESS]` prefix (green) |
+| `log_warn(msg)` | function | `[WARN]` prefix (yellow) |
+| `log_error(msg)` | function | `[ERROR]` prefix (red) |
+
+All `log_*` functions print to **stdout** (not stderr). Use `print(..., file=sys.stderr)` for stderr output.
+
+### `common/git.py` — Git Command Wrapper
+
+```python
+def run_git(args: list[str], cwd: Path | None = None) -> tuple[int, str, str]
+```
+
+- Prepends `git -c i18n.logOutputEncoding=UTF-8` to all commands (cross-platform UTF-8)
+- Uses `encoding="utf-8", errors="replace"` for subprocess output
+- Returns `(1, "", error_message)` on exception (never raises)
+- Backward-compatible alias in `git_context.py`: `_run_git_command = run_git`
+
+### `common/types.py` — Typed Data Model
+
+#### Design Decision: TypedDict for Reads, Raw Dict for Writes
+
+**Context**: task.json may contain fields not defined in our TypedDict (e.g., user-added custom fields). If we serialize a TypedDict/dataclass back to JSON, unknown fields are silently dropped.
+
+**Decision**: Two-layer type system:
+
+| Type | Kind | Purpose | Includes unknown fields? |
+|------|------|---------|--------------------------|
+| `TaskData` | `TypedDict(total=False)` | Type hints when reading task.json | N/A (annotation only) |
+| `TaskInfo` | `dataclass(frozen=True)` | Immutable view for business logic | Yes, via `.raw` dict |
+
+**Write-back rule**: Always modify `task_info.raw` (the original dict) and pass it to `write_json()`. Never construct a new dict from TaskInfo fields.
+
+```python
+# GOOD — modify original dict, preserve unknown fields
+data = read_json(task_json)
+data["status"] = "completed"
+write_json(task_json, data)
+
+# BAD — would lose any fields not in TaskData
+write_json(task_json, {"title": info.title, "status": "completed"})
+```
+
+#### `TaskInfo` Fields
+
+| Field | Type | Source |
+|-------|------|--------|
+| `dir_name` | `str` | Directory name (e.g., `"03-12-refactor"`) |
+| `directory` | `Path` | Absolute path to task dir |
+| `title` | `str` | `data["title"]` or `data["name"]` or `"unknown"` |
+| `status` | `str` | `data["status"]` (default `"unknown"`) |
+| `assignee` | `str` | `data["assignee"]` (default `""`) |
+| `priority` | `str` | `data["priority"]` (default `"P2"`) |
+| `children` | `tuple[str, ...]` | Immutable copy of `data["children"]` |
+| `parent` | `str \| None` | Parent task dir name |
+| `package` | `str \| None` | Associated package |
+| `raw` | `dict` | Original dict for writes and uncommon fields |
+
+Properties: `.name`, `.description`, `.branch`, `.meta` — delegate to `raw`.
+
+### `common/tasks.py` — Task Data Access Layer
+
+Replaces 9 scattered task iteration patterns with a single typed API.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `load_task` | `(task_dir: Path) -> TaskInfo \| None` | Load one task; `None` if no valid task.json |
+| `iter_active_tasks` | `(tasks_dir: Path) -> Iterator[TaskInfo]` | All non-archived tasks, **sorted by dir name** |
+| `get_all_statuses` | `(tasks_dir: Path) -> dict[str, str]` | `{dir_name: status}` map for progress display |
+| `children_progress` | `(children, all_statuses) -> str` | Format `" [2/3 done]"` or `""` |
+
+**Sorting guarantee**: `iter_active_tasks` uses `sorted(tasks_dir.iterdir())` — same order as the filesystem `ls` output. This is frozen behavior; changing the sort would break display consistency.
 
 ---
 
@@ -701,6 +791,85 @@ from pathlib import Path
 from common.paths import get_repo_root
 from common.developer import get_developer
 ```
+
+---
+
+## Module Split Patterns
+
+When a script grows too large (300+ lines of logic), split it into focused modules. These patterns were established during the v0.4.0 refactoring of `task.py` (1375→456 lines), `git_context.py` (724→80 lines), and `status.py` (783→79 lines).
+
+### Pattern: Entry Shim
+
+Keep the original filename as a thin dispatcher that imports from new modules. This preserves all external references (`.md` templates, other scripts doing `from task import cmd_create`).
+
+```python
+# task.py — entry shim (argparse + dispatch only)
+from __future__ import annotations
+
+import argparse
+import sys
+
+from common.task_store import cmd_create, cmd_archive   # CRUD operations
+from common.task_context import cmd_init_context         # JSONL management
+
+def main() -> int:
+    parser = argparse.ArgumentParser(...)
+    args = parser.parse_args()
+    if args.command == "create":
+        return cmd_create(args)
+    # ... dispatch table
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
+
+**Key rules**:
+- Original file path stays stable (e.g., `python3 .trellis/scripts/task.py`)
+- Imported names become re-exports for backward compatibility
+- Display-only commands (like `cmd_list`) can stay in the shim if they don't warrant a new module
+
+### Pattern: Lazy Import for Circular Dependencies
+
+When two split modules need each other (A imports from B, B imports from A), use a lazy import inside the function body:
+
+```python
+# status_display.py — imports status_monitor at call time, not module load time
+def cmd_summary(repo_root: Path, filter_assignee: str | None = None) -> int:
+    # Lazy import: status_monitor imports find_agent from this module
+    from .status_monitor import get_last_tool, get_last_message
+
+    # ... use get_last_tool, get_last_message
+```
+
+**When to use**: Only when a true circular dependency exists. If you can restructure imports to avoid it, do that first.
+
+### Pattern: Internal Helpers to Avoid Redundant File Reads
+
+When multiple public functions read the same file and call each other, extract private helpers that operate on a pre-loaded `data: dict`:
+
+```python
+# BAD — get_phase_info reads task.json 3 times
+def get_phase_info(task_json: Path) -> str:
+    data = read_json(task_json)              # read 1
+    total = get_total_phases(task_json)      # read 2 (inside)
+    action = get_phase_action(task_json, p)  # read 3 (inside)
+
+# GOOD — read once, pass data to private helpers
+def _total_phases(data: dict) -> int:
+    next_action = data.get("next_action", [])
+    return len(next_action) if isinstance(next_action, list) else 0
+
+def _phase_action(data: dict, phase: int) -> str:
+    # ... operate on data dict directly
+
+def get_phase_info(task_json: Path) -> str:
+    data = read_json(task_json)              # read once
+    total = _total_phases(data)              # no file I/O
+    action = _phase_action(data, phase)      # no file I/O
+```
+
+**When to use**: Any module where public functions compose by calling other public functions that each read the same file (e.g., `phase.py`, `registry.py`).
 
 ---
 

@@ -143,15 +143,15 @@ def cli_name(self) -> str:
 
 When adding new files to `src/templates/trellis/scripts/`:
 
-**CRITICAL**: New script files must be registered in THREE places:
+**CRITICAL**: New script files must be registered in TWO places:
 
 1. **`src/templates/trellis/index.ts`**:
    - Add `export const xxxScript = readTemplate("scripts/path/file.py");`
    - Add to `getAllScripts()` Map
 
-2. **`src/commands/update.ts`**:
+2. **`src/commands/update.ts`** → `collectTemplateFiles()`:
    - Add to import statement
-   - Add to `collectTemplateFiles()` Map
+   - Add to the files Map
 
 **Why this matters**: Without registration, `trellis update` won't sync the file to user projects. Bug fixes and features won't propagate.
 
@@ -162,3 +162,13 @@ When adding new files to `src/templates/trellis/scripts/`:
 grep -l "newFileName" src/templates/trellis/index.ts  # Should match
 grep -l "newFileName" src/commands/update.ts          # Should match
 ```
+
+### Template Sync Convention
+
+`.trellis/scripts/` (dogfooded) and `packages/cli/src/templates/trellis/scripts/` (template) must stay identical. After editing `.trellis/scripts/`, always sync:
+
+```bash
+rsync -av --delete --exclude='__pycache__' .trellis/scripts/ packages/cli/src/templates/trellis/scripts/
+```
+
+**Gotcha**: Running rsync with wrong source/destination paths can create nested garbage directories (e.g., `.trellis/scripts/packages/cli/...`). Always double-check paths before running.
