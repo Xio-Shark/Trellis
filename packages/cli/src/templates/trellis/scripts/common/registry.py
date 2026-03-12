@@ -25,6 +25,29 @@ from .worktree import get_agents_dir
 
 
 # =============================================================================
+# Internal Helpers
+# =============================================================================
+
+def _load_registry(
+    repo_root: Path | None = None,
+) -> tuple[Path | None, dict | None]:
+    """Load registry file and data in one step.
+
+    Returns:
+        (registry_file_path, data_dict) — either may be None.
+    """
+    if repo_root is None:
+        repo_root = get_repo_root()
+
+    registry_file = registry_get_file(repo_root)
+    if not registry_file or not registry_file.is_file():
+        return registry_file, None
+
+    data = read_json(registry_file)
+    return registry_file, data
+
+
+# =============================================================================
 # Registry File Access
 # =============================================================================
 
@@ -92,14 +115,7 @@ def registry_get_agent_by_id(
     Returns:
         Agent dict, or None if not found.
     """
-    if repo_root is None:
-        repo_root = get_repo_root()
-
-    registry_file = registry_get_file(repo_root)
-    if not registry_file or not registry_file.is_file():
-        return None
-
-    data = read_json(registry_file)
+    _, data = _load_registry(repo_root)
     if not data:
         return None
 
@@ -123,14 +139,7 @@ def registry_get_agent_by_worktree(
     Returns:
         Agent dict, or None if not found.
     """
-    if repo_root is None:
-        repo_root = get_repo_root()
-
-    registry_file = registry_get_file(repo_root)
-    if not registry_file or not registry_file.is_file():
-        return None
-
-    data = read_json(registry_file)
+    _, data = _load_registry(repo_root)
     if not data:
         return None
 
@@ -154,14 +163,7 @@ def registry_search_agent(
     Returns:
         First matching agent dict, or None if not found.
     """
-    if repo_root is None:
-        repo_root = get_repo_root()
-
-    registry_file = registry_get_file(repo_root)
-    if not registry_file or not registry_file.is_file():
-        return None
-
-    data = read_json(registry_file)
+    _, data = _load_registry(repo_root)
     if not data:
         return None
 
@@ -190,9 +192,14 @@ def registry_get_task_dir(
     Returns:
         Task directory path, or None if not found.
     """
-    agent = registry_get_agent_by_worktree(worktree_path, repo_root)
-    if agent:
-        return agent.get("task_dir")
+    _, data = _load_registry(repo_root)
+    if not data:
+        return None
+
+    for agent in data.get("agents", []):
+        if agent.get("worktree_path") == worktree_path:
+            return agent.get("task_dir")
+
     return None
 
 
@@ -210,16 +217,9 @@ def registry_remove_by_id(agent_id: str, repo_root: Path | None = None) -> bool:
     Returns:
         True on success.
     """
-    if repo_root is None:
-        repo_root = get_repo_root()
-
-    registry_file = registry_get_file(repo_root)
-    if not registry_file or not registry_file.is_file():
+    registry_file, data = _load_registry(repo_root)
+    if not registry_file or not data:
         return True  # Nothing to remove
-
-    data = read_json(registry_file)
-    if not data:
-        return True
 
     agents = data.get("agents", [])
     data["agents"] = [a for a in agents if a.get("id") != agent_id]
@@ -240,16 +240,9 @@ def registry_remove_by_worktree(
     Returns:
         True on success.
     """
-    if repo_root is None:
-        repo_root = get_repo_root()
-
-    registry_file = registry_get_file(repo_root)
-    if not registry_file or not registry_file.is_file():
+    registry_file, data = _load_registry(repo_root)
+    if not registry_file or not data:
         return True  # Nothing to remove
-
-    data = read_json(registry_file)
-    if not data:
-        return True
 
     agents = data.get("agents", [])
     data["agents"] = [a for a in agents if a.get("worktree_path") != worktree_path]
@@ -319,14 +312,7 @@ def registry_list_agents(repo_root: Path | None = None) -> list[dict]:
     Returns:
         List of agent dicts.
     """
-    if repo_root is None:
-        repo_root = get_repo_root()
-
-    registry_file = registry_get_file(repo_root)
-    if not registry_file or not registry_file.is_file():
-        return []
-
-    data = read_json(registry_file)
+    _, data = _load_registry(repo_root)
     if not data:
         return []
 

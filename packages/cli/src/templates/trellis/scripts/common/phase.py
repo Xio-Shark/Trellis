@@ -25,6 +25,36 @@ from .io import read_json, write_json
 
 
 # =============================================================================
+# Internal Helpers (operate on pre-loaded data dict)
+# =============================================================================
+
+def _total_phases(data: dict) -> int:
+    """Get total phases from pre-loaded data."""
+    next_action = data.get("next_action", [])
+    return len(next_action) if isinstance(next_action, list) else 0
+
+
+def _phase_action(data: dict, phase: int) -> str:
+    """Get action name for a phase from pre-loaded data."""
+    next_action = data.get("next_action", [])
+    if isinstance(next_action, list):
+        for item in next_action:
+            if isinstance(item, dict) and item.get("phase") == phase:
+                return item.get("action", "unknown")
+    return "unknown"
+
+
+def _phase_for_action(data: dict, action: str) -> int:
+    """Get phase number for an action name from pre-loaded data."""
+    next_action = data.get("next_action", [])
+    if isinstance(next_action, list):
+        for item in next_action:
+            if isinstance(item, dict) and item.get("action") == action:
+                return item.get("phase", 0)
+    return 0
+
+
+# =============================================================================
 # Phase Functions
 # =============================================================================
 
@@ -55,11 +85,7 @@ def get_total_phases(task_json: Path) -> int:
     data = read_json(task_json)
     if not data:
         return 0
-
-    next_action = data.get("next_action", [])
-    if isinstance(next_action, list):
-        return len(next_action)
-    return 0
+    return _total_phases(data)
 
 
 def get_phase_action(task_json: Path, phase: int) -> str:
@@ -75,13 +101,7 @@ def get_phase_action(task_json: Path, phase: int) -> str:
     data = read_json(task_json)
     if not data:
         return "unknown"
-
-    next_action = data.get("next_action", [])
-    if isinstance(next_action, list):
-        for item in next_action:
-            if isinstance(item, dict) and item.get("phase") == phase:
-                return item.get("action", "unknown")
-    return "unknown"
+    return _phase_action(data, phase)
 
 
 def get_phase_info(task_json: Path) -> str:
@@ -98,13 +118,13 @@ def get_phase_info(task_json: Path) -> str:
         return "N/A"
 
     current_phase = data.get("current_phase", 0) or 0
-    total_phases = get_total_phases(task_json)
-    action_name = get_phase_action(task_json, current_phase)
+    total = _total_phases(data)
+    action_name = _phase_action(data, current_phase)
 
     if current_phase == 0 or current_phase is None:
-        return f"0/{total_phases} (pending)"
+        return f"0/{total} (pending)"
     else:
-        return f"{current_phase}/{total_phases} ({action_name})"
+        return f"{current_phase}/{total} ({action_name})"
 
 
 def set_phase(task_json: Path, phase: int) -> bool:
@@ -139,7 +159,7 @@ def advance_phase(task_json: Path) -> bool:
         return False
 
     current = data.get("current_phase", 0) or 0
-    total = get_total_phases(task_json)
+    total = _total_phases(data)
     next_phase = current + 1
 
     if next_phase > total:
@@ -162,13 +182,7 @@ def get_phase_for_action(task_json: Path, action: str) -> int:
     data = read_json(task_json)
     if not data:
         return 0
-
-    next_action = data.get("next_action", [])
-    if isinstance(next_action, list):
-        for item in next_action:
-            if isinstance(item, dict) and item.get("action") == action:
-                return item.get("phase", 0)
-    return 0
+    return _phase_for_action(data, action)
 
 
 def map_subagent_to_action(subagent_type: str) -> str:
@@ -215,8 +229,11 @@ def is_current_action(task_json: Path, action: str) -> bool:
     Returns:
         True if current phase matches the action.
     """
-    current = get_current_phase(task_json)
-    action_phase = get_phase_for_action(task_json, action)
+    data = read_json(task_json)
+    if not data:
+        return False
+    current = data.get("current_phase", 0) or 0
+    action_phase = _phase_for_action(data, action)
     return current == action_phase
 
 
