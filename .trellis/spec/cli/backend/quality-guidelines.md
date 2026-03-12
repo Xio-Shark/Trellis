@@ -435,6 +435,45 @@ fetchedTemplates = []; // Clear stale data from previous source
 
 ---
 
+## String Sanitization Patterns
+
+### Never Use `str.strip()` to Remove Surrounding Quotes
+
+Python's `str.strip(chars)` removes **all matching characters from both ends greedily** — it is NOT "remove one pair of surrounding quotes":
+
+```python
+# Bad: Greedy strip eats nested quotes
+value = raw.strip('"').strip("'")
+# "echo 'hello'" → strip('"') → echo 'hello' → strip("'") → echo  hello
+#                                                               ^^^^ BROKEN!
+
+# Good: Remove exactly one layer of matching outer quotes
+def _unquote(s: str) -> str:
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in ('"', "'"):
+        return s[1:-1]
+    return s
+
+value = _unquote(raw)
+# "echo 'hello'" → echo 'hello'  ✓
+```
+
+In TypeScript, the equivalent safe pattern:
+
+```typescript
+// Bad: No quote handling at all
+const value = match[1].trim();
+// "path" → still has quotes
+
+// Good: Regex removes exactly one from each end
+const value = match[1].trim().replace(/^['"]|['"]$/g, "");
+```
+
+**Why this matters**: When parsed values are passed to `shell=True` (subprocess) or used as file paths, corrupted quotes cause shell injection-style errors or silent path mismatches.
+
+**Rule**: Always test string sanitization with nested/mixed quote inputs: `"it's here"`, `'say "hi"'`, `"echo 'hello'"`.
+
+---
+
 ## DO / DON'T
 
 ### DO
