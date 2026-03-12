@@ -30,12 +30,12 @@ from common.io import read_json
 from common.log import Colors
 from common.developer import ensure_developer
 from common.paths import (
-    FILE_TASK_JSON,
     get_repo_root,
     get_tasks_dir,
 )
 from common.phase import get_phase_info
 from common.task_queue import format_task_stats, get_task_stats
+from common.tasks import iter_active_tasks
 from common.worktree import get_agents_dir
 
 # Colors and read_json are now imported from common.log and common.io above.
@@ -351,22 +351,11 @@ def cmd_summary(repo_root: Path, filter_assignee: str | None = None) -> int:
         else None
     )
 
-    for d in sorted(tasks_dir.iterdir()):
-        if not d.is_dir() or d.name == "archive":
-            continue
-
-        name = d.name
-        task_json = d / FILE_TASK_JSON
-        status = "unknown"
-        assignee = "unassigned"
-        priority = "P2"
-
-        if task_json.is_file():
-            data = read_json(task_json)
-            if data:
-                status = data.get("status", "unknown")
-                assignee = data.get("assignee", "unassigned")
-                priority = data.get("priority", "P2")
+    for t in iter_active_tasks(tasks_dir):
+        name = t.dir_name
+        status = t.status
+        assignee = t.assignee or "unassigned"
+        priority = t.priority
 
         # Filter by assignee
         if filter_assignee and assignee != filter_assignee:
@@ -390,7 +379,7 @@ def cmd_summary(repo_root: Path, filter_assignee: str | None = None) -> int:
                 # Running agent
                 task_dir_rel = agent_info.get("task_dir", "")
                 worktree_task_json = Path(worktree) / task_dir_rel / "task.json"
-                phase_source = task_json
+                phase_source = t.directory / "task.json"
                 if worktree_task_json.is_file():
                     phase_source = worktree_task_json
 

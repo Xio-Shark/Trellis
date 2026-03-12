@@ -30,6 +30,7 @@ from common.paths import (
     get_workspace_dir,
 )
 from common.developer import ensure_developer
+from common.tasks import load_task
 from common.config import (
     get_packages,
     get_session_commit_message,
@@ -451,16 +452,9 @@ def main() -> int:
         task_package = None
         current = get_current_task(repo_root)
         if current:
-            task_json_path = repo_root / current / "task.json"
-            if task_json_path.is_file():
-                try:
-                    data = json.loads(task_json_path.read_text(encoding="utf-8"))
-                    if isinstance(data, dict):
-                        tp = data.get("package")
-                        if isinstance(tp, str) and tp:
-                            task_package = tp
-                except (json.JSONDecodeError, OSError):
-                    pass
+            ct = load_task(repo_root / current)
+            if ct and ct.package:
+                task_package = ct.package
         package = resolve_package(task_package, repo_root)
 
     return add_session(

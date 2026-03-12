@@ -64,6 +64,7 @@ from common.task_utils import (
     find_task_by_name,
     archive_task_complete,
 )
+from common.tasks import iter_active_tasks, children_progress
 from common.config import (
     get_hooks,
     get_packages,
@@ -954,24 +955,6 @@ def cmd_remove_subtask(args: argparse.Namespace) -> int:
 # Command: list
 # =============================================================================
 
-def _get_children_progress(children: list[str], tasks_dir: Path) -> str:
-    """Get children progress summary like '[2/3 done]'."""
-    if not children:
-        return ""
-    done_count = 0
-    total = len(children)
-    for child_name in children:
-        child_dir = tasks_dir / child_name
-        child_json = child_dir / FILE_TASK_JSON
-        if child_json.is_file():
-            data = read_json(child_json)
-            if data:
-                status = data.get("status", "")
-                if status in ("completed", "done"):
-                    done_count += 1
-    return f" [{done_count}/{total} done]"
-
-
 def cmd_list(args: argparse.Namespace) -> int:
     """List active tasks."""
     repo_root = get_repo_root()
@@ -990,55 +973,23 @@ def cmd_list(args: argparse.Namespace) -> int:
         print(colored("All active tasks:", Colors.BLUE))
     print()
 
-    # First pass: collect all task data and identify parent/child relationships
-    all_tasks: dict[str, dict] = {}
-    if tasks_dir.is_dir():
-        for d in sorted(tasks_dir.iterdir()):
-            if not d.is_dir() or d.name == "archive":
-                continue
+    # Single pass: collect all tasks via shared iterator
+    all_tasks = {t.dir_name: t for t in iter_active_tasks(tasks_dir)}
+    all_statuses = {name: t.status for name, t in all_tasks.items()}
 
-            dir_name = d.name
-            task_json = d / FILE_TASK_JSON
-            status = "unknown"
-            assignee = "-"
-            package: str | None = None
-            children: list[str] = []
-            parent: str | None = None
-
-            if task_json.is_file():
-                data = read_json(task_json)
-                if data:
-                    status = data.get("status", "unknown")
-                    assignee = data.get("assignee", "-")
-                    package = data.get("package")
-                    children = data.get("children", [])
-                    parent = data.get("parent")
-
-            all_tasks[dir_name] = {
-                "status": status,
-                "assignee": assignee,
-                "package": package,
-                "children": children,
-                "parent": parent,
-            }
-
-    # Second pass: display tasks hierarchically
+    # Display tasks hierarchically
     count = 0
 
     def _print_task(dir_name: str, indent: int = 0) -> None:
         nonlocal count
-        info = all_tasks[dir_name]
-        status = info["status"]
-        assignee = info["assignee"]
-        pkg = info.get("package")
-        children = info["children"]
+        t = all_tasks[dir_name]
 
         # Apply --mine filter
-        if filter_mine and assignee != developer:
+        if filter_mine and (t.assignee or "-") != developer:
             return
 
         # Apply --status filter
-        if filter_status and status != filter_status:
+        if filter_status and t.status != filter_status:
             return
 
         relative_path = f"{DIR_WORKFLOW}/{DIR_TASKS}/{dir_name}"
@@ -1047,28 +998,27 @@ def cmd_list(args: argparse.Namespace) -> int:
             marker = f" {colored('<- current', Colors.GREEN)}"
 
         # Children progress
-        progress = _get_children_progress(children, tasks_dir) if children else ""
+        progress = children_progress(t.children, all_statuses)
 
         # Package tag
-        pkg_tag = f" @{pkg}" if pkg else ""
+        pkg_tag = f" @{t.package}" if t.package else ""
 
         prefix = "  " * indent + "  - "
 
         if filter_mine:
-            print(f"{prefix}{dir_name}/ ({status}){pkg_tag}{progress}{marker}")
+            print(f"{prefix}{dir_name}/ ({t.status}){pkg_tag}{progress}{marker}")
         else:
-            print(f"{prefix}{dir_name}/ ({status}){pkg_tag}{progress} [{colored(assignee, Colors.CYAN)}]{marker}")
+            print(f"{prefix}{dir_name}/ ({t.status}){pkg_tag}{progress} [{colored(t.assignee or '-', Colors.CYAN)}]{marker}")
         count += 1
 
         # Print children indented
-        for child_name in children:
+        for child_name in t.children:
             if child_name in all_tasks:
                 _print_task(child_name, indent + 1)
 
     # Display only top-level tasks (those without a parent)
     for dir_name in sorted(all_tasks.keys()):
-        info = all_tasks[dir_name]
-        if not info["parent"]:
+        if not all_tasks[dir_name].parent:
             _print_task(dir_name)
 
     if count == 0:
