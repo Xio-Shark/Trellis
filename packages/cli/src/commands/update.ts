@@ -152,7 +152,7 @@ export function loadUpdateSkipPaths(cwd: string): string[] {
       if (inSkip) {
         const match = trimmed.match(/^\s+-\s+(.+)$/);
         if (match) {
-          paths.push(match[1].trim());
+          paths.push(match[1].trim().replace(/^['"]|['"]$/g, ""));
           continue;
         }
         // If line is non-empty and not a list item, we've left the skip section

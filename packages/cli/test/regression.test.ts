@@ -12,10 +12,12 @@
  * 5. Platform Registry (beta.9, beta.13, beta.16)
  */
 
+import { execSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   clearManifestCache,
   getAllMigrations,
@@ -43,6 +45,7 @@ import {
   multiAgentPlan,
   multiAgentStart,
   commonCliAdapter,
+  commonWorktree,
   getAllScripts,
 } from "../src/templates/trellis/index.js";
 import {
@@ -781,6 +784,100 @@ describe("regression: collectTemplates paths match init directory structure (0.3
         "/commands/",
       );
     }
+  });
+});
+
+// =============================================================================
+// YAML Quote Stripping (0.3.8)
+// =============================================================================
+
+describe("regression: parse_simple_yaml uses _unquote not greedy strip (0.3.8)", () => {
+  it("worktree.py defines _unquote helper", () => {
+    expect(commonWorktree).toContain("def _unquote(s: str) -> str:");
+  });
+
+  it("worktree.py uses _unquote for list items, not .strip('\"')", () => {
+    // The bug: .strip('"').strip("'") greedily eats nested quotes
+    // e.g. "echo 'hello'" -> strip("'") -> echo 'hello (broken!)
+    expect(commonWorktree).not.toContain(".strip('\"').strip(\"'\")");
+    expect(commonWorktree).toContain("_unquote(stripped[2:].strip())");
+  });
+
+  it("worktree.py uses _unquote for key-value, not .strip('\"')", () => {
+    expect(commonWorktree).toContain("_unquote(value.strip())");
+  });
+});
+
+describe("regression: parse_simple_yaml Python execution (0.3.8)", () => {
+  // Extract _unquote + _parse_yaml_block + _next_content_line + parse_simple_yaml
+  // from commonWorktree and run them in an isolated Python process.
+  // We can't import worktree.py directly because it has `from .paths import ...`
+  let tmpDir: string;
+  let extractedPy: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-yaml-py-"));
+    // Extract _unquote + parse_simple_yaml + _parse_yaml_block + _next_content_line
+    // These 4 functions have no external imports — safe to run standalone.
+    const fnStart = commonWorktree.indexOf("def _unquote(");
+    const fnEnd = commonWorktree.indexOf("\ndef _yaml_get_value(");
+    extractedPy = commonWorktree.substring(fnStart, fnEnd);
+    fs.writeFileSync(path.join(tmpDir, "yaml_parser.py"), extractedPy);
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  /** Run parse_simple_yaml via Python subprocess and return parsed result */
+  function runPythonYaml(yamlContent: string): unknown {
+    const scriptFile = path.join(tmpDir, "_test.py");
+    const script = [
+      "import sys, json",
+      `sys.path.insert(0, ${JSON.stringify(tmpDir)})`,
+      "from yaml_parser import parse_simple_yaml",
+      `result = parse_simple_yaml(${JSON.stringify(yamlContent)})`,
+      "print(json.dumps(result))",
+    ].join("\n");
+    fs.writeFileSync(scriptFile, script);
+    const out = execSync(`python3 ${JSON.stringify(scriptFile)}`, {
+      encoding: "utf-8",
+    });
+    return JSON.parse(out.trim());
+  }
+
+  it("nested single quotes inside double quotes are preserved", () => {
+    const result = runPythonYaml('key: "echo \'hello\'"');
+    expect(result).toEqual({ key: "echo 'hello'" });
+  });
+
+  it("nested double quotes inside single quotes are preserved", () => {
+    const result = runPythonYaml("key: 'say \"hi\"'");
+    expect(result).toEqual({ key: 'say "hi"' });
+  });
+
+  it("list items with nested quotes are preserved", () => {
+    const result = runPythonYaml(
+      'hooks:\n  after_create:\n    - "echo \'Task created\'"',
+    );
+    expect(result).toEqual({
+      hooks: { after_create: ["echo 'Task created'"] },
+    });
+  });
+
+  it("simple quoted values work", () => {
+    const result = runPythonYaml('a: "hello"\nb: \'world\'');
+    expect(result).toEqual({ a: "hello", b: "world" });
+  });
+
+  it("unquoted values are unchanged", () => {
+    const result = runPythonYaml("key: plain value");
+    expect(result).toEqual({ key: "plain value" });
+  });
+
+  it("mismatched quotes are left as-is", () => {
+    const result = runPythonYaml("key: \"hello'");
+    expect(result).toEqual({ key: "\"hello'" });
   });
 });
 

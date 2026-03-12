@@ -12,6 +12,7 @@ import path from "node:path";
 
 import {
   cleanupEmptyDirs,
+  loadUpdateSkipPaths,
   sortMigrationsForExecution,
 } from "../../src/commands/update.js";
 
@@ -96,6 +97,55 @@ describe("cleanupEmptyDirs", () => {
   it("handles non-existent directory gracefully", () => {
     // Should not throw
     expect(() => cleanupEmptyDirs(tmpDir, ".claude/nonexistent")).not.toThrow();
+  });
+});
+
+// =============================================================================
+// loadUpdateSkipPaths — YAML quote handling
+// =============================================================================
+
+describe("loadUpdateSkipPaths", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-skip-"));
+    fs.mkdirSync(path.join(tmpDir, ".trellis"), { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("strips double quotes from skip paths", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, ".trellis", "config.yaml"),
+      'update:\n  skip:\n    - ".claude/commands/"\n',
+    );
+    const paths = loadUpdateSkipPaths(tmpDir);
+    expect(paths).toEqual([".claude/commands/"]);
+  });
+
+  it("strips single quotes from skip paths", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, ".trellis", "config.yaml"),
+      "update:\n  skip:\n    - '.claude/commands/'\n",
+    );
+    const paths = loadUpdateSkipPaths(tmpDir);
+    expect(paths).toEqual([".claude/commands/"]);
+  });
+
+  it("handles unquoted skip paths", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, ".trellis", "config.yaml"),
+      "update:\n  skip:\n    - .claude/commands/\n",
+    );
+    const paths = loadUpdateSkipPaths(tmpDir);
+    expect(paths).toEqual([".claude/commands/"]);
+  });
+
+  it("returns empty array when no config exists", () => {
+    const paths = loadUpdateSkipPaths(tmpDir);
+    expect(paths).toEqual([]);
   });
 });
 
