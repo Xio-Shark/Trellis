@@ -12,23 +12,15 @@ Provides:
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
+from .io import read_json
 from .paths import (
     FILE_TASK_JSON,
     get_repo_root,
     get_developer,
     get_tasks_dir,
 )
-
-
-def _read_json_file(path: Path) -> dict | None:
-    """Read and parse a JSON file."""
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return None
 
 
 # =============================================================================
@@ -65,7 +57,7 @@ def list_tasks_by_status(
         if not task_json.is_file():
             continue
 
-        data = _read_json_file(task_json)
+        data = read_json(task_json)
         if not data:
             continue
 
@@ -137,7 +129,7 @@ def list_tasks_by_assignee(
         if not task_json.is_file():
             continue
 
-        data = _read_json_file(task_json)
+        data = read_json(task_json)
         if not data:
             continue
 
@@ -222,7 +214,7 @@ def get_task_stats(repo_root: Path | None = None) -> dict[str, int]:
         if not task_json.is_file():
             continue
 
-        data = _read_json_file(task_json)
+        data = read_json(task_json)
         if not data:
             continue
 

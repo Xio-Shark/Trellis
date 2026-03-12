@@ -23,10 +23,11 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+import _bootstrap  # noqa: F401 — adds parent scripts/ dir to sys.path
 
 from common.cli_adapter import get_cli_adapter
+from common.io import read_json
+from common.log import Colors
 from common.developer import ensure_developer
 from common.paths import (
     FILE_TASK_JSON,
@@ -37,32 +38,7 @@ from common.phase import get_phase_info
 from common.task_queue import format_task_stats, get_task_stats
 from common.worktree import get_agents_dir
 
-# =============================================================================
-# Colors
-# =============================================================================
-
-
-class Colors:
-    RED = "\033[0;31m"
-    GREEN = "\033[0;32m"
-    YELLOW = "\033[1;33m"
-    BLUE = "\033[0;34m"
-    CYAN = "\033[0;36m"
-    DIM = "\033[2m"
-    NC = "\033[0m"
-
-
-# =============================================================================
-# Helper Functions
-# =============================================================================
-
-
-def _read_json_file(path: Path) -> dict | None:
-    """Read and parse a JSON file."""
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return None
+# Colors and read_json are now imported from common.log and common.io above.
 
 
 def is_running(pid: int | str | None) -> bool:
@@ -101,7 +77,7 @@ def find_agent(search: str, repo_root: Path) -> dict | None:
     if not registry_file or not registry_file.is_file():
         return None
 
-    data = _read_json_file(registry_file)
+    data = read_json(registry_file)
     if not data:
         return None
 
@@ -306,7 +282,7 @@ def cmd_list(repo_root: Path) -> int:
         print("  (no registry found)")
         return 0
 
-    data = _read_json_file(registry_file)
+    data = read_json(registry_file)
     if not data or not data.get("agents"):
         print("  (no agents registered)")
         return 0
@@ -346,7 +322,7 @@ def cmd_summary(repo_root: Path, filter_assignee: str | None = None) -> int:
     total_agents = 0
 
     if registry_file and registry_file.is_file():
-        data = _read_json_file(registry_file)
+        data = read_json(registry_file)
         if data:
             agents = data.get("agents", [])
             total_agents = len(agents)
@@ -370,7 +346,7 @@ def cmd_summary(repo_root: Path, filter_assignee: str | None = None) -> int:
     regular_tasks = []
 
     registry_data = (
-        _read_json_file(registry_file)
+        read_json(registry_file)
         if registry_file and registry_file.is_file()
         else None
     )
@@ -386,7 +362,7 @@ def cmd_summary(repo_root: Path, filter_assignee: str | None = None) -> int:
         priority = "P2"
 
         if task_json.is_file():
-            data = _read_json_file(task_json)
+            data = read_json(task_json)
             if data:
                 status = data.get("status", "unknown")
                 assignee = data.get("assignee", "unassigned")
@@ -422,7 +398,7 @@ def cmd_summary(repo_root: Path, filter_assignee: str | None = None) -> int:
                 elapsed = calc_elapsed(started)
                 modified = count_modified_files(worktree)
 
-                worktree_data = _read_json_file(phase_source)
+                worktree_data = read_json(phase_source)
                 branch = worktree_data.get("branch", "N/A") if worktree_data else "N/A"
 
                 log_file = Path(worktree) / ".agent-log"
@@ -448,7 +424,7 @@ def cmd_summary(repo_root: Path, filter_assignee: str | None = None) -> int:
                 worktree_status = "unknown"
 
                 if worktree_task_json.is_file():
-                    wt_data = _read_json_file(worktree_task_json)
+                    wt_data = read_json(worktree_task_json)
                     if wt_data:
                         worktree_status = wt_data.get("status", "unknown")
 
@@ -618,7 +594,7 @@ def cmd_detail(target: str, repo_root: Path) -> int:
         print()
         print(f"{Colors.BLUE}=== Task Info ==={Colors.NC}")
         print()
-        data = _read_json_file(task_json)
+        data = read_json(task_json)
         if data:
             print(f"  Status:      {data.get('status', 'unknown')}")
             print(f"  Branch:      {data.get('branch', 'N/A')}")
@@ -764,7 +740,7 @@ def cmd_registry(repo_root: Path) -> int:
     print()
 
     if registry_file and registry_file.is_file():
-        data = _read_json_file(registry_file)
+        data = read_json(registry_file)
         if data:
             print(json.dumps(data, indent=2))
     else:

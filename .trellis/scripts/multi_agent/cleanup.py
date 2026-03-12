@@ -28,10 +28,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+import _bootstrap  # noqa: F401 — adds parent scripts/ dir to sys.path
 
-from common.git_context import _run_git_command
+from common.git import run_git
+from common.log import Colors, log_info, log_success, log_warn, log_error
 from common.paths import FILE_TASK_JSON, get_repo_root
 from common.registry import (
     registry_get_file,
@@ -45,38 +45,8 @@ from common.task_utils import (
     is_safe_task_path,
 )
 
-# =============================================================================
-# Colors
-# =============================================================================
-
-
-class Colors:
-    RED = "\033[0;31m"
-    GREEN = "\033[0;32m"
-    YELLOW = "\033[1;33m"
-    BLUE = "\033[0;34m"
-    NC = "\033[0m"
-
-
-def log_info(msg: str) -> None:
-    print(f"{Colors.BLUE}[INFO]{Colors.NC} {msg}")
-
-
-def log_success(msg: str) -> None:
-    print(f"{Colors.GREEN}[SUCCESS]{Colors.NC} {msg}")
-
-
-def log_warn(msg: str) -> None:
-    print(f"{Colors.YELLOW}[WARN]{Colors.NC} {msg}")
-
-
-def log_error(msg: str) -> None:
-    print(f"{Colors.RED}[ERROR]{Colors.NC} {msg}")
-
-
-# =============================================================================
-# Helper Functions
-# =============================================================================
+# Colors, log_info, log_success, log_warn, log_error
+# are now imported from common.log above.
 
 
 def confirm(prompt: str, skip_confirm: bool) -> bool:
@@ -211,7 +181,7 @@ def cleanup_worktree(
 ) -> int:
     """Cleanup single worktree."""
     # Find worktree path for branch
-    _, worktree_list, _ = _run_git_command(
+    _, worktree_list, _ = run_git(
         ["worktree", "list", "--porcelain"], cwd=repo_root
     )
 
@@ -257,7 +227,7 @@ def cleanup_worktree(
 
     # 3. Remove worktree
     log_info("Removing worktree...")
-    ret, _, _ = _run_git_command(
+    ret, _, _ = run_git(
         ["worktree", "remove", worktree_path, "--force"], cwd=repo_root
     )
     if ret != 0:
@@ -272,7 +242,7 @@ def cleanup_worktree(
     # 4. Delete branch (optional)
     if not keep_branch:
         log_info("Deleting branch...")
-        ret, _, _ = _run_git_command(["branch", "-D", branch], cwd=repo_root)
+        ret, _, _ = run_git(["branch", "-D", branch], cwd=repo_root)
         if ret != 0:
             log_warn("Could not delete branch (may be checked out elsewhere)")
 
@@ -283,7 +253,7 @@ def cleanup_worktree(
 def cmd_merged(repo_root: Path, skip_confirm: bool, keep_branch: bool) -> int:
     """Cleanup merged worktrees."""
     # Get main branch
-    _, head_out, _ = _run_git_command(
+    _, head_out, _ = run_git(
         ["symbolic-ref", "refs/remotes/origin/HEAD"], cwd=repo_root
     )
     main_branch = head_out.strip().replace("refs/remotes/origin/", "") or "main"
@@ -292,7 +262,7 @@ def cmd_merged(repo_root: Path, skip_confirm: bool, keep_branch: bool) -> int:
     print()
 
     # Get merged branches
-    _, merged_out, _ = _run_git_command(
+    _, merged_out, _ = run_git(
         ["branch", "--merged", main_branch], cwd=repo_root
     )
     merged_branches = []
@@ -306,7 +276,7 @@ def cmd_merged(repo_root: Path, skip_confirm: bool, keep_branch: bool) -> int:
         return 0
 
     # Get worktree list
-    _, worktree_list, _ = _run_git_command(["worktree", "list"], cwd=repo_root)
+    _, worktree_list, _ = run_git(["worktree", "list"], cwd=repo_root)
 
     worktree_branches = []
     for branch in merged_branches:
@@ -335,7 +305,7 @@ def cmd_all(repo_root: Path, skip_confirm: bool, keep_branch: bool) -> int:
     print()
 
     # Get worktree list
-    _, worktree_list, _ = _run_git_command(
+    _, worktree_list, _ = run_git(
         ["worktree", "list", "--porcelain"], cwd=repo_root
     )
 
@@ -365,7 +335,7 @@ def cmd_all(repo_root: Path, skip_confirm: bool, keep_branch: bool) -> int:
     # Get branch for each worktree
     for wt in worktrees:
         # Find branch name from worktree list
-        _, wt_list, _ = _run_git_command(["worktree", "list"], cwd=repo_root)
+        _, wt_list, _ = run_git(["worktree", "list"], cwd=repo_root)
         for line in wt_list.splitlines():
             if wt in line:
                 # Extract branch from [branch] format

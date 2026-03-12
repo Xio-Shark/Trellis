@@ -19,16 +19,16 @@ step after all implementation and checks are complete.
 from __future__ import annotations
 
 import argparse
-import json
 import subprocess
 import sys
 from pathlib import Path
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+import _bootstrap  # noqa: F401 — adds parent scripts/ dir to sys.path
 
 from common.config import get_submodule_packages
-from common.git_context import _run_git_command
+from common.git import run_git
+from common.io import read_json, write_json
+from common.log import Colors
 from common.paths import (
     DIR_WORKFLOW,
     FILE_TASK_JSON,
@@ -37,41 +37,8 @@ from common.paths import (
 )
 from common.phase import get_phase_for_action
 
-# =============================================================================
-# Colors
-# =============================================================================
-
-
-class Colors:
-    RED = "\033[0;31m"
-    GREEN = "\033[0;32m"
-    YELLOW = "\033[1;33m"
-    BLUE = "\033[0;34m"
-    NC = "\033[0m"
-
-
-# =============================================================================
-# Helper Functions
-# =============================================================================
-
-
-def _read_json_file(path: Path) -> dict | None:
-    """Read and parse a JSON file."""
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return None
-
-
-def _write_json_file(path: Path, data: dict) -> bool:
-    """Write dict to JSON file."""
-    try:
-        path.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
-        return True
-    except (OSError, IOError):
-        return False
+# Colors, read_json, write_json
+# are now imported from common.log and common.io above.
 
 
 # =============================================================================
@@ -93,7 +60,7 @@ def _get_submodule_default_branch(submodule_abs: Path) -> str:
     Returns:
         Default branch name (e.g. "main"), falls back to "main" on failure.
     """
-    ret, out, _ = _run_git_command(
+    ret, out, _ = run_git(
         ["symbolic-ref", "refs/remotes/origin/HEAD"], cwd=submodule_abs
     )
     if ret == 0 and out.strip():
@@ -136,7 +103,7 @@ def _process_submodule_changes(
         if not sub_abs.is_dir():
             continue
 
-        ret, status_out, _ = _run_git_command(
+        ret, status_out, _ = run_git(
             ["status", "--porcelain"], cwd=sub_abs
         )
         if ret != 0:
@@ -177,13 +144,13 @@ def _process_submodule_changes(
             continue
 
         # --- Checkout or create branch in submodule ---
-        ret, _, _ = _run_git_command(
+        ret, _, _ = run_git(
             ["show-ref", "--verify", "--quiet", f"refs/heads/{sub_branch}"],
             cwd=sub_abs,
         )
         if ret == 0:
             # Branch exists, checkout
-            ret, _, err = _run_git_command(
+            ret, _, err = run_git(
                 ["checkout", sub_branch], cwd=sub_abs
             )
             if ret != 0:
@@ -191,7 +158,7 @@ def _process_submodule_changes(
                 return submodule_prs, changed_paths, False
 
             # Check for divergence (reuse risk)
-            ret_anc, _, _ = _run_git_command(
+            ret_anc, _, _ = run_git(
                 ["merge-base", "--is-ancestor", sub_base, sub_branch],
                 cwd=sub_abs,
             )
@@ -202,7 +169,7 @@ def _process_submodule_changes(
                 )
         else:
             # Create new branch
-            ret, _, err = _run_git_command(
+            ret, _, err = run_git(
                 ["checkout", "-b", sub_branch], cwd=sub_abs
             )
             if ret != 0:
@@ -210,12 +177,12 @@ def _process_submodule_changes(
                 return submodule_prs, changed_paths, False
 
         # --- Stage and commit ---
-        _run_git_command(["add", "-A"], cwd=sub_abs)
+        run_git(["add", "-A"], cwd=sub_abs)
 
-        ret, _, _ = _run_git_command(["diff", "--cached", "--quiet"], cwd=sub_abs)
+        ret, _, _ = run_git(["diff", "--cached", "--quiet"], cwd=sub_abs)
         if ret != 0:
             # Has staged changes
-            ret, _, err = _run_git_command(
+            ret, _, err = run_git(
                 ["commit", "-m", sub_commit_msg], cwd=sub_abs
             )
             if ret != 0:
@@ -226,7 +193,7 @@ def _process_submodule_changes(
             print(f"  No staged changes in {pkg_name}, skipping commit")
 
         # --- Push ---
-        ret, _, err = _run_git_command(
+        ret, _, err = run_git(
             ["push", "-u", "origin", sub_branch], cwd=sub_abs
         )
         if ret != 0:
@@ -282,7 +249,7 @@ def _process_submodule_changes(
         # Persist immediately (incremental, supports re-entry)
         submodule_prs[pkg_name] = sub_pr_url
         task_data["submodule_prs"] = submodule_prs
-        _write_json_file(task_json, task_data)
+        write_json(task_json, task_data)
 
         changed_paths.append(pkg_path)
 
@@ -398,7 +365,7 @@ def main() -> int:
     print()
 
     # Read task config
-    task_data = _read_json_file(task_json)
+    task_data = read_json(task_json)
     if not task_data:
         print(f"{Colors.RED}Error: Failed to read task.json{Colors.NC}")
         return 1
@@ -429,7 +396,7 @@ def main() -> int:
     print()
 
     # Get current branch
-    _, branch_out, _ = _run_git_command(["branch", "--show-current"])
+    _, branch_out, _ = run_git(["branch", "--show-current"])
     current_branch = branch_out.strip()
     print(f"Current branch: {current_branch}")
 
@@ -463,32 +430,32 @@ def main() -> int:
     print(f"{Colors.YELLOW}Checking for changes...{Colors.NC}")
 
     # Stage changes
-    _run_git_command(["add", "-A"])
+    run_git(["add", "-A"])
 
     # Exclude workspace and temp files
-    _run_git_command(["reset", f"{DIR_WORKFLOW}/workspace/"])
-    _run_git_command(["reset", ".agent-log", ".session-id"])
+    run_git(["reset", f"{DIR_WORKFLOW}/workspace/"])
+    run_git(["reset", ".agent-log", ".session-id"])
 
     # If submodules changed, ensure their ref updates are staged
     for sub_path in changed_submodule_paths:
-        _run_git_command(["add", sub_path])
+        run_git(["add", sub_path])
 
     # Check if there are staged changes
-    ret, _, _ = _run_git_command(["diff", "--cached", "--quiet"])
+    ret, _, _ = run_git(["diff", "--cached", "--quiet"])
     has_staged_changes = ret != 0
 
     if not has_staged_changes:
         print(f"{Colors.YELLOW}No staged changes to commit{Colors.NC}")
 
         # Check for unpushed commits
-        ret, log_out, _ = _run_git_command(
+        ret, log_out, _ = run_git(
             ["log", f"origin/{current_branch}..HEAD", "--oneline"]
         )
         unpushed = len([line for line in log_out.splitlines() if line.strip()])
 
         if unpushed == 0:
             if args.dry_run:
-                _run_git_command(["reset", "HEAD"])
+                run_git(["reset", "HEAD"])
             print(f"{Colors.RED}No changes to create PR{Colors.NC}")
             return 1
 
@@ -501,11 +468,11 @@ def main() -> int:
         if args.dry_run:
             print(f"[DRY-RUN] Would commit with message: {commit_msg}")
             print("[DRY-RUN] Staged files:")
-            _, staged_out, _ = _run_git_command(["diff", "--cached", "--name-only"])
+            _, staged_out, _ = run_git(["diff", "--cached", "--name-only"])
             for line in staged_out.splitlines():
                 print(f"  - {line}")
         else:
-            _run_git_command(["commit", "-m", commit_msg])
+            run_git(["commit", "-m", commit_msg])
             print(f"{Colors.GREEN}Committed: {commit_msg}{Colors.NC}")
 
     # Push to remote
@@ -513,7 +480,7 @@ def main() -> int:
     if args.dry_run:
         print(f"[DRY-RUN] Would push to: origin/{current_branch}")
     else:
-        ret, _, err = _run_git_command(["push", "-u", "origin", current_branch])
+        ret, _, err = run_git(["push", "-u", "origin", current_branch])
         if ret != 0:
             print(f"{Colors.RED}Failed to push: {err}{Colors.NC}")
             return 1
@@ -629,14 +596,14 @@ def main() -> int:
         if has_submodule_prs:
             task_data["submodule_prs"] = submodule_prs
 
-        _write_json_file(task_json, task_data)
+        write_json(task_json, task_data)
         print(
             f"{Colors.GREEN}Task status updated to 'completed', phase {create_pr_phase}{Colors.NC}"
         )
 
     # In dry-run, reset the staging area
     if args.dry_run:
-        _run_git_command(["reset", "HEAD"])
+        run_git(["reset", "HEAD"])
 
     print()
     print(f"{Colors.GREEN}=== PR Created Successfully ==={Colors.NC}")

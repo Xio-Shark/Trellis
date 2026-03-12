@@ -21,7 +21,6 @@ Configuration: .trellis/worktree.yaml
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess
@@ -29,11 +28,12 @@ import sys
 import uuid
 from pathlib import Path
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+import _bootstrap  # noqa: F401 — adds parent scripts/ dir to sys.path
 
 from common.cli_adapter import get_cli_adapter
-from common.git_context import _run_git_command
+from common.git import run_git
+from common.io import read_json, write_json
+from common.log import Colors, log_info, log_success, log_warn, log_error
 from common.paths import (
     DIR_WORKFLOW,
     FILE_CURRENT_TASK,
@@ -57,57 +57,8 @@ from common.worktree import (
     get_worktree_post_create_hooks,
 )
 
-# =============================================================================
-# Colors
-# =============================================================================
-
-
-class Colors:
-    RED = "\033[0;31m"
-    GREEN = "\033[0;32m"
-    YELLOW = "\033[1;33m"
-    BLUE = "\033[0;34m"
-    NC = "\033[0m"
-
-
-def log_info(msg: str) -> None:
-    print(f"{Colors.BLUE}[INFO]{Colors.NC} {msg}")
-
-
-def log_success(msg: str) -> None:
-    print(f"{Colors.GREEN}[SUCCESS]{Colors.NC} {msg}")
-
-
-def log_warn(msg: str) -> None:
-    print(f"{Colors.YELLOW}[WARN]{Colors.NC} {msg}")
-
-
-def log_error(msg: str) -> None:
-    print(f"{Colors.RED}[ERROR]{Colors.NC} {msg}")
-
-
-# =============================================================================
-# Helper Functions
-# =============================================================================
-
-
-def _read_json_file(path: Path) -> dict | None:
-    """Read and parse a JSON file."""
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return None
-
-
-def _write_json_file(path: Path, data: dict) -> bool:
-    """Write dict to JSON file."""
-    try:
-        path.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
-        return True
-    except (OSError, IOError):
-        return False
+# Colors, log_info, log_success, log_warn, log_error, read_json, write_json
+# are now imported from common.log and common.io above.
 
 
 # =============================================================================
@@ -175,7 +126,7 @@ def _init_submodules_for_task(
     log_info(f"Checking submodule status for '{package}' ({submodule_path})...")
 
     # Run git submodule status in worktree directory
-    ret, status_out, status_err = _run_git_command(
+    ret, status_out, status_err = run_git(
         ["submodule", "status", submodule_path], cwd=Path(worktree_path)
     )
 
@@ -199,7 +150,7 @@ def _init_submodules_for_task(
     if prefix == "-":
         # Uninitialized: run git submodule update --init
         log_info(f"Initializing submodule '{submodule_path}'...")
-        ret, _, err = _run_git_command(
+        ret, _, err = run_git(
             ["submodule", "update", "--init", submodule_path],
             cwd=Path(worktree_path),
         )
@@ -285,7 +236,7 @@ def main() -> int:
     print(f"{Colors.BLUE}=== Multi-Agent Pipeline: Start ==={Colors.NC}")
     log_info(f"Task: {task_dir_abs}")
 
-    task_data = _read_json_file(task_json_path)
+    task_data = read_json(task_json_path)
     if not task_data:
         log_error("Failed to read task.json")
         return 1
@@ -334,7 +285,7 @@ def main() -> int:
         log_info("Step 1: Creating worktree...")
 
         # Record current branch as base_branch (PR target)
-        _, base_branch_out, _ = _run_git_command(
+        _, base_branch_out, _ = run_git(
             ["branch", "--show-current"], cwd=project_root
         )
         base_branch = base_branch_out.strip()
@@ -351,18 +302,18 @@ def main() -> int:
         worktree_path_obj.parent.mkdir(parents=True, exist_ok=True)
 
         # Create branch if not exists
-        ret, _, _ = _run_git_command(
+        ret, _, _ = run_git(
             ["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
             cwd=project_root,
         )
         if ret == 0:
             log_info("Branch exists, checking out...")
-            ret, _, err = _run_git_command(
+            ret, _, err = run_git(
                 ["worktree", "add", worktree_path, branch], cwd=project_root
             )
         else:
             log_info(f"Creating new branch: {branch}")
-            ret, _, err = _run_git_command(
+            ret, _, err = run_git(
                 ["worktree", "add", "-b", branch, worktree_path], cwd=project_root
             )
 
@@ -375,7 +326,7 @@ def main() -> int:
         # Update task.json with worktree_path and base_branch
         task_data["worktree_path"] = worktree_path
         task_data["base_branch"] = base_branch
-        _write_json_file(task_json_path, task_data)
+        write_json(task_json_path, task_data)
 
         # ----- Copy environment files -----
         log_info("Copying environment files...")
@@ -452,7 +403,7 @@ def main() -> int:
 
     # Update task status
     task_data["status"] = "in_progress"
-    _write_json_file(task_json_path, task_data)
+    write_json(task_json_path, task_data)
 
     log_file = Path(worktree_path) / ".agent-log"
     session_id_file = Path(worktree_path) / ".session-id"

@@ -11,10 +11,11 @@ Provides:
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 
 from .config import get_default_package, get_packages, get_spec_scope
+from .git import run_git
+from .io import read_json
 from .paths import (
     DIR_SCRIPTS,
     DIR_SPEC,
@@ -35,34 +36,8 @@ from .paths import (
 # =============================================================================
 
 
-def _run_git_command(args: list[str], cwd: Path | None = None) -> tuple[int, str, str]:
-    """Run a git command and return (returncode, stdout, stderr).
-
-    Uses UTF-8 encoding with -c i18n.logOutputEncoding=UTF-8 to ensure
-    consistent output across all platforms (Windows, macOS, Linux).
-    """
-    try:
-        # Force git to output UTF-8 for consistent cross-platform behavior
-        git_args = ["git", "-c", "i18n.logOutputEncoding=UTF-8"] + args
-        result = subprocess.run(
-            git_args,
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        return result.returncode, result.stdout, result.stderr
-    except Exception as e:
-        return 1, "", str(e)
-
-
-def _read_json_file(path: Path) -> dict | None:
-    """Read and parse a JSON file."""
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return None
+# Backward-compatible alias — external modules import this name
+_run_git_command = run_git
 
 
 def _scan_spec_layers(spec_dir: Path, package: str | None = None) -> list[str]:
@@ -171,15 +146,15 @@ def get_context_json(repo_root: Path | None = None) -> dict:
         )
 
     # Git info
-    _, branch_out, _ = _run_git_command(["branch", "--show-current"], cwd=repo_root)
+    _, branch_out, _ = run_git(["branch", "--show-current"], cwd=repo_root)
     branch = branch_out.strip() or "unknown"
 
-    _, status_out, _ = _run_git_command(["status", "--porcelain"], cwd=repo_root)
+    _, status_out, _ = run_git(["status", "--porcelain"], cwd=repo_root)
     git_status_count = len([line for line in status_out.splitlines() if line.strip()])
     is_clean = git_status_count == 0
 
     # Recent commits
-    _, log_out, _ = _run_git_command(["log", "--oneline", "-5"], cwd=repo_root)
+    _, log_out, _ = run_git(["log", "--oneline", "-5"], cwd=repo_root)
     commits = []
     for line in log_out.splitlines():
         if line.strip():
@@ -196,7 +171,7 @@ def get_context_json(repo_root: Path | None = None) -> dict:
             if d.is_dir() and d.name != "archive":
                 task_json_path = d / FILE_TASK_JSON
                 if task_json_path.is_file():
-                    data = _read_json_file(task_json_path)
+                    data = read_json(task_json_path)
                     if data:
                         tasks.append(
                             {
@@ -276,11 +251,11 @@ def get_context_text(repo_root: Path | None = None) -> str:
 
     # Git status
     lines.append("## GIT STATUS")
-    _, branch_out, _ = _run_git_command(["branch", "--show-current"], cwd=repo_root)
+    _, branch_out, _ = run_git(["branch", "--show-current"], cwd=repo_root)
     branch = branch_out.strip() or "unknown"
     lines.append(f"Branch: {branch}")
 
-    _, status_out, _ = _run_git_command(["status", "--porcelain"], cwd=repo_root)
+    _, status_out, _ = run_git(["status", "--porcelain"], cwd=repo_root)
     status_lines = [line for line in status_out.splitlines() if line.strip()]
     status_count = len(status_lines)
 
@@ -290,14 +265,14 @@ def get_context_text(repo_root: Path | None = None) -> str:
         lines.append(f"Working directory: {status_count} uncommitted change(s)")
         lines.append("")
         lines.append("Changes:")
-        _, short_out, _ = _run_git_command(["status", "--short"], cwd=repo_root)
+        _, short_out, _ = run_git(["status", "--short"], cwd=repo_root)
         for line in short_out.splitlines()[:10]:
             lines.append(line)
     lines.append("")
 
     # Recent commits
     lines.append("## RECENT COMMITS")
-    _, log_out, _ = _run_git_command(["log", "--oneline", "-5"], cwd=repo_root)
+    _, log_out, _ = run_git(["log", "--oneline", "-5"], cwd=repo_root)
     if log_out.strip():
         for line in log_out.splitlines():
             lines.append(line)
@@ -314,7 +289,7 @@ def get_context_text(repo_root: Path | None = None) -> str:
         lines.append(f"Path: {current_task}")
 
         if task_json_path.is_file():
-            data = _read_json_file(task_json_path)
+            data = read_json(task_json_path)
             if data:
                 t_name = data.get("name") or data.get("id") or "unknown"
                 t_status = data.get("status", "unknown")
@@ -354,7 +329,7 @@ def get_context_text(repo_root: Path | None = None) -> str:
                 parent: str | None = None
 
                 if t_json.is_file():
-                    data = _read_json_file(t_json)
+                    data = read_json(t_json)
                     if data:
                         status = data.get("status", "unknown")
                         assignee = data.get("assignee", "-")
@@ -406,7 +381,7 @@ def get_context_text(repo_root: Path | None = None) -> str:
             if d.is_dir() and d.name != "archive":
                 t_json = d / FILE_TASK_JSON
                 if t_json.is_file():
-                    data = _read_json_file(t_json)
+                    data = read_json(t_json)
                     if data:
                         assignee = data.get("assignee", "")
                         status = data.get("status", "planning")
@@ -467,13 +442,13 @@ def get_context_record_json(repo_root: Path | None = None) -> dict:
     tasks_dir = get_tasks_dir(repo_root)
 
     # Git info
-    _, branch_out, _ = _run_git_command(["branch", "--show-current"], cwd=repo_root)
+    _, branch_out, _ = run_git(["branch", "--show-current"], cwd=repo_root)
     branch = branch_out.strip() or "unknown"
 
-    _, status_out, _ = _run_git_command(["status", "--porcelain"], cwd=repo_root)
+    _, status_out, _ = run_git(["status", "--porcelain"], cwd=repo_root)
     git_status_count = len([line for line in status_out.splitlines() if line.strip()])
 
-    _, log_out, _ = _run_git_command(["log", "--oneline", "-5"], cwd=repo_root)
+    _, log_out, _ = run_git(["log", "--oneline", "-5"], cwd=repo_root)
     commits = []
     for line in log_out.splitlines():
         if line.strip():
@@ -489,7 +464,7 @@ def get_context_record_json(repo_root: Path | None = None) -> dict:
             if d.is_dir() and d.name != "archive":
                 t_json = d / FILE_TASK_JSON
                 if t_json.is_file():
-                    data = _read_json_file(t_json)
+                    data = read_json(t_json)
                     if data:
                         all_task_statuses[d.name] = data.get("status", "unknown")
 
@@ -498,7 +473,7 @@ def get_context_record_json(repo_root: Path | None = None) -> dict:
             if d.is_dir() and d.name != "archive":
                 t_json = d / FILE_TASK_JSON
                 if t_json.is_file():
-                    data = _read_json_file(t_json)
+                    data = read_json(t_json)
                     if data and data.get("assignee") == developer:
                         children_list = data.get("children", [])
                         done = sum(1 for c in children_list if all_task_statuses.get(c) in ("completed", "done"))
@@ -519,7 +494,7 @@ def get_context_record_json(repo_root: Path | None = None) -> dict:
     if current_task:
         task_json_path = (repo_root / current_task) / FILE_TASK_JSON
         if task_json_path.is_file():
-            data = _read_json_file(task_json_path)
+            data = read_json(task_json_path)
             if data:
                 current_task_info = {
                     "path": current_task,
@@ -583,7 +558,7 @@ def get_context_text_record(repo_root: Path | None = None) -> str:
             if d.is_dir() and d.name != "archive":
                 t_json = d / FILE_TASK_JSON
                 if t_json.is_file():
-                    data = _read_json_file(t_json)
+                    data = read_json(t_json)
                     if data:
                         all_task_statuses[d.name] = data.get("status", "unknown")
 
@@ -601,7 +576,7 @@ def get_context_text_record(repo_root: Path | None = None) -> str:
             if d.is_dir() and d.name != "archive":
                 t_json = d / FILE_TASK_JSON
                 if t_json.is_file():
-                    data = _read_json_file(t_json)
+                    data = read_json(t_json)
                     if data:
                         assignee = data.get("assignee", "")
                         status = data.get("status", "planning")
@@ -620,11 +595,11 @@ def get_context_text_record(repo_root: Path | None = None) -> str:
 
     # GIT STATUS
     lines.append("## GIT STATUS")
-    _, branch_out, _ = _run_git_command(["branch", "--show-current"], cwd=repo_root)
+    _, branch_out, _ = run_git(["branch", "--show-current"], cwd=repo_root)
     branch = branch_out.strip() or "unknown"
     lines.append(f"Branch: {branch}")
 
-    _, status_out, _ = _run_git_command(["status", "--porcelain"], cwd=repo_root)
+    _, status_out, _ = run_git(["status", "--porcelain"], cwd=repo_root)
     status_lines = [line for line in status_out.splitlines() if line.strip()]
     status_count = len(status_lines)
 
@@ -634,14 +609,14 @@ def get_context_text_record(repo_root: Path | None = None) -> str:
         lines.append(f"Working directory: {status_count} uncommitted change(s)")
         lines.append("")
         lines.append("Changes:")
-        _, short_out, _ = _run_git_command(["status", "--short"], cwd=repo_root)
+        _, short_out, _ = run_git(["status", "--short"], cwd=repo_root)
         for line in short_out.splitlines()[:10]:
             lines.append(line)
     lines.append("")
 
     # RECENT COMMITS
     lines.append("## RECENT COMMITS")
-    _, log_out, _ = _run_git_command(["log", "--oneline", "-5"], cwd=repo_root)
+    _, log_out, _ = run_git(["log", "--oneline", "-5"], cwd=repo_root)
     if log_out.strip():
         for line in log_out.splitlines():
             lines.append(line)
@@ -658,7 +633,7 @@ def get_context_text_record(repo_root: Path | None = None) -> str:
         lines.append(f"Path: {current_task}")
 
         if task_json_path.is_file():
-            data = _read_json_file(task_json_path)
+            data = read_json(task_json_path)
             if data:
                 t_name = data.get("name") or data.get("id") or "unknown"
                 t_status = data.get("status", "unknown")
@@ -770,7 +745,7 @@ def _get_active_task_package(repo_root: Path) -> str | None:
     task_json_path = repo_root / current / FILE_TASK_JSON
     if not task_json_path.is_file():
         return None
-    data = _read_json_file(task_json_path)
+    data = read_json(task_json_path)
     if not isinstance(data, dict):
         return None
     tp = data.get("package")

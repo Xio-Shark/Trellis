@@ -19,25 +19,9 @@ Provides:
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-
-def _read_json_file(path: Path) -> dict | None:
-    """Read and parse a JSON file."""
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return None
-
-
-def _write_json_file(path: Path, data: dict) -> bool:
-    """Write dict to JSON file."""
-    try:
-        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-        return True
-    except (OSError, IOError):
-        return False
+from .io import read_json, write_json
 
 
 # =============================================================================
@@ -53,7 +37,7 @@ def get_current_phase(task_json: Path) -> int:
     Returns:
         Current phase number, or 0 if not found.
     """
-    data = _read_json_file(task_json)
+    data = read_json(task_json)
     if not data:
         return 0
     return data.get("current_phase", 0) or 0
@@ -68,7 +52,7 @@ def get_total_phases(task_json: Path) -> int:
     Returns:
         Total phase count, or 0 if not found.
     """
-    data = _read_json_file(task_json)
+    data = read_json(task_json)
     if not data:
         return 0
 
@@ -88,7 +72,7 @@ def get_phase_action(task_json: Path, phase: int) -> str:
     Returns:
         Action name, or "unknown" if not found.
     """
-    data = _read_json_file(task_json)
+    data = read_json(task_json)
     if not data:
         return "unknown"
 
@@ -109,7 +93,7 @@ def get_phase_info(task_json: Path) -> str:
     Returns:
         Formatted string like "1/4 (implement)".
     """
-    data = _read_json_file(task_json)
+    data = read_json(task_json)
     if not data:
         return "N/A"
 
@@ -133,12 +117,12 @@ def set_phase(task_json: Path, phase: int) -> bool:
     Returns:
         True on success, False on error.
     """
-    data = _read_json_file(task_json)
+    data = read_json(task_json)
     if not data:
         return False
 
     data["current_phase"] = phase
-    return _write_json_file(task_json, data)
+    return write_json(task_json, data)
 
 
 def advance_phase(task_json: Path) -> bool:
@@ -150,7 +134,7 @@ def advance_phase(task_json: Path) -> bool:
     Returns:
         True on success, False on error or at final phase.
     """
-    data = _read_json_file(task_json)
+    data = read_json(task_json)
     if not data:
         return False
 
@@ -162,7 +146,7 @@ def advance_phase(task_json: Path) -> bool:
         return False  # Already at final phase
 
     data["current_phase"] = next_phase
-    return _write_json_file(task_json, data)
+    return write_json(task_json, data)
 
 
 def get_phase_for_action(task_json: Path, action: str) -> int:
@@ -175,7 +159,7 @@ def get_phase_for_action(task_json: Path, action: str) -> int:
     Returns:
         Phase number, or 0 if not found.
     """
-    data = _read_json_file(task_json)
+    data = read_json(task_json)
     if not data:
         return 0
 

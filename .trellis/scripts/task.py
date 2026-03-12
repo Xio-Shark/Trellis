@@ -43,7 +43,9 @@ from datetime import datetime
 from pathlib import Path
 
 from common.cli_adapter import get_cli_adapter_auto
-from common.git_context import _run_git_command
+from common.git import run_git
+from common.io import read_json, write_json
+from common.log import Colors, colored
 from common.paths import (
     DIR_WORKFLOW,
     DIR_TASKS,
@@ -71,22 +73,7 @@ from common.config import (
 )
 
 
-# =============================================================================
-# Colors
-# =============================================================================
-
-class Colors:
-    RED = "\033[0;31m"
-    GREEN = "\033[0;32m"
-    YELLOW = "\033[1;33m"
-    BLUE = "\033[0;34m"
-    CYAN = "\033[0;36m"
-    NC = "\033[0m"
-
-
-def colored(text: str, color: str) -> str:
-    """Apply color to text."""
-    return f"{color}{text}{Colors.NC}"
+# Colors and colored are now imported from common.log above.
 
 
 # =============================================================================
@@ -140,21 +127,7 @@ def _run_hooks(event: str, task_json_path: Path, repo_root: Path) -> None:
 # Helper Functions
 # =============================================================================
 
-def _read_json_file(path: Path) -> dict | None:
-    """Read and parse a JSON file."""
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return None
-
-
-def _write_json_file(path: Path, data: dict) -> bool:
-    """Write dict to JSON file."""
-    try:
-        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-        return True
-    except (OSError, IOError):
-        return False
+# read_json and write_json are now imported from common.io above.
 
 
 def _slugify(title: str) -> str:
@@ -333,7 +306,7 @@ def cmd_create(args: argparse.Namespace) -> int:
     today = datetime.now().strftime("%Y-%m-%d")
 
     # Record current branch as base_branch (PR target)
-    _, branch_out, _ = _run_git_command(["branch", "--show-current"], cwd=repo_root)
+    _, branch_out, _ = run_git(["branch", "--show-current"], cwd=repo_root)
     current_branch = branch_out.strip() or "main"
 
     task_data = {
@@ -370,7 +343,7 @@ def cmd_create(args: argparse.Namespace) -> int:
         "meta": {},
     }
 
-    _write_json_file(task_json_path, task_data)
+    write_json(task_json_path, task_data)
 
     # Handle --parent: establish bidirectional link
     if args.parent:
@@ -379,18 +352,18 @@ def cmd_create(args: argparse.Namespace) -> int:
         if not parent_json_path.is_file():
             print(colored(f"Warning: Parent task.json not found: {args.parent}", Colors.YELLOW), file=sys.stderr)
         else:
-            parent_data = _read_json_file(parent_json_path)
+            parent_data = read_json(parent_json_path)
             if parent_data:
                 # Add child to parent's children list
                 parent_children = parent_data.get("children", [])
                 if dir_name not in parent_children:
                     parent_children.append(dir_name)
                     parent_data["children"] = parent_children
-                    _write_json_file(parent_json_path, parent_data)
+                    write_json(parent_json_path, parent_data)
 
                 # Set parent in child's task.json
                 task_data["parent"] = parent_dir.name
-                _write_json_file(task_json_path, task_data)
+                write_json(task_json_path, task_data)
 
                 print(colored(f"Linked as child of: {parent_dir.name}", Colors.GREEN), file=sys.stderr)
 
@@ -448,7 +421,7 @@ def cmd_init_context(args: argparse.Namespace) -> int:
         task_json_path = target_dir / FILE_TASK_JSON
         task_pkg_value = None
         if task_json_path.is_file():
-            task_data = _read_json_file(task_json_path)
+            task_data = read_json(task_json_path)
             if isinstance(task_data, dict):
                 task_pkg_value = task_data.get("package")
         # Only pass string values to resolve_package (guard against malformed JSON)
@@ -504,11 +477,11 @@ def cmd_init_context(args: argparse.Namespace) -> int:
     # Update task.json dev_type and package
     task_json_path = target_dir / FILE_TASK_JSON
     if task_json_path.is_file():
-        task_data = _read_json_file(task_json_path)
+        task_data = read_json(task_json_path)
         if isinstance(task_data, dict):
             task_data["dev_type"] = dev_type
             task_data["package"] = package  # Always sync to match resolved value
-            _write_json_file(task_json_path, task_data)
+            write_json(task_json_path, task_data)
 
     print()
     print(colored("✓ All context files created", Colors.GREEN))
@@ -793,11 +766,11 @@ def cmd_archive(args: argparse.Namespace) -> int:
     # Update status before archiving
     today = datetime.now().strftime("%Y-%m-%d")
     if task_json_path.is_file():
-        data = _read_json_file(task_json_path)
+        data = read_json(task_json_path)
         if data:
             data["status"] = "completed"
             data["completedAt"] = today
-            _write_json_file(task_json_path, data)
+            write_json(task_json_path, data)
 
             # Handle subtask relationships on archive
             task_parent = data.get("parent")
@@ -809,13 +782,13 @@ def cmd_archive(args: argparse.Namespace) -> int:
                 if parent_dir:
                     parent_json = parent_dir / FILE_TASK_JSON
                     if parent_json.is_file():
-                        parent_data = _read_json_file(parent_json)
+                        parent_data = read_json(parent_json)
                         if parent_data:
                             parent_children = parent_data.get("children", [])
                             if dir_name in parent_children:
                                 parent_children.remove(dir_name)
                                 parent_data["children"] = parent_children
-                                _write_json_file(parent_json, parent_data)
+                                write_json(parent_json, parent_data)
 
             # If this is a parent, clear parent field in all children
             if task_children:
@@ -824,10 +797,10 @@ def cmd_archive(args: argparse.Namespace) -> int:
                     if child_dir_path:
                         child_json = child_dir_path / FILE_TASK_JSON
                         if child_json.is_file():
-                            child_data = _read_json_file(child_json)
+                            child_data = read_json(child_json)
                             if child_data:
                                 child_data["parent"] = None
-                                _write_json_file(child_json, child_data)
+                                write_json(child_json, child_data)
 
     # Clear if current task
     current = get_current_task(repo_root)
@@ -859,10 +832,10 @@ def cmd_archive(args: argparse.Namespace) -> int:
 def _auto_commit_archive(task_name: str, repo_root: Path) -> None:
     """Stage .trellis/tasks/ changes and commit after archive."""
     tasks_rel = f"{DIR_WORKFLOW}/{DIR_TASKS}"
-    _run_git_command(["add", "-A", tasks_rel], cwd=repo_root)
+    run_git(["add", "-A", tasks_rel], cwd=repo_root)
 
     # Check if there are staged changes
-    rc, _, _ = _run_git_command(
+    rc, _, _ = run_git(
         ["diff", "--cached", "--quiet", "--", tasks_rel], cwd=repo_root
     )
     if rc == 0:
@@ -870,7 +843,7 @@ def _auto_commit_archive(task_name: str, repo_root: Path) -> None:
         return
 
     commit_msg = f"chore(task): archive {task_name}"
-    rc, _, err = _run_git_command(["commit", "-m", commit_msg], cwd=repo_root)
+    rc, _, err = run_git(["commit", "-m", commit_msg], cwd=repo_root)
     if rc == 0:
         print(f"[OK] Auto-committed: {commit_msg}", file=sys.stderr)
     else:
@@ -899,8 +872,8 @@ def cmd_add_subtask(args: argparse.Namespace) -> int:
         print(colored(f"Error: Child task.json not found: {args.child_dir}", Colors.RED), file=sys.stderr)
         return 1
 
-    parent_data = _read_json_file(parent_json_path)
-    child_data = _read_json_file(child_json_path)
+    parent_data = read_json(parent_json_path)
+    child_data = read_json(child_json_path)
 
     if not parent_data or not child_data:
         print(colored("Error: Failed to read task.json", Colors.RED), file=sys.stderr)
@@ -923,8 +896,8 @@ def cmd_add_subtask(args: argparse.Namespace) -> int:
     child_data["parent"] = parent_dir.name
 
     # Write both
-    _write_json_file(parent_json_path, parent_data)
-    _write_json_file(child_json_path, child_data)
+    write_json(parent_json_path, parent_data)
+    write_json(child_json_path, child_data)
 
     print(colored(f"Linked: {child_dir.name} -> {parent_dir.name}", Colors.GREEN), file=sys.stderr)
     return 0
@@ -952,8 +925,8 @@ def cmd_remove_subtask(args: argparse.Namespace) -> int:
         print(colored(f"Error: Child task.json not found: {args.child_dir}", Colors.RED), file=sys.stderr)
         return 1
 
-    parent_data = _read_json_file(parent_json_path)
-    child_data = _read_json_file(child_json_path)
+    parent_data = read_json(parent_json_path)
+    child_data = read_json(child_json_path)
 
     if not parent_data or not child_data:
         print(colored("Error: Failed to read task.json", Colors.RED), file=sys.stderr)
@@ -970,8 +943,8 @@ def cmd_remove_subtask(args: argparse.Namespace) -> int:
     child_data["parent"] = None
 
     # Write both
-    _write_json_file(parent_json_path, parent_data)
-    _write_json_file(child_json_path, child_data)
+    write_json(parent_json_path, parent_data)
+    write_json(child_json_path, child_data)
 
     print(colored(f"Unlinked: {child_dir.name} from {parent_dir.name}", Colors.GREEN), file=sys.stderr)
     return 0
@@ -991,7 +964,7 @@ def _get_children_progress(children: list[str], tasks_dir: Path) -> str:
         child_dir = tasks_dir / child_name
         child_json = child_dir / FILE_TASK_JSON
         if child_json.is_file():
-            data = _read_json_file(child_json)
+            data = read_json(child_json)
             if data:
                 status = data.get("status", "")
                 if status in ("completed", "done"):
@@ -1033,7 +1006,7 @@ def cmd_list(args: argparse.Namespace) -> int:
             parent: str | None = None
 
             if task_json.is_file():
-                data = _read_json_file(task_json)
+                data = read_json(task_json)
                 if data:
                     status = data.get("status", "unknown")
                     assignee = data.get("assignee", "-")
@@ -1163,12 +1136,12 @@ def cmd_set_branch(args: argparse.Namespace) -> int:
         print(colored(f"Error: task.json not found at {target_dir}", Colors.RED))
         return 1
 
-    data = _read_json_file(task_json)
+    data = read_json(task_json)
     if not data:
         return 1
 
     data["branch"] = branch
-    _write_json_file(task_json, data)
+    write_json(task_json, data)
 
     print(colored(f"✓ Branch set to: {branch}", Colors.GREEN))
     print()
@@ -1200,12 +1173,12 @@ def cmd_set_base_branch(args: argparse.Namespace) -> int:
         print(colored(f"Error: task.json not found at {target_dir}", Colors.RED))
         return 1
 
-    data = _read_json_file(task_json)
+    data = read_json(task_json)
     if not data:
         return 1
 
     data["base_branch"] = base_branch
-    _write_json_file(task_json, data)
+    write_json(task_json, data)
 
     print(colored(f"✓ Base branch set to: {base_branch}", Colors.GREEN))
     print(f"  PR will target: {base_branch}")
@@ -1232,12 +1205,12 @@ def cmd_set_scope(args: argparse.Namespace) -> int:
         print(colored(f"Error: task.json not found at {target_dir}", Colors.RED))
         return 1
 
-    data = _read_json_file(task_json)
+    data = read_json(task_json)
     if not data:
         return 1
 
     data["scope"] = scope
-    _write_json_file(task_json, data)
+    write_json(task_json, data)
 
     print(colored(f"✓ Scope set to: {scope}", Colors.GREEN))
     return 0
