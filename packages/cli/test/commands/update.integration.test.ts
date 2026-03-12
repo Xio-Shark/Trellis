@@ -421,15 +421,39 @@ describe("update() integration", () => {
     expect(fs.readFileSync(versionPath, "utf-8")).toBe(VERSION);
   });
 
+  // Original template content for check-backend.md (deleted in 0.4.0-beta.1).
+  // Hash: 4e81a28d681ea770f780df55a212fd504ce21ee49b44ba16023b74b5c243cef3
+  const ORIGINAL_CHECK_BACKEND_CONTENT = [
+    "Check if the code you just wrote follows the backend development guidelines.",
+    "",
+    "Execute these steps:",
+    "1. Run `git status` to see modified files",
+    "2. Read `.trellis/spec/backend/index.md` to understand which guidelines apply",
+    "3. Based on what you changed, read the relevant guideline files:",
+    "   - Database changes → `.trellis/spec/backend/database-guidelines.md`",
+    "   - Error handling → `.trellis/spec/backend/error-handling.md`",
+    "   - Logging changes → `.trellis/spec/backend/logging-guidelines.md`",
+    "   - Type changes → `.trellis/spec/backend/type-safety.md`",
+    "   - Any changes → `.trellis/spec/backend/quality-guidelines.md`",
+    "4. Review your code against the guidelines",
+    "5. Report any violations and fix them if found",
+    "",
+  ].join("\n");
+
   it("#20 safe-file-delete respects update.skip for deprecated files", async () => {
     await setupProject();
 
-    // Create a deprecated file at a path covered by safe-file-delete manifest
+    // Sanity: content hash must match the manifest's allowed_hashes
+    expect(computeHash(ORIGINAL_CHECK_BACKEND_CONTENT)).toBe(
+      "4e81a28d681ea770f780df55a212fd504ce21ee49b44ba16023b74b5c243cef3",
+    );
+
+    // Create a deprecated file with original content (hash matches allowed_hashes)
+    // Without update.skip, collectSafeFileDeletes() would delete this file.
     const deprecatedDir = path.join(tmpDir, ".claude", "commands", "trellis");
     fs.mkdirSync(deprecatedDir, { recursive: true });
     const deprecatedFile = path.join(deprecatedDir, "check-backend.md");
-    // Even with matching hash, update.skip should protect it
-    fs.writeFileSync(deprecatedFile, "some content");
+    fs.writeFileSync(deprecatedFile, ORIGINAL_CHECK_BACKEND_CONTENT);
 
     // Add the deprecated file's directory to update.skip
     const configPath = path.join(tmpDir, DIR_NAMES.WORKFLOW, "config.yaml");
@@ -441,8 +465,28 @@ describe("update() integration", () => {
 
     await update({ force: true });
 
-    // File should be preserved (directory is in update.skip)
+    // File should be preserved (directory is in update.skip, overriding safe-file-delete)
     expect(fs.existsSync(deprecatedFile)).toBe(true);
-    expect(fs.readFileSync(deprecatedFile, "utf-8")).toBe("some content");
+    expect(fs.readFileSync(deprecatedFile, "utf-8")).toBe(ORIGINAL_CHECK_BACKEND_CONTENT);
+  });
+
+  it("#21 safe-file-delete deletes file when hash matches allowed_hashes", async () => {
+    await setupProject();
+
+    // Sanity: content hash must match the manifest's allowed_hashes
+    expect(computeHash(ORIGINAL_CHECK_BACKEND_CONTENT)).toBe(
+      "4e81a28d681ea770f780df55a212fd504ce21ee49b44ba16023b74b5c243cef3",
+    );
+
+    // Create deprecated file with original content (hash matches allowed_hashes)
+    const deprecatedDir = path.join(tmpDir, ".claude", "commands", "trellis");
+    fs.mkdirSync(deprecatedDir, { recursive: true });
+    const deprecatedFile = path.join(deprecatedDir, "check-backend.md");
+    fs.writeFileSync(deprecatedFile, ORIGINAL_CHECK_BACKEND_CONTENT);
+
+    await update({ force: true });
+
+    // File should be DELETED (hash matched allowed_hashes, no update.skip protection)
+    expect(fs.existsSync(deprecatedFile)).toBe(false);
   });
 });
