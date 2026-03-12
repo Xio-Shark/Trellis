@@ -36,9 +36,10 @@ import {
 } from "../templates/markdown/index.js";
 
 import { writeFile, ensureDir } from "../utils/file-writer.js";
-import type {
-  ProjectType,
-  DetectedPackage,
+import {
+  sanitizePkgName,
+  type ProjectType,
+  type DetectedPackage,
 } from "../utils/project-detector.js";
 
 interface DocDefinition {
@@ -240,8 +241,9 @@ async function createSpecTemplates(
   if (packages && packages.length > 0) {
     // Monorepo mode: create spec/<name>/ for each package
     for (const pkg of packages) {
-      if (remoteSpecPackages?.has(pkg.name)) continue;
-      const pkgSpecBase = path.join(cwd, `${PATHS.SPEC}/${pkg.name}`);
+      const dirName = sanitizePkgName(pkg.name);
+      if (remoteSpecPackages?.has(dirName)) continue;
+      const pkgSpecBase = path.join(cwd, `${PATHS.SPEC}/${dirName}`);
       ensureDir(pkgSpecBase);
       const pkgType = pkg.type === "unknown" ? "fullstack" : pkg.type;
       await writeSpecForType(pkgSpecBase, pkgType);

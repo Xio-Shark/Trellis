@@ -24,6 +24,7 @@ import {
 import {
   detectProjectType,
   detectMonorepo,
+  sanitizePkgName,
   type ProjectType,
   type DetectedPackage,
 } from "../utils/project-detector.js";
@@ -199,12 +200,13 @@ After completing this task:
     // Monorepo: generate per-package sections
     for (const pkg of packages) {
       const pkgType = pkg.type === "unknown" ? "fullstack" : pkg.type;
-      content += `\n### Package: ${pkg.name} (\`spec/${pkg.name}/\`)\n`;
+      const specName = sanitizePkgName(pkg.name);
+      content += `\n### Package: ${pkg.name} (\`spec/${specName}/\`)\n`;
       if (pkgType !== "frontend") {
-        content += `\n- Backend guidelines: \`.trellis/spec/${pkg.name}/backend/\`\n`;
+        content += `\n- Backend guidelines: \`.trellis/spec/${specName}/backend/\`\n`;
       }
       if (pkgType !== "backend") {
-        content += `\n- Frontend guidelines: \`.trellis/spec/${pkg.name}/frontend/\`\n`;
+        content += `\n- Frontend guidelines: \`.trellis/spec/${specName}/frontend/\`\n`;
       }
     }
   } else if (projectType === "frontend") {
@@ -258,7 +260,9 @@ function getBootstrapTaskJson(
       status: "pending",
     }));
     subtasks.push({ name: "Add code examples", status: "pending" });
-    relatedFiles = packages.map((pkg) => `.trellis/spec/${pkg.name}/`);
+    relatedFiles = packages.map(
+      (pkg) => `.trellis/spec/${sanitizePkgName(pkg.name)}/`,
+    );
   } else if (projectType === "frontend") {
     subtasks = [
       { name: "Fill frontend guidelines", status: "pending" },
@@ -397,7 +401,7 @@ function writeMonorepoConfig(cwd: string, packages: DetectedPackage[]): void {
 
   const lines = ["\n# Auto-detected monorepo packages", "packages:"];
   for (const pkg of packages) {
-    lines.push(`  ${pkg.name}:`);
+    lines.push(`  ${sanitizePkgName(pkg.name)}:`);
     lines.push(`    path: ${pkg.path}`);
     if (pkg.isSubmodule) {
       lines.push("    type: submodule");
@@ -591,7 +595,11 @@ export async function init(options: InitOptions): Promise<void> {
 
             if (specSource === "remote") {
               // Use existing template download flow, targeting spec/<name>/
-              const destDir = path.join(cwd, PATHS.SPEC, pkg.name);
+              const destDir = path.join(
+                cwd,
+                PATHS.SPEC,
+                sanitizePkgName(pkg.name),
+              );
               console.log(chalk.blue(`📦 Select template for ${pkg.name}...`));
               // Fetch templates if not already done
               const templates = await fetchTemplateIndex();
@@ -625,7 +633,7 @@ export async function init(options: InitOptions): Promise<void> {
 
                 if (result.success) {
                   console.log(chalk.green(`   ${result.message}`));
-                  remoteSpecPackages.add(pkg.name);
+                  remoteSpecPackages.add(sanitizePkgName(pkg.name));
                 } else {
                   console.log(chalk.yellow(`   ${result.message}`));
                   console.log(chalk.gray("   Falling back to blank spec..."));
@@ -640,7 +648,11 @@ export async function init(options: InitOptions): Promise<void> {
         } else if (options.template) {
           // --template as default for all packages
           for (const pkg of detected) {
-            const destDir = path.join(cwd, PATHS.SPEC, pkg.name);
+            const destDir = path.join(
+              cwd,
+              PATHS.SPEC,
+              sanitizePkgName(pkg.name),
+            );
             const result = await downloadTemplateById(
               cwd,
               options.template,
@@ -650,7 +662,7 @@ export async function init(options: InitOptions): Promise<void> {
               destDir,
             );
             if (result.success && !result.skipped) {
-              remoteSpecPackages.add(pkg.name);
+              remoteSpecPackages.add(sanitizePkgName(pkg.name));
             }
           }
         }

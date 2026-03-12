@@ -339,24 +339,24 @@ describe("init() integration", () => {
     await init({ yes: true });
 
     const specDir = path.join(tmpDir, PATHS.SPEC);
-    // Per-package spec dirs created (NOT global backend/frontend)
-    expect(fs.existsSync(path.join(specDir, "@app/web"))).toBe(true);
-    expect(fs.existsSync(path.join(specDir, "@app/api"))).toBe(true);
+    // Per-package spec dirs created with sanitized names (scope stripped)
+    expect(fs.existsSync(path.join(specDir, "web"))).toBe(true);
+    expect(fs.existsSync(path.join(specDir, "api"))).toBe(true);
 
-    // @app/web: frontend (vite.config.ts) → has frontend/, no backend/
+    // web: frontend (vite.config.ts) → has frontend/, no backend/
     expect(
-      fs.existsSync(path.join(specDir, "@app/web", "frontend", "index.md")),
+      fs.existsSync(path.join(specDir, "web", "frontend", "index.md")),
     ).toBe(true);
     expect(
-      fs.existsSync(path.join(specDir, "@app/web", "backend")),
+      fs.existsSync(path.join(specDir, "web", "backend")),
     ).toBe(false);
 
-    // @app/api: fullstack (package.json + go.mod) → has both backend/ and frontend/
+    // api: fullstack (package.json + go.mod) → has both backend/ and frontend/
     expect(
-      fs.existsSync(path.join(specDir, "@app/api", "backend", "index.md")),
+      fs.existsSync(path.join(specDir, "api", "backend", "index.md")),
     ).toBe(true);
     expect(
-      fs.existsSync(path.join(specDir, "@app/api", "frontend", "index.md")),
+      fs.existsSync(path.join(specDir, "api", "frontend", "index.md")),
     ).toBe(true);
 
     // Guides still created (shared)
@@ -380,9 +380,9 @@ describe("init() integration", () => {
 
     const configContent = fs.readFileSync(configPath, "utf-8");
     expect(configContent).toContain("packages:");
-    expect(configContent).toContain("@trellis/cli:");
+    expect(configContent).toContain("cli:");
     expect(configContent).toContain("path: packages/cli");
-    expect(configContent).toContain("@trellis/docs:");
+    expect(configContent).toContain("docs:");
     expect(configContent).toContain("path: packages/docs");
     expect(configContent).toContain("default_package:");
   });

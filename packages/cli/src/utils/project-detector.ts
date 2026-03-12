@@ -229,6 +229,14 @@ export interface DetectedPackage {
 }
 
 /**
+ * Sanitize a package name for use as a directory name.
+ * Strips npm scope prefix (@scope/) so "@zhubao/desktop" becomes "desktop".
+ */
+export function sanitizePkgName(name: string): string {
+  return name.replace(/^@[^/]+\//, "");
+}
+
+/**
  * Normalize a package path: strip ./ prefix, trailing /, unify separators.
  */
 function normalizePkgPath(p: string): string {

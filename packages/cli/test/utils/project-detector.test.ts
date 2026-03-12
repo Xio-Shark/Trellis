@@ -5,6 +5,7 @@ import os from "node:os";
 import {
   detectProjectType,
   detectMonorepo,
+  sanitizePkgName,
   getProjectTypeDescription,
   type DetectedPackage,
 } from "../../src/utils/project-detector.js";
@@ -460,5 +461,22 @@ describe("detectMonorepo", () => {
     const result = assertPackages(detectMonorepo(tmpDir));
     expect(result).toHaveLength(1);
     expect(result[0].name).toBe("nameless");
+  });
+});
+
+describe("sanitizePkgName", () => {
+  it("strips npm scope prefix", () => {
+    expect(sanitizePkgName("@zhubao/desktop")).toBe("desktop");
+    expect(sanitizePkgName("@app/api")).toBe("api");
+    expect(sanitizePkgName("@scope/name")).toBe("name");
+  });
+
+  it("keeps unscoped names unchanged", () => {
+    expect(sanitizePkgName("cli")).toBe("cli");
+    expect(sanitizePkgName("my-package")).toBe("my-package");
+  });
+
+  it("only strips the first scope prefix", () => {
+    expect(sanitizePkgName("@a/@b/c")).toBe("@b/c");
   });
 });
