@@ -539,6 +539,62 @@ commit_hash = rest.split()[0]
 
 ---
 
+## Monorepo Config API (`common/config.py`)
+
+### Config Functions
+
+| Function | Return | Purpose |
+|----------|--------|---------|
+| `is_monorepo(repo_root)` | `bool` | Whether `packages:` exists in config.yaml |
+| `get_packages(repo_root)` | `dict[str, dict] \| None` | All packages from config.yaml (`{name: {path, type?}}`) |
+| `get_default_package(repo_root)` | `str \| None` | The `default_package` from config.yaml |
+| `get_submodule_packages(repo_root)` | `dict[str, str]` | Packages with `type: submodule` (`{name: path}`) |
+| `get_spec_base(package, repo_root)` | `str` | `"spec"` (single-repo) or `"spec/<package>"` (monorepo) |
+| `validate_package(package, repo_root)` | `bool` | Whether package exists in config (always `True` for single-repo) |
+| `resolve_package(task_pkg, repo_root)` | `str \| None` | Resolve package: task → default → None |
+| `get_spec_scope(repo_root)` | `str \| list \| None` | The `session.spec_scope` config value |
+| `get_hooks(event, repo_root)` | `list[str]` | Hook commands for lifecycle event |
+
+### Config.yaml Schema
+
+```yaml
+# Auto-detected monorepo packages (written by trellis init)
+packages:
+  cli:
+    path: packages/cli
+  docs-site:
+    path: docs-site
+    type: submodule       # optional, marks git submodule
+default_package: cli      # first non-submodule package
+
+# Session behavior
+session:
+  spec_scope: active_task  # or ["cli", "docs-site"] or omit for full scan
+
+# Update behavior
+update:
+  skip:
+    - .claude/commands/trellis/my-custom.md
+
+# Lifecycle hooks
+hooks:
+  after_create:
+    - "python3 .trellis/scripts/hooks/my_hook.py create"
+```
+
+### Worktree Submodule Initialization
+
+When `start.py` creates a worktree for a task, it calls `_init_submodules_for_task()`:
+
+1. Read `packages` from config.yaml via `get_packages()`
+2. Resolve target package from task data or `default_package`
+3. Check if the package is a submodule via `get_submodule_packages()`
+4. Run `git submodule status <path>` in the worktree
+5. Parse the status prefix (see "Parsing Structured Command Output" above)
+6. If uninitialized (`-` prefix): run `git submodule update --init <path>`
+
+---
+
 ## Error Handling
 
 ### Exit Codes
