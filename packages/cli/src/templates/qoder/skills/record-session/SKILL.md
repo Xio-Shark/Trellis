@@ -5,7 +5,7 @@ description: "Record work progress after human has tested and committed code"
 
 [!] **Prerequisite**: This command should only be used AFTER the human has tested and committed the code.
 
-**AI must NOT execute git commit** - only read history (`git log`, `git status`, `git diff`).
+**Do NOT run `git commit` directly** — the scripts below handle their own commits for `.trellis/` metadata. You only need to read git history (`git log`, `git status`, `git diff`) and run the Python scripts.
 
 ---
 
