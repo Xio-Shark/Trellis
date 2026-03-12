@@ -270,6 +270,35 @@ it("[beta.10] common/__init__.py has centralized encoding fix", () => {
 
 **Prevention**: When refactoring code across files, search `test/regression.test.ts` for references to the affected files and update assertions to match the new location.
 
+### Tautological Input (Test Doesn't Exercise the Code Path)
+
+```typescript
+// Bad: test input never triggers the code path being tested
+it("safe-file-delete respects update.skip", () => {
+  // Writes "some content" — hash never matches allowed_hashes
+  // So collectSafeFileDeletes() returns "skip-modified" BEFORE checking update.skip
+  // Even if update.skip logic is completely broken, this test passes
+  fs.writeFileSync(deprecatedFile, "some content");
+  config.update.skip = [".claude/commands/trellis/"];
+  await update({ force: true });
+  expect(fs.existsSync(deprecatedFile)).toBe(true); // Always true!
+});
+
+// Good: use input that WOULD trigger deletion without the guard
+it("safe-file-delete respects update.skip", () => {
+  // Write content whose hash IS in allowed_hashes
+  // Without update.skip, the file WOULD be deleted
+  fs.writeFileSync(deprecatedFile, originalTemplateContent);
+  config.update.skip = [".claude/commands/trellis/"];
+  await update({ force: true });
+  expect(fs.existsSync(deprecatedFile)).toBe(true); // Proves update.skip works
+});
+```
+
+**Why**: The test looks like it covers the feature, but the input makes the feature's code path unreachable. The test passes regardless of whether the feature works. This is worse than a missing test because it gives **false confidence**.
+
+**Detection**: For any test that asserts a file/value is preserved, ask: "Would this assertion fail if I deleted the feature being tested?" If no → tautological input.
+
 ### Decision Rule
 
 Before writing a test, ask:
@@ -279,6 +308,7 @@ Before writing a test, ask:
 3. **Is this already tested elsewhere?** → Skip (avoid cross-file duplication)
 4. **Does this depend on data that grows over time?** → Use dynamic counts
 5. **Does this test real behavior or just restate the implementation?** → Only test behavior
+6. **Does the test input actually reach the code path being tested?** → Verify with mental deletion test
 
 ---
 

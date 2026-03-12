@@ -502,6 +502,43 @@ parser.add_argument(
 
 ---
 
+## Parsing Structured Command Output
+
+### CRITICAL: Preserve Semantic Whitespace
+
+Many CLI tools encode status information in leading/trailing whitespace characters. **Never blindly `.strip()` before parsing.**
+
+**Example — `git submodule status` output format**:
+
+```
+ abc1234 path/to/submodule (v1.0)     ← space prefix = initialized
+-def5678 path/to/other (v2.0)         ← minus prefix = not initialized
++ghi9012 path/to/modified (v3.0)      ← plus prefix = modified (out of sync)
+```
+
+```python
+# BAD — .strip() removes the leading space that means "initialized"
+status_line = status_out.strip()
+prefix = status_line[0]  # Reads commit hash char, not status prefix!
+
+# GOOD — parse the raw line, then strip individual fields
+raw_line = status_out.rstrip("\n")  # Only remove trailing newline
+if not raw_line:
+    continue
+prefix = raw_line[0]               # ' ', '-', or '+'
+rest = raw_line[1:].strip()        # Now safe to strip the rest
+commit_hash = rest.split()[0]
+```
+
+**General rule**: When a command's output uses positional formatting (columns, prefixes, fixed-width fields), parse the structure first, then clean up individual values.
+
+**Other commands with semantic whitespace**:
+- `git status --porcelain` — two-char status prefix (`XY`)
+- `git diff --name-status` — tab-separated with status prefix
+- `docker ps --format` — column-aligned output
+
+---
+
 ## Error Handling
 
 ### Exit Codes
