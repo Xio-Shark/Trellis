@@ -32,11 +32,11 @@ describe("iflow settingsTemplate SessionStart matchers", () => {
     hooks: { type: string; command: string; timeout: number }[];
   }[];
 
-  it("includes startup, clear, and compact matchers", () => {
+  it("includes startup, clear, and compress matchers", () => {
     const matchers = sessionStartEntries.map((e) => e.matcher);
     expect(matchers).toContain("startup");
     expect(matchers).toContain("clear");
-    expect(matchers).toContain("compact");
+    expect(matchers).toContain("compress");
   });
 
   it("all SessionStart entries invoke the same session-start.py hook", () => {

@@ -451,13 +451,13 @@ describe("regression: SessionStart reinject on clear/compact (MIN-231)", () => {
     );
   });
 
-  it("[MIN-231] iFlow SessionStart hooks cover startup, clear, and compact", () => {
+  it("[MIN-231] iFlow SessionStart hooks cover startup, clear, and compress", () => {
     const settings = JSON.parse(iflowSettingsTemplate);
     const matchers = settings.hooks.SessionStart.map(
       (e: { matcher: string }) => e.matcher,
     );
     expect(matchers).toEqual(
-      expect.arrayContaining(["startup", "clear", "compact"]),
+      expect.arrayContaining(["startup", "clear", "compress"]),
     );
   });
 
