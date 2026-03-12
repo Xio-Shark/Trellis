@@ -189,7 +189,7 @@ def _init_submodules_for_task(
     # Parse the prefix character from submodule status output
     # Format: "<prefix><sha1> <path> (<describe>)"
     # Prefix: '-' (uninitialized), ' ' (normal), '+' (commit mismatch), 'U' (conflict)
-    status_line = status_out.strip()
+    status_line = status_out.rstrip("\n\r")
     if not status_line:
         log_warn(f"Empty submodule status for '{submodule_path}', skipping")
         return
