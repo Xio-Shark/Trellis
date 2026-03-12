@@ -48,6 +48,7 @@ import {
   multiAgentCreatePr,
   commonCliAdapter,
   commonWorktree,
+  commonTaskUtils,
   getAllScripts,
 } from "../src/templates/trellis/index.js";
 import {
@@ -191,15 +192,15 @@ describe("regression: task directory paths (0.2.14, 0.2.15, beta.13)", () => {
   });
 });
 
-describe("regression: task.py _resolve_task_dir path handling", () => {
-  it("[beta.12] task.py resolve_task_dir handles .trellis prefix", () => {
+describe("regression: resolve_task_dir path handling", () => {
+  it("[beta.12] resolve_task_dir handles .trellis prefix", () => {
     // The function should recognize .trellis-prefixed paths as relative paths
-    expect(taskScript).toContain('.startswith(".trellis")');
+    expect(commonTaskUtils).toContain('.startswith(".trellis")');
   });
 
-  it("[potential] task.py path check includes '/' separator check", () => {
+  it("[potential] resolve_task_dir path check includes '/' separator check", () => {
     // resolve_task_dir should detect relative paths containing '/'
-    expect(taskScript).toContain('"/" in target_dir');
+    expect(commonTaskUtils).toContain('"/" in target_dir');
   });
 });
 
