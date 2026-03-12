@@ -1,7 +1,10 @@
 {
   "version": "0.4.0-beta.1",
-  "description": "Merge type-specific before-dev/check commands into generic versions",
-  "changelog": "Replaced before-backend-dev, before-frontend-dev, check-backend, check-frontend with unified before-dev and check commands across all platforms.",
+  "description": "Monorepo support, unified commands, safe-file-delete, worktree submodule awareness",
+  "breaking": true,
+  "recommendMigrate": false,
+  "changelog": "**Enhancements:**\n- feat(init): auto-detect monorepo (pnpm/npm/Cargo/Go/uv workspaces + git submodules)\n- feat(init): generate per-package spec directories and config.yaml with packages list\n- feat(update): new safe-file-delete migration type — auto-removes deprecated files when content hash matches\n- feat(update): PROTECTED_PATHS prevents migrations from touching user data (.trellis/workspace, spec, tasks)\n- feat(update): config.yaml update.skip to exclude paths from safe-file-delete and template updates\n- feat(commands): merge before-backend-dev + before-frontend-dev into unified before-dev (all 9 platforms)\n- feat(commands): merge check-backend + check-frontend into unified check (all 9 platforms)\n- feat(scripts): worktree agents auto-initialize git submodules for task packages\n- feat(scripts): session-start hook supports spec_scope filtering for monorepo\n- feat(scripts): task.py and add_session.py support --package for monorepo context\n\n**Bug Fixes:**\n- fix(update): allow rename/rename-dir migrations to target protected paths (0.2.0 compat)\n- fix(update): warn when config.yaml parse fails instead of silently disabling update.skip\n- fix(scripts): preserve git submodule status prefix character (.strip → .rstrip)",
+  "notes": "Run `trellis update` to sync new unified commands. Old before-backend-dev, before-frontend-dev, check-backend, check-frontend files will be auto-deleted if unmodified.",
   "migrations": [
     {
       "type": "safe-file-delete",
