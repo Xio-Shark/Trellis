@@ -380,6 +380,41 @@ describe("regression: shell to Python migration (beta.0)", () => {
       expect(key).not.toContain("multi-agent");
     }
   });
+
+  it("[beta.3] getAllScripts covers every .py file in templates/trellis/scripts/", () => {
+    // Bug: update.ts had a hand-maintained file list that missed 11 scripts.
+    // Fix: update.ts now uses getAllScripts() directly. This test ensures
+    // getAllScripts() itself stays in sync with the filesystem.
+    const scriptsDir = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "../src/templates/trellis/scripts",
+    );
+    const fsFiles = new Set<string>();
+    function walk(dir: string, prefix: string) {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isDirectory()) {
+          walk(path.join(dir, entry.name), `${prefix}${entry.name}/`);
+        } else if (entry.name.endsWith(".py")) {
+          fsFiles.add(`${prefix}${entry.name}`);
+        }
+      }
+    }
+    walk(scriptsDir, "");
+
+    const scripts = getAllScripts();
+    const registeredKeys = new Set(scripts.keys());
+
+    // Known exclusions: files intentionally not in getAllScripts()
+    const excluded = new Set(["hooks/linear_sync.py", "multi_agent/_bootstrap.py"]);
+
+    for (const file of fsFiles) {
+      if (excluded.has(file)) continue;
+      expect(
+        registeredKeys.has(file),
+        `${file} exists on disk but is missing from getAllScripts()`,
+      ).toBe(true);
+    }
+  });
 });
 
 describe("regression: hook JSON format (beta.7)", () => {
