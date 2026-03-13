@@ -31,34 +31,7 @@ import { setupProxy } from "../utils/proxy.js";
 
 // Import templates for comparison
 import {
-  // Python scripts - package init
-  scriptsInit,
-  // Python scripts - common
-  commonInit,
-  commonPaths,
-  commonDeveloper,
-  commonGitContext,
-  commonWorktree,
-  commonTaskQueue,
-  commonTaskUtils,
-  commonPhase,
-  commonRegistry,
-  commonCliAdapter,
-  commonConfig,
-  // Python scripts - multi_agent
-  multiAgentInit,
-  multiAgentStart,
-  multiAgentCleanup,
-  multiAgentStatus,
-  multiAgentCreatePr,
-  multiAgentPlan,
-  // Python scripts - main
-  getDeveloperScript,
-  initDeveloperScript,
-  taskScript,
-  getContextScript,
-  addSessionScript,
-  createBootstrapScript,
+  getAllScripts,
   // Configuration
   configYamlTemplate,
   worktreeYamlTemplate,
@@ -349,37 +322,10 @@ function collectTemplateFiles(cwd: string): Map<string, string> {
   const files = new Map<string, string>();
   const platforms = getConfiguredPlatforms(cwd);
 
-  // Python scripts - package init
-  files.set(`${PATHS.SCRIPTS}/__init__.py`, scriptsInit);
-
-  // Python scripts - common
-  files.set(`${PATHS.SCRIPTS}/common/__init__.py`, commonInit);
-  files.set(`${PATHS.SCRIPTS}/common/paths.py`, commonPaths);
-  files.set(`${PATHS.SCRIPTS}/common/developer.py`, commonDeveloper);
-  files.set(`${PATHS.SCRIPTS}/common/git_context.py`, commonGitContext);
-  files.set(`${PATHS.SCRIPTS}/common/worktree.py`, commonWorktree);
-  files.set(`${PATHS.SCRIPTS}/common/task_queue.py`, commonTaskQueue);
-  files.set(`${PATHS.SCRIPTS}/common/task_utils.py`, commonTaskUtils);
-  files.set(`${PATHS.SCRIPTS}/common/phase.py`, commonPhase);
-  files.set(`${PATHS.SCRIPTS}/common/registry.py`, commonRegistry);
-  files.set(`${PATHS.SCRIPTS}/common/cli_adapter.py`, commonCliAdapter);
-  files.set(`${PATHS.SCRIPTS}/common/config.py`, commonConfig);
-
-  // Python scripts - multi_agent
-  files.set(`${PATHS.SCRIPTS}/multi_agent/__init__.py`, multiAgentInit);
-  files.set(`${PATHS.SCRIPTS}/multi_agent/start.py`, multiAgentStart);
-  files.set(`${PATHS.SCRIPTS}/multi_agent/cleanup.py`, multiAgentCleanup);
-  files.set(`${PATHS.SCRIPTS}/multi_agent/status.py`, multiAgentStatus);
-  files.set(`${PATHS.SCRIPTS}/multi_agent/create_pr.py`, multiAgentCreatePr);
-  files.set(`${PATHS.SCRIPTS}/multi_agent/plan.py`, multiAgentPlan);
-
-  // Python scripts - main
-  files.set(`${PATHS.SCRIPTS}/init_developer.py`, initDeveloperScript);
-  files.set(`${PATHS.SCRIPTS}/get_developer.py`, getDeveloperScript);
-  files.set(`${PATHS.SCRIPTS}/task.py`, taskScript);
-  files.set(`${PATHS.SCRIPTS}/get_context.py`, getContextScript);
-  files.set(`${PATHS.SCRIPTS}/add_session.py`, addSessionScript);
-  files.set(`${PATHS.SCRIPTS}/create_bootstrap.py`, createBootstrapScript);
+  // Python scripts (single source of truth: getAllScripts())
+  for (const [scriptPath, content] of getAllScripts()) {
+    files.set(`${PATHS.SCRIPTS}/${scriptPath}`, content);
+  }
 
   // Configuration
   files.set(`${DIR_NAMES.WORKFLOW}/config.yaml`, configYamlTemplate);
