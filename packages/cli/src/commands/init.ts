@@ -80,7 +80,7 @@ function getBootstrapPrdContent(
 Welcome to Trellis! This is your first task.
 
 AI agents use \`.trellis/spec/\` to understand YOUR project's coding conventions.
-**Empty templates = AI writes generic code that doesn't match your project style.**
+**Starting from scratch = AI writes generic code that doesn't match your project style.**
 
 Filling these guidelines is a one-time setup that pays off for every future AI session.
 
@@ -586,7 +586,7 @@ export async function init(options: InitOptions): Promise<void> {
                 name: "specSource",
                 message: `Spec source for ${pkg.name} (${pkg.path}):`,
                 choices: [
-                  { name: "Blank spec (Trellis default)", value: "blank" },
+                  { name: "From scratch (Trellis default)", value: "blank" },
                   { name: "Download remote template", value: "remote" },
                 ],
                 default: "blank",
@@ -799,7 +799,7 @@ export async function init(options: InitOptions): Promise<void> {
         ? specTemplates
         : [
             {
-              name: "blank (default - empty templates)",
+              name: "from scratch (default)",
               value: "blank",
             },
             ...specTemplates,
