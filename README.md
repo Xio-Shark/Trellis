@@ -32,7 +32,9 @@
 <a href="https://chatgpt.com/?q=Explain+the+project+mindfold-ai/Trellis+on+GitHub"><img src="https://img.shields.io/badge/Ask-ChatGPT-74aa9c?style=flat-square&logo=openai&logoColor=white" alt="Ask ChatGPT" /></a>
 </p>
 
-https://github.com/user-attachments/assets/7b1a2989-2660-4072-aa1e-98ce07e81c27
+<p align="center">
+<img src="assets/trellis-demo.gif" alt="Trellis workflow demo" width="100%">
+</p>
 
 ## Why Trellis?
 
