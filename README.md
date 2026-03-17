@@ -33,7 +33,7 @@
 </p>
 
 <p align="center">
-<video src="assets/trellis-demo.mp4" width="100%" autoplay muted loop playsinline></video>
+https://github.com/user-attachments/assets/7b1a2989-2660-4072-aa1e-98ce07e81c27
 </p>
 
 ## Why Trellis?
