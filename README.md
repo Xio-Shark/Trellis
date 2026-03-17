@@ -32,13 +32,9 @@
 <a href="https://chatgpt.com/?q=Explain+the+project+mindfold-ai/Trellis+on+GitHub"><img src="https://img.shields.io/badge/Ask-ChatGPT-74aa9c?style=flat-square&logo=openai&logoColor=white" alt="Ask ChatGPT" /></a>
 </p>
 
-## See it in action
-
 <p align="center">
 <video src="assets/trellis-demo.mp4" width="100%" autoplay muted loop playsinline></video>
 </p>
-
-<sub>Adding Gemini CLI platform support — from brainstorm to ship in one session.</sub>
 
 ## Why Trellis?
 
