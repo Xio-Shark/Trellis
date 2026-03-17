@@ -33,6 +33,10 @@
 <a href="https://chatgpt.com/?q=Explain+the+project+mindfold-ai/Trellis+on+GitHub"><img src="https://img.shields.io/badge/Ask-ChatGPT-74aa9c?style=flat-square&logo=openai&logoColor=white" alt="Ask ChatGPT" /></a>
 </p>
 
+<p align="center">
+<img src="assets/trellis-demo-zh.gif" alt="Trellis 工作流演示" width="100%">
+</p>
+
 ## 为什么用 Trellis？
 
 | 能力 | 带来的变化 |
