@@ -27,6 +27,10 @@
 <a href="https://discord.com/invite/tWcCZ3aRHc"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord" /></a>
 </p>
 
+<p align="center">
+<img src="assets/trellis-demo-zh.gif" alt="Trellis 工作流演示" width="100%">
+</p>
+
 ## 为什么用 Trellis？
 
 | 能力 | 带来的变化 |
