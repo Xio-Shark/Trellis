@@ -27,6 +27,10 @@
 <a href="https://discord.com/invite/tWcCZ3aRHc"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord" /></a>
 </p>
 
+<p align="center">
+<img src="assets/trellis-demo.gif" alt="Trellis workflow demo" width="100%">
+</p>
+
 ## Why Trellis?
 
 | Capability | What it changes |
