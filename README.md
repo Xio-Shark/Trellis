@@ -38,7 +38,7 @@
 <video src="assets/trellis-demo.mp4" width="100%" autoplay muted loop playsinline></video>
 </p>
 
-<sub>Adding Gemini CLI platform support — from brainstorm to ship in one session. <a href="https://docs.trytrellis.app/showcase/terminal-demo">Interactive demo →</a></sub>
+<sub>Adding Gemini CLI platform support — from brainstorm to ship in one session.</sub>
 
 ## Why Trellis?
 
