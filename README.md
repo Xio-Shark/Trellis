@@ -36,10 +36,6 @@
 <img src="assets/trellis-demo.gif" alt="Trellis workflow demo" width="100%">
 </p>
 
-<p align="center">
-<img src="assets/trellis-demo.gif" alt="Trellis workflow demo" width="100%">
-</p>
-
 ## Why Trellis?
 
 | Capability | What it changes |
