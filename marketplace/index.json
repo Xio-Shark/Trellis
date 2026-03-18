@@ -18,6 +18,14 @@
       "tags": ["nextjs", "react", "typescript", "orpc", "drizzle", "postgresql"]
     },
     {
+      "id": "cf-workers-fullstack",
+      "type": "spec",
+      "name": "Cloudflare Workers + Hono + Turso",
+      "description": "Full-stack Cloudflare Workers application with Hono framework, Drizzle ORM, and Turso database",
+      "path": "marketplace/specs/cf-workers-fullstack",
+      "tags": ["cloudflare", "workers", "hono", "drizzle", "turso", "react", "typescript"]
+    },
+    {
       "id": "trellis-meta",
       "type": "skill",
       "name": "Trellis Meta Skill",
