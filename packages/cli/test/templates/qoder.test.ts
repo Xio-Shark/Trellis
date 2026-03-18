@@ -2,13 +2,11 @@ import { describe, expect, it } from "vitest";
 import { getAllSkills } from "../../src/templates/qoder/index.js";
 
 const EXPECTED_SKILL_NAMES = [
-  "before-backend-dev",
-  "before-frontend-dev",
+  "before-dev",
   "brainstorm",
   "break-loop",
-  "check-backend",
+  "check",
   "check-cross-layer",
-  "check-frontend",
   "create-command",
   "finish-work",
   "integrate-skill",

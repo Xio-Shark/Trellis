@@ -31,34 +31,7 @@ import { setupProxy } from "../utils/proxy.js";
 
 // Import templates for comparison
 import {
-  // Python scripts - package init
-  scriptsInit,
-  // Python scripts - common
-  commonInit,
-  commonPaths,
-  commonDeveloper,
-  commonGitContext,
-  commonWorktree,
-  commonTaskQueue,
-  commonTaskUtils,
-  commonPhase,
-  commonRegistry,
-  commonCliAdapter,
-  commonConfig,
-  // Python scripts - multi_agent
-  multiAgentInit,
-  multiAgentStart,
-  multiAgentCleanup,
-  multiAgentStatus,
-  multiAgentCreatePr,
-  multiAgentPlan,
-  // Python scripts - main
-  getDeveloperScript,
-  initDeveloperScript,
-  taskScript,
-  getContextScript,
-  addSessionScript,
-  createBootstrapScript,
+  getAllScripts,
   // Configuration
   configYamlTemplate,
   worktreeYamlTemplate,
@@ -109,6 +82,163 @@ const PROTECTED_PATHS = [
   `${DIR_NAMES.WORKFLOW}/.developer`,
   `${DIR_NAMES.WORKFLOW}/.current-task`,
 ];
+
+/**
+ * Check if a path is blocked by PROTECTED_PATHS
+ */
+function isProtectedPath(filePath: string): boolean {
+  return PROTECTED_PATHS.some(
+    (pp) =>
+      filePath === pp || filePath.startsWith(pp.endsWith("/") ? pp : pp + "/"),
+  );
+}
+
+/** Classified safe-file-delete item with reason */
+interface SafeFileDeleteClassified {
+  item: MigrationItem;
+  action:
+    | "delete"
+    | "skip-missing"
+    | "skip-modified"
+    | "skip-protected"
+    | "skip-update-skip";
+}
+
+/**
+ * Collect and classify safe-file-delete migrations
+ *
+ * safe-file-delete auto-executes (no --migrate needed) when:
+ * - File exists
+ * - Content hash matches allowed_hashes
+ * - Path is not protected or in update.skip
+ */
+function collectSafeFileDeletes(
+  migrations: MigrationItem[],
+  cwd: string,
+  skipPaths: string[],
+): SafeFileDeleteClassified[] {
+  const safeDeletes = migrations.filter((m) => m.type === "safe-file-delete");
+  const results: SafeFileDeleteClassified[] = [];
+
+  for (const item of safeDeletes) {
+    const fullPath = path.join(cwd, item.from);
+
+    // Check: file exists?
+    if (!fs.existsSync(fullPath)) {
+      results.push({ item, action: "skip-missing" });
+      continue;
+    }
+
+    // Check: protected path?
+    if (isProtectedPath(item.from)) {
+      results.push({ item, action: "skip-protected" });
+      continue;
+    }
+
+    // Check: update.skip?
+    if (
+      skipPaths.some(
+        (skip) =>
+          item.from === skip ||
+          item.from.startsWith(skip.endsWith("/") ? skip : skip + "/"),
+      )
+    ) {
+      results.push({ item, action: "skip-update-skip" });
+      continue;
+    }
+
+    // Check: hash matches allowed_hashes?
+    if (!item.allowed_hashes || item.allowed_hashes.length === 0) {
+      // No allowed hashes defined — skip for safety
+      results.push({ item, action: "skip-modified" });
+      continue;
+    }
+
+    try {
+      const content = fs.readFileSync(fullPath, "utf-8");
+      const fileHash = computeHash(content);
+      if (item.allowed_hashes.includes(fileHash)) {
+        results.push({ item, action: "delete" });
+      } else {
+        results.push({ item, action: "skip-modified" });
+      }
+    } catch {
+      results.push({ item, action: "skip-missing" });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Print safe-file-delete summary
+ */
+function printSafeFileDeleteSummary(
+  classified: SafeFileDeleteClassified[],
+): void {
+  const toDelete = classified.filter((c) => c.action === "delete");
+  const modified = classified.filter((c) => c.action === "skip-modified");
+  const updateSkip = classified.filter((c) => c.action === "skip-update-skip");
+
+  if (
+    toDelete.length === 0 &&
+    modified.length === 0 &&
+    updateSkip.length === 0
+  ) {
+    return;
+  }
+
+  console.log(chalk.cyan("  Deprecated commands cleanup:"));
+
+  if (toDelete.length > 0) {
+    for (const c of toDelete) {
+      console.log(
+        chalk.green(
+          `    ✕ ${c.item.from}${c.item.description ? ` (${c.item.description})` : ""}`,
+        ),
+      );
+    }
+  }
+
+  if (modified.length > 0) {
+    for (const c of modified) {
+      console.log(chalk.yellow(`    ? ${c.item.from} (modified, skipped)`));
+    }
+  }
+
+  if (updateSkip.length > 0) {
+    for (const c of updateSkip) {
+      console.log(chalk.gray(`    ○ ${c.item.from} (skipped, update.skip)`));
+    }
+  }
+
+  console.log("");
+}
+
+/**
+ * Execute safe-file-delete items (delete files + clean up empty dirs)
+ */
+function executeSafeFileDeletes(
+  classified: SafeFileDeleteClassified[],
+  cwd: string,
+): number {
+  const toDelete = classified.filter((c) => c.action === "delete");
+  let deleted = 0;
+
+  for (const c of toDelete) {
+    const fullPath = path.join(cwd, c.item.from);
+    try {
+      fs.unlinkSync(fullPath);
+      removeHash(cwd, c.item.from);
+      cleanupEmptyDirs(cwd, path.dirname(c.item.from));
+      deleted++;
+    } catch {
+      // File may have been removed between classify and execute
+    }
+  }
+
+  return deleted;
+}
 
 /**
  * Load update.skip paths from .trellis/config.yaml
@@ -176,6 +306,10 @@ export function loadUpdateSkipPaths(cwd: string): string[] {
 
     return paths;
   } catch {
+    // Config exists but failed to parse — warn user that skip rules won't apply
+    console.warn(
+      `Warning: failed to parse ${configPath}, update.skip rules will not be applied`,
+    );
     return [];
   }
 }
@@ -188,37 +322,10 @@ function collectTemplateFiles(cwd: string): Map<string, string> {
   const files = new Map<string, string>();
   const platforms = getConfiguredPlatforms(cwd);
 
-  // Python scripts - package init
-  files.set(`${PATHS.SCRIPTS}/__init__.py`, scriptsInit);
-
-  // Python scripts - common
-  files.set(`${PATHS.SCRIPTS}/common/__init__.py`, commonInit);
-  files.set(`${PATHS.SCRIPTS}/common/paths.py`, commonPaths);
-  files.set(`${PATHS.SCRIPTS}/common/developer.py`, commonDeveloper);
-  files.set(`${PATHS.SCRIPTS}/common/git_context.py`, commonGitContext);
-  files.set(`${PATHS.SCRIPTS}/common/worktree.py`, commonWorktree);
-  files.set(`${PATHS.SCRIPTS}/common/task_queue.py`, commonTaskQueue);
-  files.set(`${PATHS.SCRIPTS}/common/task_utils.py`, commonTaskUtils);
-  files.set(`${PATHS.SCRIPTS}/common/phase.py`, commonPhase);
-  files.set(`${PATHS.SCRIPTS}/common/registry.py`, commonRegistry);
-  files.set(`${PATHS.SCRIPTS}/common/cli_adapter.py`, commonCliAdapter);
-  files.set(`${PATHS.SCRIPTS}/common/config.py`, commonConfig);
-
-  // Python scripts - multi_agent
-  files.set(`${PATHS.SCRIPTS}/multi_agent/__init__.py`, multiAgentInit);
-  files.set(`${PATHS.SCRIPTS}/multi_agent/start.py`, multiAgentStart);
-  files.set(`${PATHS.SCRIPTS}/multi_agent/cleanup.py`, multiAgentCleanup);
-  files.set(`${PATHS.SCRIPTS}/multi_agent/status.py`, multiAgentStatus);
-  files.set(`${PATHS.SCRIPTS}/multi_agent/create_pr.py`, multiAgentCreatePr);
-  files.set(`${PATHS.SCRIPTS}/multi_agent/plan.py`, multiAgentPlan);
-
-  // Python scripts - main
-  files.set(`${PATHS.SCRIPTS}/init_developer.py`, initDeveloperScript);
-  files.set(`${PATHS.SCRIPTS}/get_developer.py`, getDeveloperScript);
-  files.set(`${PATHS.SCRIPTS}/task.py`, taskScript);
-  files.set(`${PATHS.SCRIPTS}/get_context.py`, getContextScript);
-  files.set(`${PATHS.SCRIPTS}/add_session.py`, addSessionScript);
-  files.set(`${PATHS.SCRIPTS}/create_bootstrap.py`, createBootstrapScript);
+  // Python scripts (single source of truth: getAllScripts())
+  for (const [scriptPath, content] of getAllScripts()) {
+    files.set(`${PATHS.SCRIPTS}/${scriptPath}`, content);
+  }
 
   // Configuration
   files.set(`${DIR_NAMES.WORKFLOW}/config.yaml`, configYamlTemplate);
@@ -687,6 +794,26 @@ function classifyMigrations(
   };
 
   for (const item of migrations) {
+    // safe-file-delete handled separately (not via --migrate)
+    if (item.type === "safe-file-delete") continue;
+
+    // Enforce PROTECTED_PATHS — never migrate FROM protected paths (prevents moving/deleting user data)
+    if (isProtectedPath(item.from)) {
+      result.skip.push(item);
+      continue;
+    }
+    // For non-rename types, also block writing TO protected paths
+    // rename/rename-dir are allowed to target protected paths (e.g., 0.2.0 renames into .trellis/workspace)
+    if (
+      item.to &&
+      isProtectedPath(item.to) &&
+      item.type !== "rename" &&
+      item.type !== "rename-dir"
+    ) {
+      result.skip.push(item);
+      continue;
+    }
+
     const oldPath = path.join(cwd, item.from);
     const oldExists = fs.existsSync(oldPath);
 
@@ -1180,31 +1307,40 @@ export async function update(options: UpdateOptions): Promise<void> {
   const hashes = loadHashes(cwd);
   const isFirstHashTracking = Object.keys(hashes).length === 0;
 
-  // Handle unknown version - skip migrations but continue with template updates
+  // Handle unknown version - skip regular migrations but safe-file-delete still runs
   const isUnknownVersion = projectVersion === "unknown";
   if (isUnknownVersion) {
     console.log(
-      chalk.yellow("⚠️  No version file found. Skipping migrations."),
+      chalk.yellow(
+        "⚠️  No version file found. Skipping migrations — run trellis init to fix.",
+      ),
     );
     console.log(chalk.gray("   Template updates will still be applied."));
     console.log(
-      chalk.gray(
-        "   If your project used old file paths, you may need to rename them manually.\n",
-      ),
+      chalk.gray("   Safe file cleanup will still run (hash-verified).\n"),
     );
   }
 
   // Collect templates (used for both migration classification and change analysis)
   const templates = collectTemplateFiles(cwd);
 
-  // Check for pending migrations (skip if unknown version)
+  // Load update.skip paths (used for both safe-file-delete and template collection)
+  const skipPaths = loadUpdateSkipPaths(cwd);
+
+  // Collect safe-file-delete items from ALL manifests (hash match is the safety net)
+  // This runs regardless of version — unknown version still gets safe cleanup
+  const allMigrations = getAllMigrations();
+  const safeFileDeletes = collectSafeFileDeletes(allMigrations, cwd, skipPaths);
+  const hasSafeDeletes =
+    safeFileDeletes.filter((c) => c.action === "delete").length > 0;
+
+  // Check for pending regular migrations (skip if unknown version)
   let pendingMigrations = isUnknownVersion
     ? []
     : getMigrationsForVersion(projectVersion, cliVersion);
 
   // Also check for "orphaned" migrations - where source still exists but version says we shouldn't migrate
   // This handles cases where version was updated but migrations weren't applied
-  const allMigrations = getAllMigrations();
   const orphanedMigrations = allMigrations.filter((item) => {
     // Only check rename and rename-dir migrations
     if (item.type !== "rename" && item.type !== "rename-dir") return false;
@@ -1277,6 +1413,11 @@ export async function update(options: UpdateOptions): Promise<void> {
     }
   }
 
+  // Print safe-file-delete summary (always shown, runs without --migrate)
+  if (safeFileDeletes.length > 0) {
+    printSafeFileDeleteSummary(safeFileDeletes);
+  }
+
   // Analyze changes (pass hashes for modification detection)
   const changes = analyzeChanges(cwd, hashes, templates);
 
@@ -1314,7 +1455,8 @@ export async function update(options: UpdateOptions): Promise<void> {
     changes.newFiles.length === 0 &&
     changes.autoUpdateFiles.length === 0 &&
     changes.changedFiles.length === 0 &&
-    !hasPendingMigrations
+    !hasPendingMigrations &&
+    !hasSafeDeletes
   ) {
     if (isSameVersion) {
       console.log(chalk.green("✓ Already up to date!"));
@@ -1444,6 +1586,17 @@ export async function update(options: UpdateOptions): Promise<void> {
     }
   }
 
+  // Execute safe-file-delete (after backup, before template writes)
+  let safeDeleted = 0;
+  if (hasSafeDeletes) {
+    safeDeleted = executeSafeFileDeletes(safeFileDeletes, cwd);
+    if (safeDeleted > 0) {
+      console.log(
+        chalk.cyan(`\nCleaned up ${safeDeleted} deprecated command file(s)`),
+      );
+    }
+  }
+
   // Track results
   let added = 0;
   let autoUpdated = 0;
@@ -1564,6 +1717,9 @@ export async function update(options: UpdateOptions): Promise<void> {
   }
   if (createdNew > 0) {
     console.log(`  Created .new copies: ${createdNew} file(s)`);
+  }
+  if (safeDeleted > 0) {
+    console.log(`  Cleaned up: ${safeDeleted} deprecated file(s)`);
   }
   if (backupDir) {
     console.log(`  Backup: ${path.relative(cwd, backupDir)}/`);

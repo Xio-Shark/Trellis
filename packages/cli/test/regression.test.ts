@@ -44,8 +44,11 @@ import {
   addSessionScript,
   multiAgentPlan,
   multiAgentStart,
+  multiAgentCleanup,
+  multiAgentCreatePr,
   commonCliAdapter,
   commonWorktree,
+  commonTaskUtils,
   getAllScripts,
 } from "../src/templates/trellis/index.js";
 import {
@@ -189,15 +192,15 @@ describe("regression: task directory paths (0.2.14, 0.2.15, beta.13)", () => {
   });
 });
 
-describe("regression: task.py _resolve_task_dir path handling", () => {
-  it("[beta.12] task.py resolve_task_dir handles .trellis prefix", () => {
+describe("regression: resolve_task_dir path handling", () => {
+  it("[beta.12] resolve_task_dir handles .trellis prefix", () => {
     // The function should recognize .trellis-prefixed paths as relative paths
-    expect(taskScript).toContain('.startswith(".trellis")');
+    expect(commonTaskUtils).toContain('.startswith(".trellis")');
   });
 
-  it("[potential] task.py path check includes '/' separator check", () => {
+  it("[potential] resolve_task_dir path check includes '/' separator check", () => {
     // resolve_task_dir should detect relative paths containing '/'
-    expect(taskScript).toContain('"/" in target_dir');
+    expect(commonTaskUtils).toContain('"/" in target_dir');
   });
 });
 
@@ -270,9 +273,30 @@ describe("regression: migration data integrity (beta.14)", () => {
 
   it("[beta.14] all migrations have valid type field", () => {
     const allMigrations = getAllMigrations();
-    const validTypes = ["rename", "rename-dir", "delete"];
+    const validTypes = ["rename", "rename-dir", "delete", "safe-file-delete"];
     for (const m of allMigrations) {
       expect(validTypes).toContain(m.type);
+    }
+  });
+
+  it("[beta.1-040] safe-file-delete migrations have allowed_hashes", () => {
+    const allMigrations = getAllMigrations();
+    const safeDeletes = allMigrations.filter(
+      (m) => m.type === "safe-file-delete",
+    );
+    for (const m of safeDeletes) {
+      expect(
+        m.allowed_hashes,
+        `safe-file-delete for '${m.from}' should have allowed_hashes`,
+      ).toBeDefined();
+      expect(Array.isArray(m.allowed_hashes)).toBe(true);
+      expect(
+        (m.allowed_hashes as string[]).length,
+        `safe-file-delete for '${m.from}' should have at least one hash`,
+      ).toBeGreaterThan(0);
+      for (const hash of m.allowed_hashes as string[]) {
+        expect(hash).toMatch(/^[a-f0-9]{64}$/);
+      }
     }
   });
 
@@ -354,6 +378,41 @@ describe("regression: shell to Python migration (beta.0)", () => {
     for (const key of multiAgentKeys) {
       expect(key).toContain("multi_agent");
       expect(key).not.toContain("multi-agent");
+    }
+  });
+
+  it("[beta.3] getAllScripts covers every .py file in templates/trellis/scripts/", () => {
+    // Bug: update.ts had a hand-maintained file list that missed 11 scripts.
+    // Fix: update.ts now uses getAllScripts() directly. This test ensures
+    // getAllScripts() itself stays in sync with the filesystem.
+    const scriptsDir = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "../src/templates/trellis/scripts",
+    );
+    const fsFiles = new Set<string>();
+    function walk(dir: string, prefix: string) {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isDirectory()) {
+          walk(path.join(dir, entry.name), `${prefix}${entry.name}/`);
+        } else if (entry.name.endsWith(".py")) {
+          fsFiles.add(`${prefix}${entry.name}`);
+        }
+      }
+    }
+    walk(scriptsDir, "");
+
+    const scripts = getAllScripts();
+    const registeredKeys = new Set(scripts.keys());
+
+    // Known exclusions: files intentionally not in getAllScripts()
+    const excluded = new Set(["hooks/linear_sync.py", "multi_agent/_bootstrap.py"]);
+
+    for (const file of fsFiles) {
+      if (excluded.has(file)) continue;
+      expect(
+        registeredKeys.has(file),
+        `${file} exists on disk but is missing from getAllScripts()`,
+      ).toBe(true);
     }
   });
 });
@@ -895,6 +954,51 @@ describe("regression: parse_simple_yaml Python execution (0.3.8)", () => {
 // =============================================================================
 // 8. Dead Code / Template Content Regressions
 // =============================================================================
+
+// =============================================================================
+// S4: Submodule + PR Awareness (beta.1)
+// =============================================================================
+
+describe("regression: submodule awareness in multi_agent scripts (beta.1)", () => {
+  it("[S4] start.py checks submodule status prefix before init (prevents detached HEAD)", () => {
+    // Critical: running `git submodule update --init` on already-initialized submodule
+    // detaches HEAD, destroying agent's in-progress work. Must check status prefix first.
+    expect(multiAgentStart).toContain("submodule status");
+    expect(multiAgentStart).toContain('prefix == "-"');
+    expect(multiAgentStart).toContain('prefix == "+"');
+  });
+
+  it("[S4] start.py imports submodule helpers from common.config", () => {
+    expect(multiAgentStart).toContain("get_submodule_packages");
+    expect(multiAgentStart).toContain("validate_package");
+  });
+
+  it("[S4] create_pr.py uses git symbolic-ref for portable base branch detection", () => {
+    // Must use `git symbolic-ref refs/remotes/origin/HEAD` (not grep + English output)
+    // for cross-platform / cross-locale compatibility
+    expect(multiAgentCreatePr).toContain("symbolic-ref");
+    expect(multiAgentCreatePr).toContain("refs/remotes/origin/HEAD");
+  });
+
+  it("[S4] create_pr.py guards submodule_prs read with isinstance", () => {
+    // Prevents TypeError crash when task.json has submodule_prs: null or non-dict
+    expect(multiAgentCreatePr).toContain("isinstance(raw_prs, dict)");
+  });
+
+  it("[S4] create_pr.py has squash-merge warning for submodule PRs", () => {
+    expect(multiAgentCreatePr).toContain("_SUBMODULE_SQUASH_WARNING_MARKER");
+    expect(multiAgentCreatePr).toContain("squash-merged");
+  });
+
+  it("[S4] cleanup.py defines AND calls _warn_submodule_prs", () => {
+    // Bug found during review: function was defined but never called.
+    // Verify both definition and at least one call site exist.
+    expect(multiAgentCleanup).toContain("def _warn_submodule_prs(");
+    // Count occurrences: 1 def + at least 2 calls = at least 3
+    const occurrences = multiAgentCleanup.split("_warn_submodule_prs").length - 1;
+    expect(occurrences).toBeGreaterThanOrEqual(3);
+  });
+});
 
 describe("regression: cross-platform-thinking-guide dead code removed (0.3.1)", () => {
   it("[0.3.1] guidesCrossPlatformThinkingGuideContent is not exported from markdown/index", () => {

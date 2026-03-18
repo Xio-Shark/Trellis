@@ -44,6 +44,19 @@ export const commonPhase = readTemplate("scripts/common/phase.py");
 export const commonRegistry = readTemplate("scripts/common/registry.py");
 export const commonCliAdapter = readTemplate("scripts/common/cli_adapter.py");
 export const commonConfig = readTemplate("scripts/common/config.py");
+export const commonIo = readTemplate("scripts/common/io.py");
+export const commonLog = readTemplate("scripts/common/log.py");
+export const commonGit = readTemplate("scripts/common/git.py");
+export const commonTypes = readTemplate("scripts/common/types.py");
+export const commonTasks = readTemplate("scripts/common/tasks.py");
+export const commonTaskContext = readTemplate("scripts/common/task_context.py");
+export const commonTaskStore = readTemplate("scripts/common/task_store.py");
+export const commonSessionContext = readTemplate(
+  "scripts/common/session_context.py",
+);
+export const commonPackagesContext = readTemplate(
+  "scripts/common/packages_context.py",
+);
 
 // Python scripts - multi_agent
 export const multiAgentInit = readTemplate("scripts/multi_agent/__init__.py");
@@ -54,6 +67,12 @@ export const multiAgentCreatePr = readTemplate(
   "scripts/multi_agent/create_pr.py",
 );
 export const multiAgentPlan = readTemplate("scripts/multi_agent/plan.py");
+export const multiAgentStatusDisplay = readTemplate(
+  "scripts/multi_agent/status_display.py",
+);
+export const multiAgentStatusMonitor = readTemplate(
+  "scripts/multi_agent/status_monitor.py",
+);
 
 // Python scripts - main
 export const getDeveloperScript = readTemplate("scripts/get_developer.py");
@@ -92,6 +111,15 @@ export function getAllScripts(): Map<string, string> {
   scripts.set("common/registry.py", commonRegistry);
   scripts.set("common/cli_adapter.py", commonCliAdapter);
   scripts.set("common/config.py", commonConfig);
+  scripts.set("common/io.py", commonIo);
+  scripts.set("common/log.py", commonLog);
+  scripts.set("common/git.py", commonGit);
+  scripts.set("common/types.py", commonTypes);
+  scripts.set("common/tasks.py", commonTasks);
+  scripts.set("common/task_context.py", commonTaskContext);
+  scripts.set("common/task_store.py", commonTaskStore);
+  scripts.set("common/session_context.py", commonSessionContext);
+  scripts.set("common/packages_context.py", commonPackagesContext);
 
   // Multi-agent
   scripts.set("multi_agent/__init__.py", multiAgentInit);
@@ -100,6 +128,8 @@ export function getAllScripts(): Map<string, string> {
   scripts.set("multi_agent/status.py", multiAgentStatus);
   scripts.set("multi_agent/create_pr.py", multiAgentCreatePr);
   scripts.set("multi_agent/plan.py", multiAgentPlan);
+  scripts.set("multi_agent/status_display.py", multiAgentStatusDisplay);
+  scripts.set("multi_agent/status_monitor.py", multiAgentStatusMonitor);
 
   // Main
   scripts.set("get_developer.py", getDeveloperScript);

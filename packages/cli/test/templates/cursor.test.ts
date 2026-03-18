@@ -7,13 +7,11 @@ import { getAllCommands } from "../../src/templates/cursor/index.js";
 
 // Cursor uses prefix naming: trellis-<name>.md (no subdirectory, no parallel)
 const EXPECTED_COMMAND_NAMES = [
-  "trellis-before-backend-dev",
-  "trellis-before-frontend-dev",
+  "trellis-before-dev",
   "trellis-brainstorm",
   "trellis-break-loop",
-  "trellis-check-backend",
   "trellis-check-cross-layer",
-  "trellis-check-frontend",
+  "trellis-check",
   "trellis-create-command",
   "trellis-finish-work",
   "trellis-integrate-skill",

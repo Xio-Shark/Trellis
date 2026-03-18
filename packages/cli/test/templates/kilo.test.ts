@@ -2,13 +2,11 @@ import { describe, expect, it } from "vitest";
 import { getAllWorkflows } from "../../src/templates/kilo/index.js";
 
 const EXPECTED_WORKFLOW_NAMES = [
-  "before-backend-dev",
-  "before-frontend-dev",
+  "before-dev",
   "brainstorm",
   "break-loop",
-  "check-backend",
   "check-cross-layer",
-  "check-frontend",
+  "check",
   "create-command",
   "finish-work",
   "integrate-skill",

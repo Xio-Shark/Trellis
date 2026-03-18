@@ -5,12 +5,17 @@ Add a new session to journal file and update index.md.
 
 Usage:
     python3 add_session.py --title "Title" --commit "hash" --summary "Summary" [--package cli]
-    echo "content" | python3 add_session.py --title "Title" --commit "hash"
+
+    # Pipe detailed content via stdin (use --stdin to opt in):
+    cat << 'EOF' | python3 add_session.py --stdin --title "Title" --summary "Summary"
+    <session content here>
+    EOF
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -20,11 +25,20 @@ from pathlib import Path
 from common.paths import (
     FILE_JOURNAL_PREFIX,
     get_repo_root,
+    get_current_task,
     get_developer,
     get_workspace_dir,
 )
 from common.developer import ensure_developer
-from common.config import get_session_commit_message, get_max_journal_lines
+from common.tasks import load_task
+from common.config import (
+    get_packages,
+    get_session_commit_message,
+    get_max_journal_lines,
+    is_monorepo,
+    resolve_package,
+    validate_package,
+)
 
 
 # =============================================================================
@@ -407,6 +421,8 @@ def main() -> int:
     parser.add_argument("--package", help="Package name tag (e.g., cli, docs-site)")
     parser.add_argument("--no-commit", action="store_true",
                         help="Skip auto-commit of workspace changes")
+    parser.add_argument("--stdin", action="store_true",
+                        help="Read extra content from stdin (explicit opt-in)")
 
     args = parser.parse_args()
 
@@ -415,13 +431,31 @@ def main() -> int:
         content_path = Path(args.content_file)
         if content_path.is_file():
             extra_content = content_path.read_text(encoding="utf-8")
-    elif not sys.stdin.isatty():
+    elif args.stdin:
         extra_content = sys.stdin.read()
 
+    # Resolve package: CLI → active task → default_package → None
+    repo_root = get_repo_root()
     package = args.package
-    if not package:
-        from common.config import get_default_package
-        package = get_default_package()
+    if package:
+        # CLI source: fail-fast in monorepo, ignore in single-repo
+        if not is_monorepo(repo_root):
+            print("Warning: --package ignored in single-repo project", file=sys.stderr)
+            package = None
+        elif not validate_package(package, repo_root):
+            packages = get_packages(repo_root)
+            available = ", ".join(sorted(packages.keys())) if packages else "(none)"
+            print(f"Error: unknown package '{package}'. Available: {available}", file=sys.stderr)
+            return 1
+    else:
+        # Inferred: active task's task.json.package → default_package → None
+        task_package = None
+        current = get_current_task(repo_root)
+        if current:
+            ct = load_task(repo_root / current)
+            if ct and ct.package:
+                task_package = ct.package
+        package = resolve_package(task_package, repo_root)
 
     return add_session(
         args.title, args.commit, args.summary, extra_content,

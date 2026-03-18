@@ -502,6 +502,99 @@ parser.add_argument(
 
 ---
 
+## Parsing Structured Command Output
+
+### CRITICAL: Preserve Semantic Whitespace
+
+Many CLI tools encode status information in leading/trailing whitespace characters. **Never blindly `.strip()` before parsing.**
+
+**Example — `git submodule status` output format**:
+
+```
+ abc1234 path/to/submodule (v1.0)     ← space prefix = initialized
+-def5678 path/to/other (v2.0)         ← minus prefix = not initialized
++ghi9012 path/to/modified (v3.0)      ← plus prefix = modified (out of sync)
+```
+
+```python
+# BAD — .strip() removes the leading space that means "initialized"
+status_line = status_out.strip()
+prefix = status_line[0]  # Reads commit hash char, not status prefix!
+
+# GOOD — parse the raw line, then strip individual fields
+raw_line = status_out.rstrip("\n")  # Only remove trailing newline
+if not raw_line:
+    continue
+prefix = raw_line[0]               # ' ', '-', or '+'
+rest = raw_line[1:].strip()        # Now safe to strip the rest
+commit_hash = rest.split()[0]
+```
+
+**General rule**: When a command's output uses positional formatting (columns, prefixes, fixed-width fields), parse the structure first, then clean up individual values.
+
+**Other commands with semantic whitespace**:
+- `git status --porcelain` — two-char status prefix (`XY`)
+- `git diff --name-status` — tab-separated with status prefix
+- `docker ps --format` — column-aligned output
+
+---
+
+## Monorepo Config API (`common/config.py`)
+
+### Config Functions
+
+| Function | Return | Purpose |
+|----------|--------|---------|
+| `is_monorepo(repo_root)` | `bool` | Whether `packages:` exists in config.yaml |
+| `get_packages(repo_root)` | `dict[str, dict] \| None` | All packages from config.yaml (`{name: {path, type?}}`) |
+| `get_default_package(repo_root)` | `str \| None` | The `default_package` from config.yaml |
+| `get_submodule_packages(repo_root)` | `dict[str, str]` | Packages with `type: submodule` (`{name: path}`) |
+| `get_spec_base(package, repo_root)` | `str` | `"spec"` (single-repo) or `"spec/<package>"` (monorepo) |
+| `validate_package(package, repo_root)` | `bool` | Whether package exists in config (always `True` for single-repo) |
+| `resolve_package(task_pkg, repo_root)` | `str \| None` | Resolve package: task → default → None |
+| `get_spec_scope(repo_root)` | `str \| list \| None` | The `session.spec_scope` config value |
+| `get_hooks(event, repo_root)` | `list[str]` | Hook commands for lifecycle event |
+
+### Config.yaml Schema
+
+```yaml
+# Auto-detected monorepo packages (written by trellis init)
+packages:
+  cli:
+    path: packages/cli
+  docs-site:
+    path: docs-site
+    type: submodule       # optional, marks git submodule
+default_package: cli      # first non-submodule package
+
+# Session behavior
+session:
+  spec_scope: active_task  # or ["cli", "docs-site"] or omit for full scan
+
+# Update behavior
+update:
+  skip:
+    - .claude/commands/trellis/my-custom.md
+
+# Lifecycle hooks
+hooks:
+  after_create:
+    - "python3 .trellis/scripts/hooks/my_hook.py create"
+```
+
+### Worktree Submodule Initialization
+
+When `start.py` creates a worktree for a task, it calls `_init_submodules_for_task()`:
+
+1. Read `packages` from config.yaml via `get_packages()`
+2. Resolve target package from task data or `default_package`
+3. Check if the package is a submodule via `get_submodule_packages()`
+4. Run `git submodule status <path>` in the worktree
+5. Parse the status prefix (see "Parsing Structured Command Output" above)
+6. If uninitialized (`-` prefix): run `git submodule update --init <path>`
+
+---
+
 ## Error Handling
 
 ### Exit Codes

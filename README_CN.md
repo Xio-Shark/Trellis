@@ -16,15 +16,25 @@
 <a href="https://docs.trytrellis.app/zh">文档</a> •
 <a href="https://docs.trytrellis.app/zh/guide/ch02-quick-start">快速开始</a> •
 <a href="https://docs.trytrellis.app/zh/guide/ch13-multi-platform">支持平台</a> •
-<a href="https://docs.trytrellis.app/zh/guide/ch08-real-world">使用场景</a>
+<a href="https://docs.trytrellis.app/zh/guide/ch08-real-world">使用场景</a> •
+<a href="#wechat-group">微信群</a>
 </p>
 
 <p align="center">
 <a href="https://www.npmjs.com/package/@mindfoldhq/trellis"><img src="https://img.shields.io/npm/v/@mindfoldhq/trellis.svg?style=flat-square&color=2563eb" alt="npm version" /></a>
+<a href="https://www.npmjs.com/package/@mindfoldhq/trellis"><img src="https://img.shields.io/npm/dw/@mindfoldhq/trellis?style=flat-square&color=cb3837&label=downloads" alt="npm downloads" /></a>
 <a href="https://github.com/mindfold-ai/Trellis/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-16a34a.svg?style=flat-square" alt="license" /></a>
 <a href="https://github.com/mindfold-ai/Trellis/stargazers"><img src="https://img.shields.io/github/stars/mindfold-ai/Trellis?style=flat-square&color=eab308" alt="stars" /></a>
 <a href="https://docs.trytrellis.app/zh"><img src="https://img.shields.io/badge/docs-trytrellis.app-0f766e?style=flat-square" alt="docs" /></a>
 <a href="https://discord.com/invite/tWcCZ3aRHc"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord" /></a>
+<a href="https://github.com/mindfold-ai/Trellis/issues"><img src="https://img.shields.io/github/issues/mindfold-ai/Trellis?style=flat-square&color=e67e22" alt="open issues" /></a>
+<a href="https://github.com/mindfold-ai/Trellis/pulls"><img src="https://img.shields.io/github/issues-pr/mindfold-ai/Trellis?style=flat-square&color=9b59b6" alt="open PRs" /></a>
+<a href="https://deepwiki.com/mindfold-ai/Trellis"><img src="https://img.shields.io/badge/Ask-DeepWiki-blue?style=flat-square" alt="Ask DeepWiki" /></a>
+<a href="https://chatgpt.com/?q=Explain+the+project+mindfold-ai/Trellis+on+GitHub"><img src="https://img.shields.io/badge/Ask-ChatGPT-74aa9c?style=flat-square&logo=openai&logoColor=white" alt="Ask ChatGPT" /></a>
+</p>
+
+<p align="center">
+<img src="assets/trellis-demo-zh.gif" alt="Trellis 工作流演示" width="100%">
 </p>
 
 <p align="center">
@@ -165,6 +175,8 @@ trellis init --registry https://github.com/your-org/your-spec-templates
 - [Tech Blog](https://docs.trytrellis.app/zh/blog) - 设计思路和技术文章
 - [GitHub Issues](https://github.com/mindfold-ai/Trellis/issues) - 提 Bug 或功能建议
 - [Discord](https://discord.com/invite/tWcCZ3aRHc) - 加入社区讨论
+
+<a id="wechat-group"></a>
 
 ### 微信群
 

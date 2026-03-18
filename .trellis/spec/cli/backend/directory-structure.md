@@ -198,6 +198,109 @@ Templates use `.txt` extension to:
 
 ---
 
+## Monorepo Detection (`project-detector.ts`)
+
+### `detectMonorepo(cwd)` Flow
+
+Detects monorepo workspace configuration and enumerates packages. Returns `DetectedPackage[]` or `null`.
+
+**Return value semantics**:
+
+| Return | Meaning |
+|--------|---------|
+| `null` | Not a monorepo (no workspace config or `.gitmodules` found) |
+| `[]` (empty array) | Monorepo config exists (e.g., `pnpm-workspace.yaml`) but no packages match on disk |
+| `[...]` (populated array) | Monorepo with detected packages |
+
+**Detection priority** (checked in order, results merged):
+
+1. `.gitmodules` — parsed first to build a submodule path set
+2. `pnpm-workspace.yaml` — `packages:` list
+3. `package.json` `workspaces` — array or `{packages: [...]}` (npm/yarn/bun)
+4. `Cargo.toml` `[workspace]` — `members` minus `exclude`
+5. `go.work` — `use` directives (block and single-line forms)
+6. `pyproject.toml` `[tool.uv.workspace]` — `members` list
+
+All workspace managers' glob patterns are expanded via `expandWorkspaceGlobs()`, and results are deduplicated by normalized path.
+
+### `DetectedPackage` Interface
+
+```typescript
+interface DetectedPackage {
+  name: string;         // From readPackageName() fallback chain
+  path: string;         // Normalized relative path (no ./ or trailing /)
+  type: ProjectType;    // Detected via detectProjectType() on the package dir
+  isSubmodule: boolean; // Whether the path appears in .gitmodules
+}
+```
+
+### `expandWorkspaceGlobs()` Limitations
+
+- Only supports `*` as a **full path segment** wildcard (e.g., `packages/*`, `crates/*/subcrate`)
+- Does **not** support `**` (recursive globbing), `?`, or character classes `[abc]`
+- Segments that are not exactly `*` are treated as literal path components
+- Dotfiles (directories starting with `.`) are excluded from wildcard matches
+- Supports `!` prefix for exclusion patterns (e.g., `!packages/internal`)
+
+### `readPackageName()` Fallback Chain
+
+Reads the package name from config files in priority order, falling back to the directory basename:
+
+1. `package.json` → `name` field
+2. `Cargo.toml` → `[package]` `name`
+3. `go.mod` → `module` directive (last path segment)
+4. `pyproject.toml` → `[project]` `name`
+5. Fallback: `path.basename(pkgPath)`
+
+### `.gitmodules` Auto-Detection
+
+When `.gitmodules` exists, its entries are parsed and:
+
+- Paths are added to the submodule lookup set
+- If no workspace manager is detected, submodule-only repos still return a non-null result (each submodule becomes a `DetectedPackage` with `isSubmodule: true`)
+- If workspace managers are also detected, submodule paths are merged: workspace packages at submodule paths get `isSubmodule: true`, and submodule paths not covered by any workspace manager are added as additional packages
+
+---
+
+## Monorepo Init Flow (`init.ts`)
+
+### CLI Flags
+
+| Flag | Behavior |
+|------|----------|
+| `--monorepo` | Force monorepo mode (error if no config detected) |
+| `--no-monorepo` | Skip monorepo detection entirely |
+| _(neither)_ | Auto-detect; prompt user to confirm if packages found |
+
+### Init Sequence (Monorepo Path)
+
+1. **Detect**: Call `detectMonorepo(cwd)` to find packages
+2. **Confirm**: In interactive mode, show detected packages and prompt "Enable monorepo mode?"
+3. **Per-package template**: For each package, ask whether to use blank spec or download a remote template (skipped with `-y`)
+4. **Create workflow structure**: Call `createWorkflowStructure()` with `packages` array, which creates per-package spec directories (`spec/<name>/backend/`, `spec/<name>/frontend/`, etc.)
+5. **Write config**: Call `writeMonorepoConfig()` to patch `config.yaml`
+
+### `writeMonorepoConfig()` Behavior
+
+Non-destructive config.yaml patch:
+
+- **Reads** existing `config.yaml` (no-op if file doesn't exist yet)
+- **Skips** if `packages:` key already present (re-init safety)
+- **Appends** `packages:` block with each package's `path` and optional `type: submodule`
+- **Sets** `default_package:` to the first non-submodule package (fallback to first package)
+
+### Per-Package Spec Directory Creation
+
+For each detected package, `createWorkflowStructure()` creates spec directories based on the package's detected `ProjectType`:
+
+- `backend` → `.trellis/spec/<name>/backend/*.md`
+- `frontend` → `.trellis/spec/<name>/frontend/*.md`
+- `fullstack` / `unknown` → both backend and frontend directories
+
+Packages that received a remote template download (tracked via `remoteSpecPackages` set) skip blank spec template creation.
+
+---
+
 ## DO / DON'T
 
 ### DO
