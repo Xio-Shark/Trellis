@@ -50,6 +50,7 @@ update:
   skip:
     - .claude/commands/
     - .agents/skills/
+    - .cursor/
 
 #-------------------------------------------------------------------------------
 # Task Lifecycle Hooks
