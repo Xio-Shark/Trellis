@@ -1,6 +1,6 @@
 # Platform Integration Guide
 
-How to add support for a new AI CLI platform (like Claude Code, Cursor, Gemini CLI, OpenCode, iFlow, Codex, Kilo, Kiro, Qoder).
+How to add support for a new AI CLI platform (like Claude Code, Cursor, Gemini CLI, OpenCode, iFlow, Codex, Kilo, Kiro, Qoder, CodeBuddy).
 
 ---
 
@@ -83,6 +83,16 @@ When adding a new platform `{platform}`, update the following:
 | `src/templates/{platform}/skills/<skill-name>/SKILL.md` | Skill definitions |
 
 > Note: Codex/Kiro/Qoder use skills (not slash commands). Skill content should use `$<skill-name>` / `/skills` semantics, not `/trellis:*` syntax. Qoder skills use YAML frontmatter (`---\nname: ...\n---`) at the top of each SKILL.md.
+
+**Commands-only with nesting pattern** (CodeBuddy):
+
+| Directory | Contents |
+|-----------|----------|
+| `src/templates/{platform}/` | Root directory |
+| `src/templates/{platform}/index.ts` | Export `getAllCommands(): CommandTemplate[]` |
+| `src/templates/{platform}/commands/trellis/` | Slash commands (`.md` files) in nested subdirectory |
+
+> Note: CodeBuddy uses nested directory namespacing like Claude/iFlow (`commands/trellis/start.md` → `/trellis:start`), but without hooks, agents, or settings. Same as "Commands-only" pattern but with subdirectory support.
 
 **Commands-only pattern** (Cursor):
 
@@ -255,6 +265,7 @@ These are now **automatically derived** from the registry:
 | Kiro | `$<skill-name>` / `/skills` | Markdown (`SKILL.md`) | `$start` |
 | Qoder | `$<skill-name>` / `/skills` | Markdown (`SKILL.md`) | `$start` |
 | Antigravity | `/<workflow-name>` | Markdown (`.md`) | `/start` |
+| CodeBuddy | `/trellis:xxx` | Markdown (`.md`) | `/trellis:start` |
 
 When creating platform templates, ensure references match the platform's interaction format and file format.
 
