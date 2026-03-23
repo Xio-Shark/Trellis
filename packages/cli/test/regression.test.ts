@@ -49,13 +49,14 @@ import {
   commonCliAdapter,
   commonWorktree,
   commonTaskUtils,
+  commonDeveloper,
   getAllScripts,
 } from "../src/templates/trellis/index.js";
 import {
   collectPlatformTemplates,
   PLATFORM_IDS,
 } from "../src/configurators/index.js";
-import { guidesIndexContent } from "../src/templates/markdown/index.js";
+import { guidesIndexContent, workspaceIndexContent } from "../src/templates/markdown/index.js";
 import * as markdownExports from "../src/templates/markdown/index.js";
 
 afterEach(() => {
@@ -115,11 +116,328 @@ describe("regression: Windows encoding (beta.10, beta.11, beta.16)", () => {
     expect(taskScript).toContain("from common");
   });
 
-  it("[rc.2] add_session.py table separator matching tolerates formatted markdown", () => {
+  it("[rc.2] add_session.py table separator detection uses regex (not startswith)", () => {
     // Bug: startswith("|---") breaks when formatters add spaces: "| ---- |"
-    // Fix: use re.match(r"^\\|\\s*-", line) to allow optional whitespace
+    // Fix: use re.match with a character-class pattern to allow optional whitespace/spaces
     expect(addSessionScript).not.toContain('startswith("|---")');
-    expect(addSessionScript).toContain(String.raw`re.match(r"^\|\s*-", line)`);
+    expect(addSessionScript).toContain(String.raw`re.match(r"^\|[-| ]+\|\s*$", line)`);
+  });
+});
+
+describe("regression: branch context in session records (issue-106)", () => {
+  it("[issue-106] add_session.py accepts --branch CLI arg", () => {
+    expect(addSessionScript).toContain("--branch");
+    expect(addSessionScript).not.toContain("--base-branch");
+  });
+
+  it("[issue-106] add_session.py auto-detects branch via git branch --show-current", () => {
+    expect(addSessionScript).toContain("branch --show-current");
+  });
+
+  it("[issue-106] add_session.py reads branch from task.json when available", () => {
+    expect(addSessionScript).toContain('task_data.raw.get("branch")');
+    expect(addSessionScript).not.toContain('task_data.raw.get("base_branch")');
+  });
+
+  it("[issue-106] add_session.py session content includes **Branch** field only", () => {
+    expect(addSessionScript).toContain("**Branch**");
+    expect(addSessionScript).not.toContain("**Base Branch**");
+  });
+
+  it("[issue-106] add_session.py index table header has 5 columns including Branch", () => {
+    expect(addSessionScript).toContain(
+      "| # | Date | Title | Commits | Branch |",
+    );
+    expect(addSessionScript).not.toContain(
+      "| # | Date | Title | Commits | Branch | Base Branch |",
+    );
+  });
+
+  it("[issue-106] add_session.py migrates old 4/6-column headers to 5-column", () => {
+    expect(addSessionScript).toContain(
+      String.raw`re.match(
+                r"^\|\s*#\s*\|\s*Date\s*\|\s*Title\s*\|\s*Commits\s*\|\s*Branch\s*\|\s*Base Branch\s*\|\s*$",`,
+    );
+    expect(addSessionScript).toContain(
+      String.raw`re.match(r"^\|\s*#\s*\|\s*Date\s*\|\s*Title\s*\|\s*Commits\s*\|\s*Branch\s*\|\s*$", line)`,
+    );
+  });
+
+  it("[issue-106] developer.py init template has 5-column session history table", () => {
+    expect(commonDeveloper).toContain(
+      "| # | Date | Title | Commits | Branch |",
+    );
+    expect(commonDeveloper).toContain(
+      "|---|------|-------|---------|--------|",
+    );
+  });
+
+  it("[issue-106] workspace-index.md template documents Branch field only for session records", () => {
+    expect(workspaceIndexContent).toContain("Branch: Which branch the work was done on");
+    expect(workspaceIndexContent).toContain("**Branch**: `{branch-name}`");
+    expect(workspaceIndexContent).not.toContain("**Base Branch**: `{base-branch-name}`");
+  });
+});
+
+describe("regression: add_session.py runtime branch context (issue-106)", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-session-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function writeTrellisScripts(): void {
+    const scriptsDir = path.join(tmpDir, ".trellis", "scripts");
+    for (const [relativePath, content] of getAllScripts()) {
+      const absPath = path.join(scriptsDir, relativePath);
+      fs.mkdirSync(path.dirname(absPath), { recursive: true });
+      fs.writeFileSync(absPath, content);
+    }
+  }
+
+  function createWorkspaceIndex(
+    headerMode: "legacy4" | "legacy6" | "current5",
+  ): void {
+    let header = "| # | Date | Title | Commits | Branch |";
+    let separator = "|---|------|-------|---------|--------|";
+    if (headerMode === "legacy4") {
+      header = "| # | Date | Title | Commits |";
+      separator = "|---|------|-------|---------|";
+    } else if (headerMode === "legacy6") {
+      header = "| # | Date | Title | Commits | Branch | Base Branch |";
+      separator = "|---|------|-------|---------|--------|-------------|";
+    }
+    const indexContent = `# Workspace Index - test-dev
+
+## Current Status
+
+<!-- @@@auto:current-status -->
+- **Active File**: \`journal-1.md\`
+- **Total Sessions**: 0
+- **Last Active**: -
+<!-- @@@/auto:current-status -->
+
+## Active Documents
+
+<!-- @@@auto:active-documents -->
+| File | Lines | Status |
+|------|-------|--------|
+| \`journal-1.md\` | ~0 | Active |
+<!-- @@@/auto:active-documents -->
+
+## Session History
+
+<!-- @@@auto:session-history -->
+${header}
+${separator}
+<!-- @@@/auto:session-history -->
+`;
+    fs.writeFileSync(
+      path.join(tmpDir, ".trellis", "workspace", "test-dev", "index.md"),
+      indexContent,
+      "utf-8",
+    );
+  }
+
+  function setupSessionRepo(options?: {
+    gitBranch?: string;
+    headerMode?: "legacy4" | "legacy6" | "current5";
+    taskBranch?: string;
+    taskBaseBranch?: string;
+  }): void {
+    writeTrellisScripts();
+
+    fs.mkdirSync(path.join(tmpDir, ".trellis", "workspace", "test-dev"), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      path.join(tmpDir, ".trellis", ".developer"),
+      "name=test-dev\ninitialized_at=2026-03-22T00:00:00\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, ".trellis", "workspace", "test-dev", "journal-1.md"),
+      "# Journal - test-dev (Part 1)\n\n---\n",
+      "utf-8",
+    );
+    createWorkspaceIndex(options?.headerMode ?? "current5");
+
+    if (options?.taskBranch || options?.taskBaseBranch) {
+      const taskDir = path.join(tmpDir, ".trellis", "tasks", "issue-106");
+      fs.mkdirSync(taskDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(tmpDir, ".trellis", ".current-task"),
+        ".trellis/tasks/issue-106\n",
+        "utf-8",
+      );
+      fs.writeFileSync(
+        path.join(taskDir, "task.json"),
+        JSON.stringify(
+          {
+            title: "Issue 106 task",
+            status: "in_progress",
+            package: null,
+            branch: options.taskBranch ?? null,
+            base_branch: options.taskBaseBranch ?? null,
+          },
+          null,
+          2,
+        ),
+        "utf-8",
+      );
+    }
+
+    if (options?.gitBranch) {
+      execSync("git init -q", { cwd: tmpDir });
+      execSync(`git branch -m ${JSON.stringify(options.gitBranch)}`, {
+        cwd: tmpDir,
+      });
+    }
+  }
+
+  function runAddSession(
+    title: string,
+    options?: { branch?: string },
+  ): void {
+    const command = [
+      "python3",
+      JSON.stringify(path.join(tmpDir, ".trellis", "scripts", "add_session.py")),
+      "--title",
+      JSON.stringify(title),
+      "--summary",
+      JSON.stringify("Regression test session"),
+      "--no-commit",
+    ];
+    if (options?.branch) {
+      command.push("--branch", JSON.stringify(options.branch));
+    }
+
+    execSync(command.join(" "), {
+      cwd: tmpDir,
+      encoding: "utf-8",
+    });
+  }
+
+  it("[issue-106] prefers explicit CLI branch over task.json and git", () => {
+    setupSessionRepo({
+      gitBranch: "feature/from-git",
+      taskBranch: "task/from-task",
+      taskBaseBranch: "main",
+    });
+
+    runAddSession("CLI branch wins", { branch: "cli/from-arg" });
+
+    const journal = fs.readFileSync(
+      path.join(tmpDir, ".trellis", "workspace", "test-dev", "journal-1.md"),
+      "utf-8",
+    );
+    const index = fs.readFileSync(
+      path.join(tmpDir, ".trellis", "workspace", "test-dev", "index.md"),
+      "utf-8",
+    );
+
+    expect(journal).toContain("**Branch**: `cli/from-arg`");
+    expect(journal).not.toContain("**Base Branch**:");
+    expect(journal).not.toContain("task/from-task");
+    expect(journal).not.toContain("feature/from-git");
+    expect(index).toContain("`cli/from-arg` |");
+    expect(index).not.toContain("`task/from-task`");
+    expect(index).not.toContain("`feature/from-git`");
+  });
+
+  it("[issue-106] prefers task.json branch over current git branch and ignores task base_branch", () => {
+    setupSessionRepo({
+      gitBranch: "feature/from-git",
+      taskBranch: "task/from-task",
+      taskBaseBranch: "main",
+    });
+
+    runAddSession("Task branch wins");
+
+    const journal = fs.readFileSync(
+      path.join(tmpDir, ".trellis", "workspace", "test-dev", "journal-1.md"),
+      "utf-8",
+    );
+    const index = fs.readFileSync(
+      path.join(tmpDir, ".trellis", "workspace", "test-dev", "index.md"),
+      "utf-8",
+    );
+
+    expect(journal).toContain("**Branch**: `task/from-task`");
+    expect(journal).not.toContain("**Base Branch**:");
+    expect(journal).not.toContain("feature/from-git");
+    expect(index).toContain("`task/from-task` |");
+    expect(index).not.toContain("`feature/from-git`");
+  });
+
+  it("[issue-106] falls back to git branch and migrates old 6-column session history", () => {
+    setupSessionRepo({
+      gitBranch: "feature/from-git",
+      headerMode: "legacy6",
+    });
+
+    runAddSession("Git branch fallback");
+
+    const journal = fs.readFileSync(
+      path.join(tmpDir, ".trellis", "workspace", "test-dev", "journal-1.md"),
+      "utf-8",
+    );
+    const index = fs.readFileSync(
+      path.join(tmpDir, ".trellis", "workspace", "test-dev", "index.md"),
+      "utf-8",
+    );
+
+    expect(journal).toContain("**Branch**: `feature/from-git`");
+    expect(journal).not.toContain("**Base Branch**:");
+    expect(index).toContain("| # | Date | Title | Commits | Branch |");
+    expect(index).toContain("|---|------|-------|---------|--------|");
+    expect(index).toContain("`feature/from-git` |");
+    expect(index).not.toContain(
+      "| # | Date | Title | Commits | Branch | Base Branch |\n|---|------|-------|---------|--------|-------------|",
+    );
+  });
+
+  it("[issue-106] migrates old 4-column session history directly to 5 columns", () => {
+    setupSessionRepo({
+      headerMode: "legacy4",
+    });
+
+    runAddSession("Legacy 4-column migration");
+
+    const index = fs.readFileSync(
+      path.join(tmpDir, ".trellis", "workspace", "test-dev", "index.md"),
+      "utf-8",
+    );
+
+    expect(index).toContain("| # | Date | Title | Commits | Branch |");
+    expect(index).toContain("|---|------|-------|---------|--------|");
+    expect(index).not.toContain(
+      "| # | Date | Title | Commits |\n|---|------|-------|---------|",
+    );
+  });
+
+  it("[issue-106] records a session even when no branch information is available", () => {
+    setupSessionRepo();
+
+    runAddSession("No branch available");
+
+    const journal = fs.readFileSync(
+      path.join(tmpDir, ".trellis", "workspace", "test-dev", "journal-1.md"),
+      "utf-8",
+    );
+    const index = fs.readFileSync(
+      path.join(tmpDir, ".trellis", "workspace", "test-dev", "index.md"),
+      "utf-8",
+    );
+
+    expect(journal).not.toContain("**Branch**:");
+    expect(journal).not.toContain("**Base Branch**:");
+    expect(index).toContain("`-` |");
+    expect(index).toContain("- **Total Sessions**: 1");
   });
 });
 

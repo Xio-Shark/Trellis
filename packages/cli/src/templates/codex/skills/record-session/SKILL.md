@@ -51,6 +51,7 @@ EOF
 **Auto-completes**:
 - [OK] Appends session to journal-N.md
 - [OK] Auto-detects line count, creates new file if >2000 lines
+- [OK] Auto-detects Branch context (`--branch` override; otherwise Branch = task.json -> current git branch; missing values are omitted gracefully)
 - [OK] Updates index.md (Total Sessions +1, Last Active, line stats, history)
 - [OK] Auto-commits .trellis/workspace and .trellis/tasks changes
 
@@ -61,6 +62,6 @@ EOF
 | Command | Purpose |
 |---------|---------|
 | `python3 ./.trellis/scripts/get_context.py --mode record` | Get context for record-session |
-| `python3 ./.trellis/scripts/add_session.py --title "..." --commit "..."` | **One-click add session (recommended)** |
+| `python3 ./.trellis/scripts/add_session.py --title "..." --commit "..."` | **One-click add session (recommended, branch auto-complete)** |
 | `python3 ./.trellis/scripts/task.py archive <name>` | Archive completed task (auto-commits) |
 | `python3 ./.trellis/scripts/task.py list` | List active tasks |

@@ -42,6 +42,7 @@ EOF
 **Auto-completes**:
 - [OK] Appends session to journal-N.md
 - [OK] Auto-detects line count, creates new file if >2000 lines
+- [OK] Auto-detects Branch context (`--branch` override; otherwise Branch = task.json -> current git branch; missing values are omitted gracefully)
 - [OK] Updates index.md (Total Sessions +1, Last Active, line stats, history)
 
 ---
