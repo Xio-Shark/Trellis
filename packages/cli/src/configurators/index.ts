@@ -10,7 +10,12 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { AI_TOOLS, type AITool, type CliFlag } from "../types/ai-tools.js";
+import {
+  AI_TOOLS,
+  getManagedPaths,
+  type AITool,
+  type CliFlag,
+} from "../types/ai-tools.js";
 
 // Platform configurators
 import { configureClaude } from "./claude.js";
@@ -23,6 +28,7 @@ import { configureKiro } from "./kiro.js";
 import { configureGemini } from "./gemini.js";
 import { configureAntigravity } from "./antigravity.js";
 import { configureQoder } from "./qoder.js";
+import { configureCodebuddy } from "./codebuddy.js";
 
 // Shared utilities
 import { resolvePlaceholders } from "./shared.js";
@@ -41,12 +47,20 @@ import {
   getAllHooks as getIflowHooks,
   getSettingsTemplate as getIflowSettings,
 } from "../templates/iflow/index.js";
-import { getAllSkills as getCodexSkills } from "../templates/codex/index.js";
+import {
+  getAllAgents as getCodexAgents,
+  getAllCodexSkills as getCodexPlatformSkills,
+  getAllHooks as getCodexHooks,
+  getAllSkills as getCodexSkills,
+  getConfigTemplate as getCodexConfigTemplate,
+  getHooksConfig as getCodexHooksConfig,
+} from "../templates/codex/index.js";
 import { getAllWorkflows as getKiloWorkflows } from "../templates/kilo/index.js";
 import { getAllSkills as getKiroSkills } from "../templates/kiro/index.js";
 import { getAllCommands as getGeminiCommands } from "../templates/gemini/index.js";
 import { getAllWorkflows as getAntigravityWorkflows } from "../templates/antigravity/index.js";
 import { getAllSkills as getQoderSkills } from "../templates/qoder/index.js";
+import { getAllCommands as getCodebuddyCommands } from "../templates/codebuddy/index.js";
 
 // =============================================================================
 // Platform Functions Registry
@@ -136,6 +150,18 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
       for (const skill of getCodexSkills()) {
         files.set(`.agents/skills/${skill.name}/SKILL.md`, skill.content);
       }
+      for (const skill of getCodexPlatformSkills()) {
+        files.set(`.codex/skills/${skill.name}/SKILL.md`, skill.content);
+      }
+      for (const agent of getCodexAgents()) {
+        files.set(`.codex/agents/${agent.name}.toml`, agent.content);
+      }
+      for (const hook of getCodexHooks()) {
+        files.set(`.codex/hooks/${hook.name}`, hook.content);
+      }
+      files.set(".codex/hooks.json", getCodexHooksConfig());
+      const config = getCodexConfigTemplate();
+      files.set(`.codex/${config.targetPath}`, config.content);
       return files;
     },
   },
@@ -189,6 +215,17 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
       return files;
     },
   },
+  codebuddy: {
+    configure: configureCodebuddy,
+    collectTemplates: () => {
+      const files = new Map<string, string>();
+      // Commands in trellis/ subdirectory (CodeBuddy supports nested dirs)
+      for (const cmd of getCodebuddyCommands()) {
+        files.set(`.codebuddy/commands/trellis/${cmd.name}.md`, cmd.content);
+      }
+      return files;
+    },
+  },
 };
 
 // =============================================================================
@@ -201,11 +238,20 @@ export const PLATFORM_IDS = Object.keys(AI_TOOLS) as AITool[];
 /** All platform config directory names (e.g., [".claude", ".cursor", ".iflow", ".opencode"]) */
 export const CONFIG_DIRS = PLATFORM_IDS.map((id) => AI_TOOLS[id].configDir);
 
+/** All managed paths for every platform (primary configDir + extra managed paths). */
+export const PLATFORM_MANAGED_DIRS = PLATFORM_IDS.flatMap((id) =>
+  getManagedPaths(id),
+);
+
 /** All directories managed by Trellis (including .trellis itself) */
-export const ALL_MANAGED_DIRS = [".trellis", ...CONFIG_DIRS];
+export const ALL_MANAGED_DIRS = [".trellis", ...new Set(PLATFORM_MANAGED_DIRS)];
 
 /**
- * Detect which platforms are configured by checking for directory existence
+ * Detect which platforms are configured by checking for configDir existence.
+ *
+ * Note: Detection uses only `configDir` (the platform-specific directory),
+ * NOT shared layers like `.agents/skills/`. This prevents false positives
+ * where a shared directory triggers detection of a specific platform.
  */
 export function getConfiguredPlatforms(cwd: string): Set<AITool> {
   const platforms = new Set<AITool>();
@@ -240,6 +286,13 @@ export function isManagedPath(dirPath: string): boolean {
  */
 export function isManagedRootDir(dirName: string): boolean {
   return ALL_MANAGED_DIRS.includes(dirName);
+}
+
+/**
+ * Get all managed paths for a platform.
+ */
+export function getPlatformManagedPaths(platformId: AITool): string[] {
+  return getManagedPaths(platformId);
 }
 
 /**

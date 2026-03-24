@@ -4,6 +4,7 @@ import chalk from "chalk";
 import inquirer from "inquirer";
 
 import { PATHS, DIR_NAMES } from "../constants/paths.js";
+import type { AITool } from "../types/ai-tools.js";
 import { VERSION, PACKAGE_NAME } from "../constants/version.js";
 import {
   getMigrationsForVersion,
@@ -318,9 +319,40 @@ export function loadUpdateSkipPaths(cwd: string): string[] {
  * Collect all template files that should be managed by update
  * Only collects templates for platforms that are already configured (have directories)
  */
-function collectTemplateFiles(cwd: string): Map<string, string> {
+/**
+ * Detect if legacy Codex upgrade is needed.
+ *
+ * Old Trellis versions used `.agents/skills/` as codex's configDir.
+ * New versions use `.codex/` for Codex-specific config and `.agents/skills/`
+ * as a shared layer.
+ *
+ * Detection: Trellis-tracked hashes contain `.agents/skills/` entries
+ * but `.codex/` does not exist. This avoids misclassifying repos that
+ * have `.agents/skills/` from other tools (Kimi CLI, Amp, etc.).
+ *
+ * Returns true if upgrade is needed. Does NOT perform the upgrade —
+ * caller should run configurePlatform("codex") after backup/confirm.
+ */
+function needsCodexUpgrade(cwd: string): boolean {
+  if (fs.existsSync(path.join(cwd, ".codex"))) {
+    return false;
+  }
+
+  const hashes = loadHashes(cwd);
+  return Object.keys(hashes).some((key) => key.startsWith(".agents/skills/"));
+}
+
+function collectTemplateFiles(
+  cwd: string,
+  extraPlatforms?: Set<AITool>,
+): Map<string, string> {
   const files = new Map<string, string>();
   const platforms = getConfiguredPlatforms(cwd);
+  if (extraPlatforms) {
+    for (const p of extraPlatforms) {
+      platforms.add(p);
+    }
+  }
 
   // Python scripts (single source of truth: getAllScripts())
   for (const [scriptPath, content] of getAllScripts()) {
@@ -1321,8 +1353,21 @@ export async function update(options: UpdateOptions): Promise<void> {
     );
   }
 
+  // Detect legacy Codex (has .agents/skills/ tracked by Trellis but no .codex/)
+  const codexUpgradeNeeded = needsCodexUpgrade(cwd);
+  if (codexUpgradeNeeded) {
+    console.log(
+      chalk.yellow(
+        "  Legacy Codex detected: .agents/skills/ tracked without .codex/ — will create .codex/ directory",
+      ),
+    );
+  }
+
   // Collect templates (used for both migration classification and change analysis)
-  const templates = collectTemplateFiles(cwd);
+  const templates = collectTemplateFiles(
+    cwd,
+    codexUpgradeNeeded ? new Set<AITool>(["codex"]) : undefined,
+  );
 
   // Load update.skip paths (used for both safe-file-delete and template collection)
   const skipPaths = loadUpdateSkipPaths(cwd);

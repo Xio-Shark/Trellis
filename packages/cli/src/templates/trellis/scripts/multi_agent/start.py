@@ -187,7 +187,7 @@ def main() -> int:
     parser.add_argument("task_dir", help="Task directory path")
     parser.add_argument(
         "--platform", "-p",
-        choices=["claude", "cursor", "iflow", "opencode", "qoder"],
+        choices=["claude", "cursor", "iflow", "opencode", "codex", "qoder"],
         default=DEFAULT_PLATFORM,
         help="Platform to use (default: claude)"
     )
@@ -218,11 +218,12 @@ def main() -> int:
         log_error(f"task.json not found at {task_json_path}")
         return 1
 
-    dispatch_md = adapter.get_agent_path("dispatch", project_root)
-    if not dispatch_md.is_file():
-        log_error(f"dispatch.md not found at {dispatch_md}")
-        log_info(f"Platform: {platform}")
-        return 1
+    if adapter.requires_agent_definition_file:
+        dispatch_md = adapter.get_agent_path("dispatch", project_root)
+        if not dispatch_md.is_file():
+            log_error(f"Agent definition not found at {dispatch_md}")
+            log_info(f"Platform: {platform}")
+            return 1
 
     config_file = get_worktree_config(project_root)
     if not config_file.is_file():

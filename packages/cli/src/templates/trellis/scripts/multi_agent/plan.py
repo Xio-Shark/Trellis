@@ -53,7 +53,7 @@ def main() -> int:
     parser.add_argument("--requirement", "-r", required=True, help="Requirement description")
     parser.add_argument(
         "--platform", "-p",
-        choices=["claude", "cursor", "iflow", "opencode", "qoder"],
+        choices=["claude", "cursor", "iflow", "opencode", "codex", "qoder"],
         default=DEFAULT_PLATFORM,
         help="Platform to use (default: claude)"
     )
@@ -76,11 +76,12 @@ def main() -> int:
     project_root = get_repo_root()
 
     # Check plan agent exists (path varies by platform)
-    plan_md = adapter.get_agent_path("plan", project_root)
-    if not plan_md.is_file():
-        log_error(f"plan agent not found at {plan_md}")
-        log_info(f"Platform: {platform}")
-        return 1
+    if adapter.requires_agent_definition_file:
+        plan_md = adapter.get_agent_path("plan", project_root)
+        if not plan_md.is_file():
+            log_error(f"Agent definition not found at {plan_md}")
+            log_info(f"Platform: {platform}")
+            return 1
 
     ensure_developer(project_root)
 

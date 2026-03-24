@@ -44,6 +44,14 @@ describe("registry internal consistency", () => {
     }
   });
 
+  it("platforms with supportsAgentSkills do not use .agents/skills as configDir", () => {
+    for (const id of PLATFORM_IDS) {
+      if (AI_TOOLS[id].supportsAgentSkills) {
+        expect(AI_TOOLS[id].configDir).not.toBe(".agents/skills");
+      }
+    }
+  });
+
   it("no configDir collides with .trellis", () => {
     for (const id of PLATFORM_IDS) {
       expect(AI_TOOLS[id].configDir).not.toBe(".trellis");

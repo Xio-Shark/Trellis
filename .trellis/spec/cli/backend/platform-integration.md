@@ -1,6 +1,6 @@
 # Platform Integration Guide
 
-How to add support for a new AI CLI platform (like Claude Code, Cursor, Gemini CLI, OpenCode, iFlow, Codex, Kilo, Kiro, Qoder).
+How to add support for a new AI CLI platform (like Claude Code, Cursor, Gemini CLI, OpenCode, iFlow, Codex, Kilo, Kiro, Qoder, CodeBuddy).
 
 ---
 
@@ -83,6 +83,32 @@ When adding a new platform `{platform}`, update the following:
 | `src/templates/{platform}/skills/<skill-name>/SKILL.md` | Skill definitions |
 
 > Note: Codex/Kiro/Qoder use skills (not slash commands). Skill content should use `$<skill-name>` / `/skills` semantics, not `/trellis:*` syntax. Qoder skills use YAML frontmatter (`---\nname: ...\n---`) at the top of each SKILL.md.
+>
+> **Codex has a three-layer directory model:**
+>
+> | Layer | Install Path | Template Source | Purpose |
+> |-------|-------------|-----------------|---------|
+> | Shared skills | `.agents/skills/` | `src/templates/codex/skills/` | Cross-platform skills (agentskills.io standard) |
+> | Codex-specific skills | `.codex/skills/` | `src/templates/codex/codex-skills/` | Platform-specific skills (e.g. `parallel` with `--platform codex`) |
+> | Codex config/agents/hooks | `.codex/` | `src/templates/codex/{agents,hooks,config.toml,hooks.json}` | Config, custom agents, SessionStart hook |
+>
+> **Key rules:**
+> - Shared skills in `.agents/skills/` must NOT contain platform-specific references (no `--platform codex`, no `codex exec`)
+> - Codex-specific skills go in `.codex/skills/` (via `codex-skills/` template dir)
+> - Agent TOML format: `name` + `description` + `developer_instructions` + optional `sandbox_mode` (NOT `[sandbox_read_only]` + `prompt`)
+> - Codex hooks require `features.codex_hooks = true` in user config (experimental as of v0.116.0)
+> - Platform detection uses `.codex/` only — `.agents/skills/` alone does NOT trigger codex detection
+> - `configDir` is `".codex"`, with `supportsAgentSkills: true` to auto-include `.agents/skills` in managed paths
+
+**Commands-only with nesting pattern** (CodeBuddy):
+
+| Directory | Contents |
+|-----------|----------|
+| `src/templates/{platform}/` | Root directory |
+| `src/templates/{platform}/index.ts` | Export `getAllCommands(): CommandTemplate[]` |
+| `src/templates/{platform}/commands/trellis/` | Slash commands (`.md` files) in nested subdirectory |
+
+> Note: CodeBuddy uses nested directory namespacing like Claude/iFlow (`commands/trellis/start.md` → `/trellis:start`), but without hooks, agents, or settings. Same as "Commands-only" pattern but with subdirectory support.
 
 **Commands-only pattern** (Cursor):
 
@@ -177,7 +203,13 @@ When adding a new platform `{platform}`, update the following:
 
 > Note: Python scripts run in user projects at runtime — they cannot import from the TS registry and maintain their own registry in `cli_adapter.py`.
 >
-> Current scope for Codex integration: common scripts + `task.py` context path mapping. Multi-agent runtime (`multi_agent/*.py`) is intentionally out of scope.
+> **Codex-specific CLIAdapter notes:**
+> - `config_dir_name` returns `".codex"` (not `".agents"`)
+> - `get_agent_path` returns `.toml` for codex (not `.md`)
+> - `requires_agent_definition_file` is `False` — Codex auto-discovers agents from `.codex/agents/*.toml`, no `--agent` CLI flag
+> - `detect_platform` checks `.codex/` existence (not `.agents/skills/`)
+> - Multi-agent scripts (`plan.py`, `start.py`) skip agent file validation for codex via `requires_agent_definition_file`
+> - **CRITICAL**: Template copy (`src/templates/trellis/scripts/`) must be byte-identical to live copy (`.trellis/scripts/`)
 
 ### Step 7: Documentation
 
@@ -255,6 +287,7 @@ These are now **automatically derived** from the registry:
 | Kiro | `$<skill-name>` / `/skills` | Markdown (`SKILL.md`) | `$start` |
 | Qoder | `$<skill-name>` / `/skills` | Markdown (`SKILL.md`) | `$start` |
 | Antigravity | `/<workflow-name>` | Markdown (`.md`) | `/start` |
+| CodeBuddy | `/trellis:xxx` | Markdown (`.md`) | `/trellis:start` |
 
 When creating platform templates, ensure references match the platform's interaction format and file format.
 

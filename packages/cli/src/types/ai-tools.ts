@@ -17,7 +17,8 @@ export type AITool =
   | "kiro"
   | "gemini"
   | "antigravity"
-  | "qoder";
+  | "qoder"
+  | "codebuddy";
 
 /**
  * Template directory categories
@@ -33,7 +34,8 @@ export type TemplateDir =
   | "kiro"
   | "gemini"
   | "antigravity"
-  | "qoder";
+  | "qoder"
+  | "codebuddy";
 
 /**
  * CLI flag names for platform selection (e.g., --claude, --cursor, --kilo, --kiro, --gemini, --antigravity)
@@ -49,7 +51,8 @@ export type CliFlag =
   | "kiro"
   | "gemini"
   | "antigravity"
-  | "qoder";
+  | "qoder"
+  | "codebuddy";
 
 /**
  * Configuration for an AI tool
@@ -61,6 +64,12 @@ export interface AIToolConfig {
   templateDirs: TemplateDir[];
   /** Config directory name in the project root (e.g., ".claude") */
   configDir: string;
+  /**
+   * Whether the platform supports the shared `.agents/skills/` layer
+   * (agentskills.io open standard). When true, `.agents/skills` is added
+   * to the platform's managed paths automatically.
+   */
+  supportsAgentSkills?: boolean;
   /** CLI flag name for --flag options (e.g., "claude" for --claude) */
   cliFlag: CliFlag;
   /** Whether this tool is checked by default in interactive init prompt */
@@ -116,7 +125,8 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
   codex: {
     name: "Codex",
     templateDirs: ["common", "codex"],
-    configDir: ".agents/skills",
+    configDir: ".codex",
+    supportsAgentSkills: true,
     cliFlag: "codex",
     defaultChecked: false,
     hasPythonHooks: false,
@@ -161,6 +171,14 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     defaultChecked: false,
     hasPythonHooks: false,
   },
+  codebuddy: {
+    name: "CodeBuddy",
+    templateDirs: ["common", "codebuddy"],
+    configDir: ".codebuddy",
+    cliFlag: "codebuddy",
+    defaultChecked: false,
+    hasPythonHooks: false,
+  },
 };
 
 /**
@@ -168,6 +186,18 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
  */
 export function getToolConfig(tool: AITool): AIToolConfig {
   return AI_TOOLS[tool];
+}
+
+/**
+ * Get all managed paths for a specific tool.
+ */
+export function getManagedPaths(tool: AITool): string[] {
+  const config = AI_TOOLS[tool];
+  const paths = [config.configDir];
+  if (config.supportsAgentSkills) {
+    paths.push(".agents/skills");
+  }
+  return paths;
 }
 
 /**

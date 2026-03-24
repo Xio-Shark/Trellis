@@ -63,6 +63,7 @@ describe("init() integration", () => {
     // Default platforms: cursor + claude
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, ".codex"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".agents", "skills"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".agent", "workflows"))).toBe(
       false,
@@ -70,6 +71,7 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".kiro", "skills"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".gemini"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".qoder"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".codebuddy"))).toBe(false);
 
     // Root files
     expect(fs.existsSync(path.join(tmpDir, "AGENTS.md"))).toBe(true);
@@ -82,6 +84,7 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".iflow"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".opencode"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".codex"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".agents", "skills"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".agent", "workflows"))).toBe(
       false,
@@ -89,6 +92,7 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".kiro", "skills"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".gemini"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".qoder"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".codebuddy"))).toBe(false);
   });
 
   it("#3 multi platform creates all selected platform directories", async () => {
@@ -98,6 +102,7 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".opencode"))).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".iflow"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".codex"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".agents", "skills"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".agent", "workflows"))).toBe(
       false,
@@ -105,9 +110,10 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".kiro", "skills"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".gemini"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".qoder"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".codebuddy"))).toBe(false);
   });
 
-  it("#3b codex platform creates .agents/skills", async () => {
+  it("#3b codex platform creates skills plus .codex assets", async () => {
     await init({ yes: true, codex: true });
 
     expect(fs.existsSync(path.join(tmpDir, ".agents", "skills"))).toBe(true);
@@ -116,9 +122,25 @@ describe("init() integration", () => {
         path.join(tmpDir, ".agents", "skills", "start", "SKILL.md"),
       ),
     ).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, ".codex", "config.toml"))).toBe(true);
     expect(
-      fs.existsSync(path.join(tmpDir, ".agents", "skills", "parallel")),
-    ).toBe(false);
+      fs.existsSync(
+        path.join(tmpDir, ".codex", "agents", "check.toml"),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".codex", "skills", "parallel", "SKILL.md"),
+      ),
+    ).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, ".codex", "hooks.json"))).toBe(
+      true,
+    );
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".codex", "hooks", "session-start.py"),
+      ),
+    ).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".gemini"))).toBe(false);
@@ -147,11 +169,6 @@ describe("init() integration", () => {
     expect(
       fs.existsSync(path.join(tmpDir, ".agent", "workflows", "start.md")),
     ).toBe(true);
-    expect(
-      fs.existsSync(
-        path.join(tmpDir, ".agent", "workflows", "parallel.md"),
-      ),
-    ).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".gemini"))).toBe(false);
@@ -166,6 +183,21 @@ describe("init() integration", () => {
     expect(
       fs.existsSync(
         path.join(tmpDir, ".qoder", "skills", "start", "SKILL.md"),
+      ),
+    ).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(false);
+  });
+
+  it("#3h codebuddy platform creates .codebuddy/commands/trellis", async () => {
+    await init({ yes: true, codebuddy: true });
+
+    expect(
+      fs.existsSync(path.join(tmpDir, ".codebuddy", "commands", "trellis")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".codebuddy", "commands", "trellis", "start.md"),
       ),
     ).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(false);

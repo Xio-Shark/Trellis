@@ -8,7 +8,7 @@
 
 <p align="center">
 <strong>A multi-platform AI coding framework that rules</strong><br/>
-<sub>Supports Claude Code, Cursor, OpenCode, iFlow, Codex, Kilo, Kiro, Gemini CLI, Antigravity, and Qoder.</sub>
+<sub>Supports Claude Code, Cursor, OpenCode, iFlow, Codex, Kilo, Kiro, Gemini CLI, Antigravity, Qoder, and CodeBuddy.</sub>
 </p>
 
 <p align="center">
@@ -61,7 +61,7 @@ trellis init --cursor --opencode --codex -u your-name
 ```
 
 - `-u your-name` creates `.trellis/workspace/your-name/` for personal journals and session continuity.
-- Platform flags can be mixed and matched. Current options include `--cursor`, `--opencode`, `--iflow`, `--codex`, `--kilo`, `--kiro`, `--gemini`, `--antigravity`, and `--qoder`.
+- Platform flags can be mixed and matched. Current options include `--cursor`, `--opencode`, `--iflow`, `--codex`, `--kilo`, `--kiro`, `--gemini`, `--antigravity`, `--qoder`, and `--codebuddy`.
 - For platform-specific setup, entry commands, and upgrade paths, use the docs:
   [Quick Start](https://docs.trytrellis.app/guide/ch02-quick-start) •
   [Supported Platforms](https://docs.trytrellis.app/guide/ch13-multi-platform) •
@@ -98,7 +98,7 @@ Trellis keeps the core workflow in `.trellis/` and generates the platform-specif
 └── scripts/                 # Utilities that power the workflow
 ```
 
-Depending on the platforms you enable, Trellis also creates tool-specific integration files such as `.claude/`, `.cursor/`, `AGENTS.md`, `.agents/`, `.kilocode/`, and `.kiro/`.
+Depending on the platforms you enable, Trellis also creates tool-specific integration files such as `.claude/`, `.cursor/`, `AGENTS.md`, `.agents/`, `.codex/`, `.kilocode/`, and `.kiro/`. For Codex, Trellis now installs both project skills under `.agents/skills/` and project-scoped config/custom agents under `.codex/`.
 
 At a high level, the workflow is simple:
 

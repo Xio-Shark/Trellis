@@ -659,6 +659,7 @@ describe("regression: update only configured platforms (beta.16)", () => {
       "gemini",
       "antigravity",
       "qoder",
+      "codebuddy",
     ] as const;
     for (const id of withTracking) {
       const result = collectPlatformTemplates(id);
@@ -887,7 +888,8 @@ describe("regression: platform additions (beta.9, beta.13, beta.16)", () => {
 
   it("[codex] Codex platform is registered", () => {
     expect(AI_TOOLS).toHaveProperty("codex");
-    expect(AI_TOOLS.codex.configDir).toBe(".agents/skills");
+    expect(AI_TOOLS.codex.configDir).toBe(".codex");
+    expect(AI_TOOLS.codex.supportsAgentSkills).toBe(true);
   });
 
   it("[kiro] Kiro platform is registered", () => {
@@ -908,6 +910,11 @@ describe("regression: platform additions (beta.9, beta.13, beta.16)", () => {
   it("[qoder] Qoder platform is registered", () => {
     expect(AI_TOOLS).toHaveProperty("qoder");
     expect(AI_TOOLS.qoder.configDir).toBe(".qoder");
+  });
+
+  it("[codebuddy] CodeBuddy platform is registered", () => {
+    expect(AI_TOOLS).toHaveProperty("codebuddy");
+    expect(AI_TOOLS.codebuddy.configDir).toBe(".codebuddy");
   });
 
   it("[beta.9] all platforms have consistent required fields", () => {
@@ -943,6 +950,12 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
   it("[codex] cli_adapter.py supports codex platform", () => {
     expect(commonCliAdapter).toContain('"codex"');
     expect(commonCliAdapter).toContain(".agents");
+    expect(commonCliAdapter).toContain(".codex");
+  });
+
+  it("[codex] multi_agent plan/start scripts allow codex platform", () => {
+    expect(multiAgentPlan).toContain('"codex"');
+    expect(multiAgentStart).toContain('"codex"');
   });
 
   it("[kiro] cli_adapter.py supports kiro platform", () => {
@@ -965,6 +978,11 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
     expect(commonCliAdapter).toContain(".qoder");
   });
 
+  it("[codebuddy] cli_adapter.py supports codebuddy platform", () => {
+    expect(commonCliAdapter).toContain('"codebuddy"');
+    expect(commonCliAdapter).toContain(".codebuddy");
+  });
+
   it("[beta.9] cli_adapter.py has detect_platform function", () => {
     expect(commonCliAdapter).toContain("def detect_platform");
   });
@@ -981,11 +999,12 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
     expect(commonCliAdapter).toContain(".cursor");
     expect(commonCliAdapter).toContain(".opencode");
     expect(commonCliAdapter).toContain(".iflow");
-    expect(commonCliAdapter).toContain(".agents");
+    expect(commonCliAdapter).toContain(".codex");
     expect(commonCliAdapter).toContain(".kiro");
     expect(commonCliAdapter).toContain(".gemini");
     expect(commonCliAdapter).toContain(".agent");
     expect(commonCliAdapter).toContain(".qoder");
+    expect(commonCliAdapter).toContain(".codebuddy");
   });
 
   it("[0.3.10] iFlow CLI uses correct agent invocation syntax", () => {
@@ -1172,6 +1191,20 @@ describe("regression: collectTemplates paths match init directory structure (0.3
         "/commands/",
       );
     }
+  });
+
+  it("[codex] collectTemplates tracks both .agents skills and .codex assets", () => {
+    const templates = collectPlatformTemplates("codex");
+    expect(templates).toBeInstanceOf(Map);
+    if (!templates) return;
+
+    const keys = [...templates.keys()];
+    expect(keys.some((key) => key.startsWith(".agents/skills/"))).toBe(true);
+    expect(keys.some((key) => key.startsWith(".codex/skills/"))).toBe(true);
+    expect(keys.some((key) => key.startsWith(".codex/agents/"))).toBe(true);
+    expect(keys.some((key) => key.startsWith(".codex/hooks/"))).toBe(true);
+    expect(keys).toContain(".codex/hooks.json");
+    expect(keys).toContain(".codex/config.toml");
   });
 });
 
