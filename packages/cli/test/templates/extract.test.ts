@@ -6,6 +6,7 @@ import {
   getClaudeTemplatePath,
   getOpenCodeTemplatePath,
   getIflowTemplatePath,
+  getCodexTemplatePath,
   getKiloTemplatePath,
   getKiroTemplatePath,
   getGeminiTemplatePath,
@@ -17,6 +18,7 @@ import {
   getClaudeSourcePath,
   getIflowSourcePath,
   getOpenCodeSourcePath,
+  getCodexSourcePath,
   getKiroSourcePath,
   getGeminiSourcePath,
   getAntigravitySourcePath,
@@ -62,6 +64,12 @@ describe("template path functions", () => {
 
   it("getIflowTemplatePath returns existing directory", () => {
     const p = getIflowTemplatePath();
+    expect(fs.existsSync(p)).toBe(true);
+    expect(fs.statSync(p).isDirectory()).toBe(true);
+  });
+
+  it("getCodexTemplatePath returns existing directory", () => {
+    const p = getCodexTemplatePath();
     expect(fs.existsSync(p)).toBe(true);
     expect(fs.statSync(p).isDirectory()).toBe(true);
   });
@@ -126,6 +134,10 @@ describe("deprecated source path aliases", () => {
 
   it("getOpenCodeSourcePath equals getOpenCodeTemplatePath", () => {
     expect(getOpenCodeSourcePath()).toBe(getOpenCodeTemplatePath());
+  });
+
+  it("getCodexSourcePath equals getCodexTemplatePath", () => {
+    expect(getCodexSourcePath()).toBe(getCodexTemplatePath());
   });
 
   it("getKiroSourcePath equals getKiroTemplatePath", () => {
