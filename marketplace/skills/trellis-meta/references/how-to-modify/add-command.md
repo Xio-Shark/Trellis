@@ -2,7 +2,7 @@
 
 Add a new `/trellis:my-command` command.
 
-**Platform**: All (9 platforms — each has its own command format)
+**Platform**: All (11 platforms — each has its own command format)
 
 ---
 
@@ -59,16 +59,18 @@ What the command produces.
 
 Commands are automatically mirrored to configured platforms by `trellis init` and `trellis update`. Each platform uses its own format:
 
-| Platform    | Path                                       | Format   |
-| ----------- | ------------------------------------------ | -------- |
-| Cursor      | `.cursor/commands/trellis-my-command.md`   | Markdown |
-| OpenCode    | `.opencode/agents/trellis-my-command.md`   | Markdown |
-| iFlow       | `.iflow/commands/trellis/my-command.md`    | Markdown |
-| Codex       | `.agents/skills/my-command/SKILL.md`       | Skill    |
-| Kilo        | `.kilocode/commands/trellis/my-command.md` | Markdown |
-| Kiro        | `.kiro/skills/my-command/SKILL.md`         | Skill    |
-| Gemini CLI  | `.gemini/commands/trellis/my-command.toml` | TOML     |
-| Antigravity | `.agent/workflows/my-command.md`           | Markdown |
+| Platform    | Path                                            | Format   |
+| ----------- | ----------------------------------------------- | -------- |
+| Cursor      | `.cursor/commands/trellis-my-command.md`        | Markdown |
+| OpenCode    | `.opencode/agents/trellis-my-command.md`        | Markdown |
+| iFlow       | `.iflow/commands/trellis/my-command.md`         | Markdown |
+| Codex       | `.codex/skills/my-command/SKILL.md`             | Skill    |
+| Kilo        | `.kilocode/workflows/my-command.md`             | Workflow |
+| Kiro        | `.kiro/skills/my-command/SKILL.md`              | Skill    |
+| Gemini CLI  | `.gemini/commands/trellis/my-command.toml`      | TOML     |
+| Antigravity | `.agent/workflows/my-command.md`                | Workflow |
+| Qoder       | `.qoder/skills/my-command/SKILL.md`             | Skill    |
+| CodeBuddy   | `.codebuddy/commands/trellis/my-command.md`     | Markdown |
 
 ---
 

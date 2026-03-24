@@ -1,61 +1,78 @@
 # Spec System
 
-Maintain coding standards that guide AI development.
+Maintain coding standards that guide AI development. Supports single-repo and monorepo layouts with dynamic discovery.
 
 ---
 
 ## Directory Structure
+
+### Single Repo
 
 ```
 .trellis/spec/
 ├── frontend/                   # Frontend guidelines
 │   ├── index.md                # Overview and quick reference
 │   ├── component-guidelines.md
-│   ├── hook-guidelines.md
-│   ├── state-management.md
 │   └── ...
 │
 ├── backend/                    # Backend guidelines
 │   ├── index.md
 │   ├── directory-structure.md
-│   ├── error-handling.md
-│   ├── api-patterns.md
 │   └── ...
 │
-└── guides/                     # Thinking guides
+└── guides/                     # Thinking guides (shared)
     ├── index.md
     ├── cross-layer-thinking-guide.md
     ├── code-reuse-thinking-guide.md
     └── cross-platform-thinking-guide.md
 ```
 
+### Monorepo (Per-Package)
+
+When `packages:` is defined in `config.yaml`, specs are organized per-package:
+
+```
+.trellis/spec/
+├── cli/                        # Package: cli
+│   ├── backend/
+│   │   ├── index.md
+│   │   └── *.md
+│   └── unit-test/
+│       ├── index.md
+│       └── *.md
+│
+├── docs-site/                  # Package: docs-site
+│   └── docs/
+│       ├── index.md
+│       └── *.md
+│
+└── guides/                     # Shared across all packages
+    ├── index.md
+    └── *.md
+```
+
+**Discovery**: `python3 .trellis/scripts/get_context.py --mode packages` lists all packages, paths, types, and spec layers.
+
 ---
 
 ## Spec Categories
 
-### Frontend (`frontend/`)
+### Package-Specific Layers
 
-UI and client-side patterns:
+Each package can have its own set of layers (subdirectories):
 
-- Component structure
-- React hooks usage
-- State management
-- Styling conventions
-- Accessibility
-
-### Backend (`backend/`)
-
-Server-side patterns:
-
-- Directory structure
-- API design
-- Error handling
-- Database access
-- Security
+| Layer | Content |
+|-------|---------|
+| `frontend/` | UI, components, state management, styling |
+| `backend/` | API, services, database, error handling |
+| `unit-test/` | Test conventions, mock strategies, integration patterns |
+| `docs/` | Documentation guidelines |
+| `shared/` | Cross-layer standards (TypeScript, git, quality) |
+| `big-question/` | Deep-dive technical investigations |
 
 ### Guides (`guides/`)
 
-Cross-cutting thinking guides:
+Cross-cutting thinking guides shared across all packages:
 
 - How to think about cross-layer changes
 - Code reuse strategies
@@ -65,71 +82,59 @@ Cross-cutting thinking guides:
 
 ## Index Files
 
-Each category has an `index.md` that:
+Each layer has an `index.md` that:
 
 1. Provides category overview
-2. Lists all specs in the category
-3. Gives quick reference for common patterns
+2. Lists all specs with links
+3. Includes a **Pre-Development Checklist**
+4. Includes a **Quality Check** section
 
-### Example: `frontend/index.md`
+### Example: `cli/backend/index.md`
 
 ```markdown
-# Frontend Specifications
+# Backend Development Guidelines
 
-## Quick Reference
+## Guidelines Index
 
-| Topic      | Guideline                        |
-| ---------- | -------------------------------- |
-| Components | Functional components only       |
-| State      | Use React Query for server state |
-| Styling    | Tailwind CSS                     |
+| Guide | Description | Status |
+|-------|-------------|--------|
+| [Directory Structure](./directory-structure.md) | Module organization | Done |
+| [Error Handling](./error-handling.md) | Error strategies | Done |
 
-## Specifications
+## Pre-Development Checklist
 
-1. [Component Guidelines](./component-guidelines.md)
-2. [Hook Guidelines](./hook-guidelines.md)
-3. [State Management](./state-management.md)
+Before writing backend code, read:
+- Error handling → error-handling.md
+- Logging → logging-guidelines.md
+
+## Quality Check
+
+After writing code:
+1. Run `pnpm lint && pnpm typecheck`
+2. Check relevant guidelines
 ```
 
 ---
 
-## Spec File Format
+## Dynamic Spec Discovery
 
-````markdown
-# [Spec Title]
+The session-start hook dynamically discovers spec directories instead of hardcoding `frontend/backend/guides`:
 
-## Overview
+1. Iterates all subdirectories under `.trellis/spec/`
+2. For monorepo: iterates `spec/<package>/<layer>/`
+3. Reads `index.md` from each discovered layer
+4. Injects all found indexes into session context
 
-Brief description of what this spec covers.
+This means adding a new spec category only requires creating the directory — no hook modification needed.
 
-## Guidelines
+### Spec Scope Filtering
 
-### 1. [Guideline Name]
+In monorepo projects, `session.spec_scope` in `config.yaml` controls which packages' specs are loaded:
 
-Detailed explanation...
-
-**Do:**
-
-```typescript
-// Good example
+```yaml
+session:
+  spec_scope: active_task    # Only load specs for the current task's package
 ```
-````
-
-**Don't:**
-
-```typescript
-// Bad example
-```
-
-### 2. [Another Guideline]
-
-...
-
-## Related Specs
-
-- [Related Spec 1](./related-spec.md)
-
-````
 
 ---
 
@@ -140,78 +145,68 @@ Detailed explanation...
 Reference specs in task context:
 
 ```jsonl
-{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend overview"}
-{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Component patterns"}
-````
+{"file": ".trellis/spec/cli/backend/index.md", "reason": "Backend overview"}
+{"file": ".trellis/spec/cli/backend/error-handling.md", "reason": "Error patterns"}
+```
 
-### Manual Reading (Cursor)
+### Manual Reading (Non-Hook Platforms)
 
 Read specs at session start:
 
 ```
-1. Read .trellis/spec/{category}/index.md
-2. Read specific guidelines as needed
-3. Follow patterns in your code
+1. Read .trellis/spec/{package}/{layer}/index.md
+2. Follow the Pre-Development Checklist
+3. Read specific guidelines as needed
 ```
 
 ---
 
 ## Creating New Specs
 
-### 1. Choose Category
+### 1. Choose Location
 
-- Frontend UI patterns → `frontend/`
-- Backend/API patterns → `backend/`
-- Cross-cutting guides → `guides/`
+- Single repo: `.trellis/spec/<layer>/`
+- Monorepo: `.trellis/spec/<package>/<layer>/`
 
 ### 2. Create Spec File
 
 ```bash
-touch .trellis/spec/frontend/new-pattern.md
+touch .trellis/spec/cli/backend/new-pattern.md
 ```
 
 ### 3. Follow Format
 
-Use the spec file format above.
+````markdown
+# [Spec Title]
+
+## Overview
+Brief description.
+
+## Guidelines
+
+### 1. [Guideline Name]
+
+**Do:**
+```typescript
+// Good example
+```
+
+**Don't:**
+```typescript
+// Bad example
+```
+
+## Related Specs
+- [Related Spec](./related-spec.md)
+````
 
 ### 4. Update Index
 
-Add to category's `index.md`:
-
-```markdown
-## Specifications
-
-...
-N. [New Pattern](./new-pattern.md)
-```
+Add to the layer's `index.md` Guidelines Index table.
 
 ### 5. Reference in JSONL
 
 Add to relevant task context files.
-
----
-
-## Adding New Categories
-
-### 1. Create Directory
-
-```bash
-mkdir .trellis/spec/mobile
-```
-
-### 2. Create Index
-
-```bash
-touch .trellis/spec/mobile/index.md
-```
-
-### 3. Add Category Specs
-
-Create individual spec files.
-
-### 4. Update Task Templates
-
-Ensure new category is available in JSONL templates.
 
 ---
 
@@ -222,3 +217,4 @@ Ensure new category is available in JSONL templates.
 3. **Link related specs** - Cross-reference
 4. **Update regularly** - Specs evolve with codebase
 5. **Index everything** - Keep index files current
+6. **Guides are shared** - Put cross-package concerns in `guides/`

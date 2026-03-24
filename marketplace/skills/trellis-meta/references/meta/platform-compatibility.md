@@ -1,24 +1,26 @@
 # Platform Compatibility Reference
 
-Detailed guide on Trellis feature availability across 9 AI coding platforms.
+Detailed guide on Trellis feature availability across 11 AI coding platforms.
 
 ---
 
 ## Overview
 
-Trellis v0.3.0 supports **9 platforms**. The key differentiator is **hook support** — Claude Code and iFlow have Python hook systems that enable automatic context injection and quality enforcement. Other platforms use commands/skills with manual context loading.
+Trellis v0.4.0 supports **11 platforms**. The key differentiator is **hook support** — Claude Code and iFlow have Python hook systems that enable automatic context injection and quality enforcement. Codex has optional SessionStart hooks. Other platforms use commands/skills with manual context loading.
 
-| Platform    | Config Directory              | CLI Flag        | Hooks | Command Format |
-| ----------- | ----------------------------- | --------------- | ----- | -------------- |
-| Claude Code | `.claude/`                    | (default)       | ✅    | Markdown       |
-| iFlow       | `.iflow/`                     | `--iflow`       | ✅    | Markdown       |
-| Cursor      | `.cursor/`                    | `--cursor`      | ❌    | Markdown       |
-| OpenCode    | `.opencode/`                  | `--opencode`    | ❌    | Markdown       |
-| Codex       | `.agents/skills/`             | `--codex`       | ❌    | Skills         |
-| Kilo        | `.kilocode/commands/trellis/` | `--kilo`        | ❌    | Markdown       |
-| Kiro        | `.kiro/skills/`               | `--kiro`        | ❌    | Skills         |
-| Gemini CLI  | `.gemini/commands/trellis/`   | `--gemini`      | ❌    | TOML           |
-| Antigravity | `.agent/workflows/`           | `--antigravity` | ❌    | Markdown       |
+| Platform    | Config Directory        | CLI Flag        | Hooks       | Command Format   |
+| ----------- | ----------------------- | --------------- | ----------- | ---------------- |
+| Claude Code | `.claude/`              | (default)       | ✅ Full     | Markdown         |
+| iFlow       | `.iflow/`               | `--iflow`       | ✅ Full     | Markdown         |
+| Cursor      | `.cursor/`              | `--cursor`      | ❌          | Markdown         |
+| OpenCode    | `.opencode/`            | `--opencode`    | ❌          | Markdown         |
+| Codex       | `.codex/`               | `--codex`       | ⚠️ Optional | Skills + TOML    |
+| Kilo        | `.kilocode/`            | `--kilo`        | ❌          | Workflows        |
+| Kiro        | `.kiro/skills/`         | `--kiro`        | ❌          | Skills           |
+| Gemini CLI  | `.gemini/`              | `--gemini`      | ❌          | TOML             |
+| Antigravity | `.agent/workflows/`     | `--antigravity` | ❌          | Markdown         |
+| Qoder       | `.qoder/`               | `--qoder`       | ❌          | Skills           |
+| CodeBuddy   | `.codebuddy/`           | `--codebuddy`   | ❌          | Markdown (nested)|
 
 ---
 
@@ -30,24 +32,32 @@ Trellis v0.3.0 supports **9 platforms**. The key differentiator is **hook suppor
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
 │  ┌────────────────────────────────────────────────────────────────────┐ │
-│  │                    LAYER 3: AUTOMATION                              │ │
+│  │                    LAYER 4: AUTOMATION                              │ │
 │  │  Hooks, Ralph Loop, Auto-injection, Multi-Session                  │ │
 │  │  ─────────────────────────────────────────────────────────────────│ │
-│  │  Platform: Claude Code + iFlow                                     │ │
+│  │  Platform: Claude Code + iFlow (full), Codex (SessionStart only)  │ │
 │  └────────────────────────────────────────────────────────────────────┘ │
 │                                    │                                     │
 │  ┌────────────────────────────────▼───────────────────────────────────┐ │
-│  │                    LAYER 2: AGENTS                                  │ │
-│  │  Agent definitions, Task tool, Subagent invocation                 │ │
+│  │                    LAYER 3: AGENTS                                  │ │
+│  │  Agent definitions, Agent tool, Subagent invocation                │ │
 │  │  ─────────────────────────────────────────────────────────────────│ │
-│  │  Platform: Claude Code + iFlow (full), others (manual)             │ │
+│  │  Platform: Claude Code + iFlow (full), Codex (TOML agents),       │ │
+│  │            others (manual)                                         │ │
+│  └────────────────────────────────────────────────────────────────────┘ │
+│                                    │                                     │
+│  ┌────────────────────────────────▼───────────────────────────────────┐ │
+│  │                    LAYER 2: SHARED AGENT SKILLS                     │ │
+│  │  .agents/skills/ (agentskills.io open standard)                    │ │
+│  │  ─────────────────────────────────────────────────────────────────│ │
+│  │  Platform: Codex + universal agent CLIs (Kimi, Amp, Cline, etc.)  │ │
 │  └────────────────────────────────────────────────────────────────────┘ │
 │                                    │                                     │
 │  ┌────────────────────────────────▼───────────────────────────────────┐ │
 │  │                    LAYER 1: PERSISTENCE                             │ │
 │  │  Workspace, Tasks, Specs, Commands/Skills, JSONL files             │ │
 │  │  ─────────────────────────────────────────────────────────────────│ │
-│  │  Platform: ALL 9 (file-based, portable)                            │ │
+│  │  Platform: ALL 11 (file-based, portable)                           │ │
 │  └────────────────────────────────────────────────────────────────────┘ │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -57,41 +67,48 @@ Trellis v0.3.0 supports **9 platforms**. The key differentiator is **hook suppor
 
 ## Detailed Feature Breakdown
 
-### Layer 1: Persistence (All 9 Platforms)
+### Layer 1: Persistence (All 11 Platforms)
 
 These features work on all platforms because they're file-based.
 
 | Feature            | Location                 | Description                               |
 | ------------------ | ------------------------ | ----------------------------------------- |
 | Workspace system   | `.trellis/workspace/`    | Journals, session history                 |
-| Task system        | `.trellis/tasks/`        | Task tracking, requirements               |
-| Spec system        | `.trellis/spec/`         | Coding guidelines                         |
+| Task system        | `.trellis/tasks/`        | Task tracking, subtasks, lifecycle hooks  |
+| Spec system        | `.trellis/spec/`         | Coding guidelines (monorepo per-package)  |
+| Config system      | `.trellis/config.yaml`   | Packages, hooks, update.skip, spec_scope  |
 | Commands/Skills    | Platform-specific dirs   | Command prompts in each platform's format |
 | JSONL context      | `*.jsonl` in task dirs   | Context file lists                        |
 | Developer identity | `.trellis/.developer`    | Who is working                            |
 | Current task       | `.trellis/.current-task` | Active task pointer                       |
 
-### Layer 2: Agents (Claude Code + iFlow Full, Others Manual)
+### Layer 2: Shared Agent Skills
 
-| Feature            | Claude Code / iFlow            | Other Platforms           |
-| ------------------ | ------------------------------ | ------------------------- |
-| Agent definitions  | Auto-loaded via `--agent` flag | Read agent files manually |
-| Task tool          | Full subagent support          | No Task tool              |
-| Context injection  | Automatic via hooks            | Manual copy-paste         |
-| Agent restrictions | Enforced by definition         | Honor code only           |
+| Feature            | Location               | Description                                |
+| ------------------ | ---------------------- | ------------------------------------------ |
+| Shared skills      | `.agents/skills/`      | agentskills.io standard, SKILL.md format   |
 
-### Layer 3: Automation (Claude Code + iFlow Only)
+Readable by Codex and any universal agent CLI that follows the agentskills.io open standard.
 
-| Feature                | Dependency         | Why Hook-Platforms Only          |
-| ---------------------- | ------------------ | -------------------------------- |
-| SessionStart hook      | `settings.json`    | Hook system for lifecycle events |
-| PreToolUse hook        | Hook system        | Intercepts tool calls            |
-| SubagentStop hook      | Hook system        | Controls agent lifecycle         |
-| Auto context injection | PreToolUse:Task    | Hooks inject JSONL content       |
-| Ralph Loop             | SubagentStop:check | Blocks agent until verify passes |
-| Multi-Session          | CLI + hooks        | Session resume, worktree scripts |
+### Layer 3: Agents (Claude Code + iFlow Full, Codex TOML, Others Manual)
 
-**No workaround**: These features fundamentally require a hook system.
+| Feature            | Claude Code / iFlow            | Codex                          | Other Platforms           |
+| ------------------ | ------------------------------ | ------------------------------ | ------------------------- |
+| Agent definitions  | Auto-loaded via `--agent` flag | TOML agents in `.codex/agents/` | Read agent files manually |
+| Agent tool         | Full subagent support          | Built-in agent support         | No Agent tool             |
+| Context injection  | Automatic via hooks            | Manual / SessionStart only     | Manual copy-paste         |
+| Agent restrictions | Enforced by definition         | TOML `sandbox_mode`            | Honor code only           |
+
+### Layer 4: Automation (Claude Code + iFlow Full, Codex Partial)
+
+| Feature                | Dependency             | Claude Code / iFlow | Codex             |
+| ---------------------- | ---------------------- | ------------------- | ----------------- |
+| SessionStart hook      | `settings.json`        | ✅ Full             | ⚠️ Optional       |
+| PreToolUse hook        | Hook system            | ✅ Full             | ❌ None           |
+| SubagentStop hook      | Hook system            | ✅ Full             | ❌ None           |
+| Auto context injection | PreToolUse:Agent       | ✅ Full             | ❌ None           |
+| Ralph Loop             | SubagentStop:check     | ✅ Full             | ❌ None           |
+| Multi-Session          | CLI + hooks            | ✅ Full             | ❌ None           |
 
 ---
 
@@ -132,8 +149,28 @@ trellis init --opencode -u your-name
 trellis init --codex -u your-name
 ```
 
-- Commands mapped to Codex Skills format under `.agents/skills/`
+- Platform-specific skills in `.codex/skills/` + shared skills in `.agents/skills/`
+- TOML agent definitions in `.codex/agents/` (implement, research, check)
+- Optional SessionStart hook (requires `codex_hooks = true` in `~/.codex/config.toml`)
 - Use `$start`, `$finish-work`, `$brainstorm` etc. to invoke
+
+### Qoder
+
+```bash
+trellis init --qoder -u your-name
+```
+
+- Skills-based platform with templates at `.qoder/skills/{name}/SKILL.md`
+- Uses YAML frontmatter for skill metadata
+
+### CodeBuddy (Tencent Cloud)
+
+```bash
+trellis init --codebuddy -u your-name
+```
+
+- Nested slash commands at `.codebuddy/commands/trellis/{name}.md`
+- 12 command templates included
 
 ### Kilo, Kiro, Gemini CLI, Antigravity
 
@@ -145,16 +182,22 @@ trellis init --antigravity -u your-name
 ```
 
 - Each platform uses its native command format
+- Kilo uses workflows (`.kilocode/workflows/`)
+- Kiro uses skills (`.kiro/skills/{name}/SKILL.md`)
+- Gemini uses TOML commands (`.gemini/commands/trellis/{name}.toml`)
+- Antigravity uses workflows (`.agent/workflows/`)
 - Core file-based systems work the same across all platforms
 
 ---
 
 ## Version Compatibility Matrix
 
-| Trellis Version | Platforms Supported |
-| --------------- | ------------------- |
-| 0.2.x           | Claude Code, Cursor |
-| 0.3.0           | All 9 platforms     |
+| Trellis Version   | Platforms Supported             |
+| ----------------- | ------------------------------- |
+| 0.2.x             | Claude Code, Cursor             |
+| 0.3.0             | 9 platforms (+ OpenCode through Antigravity) |
+| 0.3.4             | 10 platforms (+ Qoder)          |
+| 0.4.0-beta.6      | 11 platforms (+ CodeBuddy)      |
 
 ---
 
@@ -171,7 +214,7 @@ cat .claude/settings.json | grep -A 5 '"hooks"'
 
 ```bash
 # Check if platform config directory exists
-ls -la .cursor/ .opencode/ .iflow/ .agents/ .kilocode/ .kiro/ .gemini/ .agent/ 2>/dev/null
+ls -la .cursor/ .opencode/ .iflow/ .codex/ .agents/ .kilocode/ .kiro/ .gemini/ .agent/ .qoder/ .codebuddy/ 2>/dev/null
 ```
 
 ### Determining Support Level
@@ -179,7 +222,8 @@ ls -la .cursor/ .opencode/ .iflow/ .agents/ .kilocode/ .kiro/ .gemini/ .agent/ 2
 ```
 Does the platform have hook support?
 ├── YES (Claude Code, iFlow) → Full Trellis support
+├── PARTIAL (Codex) → SessionStart hook + TOML agents + shared skills
 └── NO  (all others) → Partial support
          ├── Can read files → Layer 1 works
-         └── Has agent system → Layer 2 partial
+         └── Has agent system → Layer 3 partial
 ```

@@ -15,13 +15,16 @@ Complete reference of all files in the `.trellis/` directory.
 ├── .version                # Installed Trellis version
 ├── .gitignore              # Git ignore rules
 ├── workflow.md             # Main workflow documentation
-├── config.yaml             # Project-level configuration
+├── config.yaml             # Project-level configuration (packages, hooks, etc.)
 ├── worktree.yaml           # Multi-session configuration
 │
 ├── workspace/              # Developer workspaces
-├── tasks/                  # Task tracking
-├── spec/                   # Coding guidelines
+├── tasks/                  # Task tracking (with subtask support)
+├── spec/                   # Coding guidelines (monorepo: per-package)
 └── scripts/                # Automation scripts
+    ├── common/             # Shared utilities (19 modules)
+    ├── hooks/              # Task lifecycle hook scripts
+    └── multi_agent/        # Multi-agent pipeline scripts
 ```
 
 ---
@@ -130,7 +133,7 @@ taosu
 **Format**: Plain text, semver version string.
 
 ```
-0.3.0
+0.4.0-beta.8
 ```
 
 **Used by**:
@@ -208,16 +211,45 @@ taosu
 **Format**: YAML
 
 ```yaml
-# Commit message used when auto-committing journal/index changes
+# Session settings
 session_commit_message: 'chore: record journal'
-
-# Maximum lines per journal file before rotating to a new one
 max_journal_lines: 2000
+
+# Monorepo packages
+packages:
+  cli:
+    path: packages/cli
+    tags: [backend, unit-test]
+  docs-site:
+    path: docs-site
+    type: submodule
+    tags: [docs]
+default_package: cli
+
+# Update exclusions
+update:
+  skip:
+    - .trellis/spec/custom/
+
+# Task lifecycle hooks
+hooks:
+  after_create:
+    - python3 .trellis/scripts/hooks/linear_sync.py create
+  after_start:
+    - python3 .trellis/scripts/hooks/linear_sync.py start
+  after_archive:
+    - python3 .trellis/scripts/hooks/linear_sync.py archive
+
+# Session context scope
+session:
+  spec_scope: active_task
 ```
 
-**Used by**: `common/config.py` (read by `add_session.py`)
+**Used by**: `common/config.py`
 
 **Behavior**: All values have sensible hardcoded defaults. If config.yaml is missing or a key is absent, the default is used.
+
+→ See `core/config.md` for full schema reference.
 
 ---
 
@@ -315,23 +347,34 @@ Automation scripts.
 
 These files are managed by `trellis update`:
 
-| File                     | Purpose                  |
-| ------------------------ | ------------------------ |
-| `.trellis/workflow.md`   | Workflow documentation   |
-| `.trellis/config.yaml`   | Project-level config     |
-| `.trellis/worktree.yaml` | Multi-session config     |
-| `.trellis/.gitignore`    | Git ignore rules         |
-| `.claude/hooks/*.py`     | Hook scripts             |
-| `.claude/commands/*.md`  | Slash commands           |
-| `.claude/agents/*.md`    | Agent definitions        |
-| `.cursor/commands/*.md`  | Cursor commands (mirror) |
+| File                            | Purpose                    |
+| ------------------------------- | -------------------------- |
+| `.trellis/workflow.md`          | Workflow documentation     |
+| `.trellis/config.yaml`         | Project-level config       |
+| `.trellis/worktree.yaml`       | Multi-session config       |
+| `.trellis/.gitignore`          | Git ignore rules           |
+| `.trellis/scripts/**/*.py`     | All Python scripts         |
+| `.claude/hooks/*.py`           | Hook scripts               |
+| `.claude/commands/trellis/*.md` | Slash commands (17 files) |
+| `.claude/agents/*.md`          | Agent definitions (6 files) |
+| `.cursor/commands/*.md`        | Cursor commands            |
+| `.agents/skills/*/SKILL.md`    | Shared agent skills        |
+| Platform-specific dirs          | Per-platform templates     |
 
 **Update behavior**:
 
 1. Compare file hash with `.template-hashes.json`
 2. If unchanged → Auto-update
 3. If modified → Create `.new` file for manual merge
-4. Update hashes after successful update
+4. If user-deleted → Skip (respects intentional deletion)
+5. Update hashes after successful update
+
+**Protected paths** (never touched by update/migration):
+- `.trellis/workspace/`
+- `.trellis/spec/`
+- `.trellis/tasks/`
+
+**Exclusions**: Files listed in `update.skip` in config.yaml are permanently excluded.
 
 ---
 
@@ -347,11 +390,12 @@ These files are managed by `trellis update`:
 ├── workflow.md
 ├── config.yaml
 ├── worktree.yaml
-├── spec/
-│   ├── frontend/
-│   ├── backend/
-│   └── guides/
+├── spec/                    # Single repo: frontend/, backend/, guides/
+│   └── ...                  # Monorepo: <package>/<layer>/, guides/
 └── scripts/
+    ├── common/
+    ├── hooks/
+    └── multi_agent/
 ```
 
 ### Created at runtime

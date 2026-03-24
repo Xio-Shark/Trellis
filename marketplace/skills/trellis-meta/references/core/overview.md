@@ -1,18 +1,19 @@
 # Core Systems Overview
 
-These systems work on **all 9 platforms** (Claude Code, Cursor, OpenCode, iFlow, Codex, Kilo, Kiro, Gemini CLI, Antigravity).
+These systems work on **all 11 platforms** (Claude Code, Cursor, OpenCode, iFlow, Codex, Kilo, Kiro, Gemini CLI, Antigravity, Qoder, CodeBuddy).
 
 ---
 
 ## What's in Core?
 
-| System    | Purpose                    | Files                             |
-| --------- | -------------------------- | --------------------------------- |
-| Workspace | Session tracking, journals | `.trellis/workspace/`             |
-| Tasks     | Work item tracking         | `.trellis/tasks/`                 |
-| Specs     | Coding guidelines          | `.trellis/spec/`                  |
-| Commands  | Slash command prompts      | `.claude/commands/`               |
-| Scripts   | Automation utilities       | `.trellis/scripts/` (core subset) |
+| System    | Purpose                         | Files                             |
+| --------- | ------------------------------- | --------------------------------- |
+| Workspace | Session tracking, journals      | `.trellis/workspace/`             |
+| Tasks     | Work items, subtasks, hooks     | `.trellis/tasks/`                 |
+| Specs     | Coding guidelines (per-package) | `.trellis/spec/`                  |
+| Config    | Packages, hooks, skip rules     | `.trellis/config.yaml`            |
+| Commands  | Slash command prompts           | `.claude/commands/`               |
+| Scripts   | Automation utilities            | `.trellis/scripts/` (core subset) |
 
 ---
 
@@ -30,12 +31,16 @@ All core systems are **file-based**:
 │                                                              │
 │  .trellis/                                                   │
 │  ├── workspace/     → Journals, session history              │
-│  ├── tasks/         → Task directories, PRDs, context files  │
-│  ├── spec/          → Coding guidelines                      │
+│  ├── tasks/         → Task directories, PRDs, subtasks       │
+│  ├── spec/          → Coding guidelines (monorepo support)   │
+│  ├── config.yaml    → Packages, hooks, update.skip           │
 │  └── scripts/       → Python utilities (core subset)         │
 │                                                              │
 │  .claude/                                                    │
 │  └── commands/      → Slash command prompts                  │
+│                                                              │
+│  .agents/                                                    │
+│  └── skills/        → Shared agent skills (agentskills.io)   │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -52,7 +57,11 @@ All core systems work automatically with hook integration.
 
 All core systems work automatically with hook integration (same as Claude Code).
 
-### Cursor, OpenCode, Codex, Kilo, Kiro, Gemini CLI, Antigravity
+### Codex
+
+Core systems work with optional SessionStart hook and TOML agents. See `meta/platform-compatibility.md`.
+
+### Cursor, OpenCode, Kilo, Kiro, Gemini CLI, Antigravity, Qoder, CodeBuddy
 
 Read files manually at session start:
 
@@ -69,6 +78,7 @@ Read files manually at session start:
 | -------------- | ---------------------------------------------- |
 | `files.md`     | All files in `.trellis/` with purposes         |
 | `workspace.md` | Workspace system, journals, developer identity |
-| `tasks.md`     | Task system, directories, JSONL context files  |
-| `specs.md`     | Spec system, guidelines organization           |
+| `tasks.md`     | Task system, subtasks, lifecycle hooks, JSONL   |
+| `specs.md`     | Spec system, monorepo layout, guidelines       |
 | `scripts.md`   | Core scripts (platform-independent)            |
+| `config.md`    | config.yaml full schema reference              |
