@@ -77,5 +77,6 @@
   ".agents/skills/onboard/SKILL.md": "ec6db142f763c81a3273be45b5d7726f695c32aaa5404e90dbd6e40aec92fb98",
   ".agents/skills/record-session/SKILL.md": "2f3781d894b7a45b517d36845fa18e6fac98acad40e77438a3d85760f1d7d247",
   ".agents/skills/start/SKILL.md": "8853e4ddc1681e043dec34be76c7c6fd961a3d52cbd0a2320225d72440425639",
-  ".agents/skills/update-spec/SKILL.md": "7ccf7d29ea26d28b0bd8af94ea5b8bfcddaddd9f2797f3becedbe5f3a0a9e9a7"
+  ".agents/skills/update-spec/SKILL.md": "7ccf7d29ea26d28b0bd8af94ea5b8bfcddaddd9f2797f3becedbe5f3a0a9e9a7",
+  ".codex/config.toml": "7543da7e1773a0f26bc9178716b34154fdc5fefd820fb184e7cb169f1910cc99"
 }
