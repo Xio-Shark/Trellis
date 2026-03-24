@@ -89,7 +89,7 @@ class CLIAdapter:
         """Get platform-specific config directory name.
 
         Returns:
-            Directory name ('.claude', '.opencode', '.cursor', '.iflow', '.agents', '.kilocode', '.kiro', '.gemini', '.agent', '.qoder', or '.codebuddy')
+            Directory name ('.claude', '.opencode', '.cursor', '.iflow', '.codex', '.kilocode', '.kiro', '.gemini', '.agent', '.qoder', or '.codebuddy')
         """
         if self.platform == "opencode":
             return ".opencode"
@@ -98,7 +98,7 @@ class CLIAdapter:
         elif self.platform == "iflow":
             return ".iflow"
         elif self.platform == "codex":
-            return ".agents"
+            return ".codex"
         elif self.platform == "kilo":
             return ".kilocode"
         elif self.platform == "kiro":
@@ -121,7 +121,7 @@ class CLIAdapter:
             project_root: Project root directory
 
         Returns:
-            Path to config directory (.claude, .opencode, .cursor, .iflow, .agents, .kilocode, .kiro, .gemini, .agent, .qoder, or .codebuddy)
+            Path to config directory (.claude, .opencode, .cursor, .iflow, .codex, .kilocode, .kiro, .gemini, .agent, .qoder, or .codebuddy)
         """
         return project_root / self.config_dir_name
 
@@ -133,9 +133,11 @@ class CLIAdapter:
             project_root: Project root directory
 
         Returns:
-            Path to agent .md file
+            Path to agent definition file (.md for most platforms, .toml for Codex)
         """
         mapped_name = self.get_agent_name(agent)
+        if self.platform == "codex":
+            return self.get_config_dir(project_root) / "agents" / f"{mapped_name}.toml"
         return self.get_config_dir(project_root) / "agents" / f"{mapped_name}.md"
 
     def get_commands_path(self, project_root: Path, *parts: str) -> Path:
@@ -429,8 +431,17 @@ class CLIAdapter:
     def supports_cli_agents(self) -> bool:
         """Check if platform supports running agents via CLI.
 
-        Claude Code, OpenCode, and iFlow support CLI agent execution.
+        Claude Code, OpenCode, iFlow, and Codex support CLI agent execution.
         Cursor is IDE-only and doesn't support CLI agents.
+        """
+        return self.platform in ("claude", "opencode", "iflow", "codex")
+
+    @property
+    def requires_agent_definition_file(self) -> bool:
+        """Check if platform requires an agent definition file (.md/.toml) to run.
+
+        Claude Code, OpenCode, iFlow: require agent .md files (--agent flag).
+        Codex: auto-discovers agents from .codex/agents/*.toml, no --agent flag.
         """
         return self.platform in ("claude", "opencode", "iflow")
 
@@ -539,7 +550,7 @@ def detect_platform(project_root: Path) -> Platform:
     2. .opencode directory exists → opencode
     3. .iflow directory exists → iflow
     4. .cursor directory exists (without .claude) → cursor
-    5. .agents/skills or .codex exists and no other platform dirs → codex
+    5. .codex exists and no other platform dirs → codex
     6. .kilocode directory exists → kilo
     7. .kiro/skills exists and no other platform dirs → kiro
     8. .gemini directory exists → gemini
@@ -590,11 +601,11 @@ def detect_platform(project_root: Path) -> Platform:
     if (project_root / ".gemini").is_dir():
         return "gemini"
 
-    # Check for Codex skills/config only when no other platform config exists
-    if (
-        (project_root / ".agents" / "skills").is_dir()
-        or (project_root / ".codex").is_dir()
-    ) and not _has_other_platform_dir(project_root, {".agents", ".codex"}):
+    # Check for .codex directory (Codex-specific)
+    # .agents/skills/ alone does NOT trigger codex detection (it's a shared standard)
+    if (project_root / ".codex").is_dir() and not _has_other_platform_dir(
+        project_root, {".codex", ".agents"}
+    ):
         return "codex"
 
     # Check for .kilocode directory (Kilo-specific)

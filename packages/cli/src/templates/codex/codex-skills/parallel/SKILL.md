@@ -12,7 +12,7 @@ You are the Multi-Agent Pipeline Orchestrator Agent, running in the main reposit
 - **You are in the main repository**, not in a worktree
 - **You don't write code directly** - code work is done by agents in worktrees
 - **You are responsible for planning and dispatching**: discuss requirements, create plans, configure context, start worktree agents
-- **Delegate complex analysis to research agent**: finding specs, analyzing code structure
+- **Delegate complex analysis to research**: find specs, inspect code structure, and reduce ambiguity before dispatch
 
 ---
 
@@ -22,8 +22,8 @@ Operations in this document are categorized as:
 
 | Marker | Meaning | Executor |
 |--------|---------|----------|
-| `[AI]` | Bash scripts or Task calls executed by AI | You (AI) |
-| `[USER]` | Slash commands executed by user | User |
+| `[AI]` | Bash scripts or tool calls executed by AI | You (AI) |
+| `[USER]` | Skills executed by user | User |
 
 ---
 
@@ -46,17 +46,8 @@ python3 ./.trellis/scripts/get_context.py
 ### Step 3: Read Project Guidelines `[AI]`
 
 ```bash
-# Discover packages and their spec layers
-python3 ./.trellis/scripts/get_context.py --mode packages
-```
-
-Read the spec index for the package you'll work on:
-
-```bash
-cat .trellis/spec/<package>/<layer>/index.md
-
-# Always read shared thinking guides
-cat .trellis/spec/guides/index.md
+python3 ./.trellis/scripts/get_context.py --mode packages  # Discover available spec layers
+cat .trellis/spec/guides/index.md                          # Thinking guides
 ```
 
 ### Step 4: Ask User for Requirements
@@ -84,23 +75,24 @@ Use when:
 python3 ./.trellis/scripts/multi_agent/plan.py \
   --name "<feature-name>" \
   --type "<backend|frontend|fullstack>" \
-  --requirement "<user requirement description>"
+  --requirement "<user requirement description>" \
+  --platform codex
 ```
 
 Plan Agent will:
 1. Evaluate requirement validity (may reject if unclear/too large)
-2. Call research agent to analyze codebase
+2. Analyze the codebase and specs
 3. Create and configure task directory
-4. Write prd.md with acceptance criteria
-5. Output ready-to-use task directory
+4. Write `prd.md` with acceptance criteria
+5. Output a ready-to-use task directory
 
-After plan.py completes, start the worktree agent:
+After `plan.py` completes, start the worktree agent:
 
 ```bash
-python3 ./.trellis/scripts/multi_agent/start.py "$TASK_DIR"
+python3 ./.trellis/scripts/multi_agent/start.py "$TASK_DIR" --platform codex
 ```
 
-### Option B: Manual Configuration (For simple/clear features) `[AI]`
+### Option B: Manual Configuration (For simple or already-clear features) `[AI]`
 
 Use when:
 - Requirements are already clear and specific
@@ -110,32 +102,28 @@ Use when:
 #### Step 1: Create Task Directory
 
 ```bash
-# title is task description, --slug for task directory name
 TASK_DIR=$(python3 ./.trellis/scripts/task.py create "<title>" --slug <task-name>)
 ```
 
 #### Step 2: Configure Task
 
 ```bash
-# Initialize jsonl context files
 python3 ./.trellis/scripts/task.py init-context "$TASK_DIR" <dev_type>
-
-# Set branch and scope
 python3 ./.trellis/scripts/task.py set-branch "$TASK_DIR" feature/<name>
 python3 ./.trellis/scripts/task.py set-scope "$TASK_DIR" <scope>
 ```
 
-#### Step 3: Add Context (optional: use research agent)
+#### Step 3: Add Context
 
 ```bash
 python3 ./.trellis/scripts/task.py add-context "$TASK_DIR" implement "<path>" "<reason>"
 python3 ./.trellis/scripts/task.py add-context "$TASK_DIR" check "<path>" "<reason>"
 ```
 
-#### Step 4: Create prd.md
+#### Step 4: Create `prd.md`
 
 ```bash
-cat > "$TASK_DIR/prd.md" << 'EOF'
+cat > "$TASK_DIR/prd.md" << 'END_PRD'
 # Feature: <name>
 
 ## Requirements
@@ -143,14 +131,14 @@ cat > "$TASK_DIR/prd.md" << 'EOF'
 
 ## Acceptance Criteria
 - ...
-EOF
+END_PRD
 ```
 
 #### Step 5: Validate and Start
 
 ```bash
 python3 ./.trellis/scripts/task.py validate "$TASK_DIR"
-python3 ./.trellis/scripts/multi_agent/start.py "$TASK_DIR"
+python3 ./.trellis/scripts/multi_agent/start.py "$TASK_DIR" --platform codex
 ```
 
 ---
@@ -161,16 +149,16 @@ Tell the user the agent has started and provide monitoring commands.
 
 ---
 
-## User Available Commands `[USER]`
+## User Available Skills `[USER]`
 
-The following slash commands are for users (not AI):
+The following skills are for users (not AI):
 
-| Command | Description |
-|---------|-------------|
-| `/trellis:parallel` | Start Multi-Agent Pipeline (this command) |
-| `/trellis:start` | Start normal development mode (single process) |
-| `/trellis:record-session` | Record session progress |
-| `/trellis:finish-work` | Pre-completion checklist |
+| Skill | Description |
+|-------|-------------|
+| `$parallel` | Start Multi-Agent Pipeline (this skill) |
+| `$start` | Start normal development mode (single process) |
+| `$record-session` | Record session progress |
+| `$finish-work` | Pre-completion checklist |
 
 ---
 
@@ -189,7 +177,7 @@ python3 ./.trellis/scripts/multi_agent/cleanup.py <branch>          # Cleanup wo
 
 ## Pipeline Phases
 
-The dispatch agent in worktree will automatically execute:
+The dispatch agent in the worktree will automatically execute:
 
 1. implement → Implement feature
 2. check → Check code quality
@@ -200,7 +188,7 @@ The dispatch agent in worktree will automatically execute:
 
 ## Core Rules
 
-- **Don't write code directly** - delegate to agents in worktree
-- **Don't execute git commit** - agent does it via create-pr action
-- **Delegate complex analysis to research** - finding specs, analyzing code structure
-- **All sub agents use opus model** - ensure output quality
+- **Don't write code directly** - delegate to agents in worktrees
+- **Don't execute git commit** - the flow handles it in the worktree pipeline
+- **Delegate complex analysis before dispatch** - find specs, inspect code structure, and reduce ambiguity
+- **Prefer focused tasks** - parallelism works best when each worktree has a narrow scope

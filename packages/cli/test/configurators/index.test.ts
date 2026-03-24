@@ -65,7 +65,7 @@ describe("isManagedPath", () => {
     expect(isManagedPath(".iflow/hooks/test.py")).toBe(true);
     expect(isManagedPath(".opencode/config.json")).toBe(true);
     expect(isManagedPath(".agents/skills/start/SKILL.md")).toBe(true);
-    expect(isManagedPath(".codex/agents/trellis-reviewer.toml")).toBe(true);
+    expect(isManagedPath(".codex/agents/check.toml")).toBe(true);
     expect(isManagedPath(".agent/workflows/start.md")).toBe(true);
     expect(isManagedPath(".kiro/skills/start/SKILL.md")).toBe(true);
   });
@@ -126,7 +126,7 @@ describe("isManagedPath", () => {
     expect(isManagedPath(".trellis\\spec\\backend")).toBe(true);
     expect(isManagedPath(".iflow\\hooks\\test.py")).toBe(true);
     expect(isManagedPath(".agents\\skills\\start\\SKILL.md")).toBe(true);
-    expect(isManagedPath(".codex\\agents\\trellis-reviewer.toml")).toBe(true);
+    expect(isManagedPath(".codex\\agents\\check.toml")).toBe(true);
     expect(isManagedPath(".agent\\workflows\\start.md")).toBe(true);
     expect(isManagedPath(".kiro\\skills\\start\\SKILL.md")).toBe(true);
   });
@@ -152,8 +152,8 @@ describe("isManagedRootDir", () => {
     expect(isManagedRootDir(".trellis")).toBe(true);
   });
 
-  it("matches extra managed root dirs", () => {
-    expect(isManagedRootDir(".codex")).toBe(true);
+  it("matches shared agent skills layer", () => {
+    expect(isManagedRootDir(".agents/skills")).toBe(true);
   });
 
   it("rejects sub-paths (not a root dir)", () => {

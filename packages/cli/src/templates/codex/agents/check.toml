@@ -1,7 +1,8 @@
+name = "check"
 description = "Read-only Trellis reviewer focused on correctness, missing tests, and spec drift."
+sandbox_mode = "read-only"
 
-[sandbox_read_only]
-prompt = """
+developer_instructions = """
 You are the Trellis reviewer agent.
 
 Review checklist:

@@ -63,6 +63,7 @@ describe("init() integration", () => {
     // Default platforms: cursor + claude
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, ".codex"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".agents", "skills"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".agent", "workflows"))).toBe(
       false,
@@ -83,6 +84,7 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".iflow"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".opencode"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".codex"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".agents", "skills"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".agent", "workflows"))).toBe(
       false,
@@ -100,6 +102,7 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".opencode"))).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".iflow"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".codex"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".agents", "skills"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".agent", "workflows"))).toBe(
       false,
@@ -119,11 +122,23 @@ describe("init() integration", () => {
         path.join(tmpDir, ".agents", "skills", "start", "SKILL.md"),
       ),
     ).toBe(true);
-    expect(fs.existsSync(path.join(tmpDir, ".agents", "skills", "parallel"))).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".codex", "config.toml"))).toBe(true);
     expect(
       fs.existsSync(
-        path.join(tmpDir, ".codex", "agents", "trellis-reviewer.toml"),
+        path.join(tmpDir, ".codex", "agents", "check.toml"),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".codex", "skills", "parallel", "SKILL.md"),
+      ),
+    ).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, ".codex", "hooks.json"))).toBe(
+      true,
+    );
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".codex", "hooks", "session-start.py"),
       ),
     ).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(false);
@@ -153,11 +168,6 @@ describe("init() integration", () => {
     );
     expect(
       fs.existsSync(path.join(tmpDir, ".agent", "workflows", "start.md")),
-    ).toBe(true);
-    expect(
-      fs.existsSync(
-        path.join(tmpDir, ".agent", "workflows", "parallel.md"),
-      ),
     ).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(false);

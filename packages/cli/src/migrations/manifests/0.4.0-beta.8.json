@@ -1,0 +1,30 @@
+{
+  "version": "0.4.0-beta.8",
+  "description": "Decouple .agents/skills/ from Codex — shared Agent Skills layer. Codex configDir moves from .agents/skills to .codex. Remove parallel from shared skills (moved to .codex/skills/). Rename trellis-* agents to match convention.",
+  "migrations": [
+    {
+      "type": "safe-file-delete",
+      "from": ".agents/skills/parallel/SKILL.md",
+      "description": "Moved to .codex/skills/parallel/ (Codex-specific, not shared)",
+      "allowed_hashes": ["b67b30c4e4fe00e5bc6b2f0da078e6cdfc4f082d5660b00b9ce6cfd6308d7dec"]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".codex/agents/trellis-implementer.toml",
+      "description": "Renamed to implement.toml with corrected TOML format",
+      "allowed_hashes": ["e2f46f9df38485c5a0cbb562310d326a9a612dc32286bad91494a83d00c7bb3f"]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".codex/agents/trellis-researcher.toml",
+      "description": "Renamed to research.toml with corrected TOML format",
+      "allowed_hashes": ["dfda47b432b653d29dbe30f07648614e6636b1120ab718b4a640a9b51da90242"]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".codex/agents/trellis-reviewer.toml",
+      "description": "Renamed to check.toml with corrected TOML format",
+      "allowed_hashes": ["b7ebff2a15c73ccd6d851122a4d202fc02adb9706942acd6601aad614e09ebc9"]
+    }
+  ]
+}

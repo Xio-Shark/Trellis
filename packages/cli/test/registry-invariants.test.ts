@@ -44,10 +44,10 @@ describe("registry internal consistency", () => {
     }
   });
 
-  it("all extraManagedPaths values start with dot", () => {
+  it("platforms with supportsAgentSkills do not use .agents/skills as configDir", () => {
     for (const id of PLATFORM_IDS) {
-      for (const extraPath of AI_TOOLS[id].extraManagedPaths ?? []) {
-        expect(extraPath.startsWith(".")).toBe(true);
+      if (AI_TOOLS[id].supportsAgentSkills) {
+        expect(AI_TOOLS[id].configDir).not.toBe(".agents/skills");
       }
     }
   });

@@ -1,7 +1,8 @@
+name = "research"
 description = "Read-only Trellis researcher for specs, code patterns, and affected files."
+sandbox_mode = "read-only"
 
-[sandbox_read_only]
-prompt = """
+developer_instructions = """
 You are the Trellis researcher agent.
 
 Responsibilities:

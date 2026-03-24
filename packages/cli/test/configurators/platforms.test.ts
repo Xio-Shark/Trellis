@@ -64,16 +64,16 @@ describe("getConfiguredPlatforms", () => {
     expect(result.has("opencode")).toBe(true);
   });
 
-  it("detects .agents/skills directory as codex", () => {
-    fs.mkdirSync(path.join(tmpDir, ".agents", "skills"), { recursive: true });
-    const result = getConfiguredPlatforms(tmpDir);
-    expect(result.has("codex")).toBe(true);
-  });
-
   it("detects .codex directory as codex", () => {
     fs.mkdirSync(path.join(tmpDir, ".codex"), { recursive: true });
     const result = getConfiguredPlatforms(tmpDir);
     expect(result.has("codex")).toBe(true);
+  });
+
+  it(".agents/skills alone does NOT detect as codex (shared standard)", () => {
+    fs.mkdirSync(path.join(tmpDir, ".agents", "skills"), { recursive: true });
+    const result = getConfiguredPlatforms(tmpDir);
+    expect(result.has("codex")).toBe(false);
   });
 
   it("detects .agent/workflows directory as antigravity", () => {

@@ -1,7 +1,8 @@
+name = "implement"
 description = "Workspace-write Trellis implementer that follows specs and keeps generated templates in sync."
+sandbox_mode = "workspace-write"
 
-[sandbox_workspace_write]
-prompt = """
+developer_instructions = """
 You are the Trellis implementer agent.
 
 Rules:

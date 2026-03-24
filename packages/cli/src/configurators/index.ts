@@ -49,8 +49,11 @@ import {
 } from "../templates/iflow/index.js";
 import {
   getAllAgents as getCodexAgents,
+  getAllCodexSkills as getCodexPlatformSkills,
+  getAllHooks as getCodexHooks,
   getAllSkills as getCodexSkills,
   getConfigTemplate as getCodexConfigTemplate,
+  getHooksConfig as getCodexHooksConfig,
 } from "../templates/codex/index.js";
 import { getAllWorkflows as getKiloWorkflows } from "../templates/kilo/index.js";
 import { getAllSkills as getKiroSkills } from "../templates/kiro/index.js";
@@ -147,9 +150,16 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
       for (const skill of getCodexSkills()) {
         files.set(`.agents/skills/${skill.name}/SKILL.md`, skill.content);
       }
+      for (const skill of getCodexPlatformSkills()) {
+        files.set(`.codex/skills/${skill.name}/SKILL.md`, skill.content);
+      }
       for (const agent of getCodexAgents()) {
         files.set(`.codex/agents/${agent.name}.toml`, agent.content);
       }
+      for (const hook of getCodexHooks()) {
+        files.set(`.codex/hooks/${hook.name}`, hook.content);
+      }
+      files.set(".codex/hooks.json", getCodexHooksConfig());
       const config = getCodexConfigTemplate();
       files.set(`.codex/${config.targetPath}`, config.content);
       return files;
@@ -237,16 +247,16 @@ export const PLATFORM_MANAGED_DIRS = PLATFORM_IDS.flatMap((id) =>
 export const ALL_MANAGED_DIRS = [".trellis", ...new Set(PLATFORM_MANAGED_DIRS)];
 
 /**
- * Detect which platforms are configured by checking for directory existence
+ * Detect which platforms are configured by checking for configDir existence.
+ *
+ * Note: Detection uses only `configDir` (the platform-specific directory),
+ * NOT shared layers like `.agents/skills/`. This prevents false positives
+ * where a shared directory triggers detection of a specific platform.
  */
 export function getConfiguredPlatforms(cwd: string): Set<AITool> {
   const platforms = new Set<AITool>();
   for (const id of PLATFORM_IDS) {
-    if (
-      getManagedPaths(id).some((managedPath) =>
-        fs.existsSync(path.join(cwd, managedPath)),
-      )
-    ) {
+    if (fs.existsSync(path.join(cwd, AI_TOOLS[id].configDir))) {
       platforms.add(id);
     }
   }

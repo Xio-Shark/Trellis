@@ -12,7 +12,6 @@ const EXPECTED_SKILL_NAMES = [
   "improve-ut",
   "integrate-skill",
   "onboard",
-  "parallel",
   "record-session",
   "start",
   "update-spec",
