@@ -6,23 +6,41 @@ Platform-independent Python scripts for Trellis automation.
 
 ## Overview
 
-These scripts work on all platforms - they only read/write files and don't require Claude Code's hook system.
+These scripts work on all platforms — they only read/write files and don't require Claude Code's hook system.
 
 ```
 .trellis/scripts/
-├── common/                 # Shared utilities
-│   ├── paths.py
-│   ├── developer.py
-│   ├── config.py
-│   ├── task_utils.py
-│   ├── phase.py
-│   └── git_context.py
+├── common/                  # Shared utilities (19 modules)
+│   ├── __init__.py
+│   ├── paths.py             # Path constants
+│   ├── types.py             # Core type definitions (TaskData, AgentRecord)
+│   ├── developer.py         # Developer management
+│   ├── config.py            # config.yaml reader
+│   ├── io.py                # I/O utilities
+│   ├── log.py               # Logging with colors
+│   ├── git.py               # Git command utilities
+│   ├── git_context.py       # Git and session context shim
+│   ├── session_context.py   # Session context generation
+│   ├── packages_context.py  # Package discovery (monorepo)
+│   ├── tasks.py             # Task loading and iteration
+│   ├── task_utils.py        # Task utilities (resolve, hooks)
+│   ├── task_store.py        # Task store ops (create, archive, subtasks)
+│   ├── task_queue.py        # Task queue (list by status/assignee)
+│   ├── task_context.py      # JSONL context management
+│   ├── phase.py             # Phase tracking
+│   ├── registry.py          # Agent registry (registry.json)
+│   ├── worktree.py          # Worktree utilities
+│   └── cli_adapter.py       # Multi-platform CLI adapter
 │
-├── init_developer.py       # Initialize developer
-├── get_developer.py        # Get developer name
-├── get_context.py          # Get session context
-├── task.py                 # Task management CLI
-└── add_session.py          # Record session
+├── hooks/                   # Task lifecycle hook scripts
+│   └── linear_sync.py       # Linear issue sync
+│
+├── init_developer.py        # Initialize developer
+├── get_developer.py         # Get developer name
+├── get_context.py           # Get session context
+├── task.py                  # Task management CLI (16 subcommands)
+├── add_session.py           # Record session
+└── create_bootstrap.py      # First-time spec bootstrap
 ```
 
 ---
@@ -69,15 +87,28 @@ python3 .trellis/scripts/get_developer.py
 Get session context for AI consumption.
 
 ```bash
-python3 .trellis/scripts/get_context.py
+python3 .trellis/scripts/get_context.py              # Default mode (text)
+python3 .trellis/scripts/get_context.py --json        # JSON output
+python3 .trellis/scripts/get_context.py --mode record    # For record-session
+python3 .trellis/scripts/get_context.py --mode packages  # Package info only
 ```
+
+**Modes:**
+
+| Mode | Output |
+|------|--------|
+| `default` | Full context: developer, git status, current task, active tasks, journal, packages, paths |
+| `record` | Focused context with MY ACTIVE TASKS shown first |
+| `packages` | Package names, paths, types, and spec layers only |
 
 **Output includes:**
 
 - Developer identity
 - Git status and recent commits
 - Current task (if any)
+- Active tasks list
 - Workspace summary
+- Package info (monorepo)
 
 ---
 
@@ -99,6 +130,7 @@ python3 .trellis/scripts/add_session.py \
 - `--summary` - Brief summary
 - `--content-file` - Path to file with detailed content
 - `--no-commit` - Skip auto-commit of workspace changes
+- `--package` - Package name (monorepo)
 
 **Actions:**
 
@@ -109,11 +141,23 @@ python3 .trellis/scripts/add_session.py \
 
 ---
 
+### `create_bootstrap.py`
+
+Create a bootstrap task for first-time setup.
+
+```bash
+python3 .trellis/scripts/create_bootstrap.py
+```
+
+Creates a task that guides filling in project-specific spec guidelines.
+
+---
+
 ## Task Scripts
 
 ### `task.py`
 
-Task management CLI.
+Task management CLI with 16 subcommands.
 
 #### Create Task
 
@@ -125,37 +169,25 @@ python3 .trellis/scripts/task.py create "Task name" --slug task-slug
 
 - `--slug` - URL-safe identifier
 - `--assignee` - Developer name (default: current)
-- `--type` - Dev type: frontend, backend, fullstack
+- `--priority` - Priority level (P0, P1, P2, P3)
+- `--description` - Task description
+- `--parent` - Parent task directory (for subtasks)
+- `--package` - Package name (monorepo)
 
 #### List Tasks
 
 ```bash
 python3 .trellis/scripts/task.py list
+python3 .trellis/scripts/task.py list --mine          # My tasks only
+python3 .trellis/scripts/task.py list --status active  # Filter by status
 ```
 
-**Output:**
-
-```
-Active Tasks:
-  01-31-add-login-taosu (active)
-  01-30-fix-api-cursor-agent (paused)
-```
-
-#### Start Task
+#### Start / Finish Task
 
 ```bash
-python3 .trellis/scripts/task.py start <task-dir>
+python3 .trellis/scripts/task.py start <task-dir>   # Set .current-task
+python3 .trellis/scripts/task.py finish              # Clear .current-task
 ```
-
-Sets `.trellis/.current-task` to the task directory.
-
-#### Stop Task
-
-```bash
-python3 .trellis/scripts/task.py stop
-```
-
-Clears `.trellis/.current-task`.
 
 #### Initialize Context
 
@@ -163,39 +195,77 @@ Clears `.trellis/.current-task`.
 python3 .trellis/scripts/task.py init-context <task-dir> <dev-type>
 ```
 
-**Dev types:** `frontend`, `backend`, `fullstack`
+**Dev types:** `frontend`, `backend`, `fullstack`, `test`, `docs`
 
-Creates JSONL files with appropriate spec references.
+Creates JSONL files with appropriate spec references. After initialization, outputs available spec files as hints.
 
-#### Set Branch
+#### Manage Context
+
+```bash
+python3 .trellis/scripts/task.py add-context <task-dir> <agent> <path> <reason>
+python3 .trellis/scripts/task.py list-context <task-dir>
+python3 .trellis/scripts/task.py validate <task-dir>
+```
+
+**Agent types for add-context:** `implement`, `check`, `debug`
+
+#### Branch Management
 
 ```bash
 python3 .trellis/scripts/task.py set-branch <task-dir> <branch-name>
+python3 .trellis/scripts/task.py set-base-branch <task-dir> <base-branch>
+python3 .trellis/scripts/task.py set-scope <task-dir> <scope>
 ```
 
-Updates `branch` field in task.json.
-
-#### Archive Task
+#### Subtask Management
 
 ```bash
-python3 .trellis/scripts/task.py archive <task-dir>
+python3 .trellis/scripts/task.py create "Subtask" --parent <parent-dir>
+python3 .trellis/scripts/task.py add-subtask <parent-dir> <child-dir>
+python3 .trellis/scripts/task.py remove-subtask <parent-dir> <child-dir>
 ```
 
-Moves task to `.trellis/tasks/archive/YYYY-MM/`.
-
-#### List Archive
+#### Archive and PR
 
 ```bash
-python3 .trellis/scripts/task.py list-archive [month]
+python3 .trellis/scripts/task.py archive <task-dir>         # Auto-commits
+python3 .trellis/scripts/task.py archive <task-dir> --no-commit
+python3 .trellis/scripts/task.py list-archive [YYYY-MM]
+python3 .trellis/scripts/task.py create-pr <task-dir>       # Delegates to multi_agent/create_pr.py
 ```
+
+---
+
+## Hook Scripts
+
+### `hooks/linear_sync.py`
+
+Syncs task lifecycle events to Linear via `linearis` CLI.
+
+```bash
+# Called automatically by task lifecycle hooks in config.yaml
+python3 .trellis/scripts/hooks/linear_sync.py create
+python3 .trellis/scripts/hooks/linear_sync.py start
+python3 .trellis/scripts/hooks/linear_sync.py archive
+```
+
+**Environment variable:** `TASK_JSON_PATH` — path to the task's `task.json`.
 
 ---
 
 ## Common Utilities
 
-### `common/paths.py`
+### Core Types (`common/types.py`)
 
-Path constants and utilities.
+```python
+from common.types import TaskData, TaskInfo, AgentRecord
+```
+
+- `TaskData` — TypedDict for task.json fields
+- `TaskInfo` — Extended task info with directory path
+- `AgentRecord` — Agent registry entry
+
+### Paths (`common/paths.py`)
 
 ```python
 from common.paths import (
@@ -206,9 +276,7 @@ from common.paths import (
 )
 ```
 
-### `common/developer.py`
-
-Developer management.
+### Developer (`common/developer.py`)
 
 ```python
 from common.developer import (
@@ -217,52 +285,69 @@ from common.developer import (
 )
 ```
 
-### `common/task_utils.py`
-
-Task lookup functions.
-
-```python
-from common.task_utils import (
-    get_current_task,  # Get current task directory
-    load_task_json,    # Load task.json
-    save_task_json,    # Save task.json
-)
-```
-
-### `common/phase.py`
-
-Phase tracking.
-
-```python
-from common.phase import (
-    get_current_phase,  # Get current phase number
-    advance_phase,      # Move to next phase
-)
-```
-
-### `common/config.py`
-
-Project-level configuration reader.
+### Config (`common/config.py`)
 
 ```python
 from common.config import (
     get_session_commit_message,  # Commit message for auto-commit
     get_max_journal_lines,       # Max lines per journal file
+    get_packages,                # Monorepo package dict or None
+    get_default_package,         # Default package name
+    is_monorepo,                 # Check if packages are configured
+    get_submodule_packages,      # Packages with type: submodule
+    get_git_packages,            # Packages with git: true
+    get_spec_base,               # "spec" or "spec/<package>"
+    get_spec_scope,              # Session spec scope setting
 )
 ```
 
-Reads from `.trellis/config.yaml` with hardcoded fallback defaults.
-
-### `common/git_context.py`
-
-Git context generation.
+### Task Modules
 
 ```python
-from common.git_context import (
-    get_git_status,     # Get git status
-    get_recent_commits, # Get recent commit messages
-    get_branch_name,    # Get current branch
+from common.task_utils import (
+    resolve_task_dir,   # Resolve task directory from name
+    run_task_hooks,     # Execute task lifecycle hooks
 )
+
+from common.task_store import (
+    create_task,        # Create new task directory
+    archive_task,       # Archive completed task
+    add_subtask,        # Link child to parent
+    remove_subtask,     # Unlink child from parent
+)
+
+from common.task_queue import (
+    list_by_status,     # List tasks by status
+    list_by_assignee,   # List tasks by assignee
+)
+
+from common.task_context import (
+    init_context,       # Create JSONL files for a task
+    add_context,        # Add entry to a JSONL file
+    validate_context,   # Validate JSONL files
+    list_context,       # List JSONL entries
+)
+```
+
+### Git (`common/git.py`)
+
+```python
+from common.git import run_git  # Execute git commands
+```
+
+### I/O and Logging
+
+```python
+from common.io import read_file, write_file  # File operations
+from common.log import info, warn, error     # Colored logging
+```
+
+### Multi-Platform (`common/cli_adapter.py`)
+
+Abstracts CLI differences between all 11 platforms for the multi-agent pipeline.
+
+```python
+from common.cli_adapter import get_cli_adapter  # Get platform-specific adapter
 ```
 
 ---
@@ -284,11 +369,19 @@ python3 .trellis/scripts/task.py create "Add user login" --slug add-login
 
 # Initialize context for fullstack work
 python3 .trellis/scripts/task.py init-context \
-  .trellis/tasks/01-31-add-login-john-doe fullstack
+  .trellis/tasks/03-24-add-login fullstack
 
 # Start task
 python3 .trellis/scripts/task.py start \
-  .trellis/tasks/01-31-add-login-john-doe
+  .trellis/tasks/03-24-add-login
+```
+
+### Create Subtask
+
+```bash
+# Create a child task under an existing parent
+python3 .trellis/scripts/task.py create "Login API endpoint" \
+  --slug login-api --parent .trellis/tasks/03-24-add-login
 ```
 
 ### Record Session
@@ -304,5 +397,5 @@ python3 .trellis/scripts/add_session.py \
 
 ```bash
 python3 .trellis/scripts/task.py archive \
-  .trellis/tasks/01-31-add-login-john-doe
+  .trellis/tasks/03-24-add-login
 ```

@@ -1,17 +1,18 @@
 ---
 name: trellis-meta
-description: "Meta-skill for understanding and customizing Mindfold Trellis — the all-in-one AI workflow system for 9 AI coding platforms (Claude Code, Cursor, OpenCode, iFlow, Codex, Kilo, Kiro, Gemini CLI, Antigravity). Documents the original Trellis system design including architecture, commands, hooks, and multi-agent pipelines. Use when understanding Trellis architecture, customizing workflows, adding commands or agents, troubleshooting issues, or adapting Trellis to specific projects. Modifications should be recorded in a project-local trellis-local skill, not here."
+description: "Meta-skill for understanding and customizing Mindfold Trellis — the all-in-one AI workflow system for 11 AI coding platforms (Claude Code, Cursor, OpenCode, iFlow, Codex, Kilo, Kiro, Gemini CLI, Antigravity, Qoder, CodeBuddy). Documents the original Trellis system design including architecture, commands, hooks, multi-agent pipelines, monorepo support, and task lifecycle hooks. Use when understanding Trellis architecture, customizing workflows, adding commands or agents, troubleshooting issues, or adapting Trellis to specific projects. Modifications should be recorded in a project-local trellis-local skill, not here."
 ---
 
 # Trellis Meta-Skill
 
 ## Version Compatibility
 
-| Item                        | Value      |
-| --------------------------- | ---------- |
-| **Trellis CLI Version**     | 0.3.0      |
-| **Skill Last Updated**      | 2026-02-28 |
-| **Min Claude Code Version** | 1.0.0+     |
+| Item                        | Value            |
+| --------------------------- | ---------------- |
+| **Trellis CLI Version**     | 0.4.0-beta.8     |
+| **Skill Last Updated**      | 2026-03-24       |
+| **Min Claude Code Version** | 1.0.0+           |
+| **Min Node.js Version**     | >=18.17.0        |
 
 > ⚠️ **Version Mismatch Warning**: If your Trellis CLI version differs from above, some features may not work as documented. Run `trellis --version` to check.
 
@@ -21,23 +22,24 @@ description: "Meta-skill for understanding and customizing Mindfold Trellis — 
 
 ### Feature Support Matrix
 
-| Feature                     | Claude Code | iFlow   | Cursor     | OpenCode   | Codex      | Kilo       | Kiro       | Gemini CLI | Antigravity  |
-| --------------------------- | ----------- | ------- | ---------- | ---------- | ---------- | ---------- | ---------- | ---------- | ------------ |
-| **Core Systems**            |             |         |            |            |            |            |            |            |              |
-| Workspace system            | ✅ Full     | ✅ Full | ✅ Full    | ✅ Full    | ✅ Full    | ✅ Full    | ✅ Full    | ✅ Full    | ✅ Full      |
-| Task system                 | ✅ Full     | ✅ Full | ✅ Full    | ✅ Full    | ✅ Full    | ✅ Full    | ✅ Full    | ✅ Full    | ✅ Full      |
-| Spec system                 | ✅ Full     | ✅ Full | ✅ Full    | ✅ Full    | ✅ Full    | ✅ Full    | ✅ Full    | ✅ Full    | ✅ Full      |
-| Commands/Skills             | ✅ Full     | ✅ Full | ✅ Full    | ✅ Full    | ✅ Skills  | ✅ Full    | ✅ Skills  | ✅ TOML    | ✅ Workflows |
-| Agent definitions           | ✅ Full     | ✅ Full | ⚠️ Manual  | ✅ Full    | ⚠️ Manual  | ⚠️ Manual  | ⚠️ Manual  | ⚠️ Manual  | ⚠️ Manual    |
-| **Hook-Dependent Features** |             |         |            |            |            |            |            |            |              |
-| SessionStart hook           | ✅ Full     | ✅ Full | ❌ None    | ❌ None    | ❌ None    | ❌ None    | ❌ None    | ❌ None    | ❌ None      |
-| PreToolUse hook             | ✅ Full     | ✅ Full | ❌ None    | ❌ None    | ❌ None    | ❌ None    | ❌ None    | ❌ None    | ❌ None      |
-| SubagentStop hook           | ✅ Full     | ✅ Full | ❌ None    | ❌ None    | ❌ None    | ❌ None    | ❌ None    | ❌ None    | ❌ None      |
-| Auto context injection      | ✅ Full     | ✅ Full | ❌ Manual  | ❌ Manual  | ❌ Manual  | ❌ Manual  | ❌ Manual  | ❌ Manual  | ❌ Manual    |
-| Ralph Loop                  | ✅ Full     | ✅ Full | ❌ None    | ❌ None    | ❌ None    | ❌ None    | ❌ None    | ❌ None    | ❌ None      |
-| **Multi-Agent/Session**     |             |         |            |            |            |            |            |            |              |
-| Multi-Agent (current dir)   | ✅ Full     | ✅ Full | ⚠️ Limited | ⚠️ Limited | ⚠️ Limited | ⚠️ Limited | ⚠️ Limited | ⚠️ Limited | ⚠️ Limited   |
-| Multi-Session (worktrees)   | ✅ Full     | ✅ Full | ❌ None    | ❌ None    | ❌ None    | ❌ None    | ❌ None    | ❌ None    | ❌ None      |
+| Feature                     | Claude Code | iFlow   | Cursor     | OpenCode   | Codex         | Kilo       | Kiro       | Gemini CLI | Antigravity  | Qoder      | CodeBuddy  |
+| --------------------------- | ----------- | ------- | ---------- | ---------- | ------------- | ---------- | ---------- | ---------- | ------------ | ---------- | ---------- |
+| **Core Systems**            |             |         |            |            |               |            |            |            |              |            |            |
+| Workspace system            | ✅ Full     | ✅ Full | ✅ Full    | ✅ Full    | ✅ Full       | ✅ Full    | ✅ Full    | ✅ Full    | ✅ Full      | ✅ Full    | ✅ Full    |
+| Task system                 | ✅ Full     | ✅ Full | ✅ Full    | ✅ Full    | ✅ Full       | ✅ Full    | ✅ Full    | ✅ Full    | ✅ Full      | ✅ Full    | ✅ Full    |
+| Spec system                 | ✅ Full     | ✅ Full | ✅ Full    | ✅ Full    | ✅ Full       | ✅ Full    | ✅ Full    | ✅ Full    | ✅ Full      | ✅ Full    | ✅ Full    |
+| Commands/Skills             | ✅ Full     | ✅ Full | ✅ Full    | ✅ Full    | ✅ Skills     | ✅ Full    | ✅ Skills  | ✅ TOML    | ✅ Workflows | ✅ Skills  | ✅ Full    |
+| Agent definitions           | ✅ Full     | ✅ Full | ⚠️ Manual  | ✅ Full    | ✅ TOML       | ⚠️ Manual  | ⚠️ Manual  | ⚠️ Manual  | ⚠️ Manual    | ⚠️ Manual  | ⚠️ Manual  |
+| Shared agent skills         | —           | —       | —          | —          | ✅ Full       | —          | —          | —          | —            | —          | —          |
+| **Hook-Dependent Features** |             |         |            |            |               |            |            |            |              |            |            |
+| SessionStart hook           | ✅ Full     | ✅ Full | ❌ None    | ❌ None    | ⚠️ Optional   | ❌ None    | ❌ None    | ❌ None    | ❌ None      | ❌ None    | ❌ None    |
+| PreToolUse hook             | ✅ Full     | ✅ Full | ❌ None    | ❌ None    | ❌ None       | ❌ None    | ❌ None    | ❌ None    | ❌ None      | ❌ None    | ❌ None    |
+| SubagentStop hook           | ✅ Full     | ✅ Full | ❌ None    | ❌ None    | ❌ None       | ❌ None    | ❌ None    | ❌ None    | ❌ None      | ❌ None    | ❌ None    |
+| Auto context injection      | ✅ Full     | ✅ Full | ❌ Manual  | ❌ Manual  | ❌ Manual     | ❌ Manual  | ❌ Manual  | ❌ Manual  | ❌ Manual    | ❌ Manual  | ❌ Manual  |
+| Ralph Loop                  | ✅ Full     | ✅ Full | ❌ None    | ❌ None    | ❌ None       | ❌ None    | ❌ None    | ❌ None    | ❌ None      | ❌ None    | ❌ None    |
+| **Multi-Agent/Session**     |             |         |            |            |               |            |            |            |              |            |            |
+| Multi-Agent (current dir)   | ✅ Full     | ✅ Full | ⚠️ Limited | ⚠️ Limited | ⚠️ Limited    | ⚠️ Limited | ⚠️ Limited | ⚠️ Limited | ⚠️ Limited   | ⚠️ Limited | ⚠️ Limited |
+| Multi-Session (worktrees)   | ✅ Full     | ✅ Full | ❌ None    | ❌ None    | ❌ None       | ❌ None    | ❌ None    | ❌ None    | ❌ None      | ❌ None    | ❌ None    |
 
 ### Legend
 
@@ -51,12 +53,18 @@ description: "Meta-skill for understanding and customizing Mindfold Trellis — 
 
 All features work as documented. Hooks provide automatic context injection and quality enforcement. iFlow shares the same Python hook system as Claude Code.
 
-#### Commands Only (Cursor, OpenCode, Codex, Kilo, Kiro, Gemini CLI, Antigravity)
+#### Partial Hook Support (Codex)
+
+- **Works**: Workspace, tasks, specs, skills (`.codex/skills/` + `.agents/skills/` shared layer), TOML agent definitions (`.codex/agents/`), optional SessionStart hook
+- **Doesn't work**: PreToolUse, SubagentStop, Ralph Loop, Multi-Session
+- **Note**: SessionStart hook requires `codex_hooks = true` in `~/.codex/config.toml`
+
+#### Commands Only (Cursor, OpenCode, Kilo, Kiro, Gemini CLI, Antigravity, Qoder, CodeBuddy)
 
 - **Works**: Workspace, tasks, specs, commands/skills (platform-specific format)
 - **Doesn't work**: Hooks, auto-injection, Ralph Loop, Multi-Session
 - **Workaround**: Manually read spec files at session start; no automatic quality gates
-- **Note**: Each platform uses its own command format (Codex uses Skills, Gemini uses TOML, Antigravity uses Workflows)
+- **Note**: Each platform uses its own command format (Kiro/Qoder use Skills, Gemini uses TOML, Antigravity uses Workflows, CodeBuddy uses nested Markdown commands)
 
 ### Designing for Portability
 
@@ -64,11 +72,17 @@ When customizing Trellis, consider platform compatibility:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                 PORTABLE (All 9 Platforms)                   │
+│                 PORTABLE (All 11 Platforms)                  │
 │  - .trellis/workspace/    - .trellis/tasks/                 │
 │  - .trellis/spec/         - Platform commands/skills        │
 │  - File-based configs     - JSONL context files             │
+│  - config.yaml            - Monorepo packages support       │
 └─────────────────────────────────────────────────────────────┘
+                              │
+┌─────────────────────────────▼───────────────────────────────┐
+│         SHARED AGENT SKILLS (agentskills.io standard)       │
+│  - .agents/skills/          (Codex + universal agent CLIs)  │
+└─────────────────────────────┬───────────────────────────────┘
                               │
 ┌─────────────────────────────▼───────────────────────────────┐
 │              HOOK-CAPABLE (Claude Code + iFlow)              │
@@ -76,6 +90,7 @@ When customizing Trellis, consider platform compatibility:
 │  - settings.json hook configuration                         │
 │  - Auto context injection   - SubagentStop control          │
 │  - Ralph Loop               - Multi-Session worktrees       │
+│  - Task lifecycle hooks     - Dynamic spec discovery        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -223,27 +238,32 @@ Trellis transforms AI assistants into structured development partners through **
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        USER INTERACTION                              │
-│  /trellis:start  /trellis:brainstorm  /trellis:parallel  /trellis:finish-work │
+│  /trellis:start  /trellis:brainstorm  /trellis:parallel             │
+│  /trellis:finish-work  /trellis:before-dev  /trellis:check          │
 └─────────────────────────────────┬───────────────────────────────────┘
                                   │
 ┌─────────────────────────────────▼───────────────────────────────────┐
 │                         SKILLS LAYER                                 │
-│  .claude/commands/trellis/*.md   (slash commands)                   │
-│  .claude/agents/*.md             (sub-agent definitions)            │
+│  .claude/commands/trellis/*.md   (17 slash commands)                │
+│  .claude/agents/*.md             (6 sub-agent definitions)          │
+│  .agents/skills/*/SKILL.md       (shared agent skills layer)        │
 └─────────────────────────────────┬───────────────────────────────────┘
                                   │
 ┌─────────────────────────────────▼───────────────────────────────────┐
 │                          HOOKS LAYER                                 │
-│  SessionStart     → session-start.py (injects workflow + context)   │
-│  PreToolUse:Task  → inject-subagent-context.py (spec injection)     │
-│  SubagentStop     → ralph-loop.py (quality enforcement)             │
+│  SessionStart      → session-start.py (workflow + context + status) │
+│  PreToolUse:Agent  → inject-subagent-context.py (spec injection)    │
+│  SubagentStop      → ralph-loop.py (quality enforcement)            │
+│  Task Lifecycle    → config.yaml hooks (after_create/start/finish/  │
+│                      archive → e.g. Linear sync)                    │
 └─────────────────────────────────┬───────────────────────────────────┘
                                   │
 ┌─────────────────────────────────▼───────────────────────────────────┐
 │                       PERSISTENCE LAYER                              │
 │  .trellis/workspace/  (journals, session history)                   │
-│  .trellis/tasks/      (task tracking, context files)                │
-│  .trellis/spec/       (coding guidelines)                           │
+│  .trellis/tasks/      (task tracking, context files, subtasks)      │
+│  .trellis/spec/       (coding guidelines, monorepo per-package)     │
+│  .trellis/config.yaml (packages, hooks, update.skip, spec_scope)   │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -277,37 +297,61 @@ Track development progress across sessions with per-developer isolation.
 
 ### 2. Task System
 
-Track work items with phase-based execution.
+Track work items with phase-based execution, parent-child subtasks, and lifecycle hooks.
 
 ```
-.trellis/tasks/{MM-DD-slug-assignee}/
-├── task.json           # Metadata, phases, branch
+.trellis/tasks/{MM-DD-slug}/
+├── task.json           # Metadata, phases, branch, subtasks
 ├── prd.md              # Requirements
+├── info.md             # Technical design (optional)
 ├── implement.jsonl     # Context for implement agent
 ├── check.jsonl         # Context for check agent
-└── debug.jsonl         # Context for debug agent
+├── debug.jsonl         # Context for debug agent
+├── research.jsonl      # Context for research agent (optional)
+└── cr.jsonl            # Context for code review (optional)
 ```
 
 ### 3. Spec System
 
-Maintain coding standards that get injected to agents.
+Maintain coding standards that get injected to agents. Supports both single-repo and monorepo layouts.
 
 ```
+# Single repo
 .trellis/spec/
 ├── frontend/           # Frontend guidelines
 ├── backend/            # Backend guidelines
 └── guides/             # Thinking guides
+
+# Monorepo (per-package)
+.trellis/spec/
+├── <package-name>/     # Per-package specs
+│   ├── backend/
+│   ├── frontend/
+│   └── unit-test/
+└── guides/             # Shared thinking guides
 ```
 
 ### 4. Hooks System
 
 Automatically inject context and enforce quality.
 
-| Hook                 | When              | Purpose                           |
-| -------------------- | ----------------- | --------------------------------- |
-| `SessionStart`       | Session begins    | Inject workflow, guidelines       |
-| `PreToolUse:Task`    | Before sub-agent  | Inject specs via JSONL            |
-| `SubagentStop:check` | Check agent stops | Enforce verification (Ralph Loop) |
+**Claude Code / iFlow Hooks** (settings.json):
+
+| Hook                  | When                           | Purpose                                    |
+| --------------------- | ------------------------------ | ------------------------------------------ |
+| `SessionStart`        | startup, clear, compact events | Inject workflow, guidelines, task status    |
+| `PreToolUse:Agent`    | Before sub-agent launch        | Inject specs via JSONL                     |
+| `PreToolUse:Task`     | Before Task tool (legacy)      | Same as Agent (CC renamed Task→Agent)      |
+| `SubagentStop:check`  | Check agent stops              | Enforce verification (Ralph Loop)          |
+
+**Task Lifecycle Hooks** (config.yaml):
+
+| Event            | When                | Purpose                         |
+| ---------------- | ------------------- | ------------------------------- |
+| `after_create`   | Task created        | e.g. create Linear issue        |
+| `after_start`    | Task started        | e.g. update Linear status       |
+| `after_finish`   | Task finished       | e.g. mark Linear complete       |
+| `after_archive`  | Task archived       | e.g. close Linear issue         |
 
 ### 5. Agent System
 
@@ -386,9 +430,10 @@ references/
 | `overview.md`  | Core systems introduction                      |
 | `files.md`     | All `.trellis/` files with purposes            |
 | `workspace.md` | Workspace system, journals, developer identity |
-| `tasks.md`     | Task system, directories, JSONL context files  |
-| `specs.md`     | Spec system, guidelines organization           |
+| `tasks.md`     | Task system, subtasks, lifecycle hooks, JSONL   |
+| `specs.md`     | Spec system, monorepo layout, guidelines       |
 | `scripts.md`   | Platform-independent scripts                   |
+| `config.md`    | config.yaml full reference                     |
 
 ### `claude-code/` - Claude Code Only
 
@@ -428,21 +473,27 @@ references/
 
 ### Key Scripts
 
-| Script                 | Purpose              |
-| ---------------------- | -------------------- |
-| `get_context.py`       | Get session context  |
-| `task.py`              | Task management      |
-| `add_session.py`       | Record session       |
-| `multi_agent/start.py` | Start parallel agent |
+| Script                   | Purpose                              |
+| ------------------------ | ------------------------------------ |
+| `get_context.py`         | Get session context (text/JSON)      |
+| `task.py`                | Task management (16 subcommands)     |
+| `add_session.py`         | Record session                       |
+| `create_bootstrap.py`    | First-time spec bootstrap            |
+| `multi_agent/start.py`   | Start parallel agent                 |
+| `multi_agent/status.py`  | Monitor agent status                 |
+| `multi_agent/create_pr.py` | Create PR from worktree           |
 
 ### Key Paths
 
-| Path                     | Purpose             |
-| ------------------------ | ------------------- |
-| `.trellis/.developer`    | Developer identity  |
-| `.trellis/.current-task` | Active task pointer |
-| `.trellis/workflow.md`   | Main workflow docs  |
-| `.claude/settings.json`  | Hook configuration  |
+| Path                     | Purpose                            |
+| ------------------------ | ---------------------------------- |
+| `.trellis/.developer`    | Developer identity                 |
+| `.trellis/.current-task` | Active task pointer                |
+| `.trellis/workflow.md`   | Main workflow docs                 |
+| `.trellis/config.yaml`   | Project config (packages, hooks)   |
+| `.trellis/worktree.yaml` | Multi-session config               |
+| `.claude/settings.json`  | Hook configuration                 |
+| `.agents/skills/`        | Shared agent skills (agentskills.io) |
 
 ---
 

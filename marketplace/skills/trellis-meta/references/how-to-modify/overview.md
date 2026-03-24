@@ -19,7 +19,7 @@ Common Trellis customization scenarios and what files need to be modified.
 | [Add core script](#add-core-script)               | scripts/, trellis-local              | All      |
 | [Change task types](#change-task-types)           | task.py, jsonl templates             | All      |
 
-**Platform**: `All` = All 9 platforms | `CC` = Claude Code + iFlow (hook-capable)
+**Platform**: `All` = All 11 platforms | `CC` = Claude Code + iFlow (hook-capable)
 
 ---
 

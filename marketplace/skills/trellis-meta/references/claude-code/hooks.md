@@ -1,29 +1,44 @@
 # Hooks System
 
-Claude Code hooks for automatic context injection and quality enforcement.
+Claude Code / iFlow hooks for automatic context injection and quality enforcement, plus task lifecycle hooks configured in config.yaml.
 
 ---
 
 ## Overview
 
-Hooks intercept Claude Code lifecycle events to inject context and enforce quality.
+There are two types of hooks in Trellis:
+
+1. **Platform hooks** (Claude Code / iFlow) — Intercept AI lifecycle events via `settings.json`
+2. **Task lifecycle hooks** (all platforms) — Shell commands triggered by task.py operations via `config.yaml`
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                           HOOK LIFECYCLE                                 │
+│                      PLATFORM HOOK LIFECYCLE                             │
 │                                                                          │
-│  Session Start ──► SessionStart hook ──► Inject workflow context        │
+│  Session Start ──► SessionStart hook ──► Inject workflow + task status  │
+│  (startup/clear/compact)                                                │
 │                                                                          │
-│  Task() called ──► PreToolUse:Task hook ──► Inject specs from JSONL     │
+│  Agent() called ──► PreToolUse:Agent hook ──► Inject specs from JSONL  │
+│  Task() called  ──► PreToolUse:Task hook  ──► (same, legacy matcher)   │
 │                                                                          │
 │  Agent stops ──► SubagentStop hook ──► Ralph Loop verification          │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      TASK LIFECYCLE HOOKS                                 │
+│                                                                          │
+│  task.py create  ──► after_create  ──► e.g. Create Linear issue        │
+│  task.py start   ──► after_start   ──► e.g. Update status              │
+│  task.py finish  ──► after_finish  ──► e.g. Mark done                  │
+│  task.py archive ──► after_archive ──► e.g. Close issue                │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Configuration
+## Platform Hook Configuration
 
 ### `.claude/settings.json`
 
@@ -40,11 +55,41 @@ Hooks intercept Claude Code lifecycle events to inject context and enforce quali
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.py\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.py\"",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PreToolUse": [
       {
         "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-subagent-context.py\"",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
         "hooks": [
           {
             "type": "command",
@@ -70,13 +115,23 @@ Hooks intercept Claude Code lifecycle events to inject context and enforce quali
 }
 ```
 
+**Note**: PreToolUse matches both `Task` and `Agent` because Claude Code renamed the Task tool to Agent in v2.1.63. Both matchers are kept for backward compatibility.
+
 ---
 
 ## SessionStart Hook
 
 ### Purpose
 
-Inject initial context when a Claude Code session starts.
+Inject initial context when a Claude Code session starts, clears, or compacts.
+
+### Matchers
+
+| Matcher | When |
+|---------|------|
+| `startup` | Session first starts |
+| `clear` | User runs `/clear` |
+| `compact` | Context window compresses |
 
 ### Script: `session-start.py`
 
@@ -84,23 +139,31 @@ Inject initial context when a Claude Code session starts.
 
 - Developer identity from `.trellis/.developer`
 - Git status and recent commits
-- Current task (if `.trellis/.current-task` exists)
+- Current task info (if `.trellis/.current-task` exists)
 - `workflow.md` content
-- All `spec/*/index.md` files
+- All dynamically discovered `spec/*/index.md` files (supports monorepo layout)
+- Spec guideline indexes
 - Start instructions
+- **Task status tag** (`<task-status>`) with structured state:
+  - `NO ACTIVE TASK` — no current task set
+  - `NOT READY` — task exists but no JSONL context files
+  - `READY` — task has context, ready to implement
+  - `COMPLETED` — task is done
+
+**Dynamic spec discovery**: The hook iterates `spec/` subdirectories at runtime instead of hardcoding `frontend/backend/guides`. This means adding a new spec category requires no hook modification.
 
 **Output format:**
 
 ```json
 {
   "result": "continue",
-  "message": "# Session Context\n\n## Developer\ntaosu\n\n## Git Status\n..."
+  "message": "# Session Context\n\n## Developer\ntaosu\n\n<task-status>Status: READY\n...</task-status>"
 }
 ```
 
 ---
 
-## PreToolUse:Task Hook
+## PreToolUse:Agent Hook
 
 ### Purpose
 
@@ -108,7 +171,7 @@ Inject relevant specs when a subagent is invoked.
 
 ### Script: `inject-subagent-context.py`
 
-**Trigger:** When `Task(subagent_type="...")` is called.
+**Trigger:** When `Agent(subagent_type="...")` or `Task(subagent_type="...")` is called.
 
 **Flow:**
 
@@ -133,9 +196,9 @@ Inject relevant specs when a subagent is invoked.
 ### JSONL Format
 
 ```jsonl
-{"file": ".trellis/spec/backend/index.md", "reason": "Backend guidelines"}
+{"file": ".trellis/spec/cli/backend/index.md", "reason": "Backend guidelines"}
 {"file": "src/services/auth.ts", "reason": "Existing pattern"}
-{"file": ".trellis/tasks/01-31-add-login/prd.md", "reason": "Requirements"}
+{"file": ".trellis/tasks/03-24-add-login/prd.md", "reason": "Requirements"}
 ```
 
 ---
@@ -161,20 +224,78 @@ Quality enforcement via Ralph Loop.
 
 ---
 
+## Task Lifecycle Hooks
+
+### Purpose
+
+Run shell commands after task lifecycle events. Works on all platforms (file-based, no hook system required).
+
+### Configuration (config.yaml)
+
+```yaml
+hooks:
+  after_create:
+    - python3 .trellis/scripts/hooks/linear_sync.py create
+  after_start:
+    - python3 .trellis/scripts/hooks/linear_sync.py start
+  after_finish:
+    - python3 .trellis/scripts/hooks/linear_sync.py finish
+  after_archive:
+    - python3 .trellis/scripts/hooks/linear_sync.py archive
+```
+
+### Events
+
+| Event | Trigger | Example Use Case |
+|-------|---------|------------------|
+| `after_create` | `task.py create` | Create Linear/Jira issue |
+| `after_start` | `task.py start` | Update issue to "In Progress" |
+| `after_finish` | `task.py finish` | Mark issue complete |
+| `after_archive` | `task.py archive` | Close external issue |
+
+### Environment Variable
+
+| Variable | Description |
+|----------|-------------|
+| `TASK_JSON_PATH` | Absolute path to the task's `task.json` file |
+
+### Built-in: Linear Sync Hook
+
+Ships with `hooks/linear_sync.py` that syncs task events to Linear via the `linearis` CLI tool.
+
+---
+
+## Codex SessionStart Hook
+
+Codex has its own optional SessionStart hook at `.codex/hooks/session-start.py` configured via `.codex/hooks.json`.
+
+**Requires**: `codex_hooks = true` in `~/.codex/config.toml`
+
+**Injects**: Same Trellis context as the Claude Code hook (workflow, guidelines, task status).
+
+---
+
 ## Hook Scripts Location
 
 ```
-.claude/hooks/
-├── session-start.py           # SessionStart handler
-├── inject-subagent-context.py # PreToolUse:Task handler
-└── ralph-loop.py              # SubagentStop:check handler
+.claude/hooks/                          # Claude Code platform hooks
+├── session-start.py                    # SessionStart handler
+├── inject-subagent-context.py          # PreToolUse:Agent/Task handler
+└── ralph-loop.py                       # SubagentStop:check handler
+
+.trellis/scripts/hooks/                 # Task lifecycle hooks (all platforms)
+└── linear_sync.py                      # Linear issue sync
+
+.codex/hooks/                           # Codex platform hooks (optional)
+├── session-start.py                    # Codex SessionStart handler
+└── hooks.json                          # Codex hook configuration
 ```
 
 ---
 
 ## Environment Variables
 
-Available in hook scripts:
+Available in platform hook scripts:
 
 | Variable             | Description                                 |
 | -------------------- | ------------------------------------------- |
@@ -237,9 +358,10 @@ TOOL_INPUT='{"subagent_type":"implement","prompt":"test"}' \
 
 ### Common Issues
 
-| Issue               | Cause                 | Solution                     |
-| ------------------- | --------------------- | ---------------------------- |
-| Hook not running    | Wrong matcher         | Check settings.json matcher  |
-| Timeout             | Script too slow       | Increase timeout or optimize |
-| No context injected | Missing .current-task | Run `task.py start`          |
-| JSONL not found     | Wrong task directory  | Check .current-task path     |
+| Issue               | Cause                        | Solution                            |
+| ------------------- | ---------------------------- | ----------------------------------- |
+| Hook not running    | Wrong matcher                | Check settings.json (both Task+Agent) |
+| Timeout             | Script too slow              | Increase timeout or optimize        |
+| No context injected | Missing .current-task        | Run `task.py start`                 |
+| JSONL not found     | Wrong task directory         | Check .current-task path            |
+| Import warnings     | IDE Pyright/Pylance          | `# type: ignore[import-not-found]` added |
