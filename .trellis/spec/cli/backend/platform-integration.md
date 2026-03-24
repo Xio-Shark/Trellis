@@ -84,14 +84,21 @@ When adding a new platform `{platform}`, update the following:
 
 > Note: Codex/Kiro/Qoder use skills (not slash commands). Skill content should use `$<skill-name>` / `/skills` semantics, not `/trellis:*` syntax. Qoder skills use YAML frontmatter (`---\nname: ...\n---`) at the top of each SKILL.md.
 >
-> Codex also supports **project-scoped config and custom agents**:
+> **Codex has a three-layer directory model:**
 >
-> | Directory / File | Contents |
-> |------------------|----------|
-> | `src/templates/codex/config.toml` | Project-scoped Codex settings |
-> | `src/templates/codex/agents/*.toml` | Custom Codex subagents |
+> | Layer | Install Path | Template Source | Purpose |
+> |-------|-------------|-----------------|---------|
+> | Shared skills | `.agents/skills/` | `src/templates/codex/skills/` | Cross-platform skills (agentskills.io standard) |
+> | Codex-specific skills | `.codex/skills/` | `src/templates/codex/codex-skills/` | Platform-specific skills (e.g. `parallel` with `--platform codex`) |
+> | Codex config/agents/hooks | `.codex/` | `src/templates/codex/{agents,hooks,config.toml,hooks.json}` | Config, custom agents, SessionStart hook |
 >
-> When updating Codex integration, remember that `trellis init --codex` owns **both** `.agents/skills/` and `.codex/`.
+> **Key rules:**
+> - Shared skills in `.agents/skills/` must NOT contain platform-specific references (no `--platform codex`, no `codex exec`)
+> - Codex-specific skills go in `.codex/skills/` (via `codex-skills/` template dir)
+> - Agent TOML format: `name` + `description` + `developer_instructions` + optional `sandbox_mode` (NOT `[sandbox_read_only]` + `prompt`)
+> - Codex hooks require `features.codex_hooks = true` in user config (experimental as of v0.116.0)
+> - Platform detection uses `.codex/` only — `.agents/skills/` alone does NOT trigger codex detection
+> - `configDir` is `".codex"`, with `supportsAgentSkills: true` to auto-include `.agents/skills` in managed paths
 
 **Commands-only with nesting pattern** (CodeBuddy):
 
@@ -196,7 +203,13 @@ When adding a new platform `{platform}`, update the following:
 
 > Note: Python scripts run in user projects at runtime — they cannot import from the TS registry and maintain their own registry in `cli_adapter.py`.
 >
-> Codex integration now includes `multi_agent/plan.py` and `multi_agent/start.py` platform choices in addition to common scripts and task path mapping. If Codex-managed directories change, update those argparse choices and detection logic together.
+> **Codex-specific CLIAdapter notes:**
+> - `config_dir_name` returns `".codex"` (not `".agents"`)
+> - `get_agent_path` returns `.toml` for codex (not `.md`)
+> - `requires_agent_definition_file` is `False` — Codex auto-discovers agents from `.codex/agents/*.toml`, no `--agent` CLI flag
+> - `detect_platform` checks `.codex/` existence (not `.agents/skills/`)
+> - Multi-agent scripts (`plan.py`, `start.py`) skip agent file validation for codex via `requires_agent_definition_file`
+> - **CRITICAL**: Template copy (`src/templates/trellis/scripts/`) must be byte-identical to live copy (`.trellis/scripts/`)
 
 ### Step 7: Documentation
 
