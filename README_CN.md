@@ -181,7 +181,7 @@ trellis init --registry https://github.com/your-org/your-spec-templates
 ### 微信群
 
 <p align="center">
-<img src="assets/wx_link3.jpg" alt="Trellis AI 框架中文社群二维码" width="260" />
+<img src="assets/wx_link4.jpg" alt="Trellis AI 框架中文社群二维码" width="260" />
 </p>
 
 <p align="center">
