@@ -27,7 +27,7 @@ Before running this skill, ensure these tools are set up. See [references/mcp-se
 |------|---------|----------|
 | [Trellis](https://github.com/mindfold/trellis) | Workflow framework with `.trellis/spec/` structure | Yes |
 | [GitNexus](https://github.com/abhigyanpatwari/GitNexus) | Code → knowledge graph (Tree-sitter + KuzuDB) | Yes |
-| [ABCoder](https://github.com/nicepkg/abcoder) | Code → UniAST (ts-morph for TS, tree-sitter for others) | Yes |
+| [ABCoder](https://github.com/cloudwego/abcoder) | Code → UniAST (ts-morph for TS, tree-sitter for others) | Yes |
 | [Codex CLI](https://github.com/openai/codex) | Parallel task execution agent | Yes |
 
 Quick check:
