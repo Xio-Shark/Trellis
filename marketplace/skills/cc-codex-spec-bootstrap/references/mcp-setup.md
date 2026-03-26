@@ -81,7 +81,7 @@ Parses codebases into UniAST (Universal Abstract Syntax Tree) using ts-morph (Ty
 
 ```bash
 # Install globally
-npm install -g abcoder
+go install github.com/cloudwego/abcoder@latest
 
 # Verify
 abcoder --help
