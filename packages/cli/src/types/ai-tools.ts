@@ -129,7 +129,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     supportsAgentSkills: true,
     cliFlag: "codex",
     defaultChecked: false,
-    hasPythonHooks: false,
+    hasPythonHooks: true,
   },
   kilo: {
     name: "Kilo CLI",
