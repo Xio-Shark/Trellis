@@ -1,4 +1,8 @@
 {
+  "statusLine": {
+    "type": "command",
+    "command": "{{PYTHON_CMD}} .claude/hooks/statusline.py"
+  },
   "hooks": {
     "SessionStart": [
       {
