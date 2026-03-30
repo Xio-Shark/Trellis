@@ -159,7 +159,10 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
       for (const hook of getCodexHooks()) {
         files.set(`.codex/hooks/${hook.name}`, hook.content);
       }
-      files.set(".codex/hooks.json", getCodexHooksConfig());
+      files.set(
+        ".codex/hooks.json",
+        resolvePlaceholders(getCodexHooksConfig()),
+      );
       const config = getCodexConfigTemplate();
       files.set(`.codex/${config.targetPath}`, config.content);
       return files;

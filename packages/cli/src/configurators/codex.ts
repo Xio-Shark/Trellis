@@ -8,6 +8,7 @@ import {
   getHooksConfig,
 } from "../templates/codex/index.js";
 import { ensureDir, writeFile } from "../utils/file-writer.js";
+import { resolvePlaceholders } from "./shared.js";
 
 /**
  * Configure Codex by writing:
@@ -61,7 +62,10 @@ export async function configureCodex(cwd: string): Promise<void> {
   }
 
   // Hooks config → .codex/hooks.json
-  await writeFile(path.join(codexRoot, "hooks.json"), getHooksConfig());
+  await writeFile(
+    path.join(codexRoot, "hooks.json"),
+    resolvePlaceholders(getHooksConfig()),
+  );
 
   // Config → .codex/config.toml
   const config = getConfigTemplate();

@@ -5,6 +5,7 @@ import os from "node:os";
 import {
   getConfiguredPlatforms,
   configurePlatform,
+  collectPlatformTemplates,
   PLATFORM_IDS,
 } from "../../src/configurators/index.js";
 import { AI_TOOLS } from "../../src/types/ai-tools.js";
@@ -13,12 +14,14 @@ import {
   getAllAgents as getAllCodexAgents,
   getAllSkills,
   getConfigTemplate as getCodexConfigTemplate,
+  getHooksConfig as getCodexHooksConfig,
 } from "../../src/templates/codex/index.js";
 import { getAllWorkflows as getAllAntigravityWorkflows } from "../../src/templates/antigravity/index.js";
 import { getAllSkills as getAllKiroSkills } from "../../src/templates/kiro/index.js";
 import { getAllCommands as getAllGeminiCommands } from "../../src/templates/gemini/index.js";
 import { getAllSkills as getAllQoderSkills } from "../../src/templates/qoder/index.js";
 import { getAllCommands as getAllCodebuddyCommands } from "../../src/templates/codebuddy/index.js";
+import { resolvePlaceholders } from "../../src/configurators/shared.js";
 
 // =============================================================================
 // getConfiguredPlatforms — detects existing platform directories
@@ -219,6 +222,17 @@ describe("configurePlatform", () => {
     const configPath = path.join(tmpDir, ".codex", config.targetPath);
     expect(fs.existsSync(configPath)).toBe(true);
     expect(fs.readFileSync(configPath, "utf-8")).toBe(config.content);
+  });
+
+  it("configurePlatform('codex') resolves PYTHON_CMD in hooks.json", async () => {
+    await configurePlatform("codex", tmpDir);
+
+    const hooksPath = path.join(tmpDir, ".codex", "hooks.json");
+    expect(fs.existsSync(hooksPath)).toBe(true);
+    const content = fs.readFileSync(hooksPath, "utf-8");
+    const expectedPythonCmd = process.platform === "win32" ? "python" : "python3";
+    expect(content).toContain(`"command": "${expectedPythonCmd} .codex/hooks/session-start.py"`);
+    expect(content).not.toContain("{{PYTHON_CMD}}");
   });
 
   it("configurePlatform('kiro') creates .kiro/skills directory", async () => {
@@ -462,5 +476,18 @@ describe("configurePlatform", () => {
         fs.rmSync(platformDir, { recursive: true, force: true });
       }
     }
+  });
+
+  it("collectPlatformTemplates('codex') resolves placeholders in hooks.json", () => {
+    const templates = collectPlatformTemplates("codex");
+    expect(templates).toBeInstanceOf(Map);
+    expect(templates?.get(".codex/hooks.json")).toBe(
+      resolvePlaceholders(getCodexHooksConfig()),
+    );
+  });
+
+  it("codex hooks.json template keeps PYTHON_CMD placeholder", () => {
+    const rawTemplate = getCodexHooksConfig();
+    expect(rawTemplate).toContain("{{PYTHON_CMD}} .codex/hooks/session-start.py");
   });
 });
