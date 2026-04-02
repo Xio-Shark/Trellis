@@ -69,6 +69,9 @@ describe("isManagedPath", () => {
     expect(isManagedPath(".agent/workflows/start.md")).toBe(true);
     expect(isManagedPath(".kiro/skills/start/SKILL.md")).toBe(true);
     expect(isManagedPath(".windsurf/workflows/trellis-start.md")).toBe(true);
+    expect(isManagedPath(".github/prompts/start.prompt.md")).toBe(true);
+    expect(isManagedPath(".github/copilot/hooks/session-start.py")).toBe(true);
+    expect(isManagedPath(".github/hooks/trellis.json")).toBe(true);
   });
 
   // Positive: exact match (startsWith(d + "/") = false, === d = true)
@@ -82,6 +85,8 @@ describe("isManagedPath", () => {
     expect(isManagedPath(".agent/workflows")).toBe(true);
     expect(isManagedPath(".kiro/skills")).toBe(true);
     expect(isManagedPath(".windsurf/workflows")).toBe(true);
+    expect(isManagedPath(".github/prompts")).toBe(true);
+    expect(isManagedPath(".github/hooks")).toBe(true);
     expect(isManagedPath(".trellis")).toBe(true);
   });
 
@@ -102,6 +107,9 @@ describe("isManagedPath", () => {
     expect(isManagedPath(".agent/workflows-backup")).toBe(false);
     expect(isManagedPath(".kiro/skills-backup")).toBe(false);
     expect(isManagedPath(".windsurf/workflows-backup")).toBe(false);
+    expect(isManagedPath(".github/prompts-backup")).toBe(false);
+    expect(isManagedPath(".github/copilot-backup")).toBe(false);
+    expect(isManagedPath(".github/hooks-backup")).toBe(false);
   });
 
   // Boundary: empty string
@@ -133,6 +141,11 @@ describe("isManagedPath", () => {
     expect(isManagedPath(".agent\\workflows\\start.md")).toBe(true);
     expect(isManagedPath(".kiro\\skills\\start\\SKILL.md")).toBe(true);
     expect(isManagedPath(".windsurf\\workflows\\trellis-start.md")).toBe(true);
+    expect(isManagedPath(".github\\prompts\\start.prompt.md")).toBe(true);
+    expect(isManagedPath(".github\\copilot\\hooks\\session-start.py")).toBe(
+      true,
+    );
+    expect(isManagedPath(".github\\hooks\\trellis.json")).toBe(true);
   });
 
   // Mixed separators
@@ -158,6 +171,14 @@ describe("isManagedRootDir", () => {
 
   it("matches shared agent skills layer", () => {
     expect(isManagedRootDir(".agents/skills")).toBe(true);
+  });
+
+  it("matches copilot discovery hooks root", () => {
+    expect(isManagedRootDir(".github/hooks")).toBe(true);
+  });
+
+  it("matches copilot prompt root", () => {
+    expect(isManagedRootDir(".github/prompts")).toBe(true);
   });
 
   it("rejects sub-paths (not a root dir)", () => {
@@ -313,5 +334,13 @@ describe("collectPlatformTemplates", () => {
         expect(result.size).toBeGreaterThan(0);
       }
     }
+  });
+
+  it("copilot collectTemplates includes both tracked and discovery config files", () => {
+    const result = collectPlatformTemplates("copilot");
+    expect(result).toBeInstanceOf(Map);
+    expect(result?.has(".github/prompts/start.prompt.md")).toBe(true);
+    expect(result?.has(".github/copilot/hooks.json")).toBe(true);
+    expect(result?.has(".github/hooks/trellis.json")).toBe(true);
   });
 });

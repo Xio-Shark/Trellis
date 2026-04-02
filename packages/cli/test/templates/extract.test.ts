@@ -14,6 +14,7 @@ import {
   getWindsurfTemplatePath,
   getQoderTemplatePath,
   getCodebuddyTemplatePath,
+  getCopilotTemplatePath,
   getTrellisSourcePath,
   getCursorSourcePath,
   getClaudeSourcePath,
@@ -114,6 +115,12 @@ describe("template path functions", () => {
 
   it("getCodebuddyTemplatePath returns existing directory", () => {
     const p = getCodebuddyTemplatePath();
+    expect(fs.existsSync(p)).toBe(true);
+    expect(fs.statSync(p).isDirectory()).toBe(true);
+  });
+
+  it("getCopilotTemplatePath returns existing directory", () => {
+    const p = getCopilotTemplatePath();
     expect(fs.existsSync(p)).toBe(true);
     expect(fs.statSync(p).isDirectory()).toBe(true);
   });

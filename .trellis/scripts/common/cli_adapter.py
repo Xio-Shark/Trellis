@@ -162,6 +162,7 @@ class CLIAdapter:
             Cursor uses prefix naming: .cursor/commands/trellis-<name>.md
             Antigravity uses workflow directory: .agent/workflows/<name>.md
             Windsurf uses workflow directory: .windsurf/workflows/trellis-<name>.md
+            Copilot uses prompt files: .github/prompts/<name>.prompt.md
             Claude/OpenCode use subdirectory: .claude/commands/trellis/<name>.md
         """
         if self.platform == "windsurf":
@@ -181,6 +182,17 @@ class CLIAdapter:
                 filename = parts[-1]
                 return workflow_dir / filename
             return workflow_dir / Path(*parts)
+
+        if self.platform == "copilot":
+            prompts_dir = project_root / ".github" / "prompts"
+            if not parts:
+                return prompts_dir
+            if len(parts) >= 2 and parts[0] == "trellis":
+                filename = parts[-1]
+                if filename.endswith(".md"):
+                    filename = filename[:-3]
+                return prompts_dir / f"{filename}.prompt.md"
+            return prompts_dir / Path(*parts)
 
         if not parts:
             return self.get_config_dir(project_root) / "commands"
@@ -227,6 +239,8 @@ class CLIAdapter:
             return f".windsurf/workflows/trellis-{name}.md"
         elif self.platform == "kilo":
             return f".kilocode/workflows/{name}.md"
+        elif self.platform == "copilot":
+            return f".github/prompts/{name}.prompt.md"
         else:
             return f"{self.config_dir_name}/commands/trellis/{name}.md"
 
@@ -257,6 +271,8 @@ class CLIAdapter:
         elif self.platform == "qoder":
             return {}
         elif self.platform == "codebuddy":
+            return {}
+        elif self.platform == "copilot":
             return {}
         else:
             return {"CLAUDE_NON_INTERACTIVE": "1"}
@@ -333,6 +349,10 @@ class CLIAdapter:
             raise ValueError(
                 "CodeBuddy does not support non-interactive mode (no CLI agent)"
             )
+        elif self.platform == "copilot":
+            raise ValueError(
+                "GitHub Copilot is IDE-only; CLI agent run is not supported."
+            )
 
         else:  # claude
             cmd = ["claude", "-p"]
@@ -388,6 +408,10 @@ class CLIAdapter:
         elif self.platform == "codebuddy":
             raise ValueError(
                 "CodeBuddy does not support non-interactive mode (no CLI agent)"
+            )
+        elif self.platform == "copilot":
+            raise ValueError(
+                "GitHub Copilot is IDE-only; CLI resume is not supported."
             )
         else:
             return ["claude", "--resume", session_id]
@@ -457,6 +481,8 @@ class CLIAdapter:
             return "qodercli"
         elif self.platform == "codebuddy":
             return "codebuddy"
+        elif self.platform == "copilot":
+            return "copilot"
         else:
             return "claude"
 

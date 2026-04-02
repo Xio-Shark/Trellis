@@ -22,6 +22,11 @@ import { getAllSkills as getAllKiroSkills } from "../../src/templates/kiro/index
 import { getAllCommands as getAllGeminiCommands } from "../../src/templates/gemini/index.js";
 import { getAllSkills as getAllQoderSkills } from "../../src/templates/qoder/index.js";
 import { getAllCommands as getAllCodebuddyCommands } from "../../src/templates/codebuddy/index.js";
+import {
+  getAllHooks as getAllCopilotHooks,
+  getAllPrompts as getAllCopilotPrompts,
+  getHooksConfig as getCopilotHooksConfig,
+} from "../../src/templates/copilot/index.js";
 import { resolvePlaceholders } from "../../src/configurators/shared.js";
 
 // =============================================================================
@@ -118,6 +123,12 @@ describe("getConfiguredPlatforms", () => {
     fs.mkdirSync(path.join(tmpDir, ".codebuddy"), { recursive: true });
     const result = getConfiguredPlatforms(tmpDir);
     expect(result.has("codebuddy")).toBe(true);
+  });
+
+  it("detects .github/copilot directory as copilot", () => {
+    fs.mkdirSync(path.join(tmpDir, ".github", "copilot"), { recursive: true });
+    const result = getConfiguredPlatforms(tmpDir);
+    expect(result.has("copilot")).toBe(true);
   });
 
   it("detects multiple platforms simultaneously", () => {
@@ -483,6 +494,47 @@ describe("configurePlatform", () => {
     }
   });
 
+  it("configurePlatform('copilot') creates .github/copilot hooks", async () => {
+    await configurePlatform("copilot", tmpDir);
+
+    expect(fs.existsSync(path.join(tmpDir, ".github", "copilot"))).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, ".github", "copilot", "hooks"))).toBe(true);
+
+    const expectedHooks = getAllCopilotHooks();
+    for (const hook of expectedHooks) {
+      const hookPath = path.join(tmpDir, ".github", "copilot", "hooks", hook.name);
+      expect(fs.existsSync(hookPath)).toBe(true);
+      expect(fs.readFileSync(hookPath, "utf-8")).toBe(hook.content);
+    }
+  });
+
+  it("configurePlatform('copilot') writes slash-command prompt files", async () => {
+    await configurePlatform("copilot", tmpDir);
+
+    const promptsDir = path.join(tmpDir, ".github", "prompts");
+    expect(fs.existsSync(promptsDir)).toBe(true);
+
+    const expectedPrompts = getAllCopilotPrompts();
+    for (const prompt of expectedPrompts) {
+      const promptPath = path.join(promptsDir, `${prompt.name}.prompt.md`);
+      expect(fs.existsSync(promptPath)).toBe(true);
+      expect(fs.readFileSync(promptPath, "utf-8")).toBe(prompt.content);
+    }
+  });
+
+  it("configurePlatform('copilot') writes both tracked and discovery hooks config", async () => {
+    await configurePlatform("copilot", tmpDir);
+
+    const expected = resolvePlaceholders(getCopilotHooksConfig());
+    const tracked = path.join(tmpDir, ".github", "copilot", "hooks.json");
+    const discovery = path.join(tmpDir, ".github", "hooks", "trellis.json");
+
+    expect(fs.existsSync(tracked)).toBe(true);
+    expect(fs.existsSync(discovery)).toBe(true);
+    expect(fs.readFileSync(tracked, "utf-8")).toBe(expected);
+    expect(fs.readFileSync(discovery, "utf-8")).toBe(expected);
+  });
+
   it("claude-code configuration includes commands directory", async () => {
     await configurePlatform("claude-code", tmpDir);
     expect(fs.existsSync(path.join(tmpDir, ".claude", "commands"))).toBe(true);
@@ -527,5 +579,24 @@ describe("configurePlatform", () => {
   it("codex hooks.json template keeps PYTHON_CMD placeholder", () => {
     const rawTemplate = getCodexHooksConfig();
     expect(rawTemplate).toContain("{{PYTHON_CMD}} .codex/hooks/session-start.py");
+  });
+
+  it("collectPlatformTemplates('copilot') includes tracked + discovery hooks config", () => {
+    const templates = collectPlatformTemplates("copilot");
+    expect(templates).toBeInstanceOf(Map);
+    expect(templates?.get(".github/prompts/start.prompt.md")).toBeDefined();
+    expect(templates?.get(".github/copilot/hooks.json")).toBe(
+      resolvePlaceholders(getCopilotHooksConfig()),
+    );
+    expect(templates?.get(".github/hooks/trellis.json")).toBe(
+      resolvePlaceholders(getCopilotHooksConfig()),
+    );
+  });
+
+  it("copilot hooks.json template keeps PYTHON_CMD placeholder", () => {
+    const rawTemplate = getCopilotHooksConfig();
+    expect(rawTemplate).toContain(
+      "{{PYTHON_CMD}} .github/copilot/hooks/session-start.py",
+    );
   });
 });

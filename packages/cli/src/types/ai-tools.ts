@@ -76,6 +76,8 @@ export interface AIToolConfig {
    * to the platform's managed paths automatically.
    */
   supportsAgentSkills?: boolean;
+  /** Additional managed paths beyond configDir (e.g., .github/hooks for Copilot) */
+  extraManagedPaths?: string[];
   /** CLI flag name for --flag options (e.g., "claude" for --claude) */
   cliFlag: CliFlag;
   /** Whether this tool is checked by default in interactive init prompt */
@@ -197,6 +199,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     name: "GitHub Copilot",
     templateDirs: ["common", "copilot"],
     configDir: ".github/copilot",
+    extraManagedPaths: [".github/hooks", ".github/prompts"],
     cliFlag: "copilot",
     defaultChecked: false,
     hasPythonHooks: true,
@@ -218,6 +221,9 @@ export function getManagedPaths(tool: AITool): string[] {
   const paths = [config.configDir];
   if (config.supportsAgentSkills) {
     paths.push(".agents/skills");
+  }
+  if (config.extraManagedPaths) {
+    paths.push(...config.extraManagedPaths);
   }
   return paths;
 }

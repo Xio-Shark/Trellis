@@ -66,6 +66,7 @@ import { getAllSkills as getQoderSkills } from "../templates/qoder/index.js";
 import { getAllCommands as getCodebuddyCommands } from "../templates/codebuddy/index.js";
 import {
   getAllHooks as getCopilotHooks,
+  getAllPrompts as getCopilotPrompts,
   getHooksConfig as getCopilotHooksConfig,
 } from "../templates/copilot/index.js";
 
@@ -250,13 +251,20 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
     configure: configureCopilot,
     collectTemplates: () => {
       const files = new Map<string, string>();
+      for (const prompt of getCopilotPrompts()) {
+        files.set(`.github/prompts/${prompt.name}.prompt.md`, prompt.content);
+      }
       for (const hook of getCopilotHooks()) {
         files.set(`.github/copilot/hooks/${hook.name}`, hook.content);
       }
-      // Note: .github/hooks/trellis.json is also written by configureCopilot
-      // for VS Code Copilot discovery, but tracked here under configDir
+      // Tracked copy under platform config directory
       files.set(
         ".github/copilot/hooks.json",
+        resolvePlaceholders(getCopilotHooksConfig()),
+      );
+      // VS Code Copilot discovery entry written by configureCopilot
+      files.set(
+        ".github/hooks/trellis.json",
         resolvePlaceholders(getCopilotHooksConfig()),
       );
       return files;

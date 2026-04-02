@@ -75,6 +75,9 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".windsurf", "workflows"))).toBe(
       false,
     );
+    expect(fs.existsSync(path.join(tmpDir, ".github", "copilot"))).toBe(
+      false,
+    );
 
     // Root files
     expect(fs.existsSync(path.join(tmpDir, "AGENTS.md"))).toBe(true);
@@ -99,6 +102,9 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".windsurf", "workflows"))).toBe(
       false,
     );
+    expect(fs.existsSync(path.join(tmpDir, ".github", "copilot"))).toBe(
+      false,
+    );
   });
 
   it("#3 multi platform creates all selected platform directories", async () => {
@@ -118,6 +124,9 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".qoder"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".codebuddy"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".windsurf", "workflows"))).toBe(
+      false,
+    );
+    expect(fs.existsSync(path.join(tmpDir, ".github", "copilot"))).toBe(
       false,
     );
   });
@@ -224,6 +233,46 @@ describe("init() integration", () => {
         path.join(tmpDir, ".codebuddy", "commands", "trellis", "start.md"),
       ),
     ).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(false);
+  });
+
+  it("#3i copilot platform creates .github/copilot hooks and discovery config", async () => {
+    await init({ yes: true, copilot: true });
+
+    expect(fs.existsSync(path.join(tmpDir, ".github", "prompts"))).toBe(true);
+    expect(
+      fs.existsSync(path.join(tmpDir, ".github", "prompts", "start.prompt.md")),
+    ).toBe(true);
+
+    expect(fs.existsSync(path.join(tmpDir, ".github", "copilot", "hooks"))).toBe(
+      true,
+    );
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".github", "copilot", "hooks", "session-start.py"),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(tmpDir, ".github", "copilot", "hooks.json")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(tmpDir, ".github", "hooks", "trellis.json")),
+    ).toBe(true);
+
+    const hashFile = path.join(
+      tmpDir,
+      DIR_NAMES.WORKFLOW,
+      ".template-hashes.json",
+    );
+    const hashes = JSON.parse(
+      fs.readFileSync(hashFile, "utf-8"),
+    ) as Record<string, string>;
+    const trackedPaths = Object.keys(hashes).map((p) => p.replace(/\\/g, "/"));
+    expect(trackedPaths).toContain(".github/prompts/start.prompt.md");
+    expect(trackedPaths).toContain(".github/copilot/hooks.json");
+    expect(trackedPaths).toContain(".github/hooks/trellis.json");
+
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(false);
   });
