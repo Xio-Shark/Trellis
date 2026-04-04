@@ -142,6 +142,7 @@ trellis init --opencode -u your-name
 
 - **Works**: Workspace, tasks, specs, agents, commands
 - **Note**: Full subagent context injection requires [oh-my-opencode](https://github.com/nicepkg/oh-my-opencode). Without it, agents use Self-Loading fallback.
+- **Dispatch rule**: Trellis OpenCode dispatch should call child agents synchronously. Do not treat background task status alone as proof that a child session has fully finished.
 
 ### Codex
 
