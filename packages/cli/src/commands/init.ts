@@ -44,23 +44,54 @@ import {
 import { setupProxy, maskProxyUrl } from "../utils/proxy.js";
 
 /**
- * Detect available Python command (python3 or python)
+ * Detect available Python command (python3 or python) and verify version >= 3.10
  */
 function getPythonCommand(): string {
-  // Try python3 first (preferred on macOS/Linux)
-  try {
-    execSync("python3 --version", { stdio: "pipe" });
-    return "python3";
-  } catch {
-    // Fall back to python (common on Windows)
+  const MIN_MAJOR = 3;
+  const MIN_MINOR = 10;
+
+  function checkVersion(cmd: string): boolean {
     try {
-      execSync("python --version", { stdio: "pipe" });
-      return "python";
+      const output = execSync(`${cmd} --version`, { stdio: "pipe" })
+        .toString()
+        .trim();
+      const match = output.match(/Python (\d+)\.(\d+)/);
+      if (!match) return false;
+      const [, major, minor] = match.map(Number);
+      return major > MIN_MAJOR || (major === MIN_MAJOR && minor >= MIN_MINOR);
     } catch {
-      // Default to python3, let it fail with a clear error
-      return "python3";
+      return false;
     }
   }
+
+  if (checkVersion("python3")) return "python3";
+  if (checkVersion("python")) return "python";
+
+  // Check if Python exists but is too old
+  try {
+    const output = execSync("python3 --version", { stdio: "pipe" })
+      .toString()
+      .trim();
+    console.warn(
+      chalk.yellow(
+        `⚠️  ${output} detected, but Trellis requires Python ≥ 3.10`,
+      ),
+    );
+  } catch {
+    try {
+      const output = execSync("python --version", { stdio: "pipe" })
+        .toString()
+        .trim();
+      console.warn(
+        chalk.yellow(
+          `⚠️  ${output} detected, but Trellis requires Python ≥ 3.10`,
+        ),
+      );
+    } catch {
+      // No Python at all
+    }
+  }
+  return "python3";
 }
 
 // =============================================================================

@@ -47,6 +47,11 @@
 | **Team-shared standards** | Specs live in the repo, so one person’s hard-won workflow or rule can benefit the whole team. |
 | **Multi-platform setup** | Bring the same Trellis structure to 11 AI coding platforms instead of rebuilding your workflow per tool. |
 
+## Prerequisites
+
+- **Node.js** ≥ 18
+- **Python** ≥ 3.10 (required for hooks and automation scripts)
+
 ## Quick Start
 
 ```bash
