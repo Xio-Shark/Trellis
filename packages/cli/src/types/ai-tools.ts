@@ -19,7 +19,8 @@ export type AITool =
   | "antigravity"
   | "windsurf"
   | "qoder"
-  | "codebuddy";
+  | "codebuddy"
+  | "copilot";
 
 /**
  * Template directory categories
@@ -37,7 +38,8 @@ export type TemplateDir =
   | "antigravity"
   | "windsurf"
   | "qoder"
-  | "codebuddy";
+  | "codebuddy"
+  | "copilot";
 
 /**
  * CLI flag names for platform selection (e.g., --claude, --cursor, --kilo, --kiro, --gemini, --antigravity)
@@ -55,7 +57,8 @@ export type CliFlag =
   | "antigravity"
   | "windsurf"
   | "qoder"
-  | "codebuddy";
+  | "codebuddy"
+  | "copilot";
 
 /**
  * Configuration for an AI tool
@@ -73,6 +76,8 @@ export interface AIToolConfig {
    * to the platform's managed paths automatically.
    */
   supportsAgentSkills?: boolean;
+  /** Additional managed paths beyond configDir (e.g., .github/hooks for Copilot) */
+  extraManagedPaths?: string[];
   /** CLI flag name for --flag options (e.g., "claude" for --claude) */
   cliFlag: CliFlag;
   /** Whether this tool is checked by default in interactive init prompt */
@@ -190,6 +195,15 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     defaultChecked: false,
     hasPythonHooks: false,
   },
+  copilot: {
+    name: "GitHub Copilot",
+    templateDirs: ["common", "copilot"],
+    configDir: ".github/copilot",
+    extraManagedPaths: [".github/hooks", ".github/prompts"],
+    cliFlag: "copilot",
+    defaultChecked: false,
+    hasPythonHooks: true,
+  },
 };
 
 /**
@@ -207,6 +221,9 @@ export function getManagedPaths(tool: AITool): string[] {
   const paths = [config.configDir];
   if (config.supportsAgentSkills) {
     paths.push(".agents/skills");
+  }
+  if (config.extraManagedPaths) {
+    paths.push(...config.extraManagedPaths);
   }
   return paths;
 }

@@ -61,6 +61,13 @@ import { guidesIndexContent, workspaceIndexContent } from "../src/templates/mark
 import * as markdownExports from "../src/templates/markdown/index.js";
 import { TrellisContext } from "../src/templates/opencode/lib/trellis-context.js";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const opencodeDispatchTemplate = fs.readFileSync(
+  path.join(__dirname, "../src/templates/opencode/agents/dispatch.md"),
+  "utf-8",
+);
+
 afterEach(() => {
   clearManifestCache();
 });
@@ -156,9 +163,8 @@ describe("regression: branch context in session records (issue-106)", () => {
   });
 
   it("[issue-106] add_session.py migrates old 4/6-column headers to 5-column", () => {
-    expect(addSessionScript).toContain(
-      String.raw`re.match(
-                r"^\|\s*#\s*\|\s*Date\s*\|\s*Title\s*\|\s*Commits\s*\|\s*Branch\s*\|\s*Base Branch\s*\|\s*$",`,
+    expect(addSessionScript).toMatch(
+      /re\.match\(\r?\n\s+r"\^\\\|\\s\*#\\s\*\\\|\\s\*Date\\s\*\\\|\\s\*Title\\s\*\\\|\\s\*Commits\\s\*\\\|\\s\*Branch\\s\*\\\|\\s\*Base Branch\\s\*\\\|\\s\*\$",/,
     );
     expect(addSessionScript).toContain(
       String.raw`re.match(r"^\|\s*#\s*\|\s*Date\s*\|\s*Title\s*\|\s*Commits\s*\|\s*Branch\s*\|\s*$", line)`,
@@ -470,6 +476,10 @@ describe("regression: Windows path separator (beta.12)", () => {
     expect(isManagedPath(".iflow\\hooks\\test.py")).toBe(true);
     expect(isManagedPath(".cursor\\commands\\start.md")).toBe(true);
     expect(isManagedPath(".opencode\\config.json")).toBe(true);
+    expect(isManagedPath(".github\\copilot\\hooks\\session-start.py")).toBe(
+      true,
+    );
+    expect(isManagedPath(".github\\hooks\\trellis.json")).toBe(true);
   });
 
   it("[beta.12] isManagedPath handles mixed separators", () => {
@@ -659,13 +669,36 @@ describe("regression: update only configured platforms (beta.16)", () => {
       "kiro",
       "gemini",
       "antigravity",
+      "windsurf",
       "qoder",
       "codebuddy",
+      "copilot",
     ] as const;
     for (const id of withTracking) {
       const result = collectPlatformTemplates(id);
       expect(result, `${id} should have template tracking`).toBeInstanceOf(Map);
     }
+  });
+});
+
+describe("regression: OpenCode dispatch waits for child sessions (issue-149)", () => {
+  it("[issue-149] OpenCode dispatch uses synchronous Task calls for child phases", () => {
+    expect(opencodeDispatchTemplate).toContain("run_in_background: false");
+    expect(opencodeDispatchTemplate).not.toContain("run_in_background: true");
+  });
+
+  it("[issue-149] OpenCode dispatch forbids TaskOutput polling", () => {
+    expect(opencodeDispatchTemplate).toContain("Do NOT call TaskOutput");
+    expect(opencodeDispatchTemplate).not.toContain("TaskOutput(task_id");
+  });
+
+  it("[issue-149] OpenCode dispatch instructs phase-by-phase blocking execution", () => {
+    expect(opencodeDispatchTemplate).toContain(
+      "Wait for the Task call to return before starting the next phase.",
+    );
+    expect(opencodeDispatchTemplate).toContain(
+      "Start the next phase only after the current `Task(...)` call returns",
+    );
   });
 });
 
@@ -1081,6 +1114,11 @@ describe("regression: platform additions (beta.9, beta.13, beta.16)", () => {
     expect(AI_TOOLS.codebuddy.configDir).toBe(".codebuddy");
   });
 
+  it("[copilot] Copilot platform is registered", () => {
+    expect(AI_TOOLS).toHaveProperty("copilot");
+    expect(AI_TOOLS.copilot.configDir).toBe(".github/copilot");
+  });
+
   it("[beta.9] all platforms have consistent required fields", () => {
     for (const id of PLATFORM_IDS) {
       const tool = AI_TOOLS[id];
@@ -1152,6 +1190,11 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
     expect(commonCliAdapter).toContain(".codebuddy");
   });
 
+  it("[copilot] cli_adapter.py supports copilot platform", () => {
+    expect(commonCliAdapter).toContain('"copilot"');
+    expect(commonCliAdapter).toContain(".github/copilot");
+  });
+
   it("[beta.9] cli_adapter.py has detect_platform function", () => {
     expect(commonCliAdapter).toContain("def detect_platform");
   });
@@ -1175,6 +1218,42 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
     expect(commonCliAdapter).toContain(".windsurf");
     expect(commonCliAdapter).toContain(".qoder");
     expect(commonCliAdapter).toContain(".codebuddy");
+    expect(commonCliAdapter).toContain(".github/copilot");
+  });
+
+  it("[copilot] cli_adapter.py treats copilot as IDE-only (no CLI run/resume)", () => {
+    expect(commonCliAdapter).toContain(
+      "GitHub Copilot is IDE-only; CLI agent run is not supported.",
+    );
+    expect(commonCliAdapter).toContain(
+      "GitHub Copilot is IDE-only; CLI resume is not supported.",
+    );
+    expect(commonCliAdapter).toContain('elif self.platform == "copilot":');
+    expect(commonCliAdapter).toContain('return "copilot"');
+    expect(commonCliAdapter).toContain(
+      'return f".github/prompts/{name}.prompt.md"',
+    );
+  });
+
+  it("[copilot] cli_adapter.py has explicit copilot branches in all key methods", () => {
+    expect(commonCliAdapter).toMatch(
+      /def get_commands_path[\s\S]*?if self\.platform == "copilot":[\s\S]*?prompts_dir/,
+    );
+    expect(commonCliAdapter).toMatch(
+      /def get_trellis_command_path[\s\S]*?elif self\.platform == "copilot":[\s\S]*?\.github\/prompts\//,
+    );
+    expect(commonCliAdapter).toMatch(
+      /def get_non_interactive_env[\s\S]*?elif self\.platform == "copilot":[\s\S]*?return \{\}/,
+    );
+    expect(commonCliAdapter).toMatch(
+      /def build_run_command[\s\S]*?elif self\.platform == "copilot":[\s\S]*?CLI agent run is not supported/,
+    );
+    expect(commonCliAdapter).toMatch(
+      /def build_resume_command[\s\S]*?elif self\.platform == "copilot":[\s\S]*?CLI resume is not supported/,
+    );
+    expect(commonCliAdapter).toMatch(
+      /def cli_name[\s\S]*?elif self\.platform == "copilot":[\s\S]*?return "copilot"/,
+    );
   });
 
   it("[0.3.10] iFlow CLI uses correct agent invocation syntax", () => {
@@ -1393,6 +1472,21 @@ describe("regression: collectTemplates paths match init directory structure (0.3
     expect(keys.some((key) => key.startsWith(".codex/hooks/"))).toBe(true);
     expect(keys).toContain(".codex/hooks.json");
     expect(keys).toContain(".codex/config.toml");
+  });
+
+  it("[copilot] collectTemplates tracks hooks and VS Code discovery config", () => {
+    const templates = collectPlatformTemplates("copilot");
+    expect(templates).toBeInstanceOf(Map);
+    if (!templates) return;
+
+    const keys = [...templates.keys()];
+    expect(keys.some((key) => key.startsWith(".github/prompts/"))).toBe(true);
+    expect(keys).toContain(".github/prompts/start.prompt.md");
+    expect(keys.some((key) => key.startsWith(".github/copilot/hooks/"))).toBe(
+      true,
+    );
+    expect(keys).toContain(".github/copilot/hooks.json");
+    expect(keys).toContain(".github/hooks/trellis.json");
   });
 });
 

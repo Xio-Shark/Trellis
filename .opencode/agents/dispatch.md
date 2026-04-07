@@ -71,6 +71,10 @@ Execute each step in `phase` order.
 
 > Hook will auto-inject all specs, requirements, and technical design to subagent context.
 > Dispatch only needs to issue simple call commands.
+>
+> **OpenCode dispatch rule**: Call subagents synchronously (`run_in_background: false`).
+> Do NOT use `TaskOutput` or background polling as the completion signal for child phases.
+> The background wrapper can finish before the real subagent session is actually done.
 
 ### action: "implement"
 
@@ -79,7 +83,7 @@ Task(
   subagent_type: "implement",
   prompt: "Implement the feature described in prd.md in the task directory",
   model: "opus",
-  run_in_background: true
+  run_in_background: false
 )
 ```
 
@@ -98,7 +102,7 @@ Task(
   subagent_type: "check",
   prompt: "Check code changes, fix issues yourself",
   model: "opus",
-  run_in_background: true
+  run_in_background: false
 )
 ```
 
@@ -116,7 +120,7 @@ Task(
   subagent_type: "debug",
   prompt: "Fix the issues described in the task context",
   model: "opus",
-  run_in_background: true
+  run_in_background: false
 )
 ```
 
@@ -132,7 +136,7 @@ Task(
   subagent_type: "check",
   prompt: "[finish] Execute final completion check before PR",
   model: "opus",
-  run_in_background: true
+  run_in_background: false
 )
 ```
 
@@ -168,27 +172,23 @@ This will:
 ### Basic Pattern
 
 ```
-task_id = Task(
+result = Task(
   subagent_type: "implement",  // or "check", "debug"
   prompt: "Simple task description",
   model: "opus",
-  run_in_background: true
+  run_in_background: false
 )
 
-// Poll for completion
-for i in 1..N:
-    result = TaskOutput(task_id, block=true, timeout=300000)
-    if result.status == "completed":
-        break
+// Wait for the Task call to return before starting the next phase.
+// Do NOT call TaskOutput or use background polling inside OpenCode dispatch.
 ```
 
-### Timeout Settings
+### Execution Rule
 
-| Phase | Max Time | Poll Count |
-|-------|----------|------------|
-| implement | 30 min | 6 times |
-| check | 15 min | 3 times |
-| debug | 20 min | 4 times |
+- Run one phase at a time
+- Start the next phase only after the current `Task(...)` call returns
+- If a phase returns a clear timeout or failure, handle that result explicitly
+- Do **not** simulate completion by polling a background task wrapper
 
 ---
 
@@ -196,7 +196,7 @@ for i in 1..N:
 
 ### Timeout
 
-If a subagent times out, notify the user and ask for guidance:
+If a synchronous subagent call times out, notify the user and ask for guidance:
 
 ```
 "Subagent {phase} timed out after {time}. Options:
@@ -207,10 +207,11 @@ If a subagent times out, notify the user and ask for guidance:
 
 ### Subagent Failure
 
-If a subagent reports failure, read the output and decide:
+If a synchronous subagent call reports failure, read the output and decide:
 
 - If recoverable: call debug agent to fix
 - If not recoverable: notify user and ask for guidance
+- Do not switch back to `TaskOutput` polling for the same phase
 
 ---
 
