@@ -61,6 +61,13 @@ import { guidesIndexContent, workspaceIndexContent } from "../src/templates/mark
 import * as markdownExports from "../src/templates/markdown/index.js";
 import { TrellisContext } from "../src/templates/opencode/lib/trellis-context.js";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const opencodeDispatchTemplate = fs.readFileSync(
+  path.join(__dirname, "../src/templates/opencode/agents/dispatch.md"),
+  "utf-8",
+);
+
 afterEach(() => {
   clearManifestCache();
 });
@@ -671,6 +678,27 @@ describe("regression: update only configured platforms (beta.16)", () => {
       const result = collectPlatformTemplates(id);
       expect(result, `${id} should have template tracking`).toBeInstanceOf(Map);
     }
+  });
+});
+
+describe("regression: OpenCode dispatch waits for child sessions (issue-149)", () => {
+  it("[issue-149] OpenCode dispatch uses synchronous Task calls for child phases", () => {
+    expect(opencodeDispatchTemplate).toContain("run_in_background: false");
+    expect(opencodeDispatchTemplate).not.toContain("run_in_background: true");
+  });
+
+  it("[issue-149] OpenCode dispatch forbids TaskOutput polling", () => {
+    expect(opencodeDispatchTemplate).toContain("Do NOT call TaskOutput");
+    expect(opencodeDispatchTemplate).not.toContain("TaskOutput(task_id");
+  });
+
+  it("[issue-149] OpenCode dispatch instructs phase-by-phase blocking execution", () => {
+    expect(opencodeDispatchTemplate).toContain(
+      "Wait for the Task call to return before starting the next phase.",
+    );
+    expect(opencodeDispatchTemplate).toContain(
+      "Start the next phase only after the current `Task(...)` call returns",
+    );
   });
 });
 
