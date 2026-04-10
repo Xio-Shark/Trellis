@@ -310,6 +310,45 @@ if sys.platform == "win32":
 
 ---
 
+## SessionStart Hook: additionalContext Size Constraint
+
+### Constraint
+
+Claude Code truncates `hookSpecificOutput.additionalContext` at **~20 KB**. When exceeded, only a ~2 KB preview is shown and the full payload is written to a fallback file (`tool-results/hook-*-additionalContext.txt`). AI agents do **not** proactively read the fallback file, so any content past the preview is effectively invisible.
+
+Codex has even tighter limits — users report 40-80 KB payloads consuming most of the context window on large projects.
+
+### Size Budget (measured on vanilla `trellis init --claude`)
+
+| Block | v0.4.0-beta.10 | Notes |
+|---|---:|---|
+| `<session-context>` | 0.1 KB | Fixed |
+| `<current-state>` | 1.0 KB | Grows with tasks/git state |
+| `<workflow>` | 0.1 KB | Pointer only (was 11.6 KB before lazy-load) |
+| `<guidelines>` | 5.1 KB | **Grows with spec count** — watch this |
+| `<instructions>` | 16.1 KB | start.md content |
+| `<task-status>` | 0.2 KB | Fixed |
+| `<ready>` | 0.3 KB | Fixed |
+| **Total** | **17.9 KB** | **Under 20 KB ✓** |
+
+### Design Decision: Inject Instructions, Not Reference Content
+
+**Context**: session-start.py injected both `workflow.md` (~12 KB reference) and `start.md` (~11 KB instructions), totaling ~29 KB on vanilla — always truncated.
+
+**Decision**: Remove `workflow.md` full injection. Keep `start.md` injection because:
+
+1. `start.md` is **imperative** (step-by-step instructions the AI follows) — must be in context to be effective
+2. `workflow.md` is **reference** (principles, file structure, best practices) — `start.md` Step 1 tells AI to `cat .trellis/workflow.md`, so it's accessed on-demand
+3. Other slash commands (`brainstorm`, `finish-work`, `check`) are not pre-injected — this restores symmetry
+
+**Rule**: When adding content to session-start, prefer pointers over full injection for reference material. Reserve inline injection for actionable instructions the AI must follow immediately.
+
+### Gotcha: `<guidelines>` Is the Next Growth Risk
+
+On the Trellis dev repo (light use), `<guidelines>` is 10.8 KB vs 5.1 KB on vanilla — it grows linearly with spec `index.md` file count. Combined with `<instructions>` (16.1 KB), a project with many spec layers can still exceed 20 KB. Monitor this and consider the same lazy-load pattern for guidelines if it becomes a problem.
+
+---
+
 ## Common Mistakes
 
 ### Forgot to add entry to PLATFORM_FUNCTIONS
@@ -491,6 +530,16 @@ cmd.append(f"${mapped_agent} {prompt}")
 **Design insight**: `configure()` and `collectTemplates()` use asymmetric mechanisms to produce the same file set — one recursive copies a directory tree, the other manually lists `files.set()` calls. This asymmetry makes path drift likely during structural migrations. When migrating directory structures, always check both paths.
 
 **Regression test**: `regression.test.ts` now verifies all platforms with commands use `/commands/trellis/` in their `collectTemplates` paths.
+
+### `__pycache__` in template hooks directory causes EISDIR crash
+
+**Symptom**: Tests fail with `EISDIR: illegal operation on a directory, read` in `getAllHooks()` at `src/templates/claude/index.ts`.
+
+**Cause**: Running a Python hook locally (e.g., `python3 session-start.py` for testing) creates `__pycache__/` inside `src/templates/{platform}/hooks/`. `listFiles("hooks")` returns `__pycache__` as an entry, then `readFileSync("hooks/__pycache__")` fails because it's a directory.
+
+**Fix**: `rm -rf src/templates/*/hooks/__pycache__`. Consider adding `__pycache__` to `.gitignore` or filtering directories in `listFiles()`.
+
+**Prevention**: Don't run Python hooks directly from `src/templates/` during development. Use `/tmp` copies or the installed project copy instead.
 
 ---
 
