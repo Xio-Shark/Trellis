@@ -464,6 +464,7 @@ interface InitAnswers {
 
 export async function init(options: InitOptions): Promise<void> {
   const cwd = process.cwd();
+  const isFirstInit = !fs.existsSync(path.join(cwd, DIR_NAMES.WORKFLOW));
 
   // Generate ASCII art banner dynamically using FIGlet "Rebel" font
   const banner = figlet.textSync("Trellis", { font: "Rebel" });
@@ -1176,8 +1177,10 @@ export async function init(options: InitOptions): Promise<void> {
         stdio: "pipe", // Silent
       });
 
-      // Create bootstrap task to guide user through filling guidelines
-      createBootstrapTask(cwd, developerName, projectType, monorepoPackages);
+      // Create bootstrap task only on first init (not re-init for new platforms/devices)
+      if (isFirstInit) {
+        createBootstrapTask(cwd, developerName, projectType, monorepoPackages);
+      }
     } catch {
       // Silent failure - user can run init_developer.py manually
     }
