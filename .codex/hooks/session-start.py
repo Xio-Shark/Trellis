@@ -193,21 +193,12 @@ Read and follow all instructions below carefully.
 
     output.write("</guidelines>\n\n")
 
-    # Inject start skill as instructions (Codex uses skills, not slash commands)
-    start_skill = codex_dir / "skills" / "start" / "SKILL.md"
-    if not start_skill.is_file():
-        start_skill = project_dir / ".agents" / "skills" / "start" / "SKILL.md"
-    if start_skill.is_file():
-        output.write("<instructions>\n")
-        output.write(read_file(start_skill))
-        output.write("\n</instructions>\n\n")
-
     task_status = _get_task_status(trellis_dir)
     output.write(f"<task-status>\n{task_status}\n</task-status>\n\n")
 
     output.write("""<ready>
 Context loaded. Steps 1-3 (workflow, context, guidelines) are already injected above — do NOT re-read them.
-Start from Step 4. Wait for user's first message, then follow <instructions> to handle their request.
+Start from Step 4. Wait for user's first message, then follow the workflow to handle their request.
 If there is an active task, ask whether to continue it.
 </ready>""")
 

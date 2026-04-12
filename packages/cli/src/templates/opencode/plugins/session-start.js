@@ -306,17 +306,6 @@ Read and follow all instructions below carefully.
 
   parts.push("</guidelines>")
 
-  // 5. Session Instructions - try both .claude and .opencode
-  let startMd = ctx.readFile(join(claudeDir, "commands", "trellis", "start.md"))
-  if (!startMd) {
-    startMd = ctx.readFile(join(opencodeDir, "commands", "trellis", "start.md"))
-  }
-  if (startMd) {
-    parts.push("<instructions>")
-    parts.push(startMd)
-    parts.push("</instructions>")
-  }
-
   // 6. Task status
   const taskStatus = getTaskStatus(ctx)
   parts.push(`<task-status>\n${taskStatus}\n</task-status>`)
@@ -324,7 +313,7 @@ Read and follow all instructions below carefully.
   // 7. Final directive
   parts.push(`<ready>
 Context loaded. Steps 1-3 (workflow, context, guidelines) are already injected above — do NOT re-read them.
-Start from Step 4. Wait for user's first message, then follow <instructions> to handle their request.
+Start from Step 4. Wait for user's first message, then follow the workflow to handle their request.
 If there is an active task, ask whether to continue it.
 </ready>`)
 

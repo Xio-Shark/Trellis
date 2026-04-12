@@ -82,20 +82,9 @@ Read and follow all instructions below carefully.
 
   parts.push("</guidelines>")
 
-  // 5. Session Instructions - try both .claude and .opencode
-  let startMd = ctx.readFile(join(claudeDir, "commands", "trellis", "start.md"))
-  if (!startMd) {
-    startMd = ctx.readFile(join(opencodeDir, "commands", "trellis", "start.md"))
-  }
-  if (startMd) {
-    parts.push("<instructions>")
-    parts.push(startMd)
-    parts.push("</instructions>")
-  }
-
   // 6. Final directive
   parts.push(`<ready>
-Context loaded. Wait for user's first message, then follow <instructions> to handle their request.
+Context loaded. Wait for user's first message, then follow the workflow to handle their request.
 </ready>`)
 
   return parts.join("\n\n")
