@@ -125,6 +125,32 @@ def _get_task_status(trellis_dir: Path) -> str:
     return f"Status: READY\nTask: {task_title}\nNext: Continue with implement or check"
 
 
+def _build_workflow_toc(workflow_path: Path) -> str:
+    """Build a compact section index for workflow.md (lazy-load the full file on demand).
+
+    Replaces full-file injection to keep additionalContext payload small.
+    The full file is accessible via: Read tool on .trellis/workflow.md
+    """
+    content = read_file(workflow_path)
+    if not content:
+        return "No workflow.md found"
+
+    toc_lines = [
+        "# Development Workflow — Section Index",
+        "Full guide: .trellis/workflow.md  (read on demand)",
+        "",
+    ]
+    for line in content.splitlines():
+        if line.startswith("## "):
+            toc_lines.append(line)
+
+    toc_lines += [
+        "",
+        "To read a section: use the Read tool on .trellis/workflow.md",
+    ]
+    return "\n".join(toc_lines)
+
+
 def main() -> None:
     if should_skip_injection():
         sys.exit(0)
@@ -153,8 +179,7 @@ Read and follow all instructions below carefully.
     output.write("\n</current-state>\n\n")
 
     output.write("<workflow>\n")
-    workflow_content = read_file(trellis_dir / "workflow.md", "No workflow.md found")
-    output.write(workflow_content)
+    output.write(_build_workflow_toc(trellis_dir / "workflow.md"))
     output.write("\n</workflow>\n\n")
 
     output.write("<guidelines>\n")
