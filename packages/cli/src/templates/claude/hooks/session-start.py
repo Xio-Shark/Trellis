@@ -320,7 +320,6 @@ def main():
 
     project_dir = Path(os.environ.get("CLAUDE_PROJECT_DIR", ".")).resolve()
     trellis_dir = project_dir / ".trellis"
-    claude_dir = project_dir / ".claude"
 
     # Load config for scope filtering and legacy detection
     is_mono, packages, scope_config, task_pkg, default_pkg = _load_trellis_config(trellis_dir)
@@ -395,8 +394,8 @@ Read and follow all instructions below carefully.
     output.write(f"<task-status>\n{task_status}\n</task-status>\n\n")
 
     output.write("""<ready>
-Context loaded. Steps 1-3 (workflow, context, guidelines) are already injected above — do NOT re-read them.
-Start from Step 4. Wait for user's first message, then follow the workflow to handle their request.
+Context loaded. Workflow index, project state, and guidelines are already injected above — do NOT re-read them.
+Wait for the user's first message, then handle it following the workflow guide.
 If there is an active task, ask whether to continue it.
 </ready>""")
 

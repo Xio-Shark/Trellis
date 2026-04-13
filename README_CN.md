@@ -52,6 +52,11 @@
 | **团队共享标准** | Spec 跟着仓库一起版本化，一个人总结出来的规则和流程，可以直接变成整个团队的基础设施。 |
 | **多平台复用** | 同一套 Trellis 结构可以带到 13 个 AI coding 平台上，而不是每换一个工具就重搭一次工作流。 |
 
+## 前置要求
+
+- **Node.js** ≥ 18
+- **Python** ≥ 3.10（hooks 和自动化脚本需要）
+
 ## 快速开始
 
 ```bash
@@ -181,7 +186,7 @@ trellis init --registry https://github.com/your-org/your-spec-templates
 ### 联系我们
 
 <p align="center">
-<img src="assets/wx_link4.jpg" alt="微信群" width="260" />
+<img src="assets/wx_link5.jpg" alt="微信群" width="260" />
 &nbsp;&nbsp;&nbsp;&nbsp;
 <img src="assets/wecom-group-qr.png" alt="企微话题群" width="260" />
 &nbsp;&nbsp;&nbsp;&nbsp;

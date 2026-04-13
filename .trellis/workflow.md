@@ -184,21 +184,30 @@ python3 ./.trellis/scripts/task.py create "<title>" --slug <task-name>
 1. Create or select task
    --> python3 ./.trellis/scripts/task.py create "<title>" --slug <name> or list
 
-2. Write code according to guidelines
+2. Start task (mark as current)
+   --> python3 ./.trellis/scripts/task.py start <name>
+   --> Writes .trellis/.current-task; future sessions see it in <current-state>
+
+3. Write code according to guidelines
    --> Read .trellis/spec/ docs relevant to your task
    --> For cross-layer: read .trellis/spec/guides/
 
-3. Self-test
+4. Self-test
    --> Run project's lint/test commands (see spec docs)
    --> Manual feature testing
 
-4. Commit code
+5. Commit code
    --> git add <files>
    --> git commit -m "type(scope): description"
        Format: feat/fix/docs/refactor/test/chore
 
-5. Record session (one command)
+6. Record session (one command)
    --> python3 ./.trellis/scripts/add_session.py --title "Title" --commit "hash"
+
+7. Finish task (clear current)
+   --> python3 ./.trellis/scripts/task.py finish
+   --> Only when the task is fully done; otherwise leave it set so the
+       next session resumes where you left off
 ```
 
 ### Code Quality Checklist
@@ -305,10 +314,14 @@ tasks/
 **Commands**:
 ```bash
 python3 ./.trellis/scripts/task.py create "<title>" [--slug <name>]   # Create task directory
+python3 ./.trellis/scripts/task.py start <name>    # Set as current task (writes .current-task, triggers after_start hooks)
+python3 ./.trellis/scripts/task.py finish          # Clear current task (triggers after_finish hooks)
 python3 ./.trellis/scripts/task.py archive <name>  # Archive to archive/{year-month}/
 python3 ./.trellis/scripts/task.py list            # List active tasks
 python3 ./.trellis/scripts/task.py list-archive    # List archived tasks
 ```
+
+**Current task mechanism**: `task.py start <name>` writes the selected task path to `.trellis/.current-task`. The SessionStart hook reads this file to inject `## CURRENT TASK` into every new session's context, so the AI immediately knows what you're working on without being told. Run `task.py finish` when you're done — subsequent sessions will show `(none)` until you start another task.
 
 ---
 

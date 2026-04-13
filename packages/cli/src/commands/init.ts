@@ -10,6 +10,7 @@ import {
   getInitToolChoices,
   resolveCliFlag,
   configurePlatform,
+  getConfiguredPlatforms,
   getPlatformsWithPythonHooks,
 } from "../configurators/index.js";
 import { AI_TOOLS, type CliFlag } from "../types/ai-tools.js";
@@ -44,23 +45,54 @@ import {
 import { setupProxy, maskProxyUrl } from "../utils/proxy.js";
 
 /**
- * Detect available Python command (python3 or python)
+ * Detect available Python command (python3 or python) and verify version >= 3.10
  */
 function getPythonCommand(): string {
-  // Try python3 first (preferred on macOS/Linux)
-  try {
-    execSync("python3 --version", { stdio: "pipe" });
-    return "python3";
-  } catch {
-    // Fall back to python (common on Windows)
+  const MIN_MAJOR = 3;
+  const MIN_MINOR = 10;
+
+  function checkVersion(cmd: string): boolean {
     try {
-      execSync("python --version", { stdio: "pipe" });
-      return "python";
+      const output = execSync(`${cmd} --version`, { stdio: "pipe" })
+        .toString()
+        .trim();
+      const match = output.match(/Python (\d+)\.(\d+)/);
+      if (!match) return false;
+      const [, major, minor] = match.map(Number);
+      return major > MIN_MAJOR || (major === MIN_MAJOR && minor >= MIN_MINOR);
     } catch {
-      // Default to python3, let it fail with a clear error
-      return "python3";
+      return false;
     }
   }
+
+  if (checkVersion("python3")) return "python3";
+  if (checkVersion("python")) return "python";
+
+  // Check if Python exists but is too old
+  try {
+    const output = execSync("python3 --version", { stdio: "pipe" })
+      .toString()
+      .trim();
+    console.warn(
+      chalk.yellow(
+        `⚠️  ${output} detected, but Trellis requires Python ≥ 3.10`,
+      ),
+    );
+  } catch {
+    try {
+      const output = execSync("python --version", { stdio: "pipe" })
+        .toString()
+        .trim();
+      console.warn(
+        chalk.yellow(
+          `⚠️  ${output} detected, but Trellis requires Python ≥ 3.10`,
+        ),
+      );
+    } catch {
+      // No Python at all
+    }
+  }
+  return "python3";
 }
 
 // =============================================================================
@@ -349,6 +381,157 @@ function createBootstrapTask(
   }
 }
 
+/**
+ * Handle re-init when .trellis/ already exists.
+ * Returns true if handled (caller should return), false if user chose full re-init.
+ */
+async function handleReinit(
+  cwd: string,
+  options: InitOptions,
+  developerName: string | undefined,
+): Promise<boolean> {
+  const TOOLS = getInitToolChoices();
+  const configuredPlatforms = getConfiguredPlatforms(cwd);
+  const configuredNames = [...configuredPlatforms]
+    .map((id) => AI_TOOLS[id].name)
+    .join(", ");
+
+  // Determine explicit platform flags
+  const explicitTools = TOOLS.filter(
+    (t) => options[t.key as keyof InitOptions],
+  ).map((t) => t.key);
+
+  let doAddPlatforms = explicitTools.length > 0;
+  let doAddDeveloper = !!options.user;
+  let platformsToAdd: string[] = explicitTools;
+
+  // No explicit flags → show menu
+  if (!doAddPlatforms && !doAddDeveloper) {
+    if (options.yes) {
+      console.log(chalk.gray(`Already initialized with: ${configuredNames}`));
+      console.log(
+        chalk.gray(
+          "Use platform flags (e.g., --codex) or -u <name> to add platforms/developer.",
+        ),
+      );
+      return true;
+    }
+
+    console.log(
+      chalk.gray(`\n   Already initialized with: ${configuredNames}\n`),
+    );
+
+    const { action } = await inquirer.prompt<{ action: string }>([
+      {
+        type: "list",
+        name: "action",
+        message: "Trellis is already initialized. What would you like to do?",
+        choices: [
+          { name: "Add AI platform(s)", value: "add-platform" },
+          {
+            name: "Set up developer identity on this device",
+            value: "add-developer",
+          },
+          { name: "Full re-initialize", value: "full" },
+        ],
+      },
+    ]);
+
+    if (action === "full") {
+      return false; // Fall through to full init
+    }
+    if (action === "add-platform") doAddPlatforms = true;
+    if (action === "add-developer") doAddDeveloper = true;
+  }
+
+  // --- Add platforms ---
+  if (doAddPlatforms) {
+    if (platformsToAdd.length === 0) {
+      // Interactive: show only unconfigured platforms
+      const unconfigured = TOOLS.filter((t) => {
+        const pid = resolveCliFlag(t.key);
+        return pid && !configuredPlatforms.has(pid);
+      });
+
+      if (unconfigured.length === 0) {
+        console.log(
+          chalk.green("✓ All available platforms are already configured."),
+        );
+      } else {
+        const answers = await inquirer.prompt<{ tools: string[] }>([
+          {
+            type: "checkbox",
+            name: "tools",
+            message: "Select platforms to add:",
+            choices: unconfigured.map((t) => ({
+              name: t.name,
+              value: t.key,
+            })),
+          },
+        ]);
+        platformsToAdd = answers.tools;
+      }
+    }
+
+    for (const tool of platformsToAdd) {
+      const platformId = resolveCliFlag(tool as CliFlag);
+      if (platformId) {
+        if (configuredPlatforms.has(platformId)) {
+          console.log(
+            chalk.gray(
+              `  ○ ${AI_TOOLS[platformId].name} already configured, skipping`,
+            ),
+          );
+        } else {
+          console.log(
+            chalk.blue(`📝 Configuring ${AI_TOOLS[platformId].name}...`),
+          );
+          await configurePlatform(platformId, cwd);
+        }
+      }
+    }
+
+    // Update template hashes
+    const hashedCount = initializeHashes(cwd);
+    if (hashedCount > 0) {
+      console.log(
+        chalk.gray(`📋 Tracking ${hashedCount} template files for updates`),
+      );
+    }
+  }
+
+  // --- Add developer ---
+  if (doAddDeveloper) {
+    let devName = developerName;
+    if (!devName) {
+      devName = await askInput("Your name: ");
+      while (!devName) {
+        console.log(chalk.yellow("Name is required"));
+        devName = await askInput("Your name: ");
+      }
+    }
+
+    try {
+      const pythonCmd = getPythonCommand();
+      const scriptPath = path.join(cwd, PATHS.SCRIPTS, "init_developer.py");
+      execSync(`${pythonCmd} "${scriptPath}" "${devName}"`, {
+        cwd,
+        stdio: "pipe",
+      });
+      console.log(chalk.green(`✓ Developer "${devName}" initialized`));
+    } catch {
+      console.log(
+        chalk.yellow("⚠ Could not initialize developer. Run manually:"),
+      );
+      console.log(
+        chalk.gray(`  python3 .trellis/scripts/init_developer.py ${devName}`),
+      );
+    }
+  }
+
+  return true;
+}
+
 interface InitOptions {
   cursor?: boolean;
   claude?: boolean;
@@ -433,6 +616,7 @@ interface InitAnswers {
 
 export async function init(options: InitOptions): Promise<void> {
   const cwd = process.cwd();
+  const isFirstInit = !fs.existsSync(path.join(cwd, DIR_NAMES.WORKFLOW));
 
   // Generate ASCII art banner dynamically using FIGlet "Rebel" font
   const banner = figlet.textSync("Trellis", { font: "Rebel" });
@@ -479,7 +663,19 @@ export async function init(options: InitOptions): Promise<void> {
 
   if (developerName) {
     console.log(chalk.blue("👤 Developer:"), chalk.gray(developerName));
-  } else if (!options.yes) {
+  }
+
+  // ==========================================================================
+  // Re-init fast path: skip full flow when .trellis/ already exists
+  // ==========================================================================
+
+  if (!isFirstInit && !options.force && !options.skipExisting) {
+    const reinitDone = await handleReinit(cwd, options, developerName);
+    if (reinitDone) return;
+    // reinitDone === false means user chose "full re-initialize" → fall through
+  }
+
+  if (!developerName && !options.yes) {
     // Ask for developer name if not detected and not in yes mode
     console.log(
       chalk.gray(
@@ -1145,8 +1341,10 @@ export async function init(options: InitOptions): Promise<void> {
         stdio: "pipe", // Silent
       });
 
-      // Create bootstrap task to guide user through filling guidelines
-      createBootstrapTask(cwd, developerName, projectType, monorepoPackages);
+      // Create bootstrap task only on first init (not re-init for new platforms/devices)
+      if (isFirstInit) {
+        createBootstrapTask(cwd, developerName, projectType, monorepoPackages);
+      }
     } catch {
       // Silent failure - user can run init_developer.py manually
     }
