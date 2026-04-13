@@ -229,11 +229,20 @@ Read and follow all instructions below carefully.
     }
   }
 
-  // 3. Workflow Guide
-  const workflow = ctx.readProjectFile(".trellis/workflow.md")
-  if (workflow) {
+  // 3. Workflow Guide (ToC only — lazy-load the full file on demand)
+  const workflowContent = ctx.readProjectFile(".trellis/workflow.md")
+  if (workflowContent) {
+    const tocLines = [
+      "# Development Workflow — Section Index",
+      "Full guide: .trellis/workflow.md  (read on demand)",
+      "",
+    ]
+    for (const line of workflowContent.split("\n")) {
+      if (line.startsWith("## ")) tocLines.push(line)
+    }
+    tocLines.push("", "To read a section: use the Read tool on .trellis/workflow.md")
     parts.push("<workflow>")
-    parts.push(workflow)
+    parts.push(tocLines.join("\n"))
     parts.push("</workflow>")
   }
 
