@@ -3,11 +3,7 @@
  * Trellis Session Start Plugin
  *
  * Injects context when user sends the first message in a session.
- * Uses OpenCode's chat.message + experimental.chat.messages.transform hooks.
- *
- * Compatibility:
- * - If oh-my-opencode handles via .claude/hooks/, this plugin skips
- * - Otherwise, this plugin handles injection
+ * Uses OpenCode's chat.message hook directly so the context persists in history.
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from "fs"
@@ -29,14 +25,12 @@ function getTaskStatus(ctx) {
     return "Status: NO ACTIVE TASK\nNext: Describe what you want to work on"
   }
 
-  // Resolve task directory
   const taskDir = ctx.resolveTaskDir(taskRef)
 
   if (!taskDir || !existsSync(taskDir)) {
     return `Status: STALE POINTER\nTask: ${taskRef}\nNext: Task directory not found. Run: python3 ./.trellis/scripts/task.py finish`
   }
 
-  // Read task.json
   let taskData = {}
   const taskJsonPath = join(taskDir, "task.json")
   if (existsSync(taskJsonPath)) {
@@ -55,7 +49,6 @@ function getTaskStatus(ctx) {
     return `Status: COMPLETED\nTask: ${taskTitle}\nNext: Archive with \`python3 ./.trellis/scripts/task.py archive ${dirName}\` or start a new task`
   }
 
-  // Check if context is configured (jsonl files exist and non-empty)
   let hasContext = false
   for (const jsonlName of ["implement.jsonl", "check.jsonl", "spec.jsonl"]) {
     const jsonlPath = join(taskDir, jsonlName)
@@ -105,7 +98,6 @@ function loadTrellisConfig(directory) {
     if (data.mode !== "monorepo") {
       return { isMonorepo: false, packages: {}, specScope: null, activeTaskPackage: null, defaultPackage: null }
     }
-    // Convert packages array to dict keyed by name
     const pkgDict = {}
     for (const pkg of (data.packages || [])) {
       pkgDict[pkg.name] = pkg
@@ -135,7 +127,6 @@ function checkLegacySpec(directory, config) {
   const specDir = join(directory, ".trellis", "spec")
   if (!existsSync(specDir)) return null
 
-  // Check for legacy flat spec dirs
   let hasLegacy = false
   for (const name of ["backend", "frontend"]) {
     if (existsSync(join(specDir, name, "index.md"))) {
@@ -145,7 +136,6 @@ function checkLegacySpec(directory, config) {
   }
   if (!hasLegacy) return null
 
-  // Check which packages are missing spec/<pkg>/ directory
   const pkgNames = Object.keys(config.packages).sort()
   const missing = pkgNames.filter(name => !existsSync(join(specDir, name)))
 
@@ -193,7 +183,6 @@ function resolveSpecScope(config) {
       }
     }
     if (valid.size > 0) return valid
-    // All invalid: fallback
     if (activeTaskPackage && activeTaskPackage in packages) return new Set([activeTaskPackage])
     if (defaultPackage && defaultPackage in packages) return new Set([defaultPackage])
     return null
@@ -212,7 +201,6 @@ function buildSessionContext(ctx) {
   const claudeDir = join(directory, ".claude")
   const opencodeDir = join(directory, ".opencode")
 
-  // Load config for scope filtering and legacy detection
   const config = loadTrellisConfig(directory)
   const allowedPkgs = resolveSpecScope(config)
 
@@ -267,7 +255,6 @@ Read and follow all instructions below carefully.
       }).sort()
 
       for (const sub of subs) {
-        // Always include guides/ regardless of scope
         if (sub === "guides") {
           const indexFile = join(specDir, sub, "index.md")
           if (existsSync(indexFile)) {
@@ -281,14 +268,11 @@ Read and follow all instructions below carefully.
 
         const indexFile = join(specDir, sub, "index.md")
         if (existsSync(indexFile)) {
-          // Flat spec dir: spec/<layer>/index.md (single-repo)
           const content = ctx.readFile(indexFile)
           if (content) {
             parts.push(`## ${sub}\n${content}\n`)
           }
         } else {
-          // Nested package dirs (monorepo): spec/<pkg>/<layer>/index.md
-          // Apply scope filter
           if (allowedPkgs !== null && !allowedPkgs.has(sub)) {
             continue
           }
@@ -333,11 +317,11 @@ Read and follow all instructions below carefully.
     parts.push("</instructions>")
   }
 
-  // 6. Task status (R2: check task state for session resume)
+  // 6. Task status
   const taskStatus = getTaskStatus(ctx)
   parts.push(`<task-status>\n${taskStatus}\n</task-status>`)
 
-  // 7. Final directive (R3: active, not passive)
+  // 7. Final directive
   parts.push(`<ready>
 Context loaded. Steps 1-3 (workflow, context, guidelines) are already injected above — do NOT re-read them.
 Start from Step 4. Wait for user's first message, then follow <instructions> to handle their request.
@@ -347,106 +331,150 @@ If there is an active task, ask whether to continue it.
   return parts.join("\n\n")
 }
 
-export default async ({ directory }) => {
-  const ctx = new TrellisContext(directory)
-  debugLog("session", "Plugin loaded, directory:", directory)
+function getTrellisMetadata(metadata) {
+  if (!metadata || typeof metadata !== "object") {
+    return {}
+  }
 
-  return {
-    // chat.message - triggered when user sends a message
-    "chat.message": async (input) => {
-      try {
-        const sessionID = input.sessionID
-        const agent = input.agent || "unknown"
-        debugLog("session", "chat.message called, sessionID:", sessionID, "agent:", agent)
+  const trellis = metadata.trellis
+  if (!trellis || typeof trellis !== "object") {
+    return {}
+  }
 
-        // Skip in non-interactive mode
-        if (process.env.OPENCODE_NON_INTERACTIVE === "1") {
-          debugLog("session", "Skipping - non-interactive mode")
-          return
-        }
+  return trellis
+}
 
-        // Check if we should skip (omo will handle)
-        if (ctx.shouldSkipHook("session-start")) {
-          debugLog("session", "Skipping - omo will handle via .claude/hooks/")
-          return
-        }
-
-        // Only inject on first message
-        if (contextCollector.isProcessed(sessionID)) {
-          debugLog("session", "Skipping - session already processed")
-          return
-        }
-
-        // Mark session as processed
-        contextCollector.markProcessed(sessionID)
-
-        // Build and store context
-        const context = buildSessionContext(ctx)
-        debugLog("session", "Built context, length:", context.length)
-
-        contextCollector.store(sessionID, context)
-        debugLog("session", "Context stored for session:", sessionID)
-
-      } catch (error) {
-        debugLog("session", "Error in chat.message:", error.message, error.stack)
-      }
+function markPartAsSessionStart(part) {
+  const metadata = part.metadata && typeof part.metadata === "object"
+    ? part.metadata
+    : {}
+  part.metadata = {
+    ...metadata,
+    trellis: {
+      ...getTrellisMetadata(metadata),
+      sessionStart: true,
     },
+  }
+}
 
-    // experimental.chat.messages.transform - modify messages before sending to AI
-    "experimental.chat.messages.transform": async (input, output) => {
-      try {
-        const { messages } = output
-        debugLog("session", "messages.transform called, messageCount:", messages?.length)
+function hasSessionStartMarker(part) {
+  if (!part || part.type !== "text" || typeof part.text !== "string") {
+    return false
+  }
 
-        if (!messages || messages.length === 0) {
-          return
-        }
+  return getTrellisMetadata(part.metadata).sessionStart === true
+}
 
-        // Find last user message
-        let lastUserMessageIndex = -1
-        for (let i = messages.length - 1; i >= 0; i--) {
-          if (messages[i].info?.role === "user") {
-            lastUserMessageIndex = i
-            break
+export function hasInjectedTrellisContext(messages) {
+  if (!Array.isArray(messages)) {
+    return false
+  }
+
+  return messages.some(message => {
+    if (!message?.info || message.info.role !== "user" || !Array.isArray(message.parts)) {
+      return false
+    }
+
+    return message.parts.some(hasSessionStartMarker)
+  })
+}
+
+async function hasPersistedInjectedContext(client, directory, sessionID) {
+  try {
+    const response = await client.session.messages({
+      path: { id: sessionID },
+      query: { directory },
+      throwOnError: true,
+    })
+    return hasInjectedTrellisContext(response.data || [])
+  } catch (error) {
+    debugLog(
+      "session",
+      "Failed to read session history for dedupe:",
+      error instanceof Error ? error.message : String(error),
+    )
+    return false
+  }
+}
+
+export default {
+  id: "trellis.session-start",
+  server: async ({ directory, client }) => {
+    const ctx = new TrellisContext(directory)
+    debugLog("session", "Plugin loaded, directory:", directory)
+
+    return {
+      // Clear in-memory dedupe after compaction so context can be re-injected.
+      event: ({ event }) => {
+        try {
+          if (event?.type === "session.compacted" && event?.properties?.sessionID) {
+            const sessionID = event.properties.sessionID
+            contextCollector.clear(sessionID)
+            debugLog("session", "Cleared processed flag after compaction for session:", sessionID)
           }
+        } catch (error) {
+          debugLog(
+            "session",
+            "Error in event hook:",
+            error instanceof Error ? error.message : String(error),
+          )
         }
+      },
 
-        if (lastUserMessageIndex === -1) {
-          debugLog("session", "No user message found")
-          return
+      // chat.message - triggered when user sends a message.
+      // Modify the message in-place so the context is persisted with updateMessage/updatePart.
+      "chat.message": async (input, output) => {
+        try {
+          const sessionID = input.sessionID
+          const agent = input.agent || "unknown"
+          debugLog("session", "chat.message called, sessionID:", sessionID, "agent:", agent)
+
+          // Skip in non-interactive mode
+          if (process.env.OPENCODE_NON_INTERACTIVE === "1") {
+            debugLog("session", "Skipping - non-interactive mode")
+            return
+          }
+
+          // Only inject on first message
+          if (contextCollector.isProcessed(sessionID)) {
+            debugLog("session", "Skipping - session already processed")
+            return
+          }
+
+          if (await hasPersistedInjectedContext(client, ctx.directory, sessionID)) {
+            contextCollector.markProcessed(sessionID)
+            debugLog("session", "Skipping - session already contains persisted Trellis context")
+            return
+          }
+
+          // Build context
+          const context = buildSessionContext(ctx)
+          debugLog("session", "Built context, length:", context.length)
+
+          // Inject context directly into output.parts so it gets persisted by updatePart
+          const parts = output?.parts || []
+          const textPartIndex = parts.findIndex(
+            p => p.type === "text" && p.text !== undefined
+          )
+
+          if (textPartIndex !== -1) {
+            const originalText = parts[textPartIndex].text || ""
+            parts[textPartIndex].text = `${context}\n\n---\n\n${originalText}`
+            markPartAsSessionStart(parts[textPartIndex])
+            debugLog("session", "Injected context into chat.message text part, length:", context.length)
+          } else {
+            // No existing text part: prepend a new one
+            const injectedPart = { type: "text", text: context }
+            markPartAsSessionStart(injectedPart)
+            parts.unshift(injectedPart)
+            debugLog("session", "Prepended new text part with context, length:", context.length)
+          }
+
+          contextCollector.markProcessed(sessionID)
+
+        } catch (error) {
+          debugLog("session", "Error in chat.message:", error.message, error.stack)
         }
-
-        const lastUserMessage = messages[lastUserMessageIndex]
-        const sessionID = lastUserMessage.info?.sessionID
-
-        debugLog("session", "Found user message, sessionID:", sessionID)
-
-        if (!sessionID || !contextCollector.hasPending(sessionID)) {
-          debugLog("session", "No pending context for session")
-          return
-        }
-
-        // Get and consume pending context
-        const pending = contextCollector.consume(sessionID)
-
-        // Find first text part
-        const textPartIndex = lastUserMessage.parts?.findIndex(
-          p => p.type === "text" && p.text !== undefined
-        )
-
-        if (textPartIndex === -1) {
-          debugLog("session", "No text part found in user message")
-          return
-        }
-
-        // Prepend context to the text part (same approach as omo)
-        const originalText = lastUserMessage.parts[textPartIndex].text || ""
-        lastUserMessage.parts[textPartIndex].text = `${pending.content}\n\n---\n\n${originalText}`
-
-        debugLog("session", "Injected context by prepending to text, length:", pending.content.length)
-
-      } catch (error) {
-        debugLog("session", "Error in messages.transform:", error.message, error.stack)
       }
     }
   }
