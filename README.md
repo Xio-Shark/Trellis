@@ -8,7 +8,7 @@
 
 <p align="center">
 <strong>A multi-platform AI coding framework that rules</strong><br/>
-<sub>Supports Claude Code, Cursor, OpenCode, iFlow, Codex, Kilo, Kiro, Gemini CLI, Antigravity, Windsurf, Qoder, CodeBuddy, and GitHub Copilot.</sub>
+<sub>Supports Claude Code, Cursor, OpenCode, iFlow, Codex, Kilo, Kiro, Gemini CLI, Antigravity, Windsurf, Qoder, CodeBuddy, GitHub Copilot, and Factory Droid.</sub>
 </p>
 
 <p align="center">
@@ -66,7 +66,7 @@ trellis init --cursor --opencode --codex -u your-name
 ```
 
 - `-u your-name` creates `.trellis/workspace/your-name/` for personal journals and session continuity.
-- Platform flags can be mixed and matched. Current options include `--cursor`, `--opencode`, `--iflow`, `--codex`, `--kilo`, `--kiro`, `--gemini`, `--antigravity`, `--windsurf`, `--qoder`, `--codebuddy`, and `--copilot`.
+- Platform flags can be mixed and matched. Current options include `--cursor`, `--opencode`, `--iflow`, `--codex`, `--kilo`, `--kiro`, `--gemini`, `--antigravity`, `--windsurf`, `--qoder`, `--codebuddy`, `--copilot`, and `--droid`.
 - For platform-specific setup, entry commands, and upgrade paths, use the docs:
   [Quick Start](https://docs.trytrellis.app/guide/ch02-quick-start) •
   [Supported Platforms](https://docs.trytrellis.app/guide/ch13-multi-platform) •
@@ -143,7 +143,7 @@ Those files are useful, but they tend to become monolithic. Trellis adds structu
 <details>
 <summary><strong>Is Trellis only for Claude Code?</strong></summary>
 
-No. Trellis currently supports Claude Code, Cursor, OpenCode, iFlow, Codex, Kilo, Kiro, Gemini CLI, Antigravity, Windsurf, Qoder, CodeBuddy, and GitHub Copilot. The detailed setup and entry command for each tool lives in the supported platforms guide.
+No. Trellis currently supports Claude Code, Cursor, OpenCode, iFlow, Codex, Kilo, Kiro, Gemini CLI, Antigravity, Windsurf, Qoder, CodeBuddy, GitHub Copilot, and Factory Droid. The detailed setup and entry command for each tool lives in the supported platforms guide.
 
 </details>
 

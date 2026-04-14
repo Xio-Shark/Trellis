@@ -8,7 +8,7 @@
 
 <p align="center">
 <strong>给 AI 立规矩的开源框架</strong><br/>
-<sub>支持 Claude Code、Cursor、OpenCode、iFlow、Codex、Kilo、Kiro、Gemini CLI、Antigravity、Windsurf、Qoder、CodeBuddy 和 GitHub Copilot。</sub>
+<sub>支持 Claude Code、Cursor、OpenCode、iFlow、Codex、Kilo、Kiro、Gemini CLI、Antigravity、Windsurf、Qoder、CodeBuddy、GitHub Copilot 和 Factory Droid。</sub>
 </p>
 
 <p align="center">
@@ -71,7 +71,7 @@ trellis init --cursor --opencode --codex -u your-name
 ```
 
 - `-u your-name` 会创建 `.trellis/workspace/your-name/`，用来保存个人 journal 和会话连续性。
-- 平台参数可以自由组合。当前可选项包括 `--cursor`、`--opencode`、`--iflow`、`--codex`、`--kilo`、`--kiro`、`--gemini`、`--antigravity`、`--windsurf`、`--qoder`、`--codebuddy` 和 `--copilot`。
+- 平台参数可以自由组合。当前可选项包括 `--cursor`、`--opencode`、`--iflow`、`--codex`、`--kilo`、`--kiro`、`--gemini`、`--antigravity`、`--windsurf`、`--qoder`、`--codebuddy`、`--copilot` 和 `--droid`。
 - 更完整的安装步骤、各平台入口命令和升级方式放在文档站：
   [快速开始](https://docs.trytrellis.app/zh/guide/ch02-quick-start) •
   [支持平台](https://docs.trytrellis.app/zh/guide/ch13-multi-platform) •
@@ -148,7 +148,7 @@ trellis init --registry https://github.com/your-org/your-spec-templates
 <details>
 <summary><strong>Trellis 只适合 Claude Code 吗？</strong></summary>
 
-不是。Trellis 目前支持 Claude Code、Cursor、OpenCode、iFlow、Codex、Kilo、Kiro、Gemini CLI、Antigravity、Windsurf、Qoder、CodeBuddy 和 GitHub Copilot。每个平台的具体接入方式和入口命令，文档站都有单独说明。
+不是。Trellis 目前支持 Claude Code、Cursor、OpenCode、iFlow、Codex、Kilo、Kiro、Gemini CLI、Antigravity、Windsurf、Qoder、CodeBuddy、GitHub Copilot 和 Factory Droid。每个平台的具体接入方式和入口命令，文档站都有单独说明。
 
 </details>
 

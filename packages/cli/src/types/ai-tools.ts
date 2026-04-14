@@ -20,7 +20,8 @@ export type AITool =
   | "windsurf"
   | "qoder"
   | "codebuddy"
-  | "copilot";
+  | "copilot"
+  | "droid";
 
 /**
  * Template directory categories
@@ -39,7 +40,8 @@ export type TemplateDir =
   | "windsurf"
   | "qoder"
   | "codebuddy"
-  | "copilot";
+  | "copilot"
+  | "droid";
 
 /**
  * CLI flag names for platform selection (e.g., --claude, --cursor, --kilo, --kiro, --gemini, --antigravity)
@@ -58,7 +60,8 @@ export type CliFlag =
   | "windsurf"
   | "qoder"
   | "codebuddy"
-  | "copilot";
+  | "copilot"
+  | "droid";
 
 /**
  * Configuration for an AI tool
@@ -203,6 +206,14 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     cliFlag: "copilot",
     defaultChecked: false,
     hasPythonHooks: true,
+  },
+  droid: {
+    name: "Factory Droid",
+    templateDirs: ["common", "droid"],
+    configDir: ".factory",
+    cliFlag: "droid",
+    defaultChecked: false,
+    hasPythonHooks: false,
   },
 };
 
