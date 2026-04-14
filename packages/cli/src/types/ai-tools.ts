@@ -134,7 +134,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     hasPythonHooks: true,
   },
   codex: {
-    name: "Codex",
+    name: "Codex (also writes .agents/skills/ — read by Cursor, Gemini CLI, GitHub Copilot, Amp, Kimi Code)",
     templateDirs: ["common", "codex"],
     configDir: ".codex",
     supportsAgentSkills: true,
