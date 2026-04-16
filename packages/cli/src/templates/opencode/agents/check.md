@@ -22,7 +22,7 @@ You are the Check Agent in the Trellis workflow.
 Otherwise, load context yourself:
 
 1. Read `.trellis/.current-task` → get task directory (e.g., `.trellis/tasks/xxx`)
-2. Read `{task_dir}/check.jsonl` (or `spec.jsonl` as fallback)
+2. Read `{task_dir}/check.jsonl`
 3. For each entry in JSONL:
    - If `path` is a file → Read it
    - If `path` is a directory → Read all `.md` files in it
@@ -89,32 +89,6 @@ If failed, fix issues and re-run.
 
 ---
 
-## Completion Markers (Ralph Loop)
-
-**CRITICAL**: You are in a loop controlled by the Ralph Loop system.
-The loop will NOT stop until you output ALL required completion markers.
-
-Completion markers are generated from `check.jsonl` in the task directory.
-Each entry's `reason` field becomes a marker: `{REASON}_FINISH`
-
-For example, if check.jsonl contains:
-```json
-{"file": "...", "reason": "TypeCheck"}
-{"file": "...", "reason": "Lint"}
-{"file": "...", "reason": "CodeReview"}
-```
-
-You MUST output these markers when each check passes:
-- `TYPECHECK_FINISH` - After typecheck passes
-- `LINT_FINISH` - After lint passes
-- `CODEREVIEW_FINISH` - After code review passes
-
-If check.jsonl doesn't exist or has no reasons, output: `ALL_CHECKS_FINISH`
-
-**The loop will block you from stopping until all markers are present in your output.**
-
----
-
 ## Report Format
 
 ```markdown
@@ -136,11 +110,10 @@ If check.jsonl doesn't exist or has no reasons, output: `ALL_CHECKS_FINISH`
 
 ### Verification Results
 
-- TypeCheck: Passed TYPECHECK_FINISH
-- Lint: Passed LINT_FINISH
+- TypeCheck: Passed
+- Lint: Passed
 
 ### Summary
 
 Checked X files, found Y issues, all fixed.
-ALL_CHECKS_FINISH
 ```

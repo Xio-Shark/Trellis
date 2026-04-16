@@ -1,19 +1,36 @@
 import path from "node:path";
 import { AI_TOOLS } from "../types/ai-tools.js";
-import { ensureDir, writeFile } from "../utils/file-writer.js";
-import { resolveAllAsSkills } from "./shared.js";
+import {
+  resolvePlaceholders,
+  resolveAllAsSkills,
+  writeSkills,
+  writeAgents,
+  writeSharedHooks,
+} from "./shared.js";
+import { getAllAgents } from "../templates/kiro/index.js";
 
 /**
- * Configure Kiro Code — skill-only platform.
- * All templates become .kiro/skills/trellis-<name>/SKILL.md
+ * Configure Kiro Code:
+ * - skills/trellis-{name}/SKILL.md — all templates as auto-triggered skills
+ * - agents/{name}.json — sub-agent definitions (JSON, with hooks embedded)
+ * - hooks/*.py — shared hook scripts (referenced by agent JSON hooks)
  */
 export async function configureKiro(cwd: string): Promise<void> {
-  const skillsRoot = path.join(cwd, ".kiro", "skills");
-  ensureDir(skillsRoot);
+  const config = AI_TOOLS.kiro;
+  // Kiro configDir is ".kiro/skills" — agents and hooks go under ".kiro/"
+  const kiroRoot = path.join(cwd, ".kiro");
 
-  for (const skill of resolveAllAsSkills(AI_TOOLS.kiro.templateContext)) {
-    const skillDir = path.join(skillsRoot, skill.name);
-    ensureDir(skillDir);
-    await writeFile(path.join(skillDir, "SKILL.md"), skill.content);
-  }
+  await writeSkills(
+    path.join(kiroRoot, "skills"),
+    resolveAllAsSkills(config.templateContext),
+  );
+
+  // Agents (JSON format, with {{PYTHON_CMD}} resolved)
+  const agents = getAllAgents().map((a) => ({
+    ...a,
+    content: resolvePlaceholders(a.content),
+  }));
+  await writeAgents(path.join(kiroRoot, "agents"), agents, ".json");
+
+  await writeSharedHooks(path.join(kiroRoot, "hooks"));
 }

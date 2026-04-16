@@ -35,7 +35,6 @@ import {
   getAllScripts,
   // Configuration
   configYamlTemplate,
-  worktreeYamlTemplate,
   gitignoreTemplate,
 } from "../templates/trellis/index.js";
 
@@ -361,7 +360,6 @@ function collectTemplateFiles(
 
   // Configuration
   files.set(`${DIR_NAMES.WORKFLOW}/config.yaml`, configYamlTemplate);
-  files.set(`${DIR_NAMES.WORKFLOW}/worktree.yaml`, worktreeYamlTemplate);
   files.set(`${DIR_NAMES.WORKFLOW}/.gitignore`, gitignoreTemplate);
   // workflow.md and workspace/index.md are user-customizable; only created during init
 

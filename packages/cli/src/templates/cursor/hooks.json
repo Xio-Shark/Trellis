@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "command": "{{PYTHON_CMD}} .cursor/hooks/inject-subagent-context.py",
+        "matcher": "Task",
+        "timeout": 30
+      }
+    ],
+    "sessionStart": [
+      {
+        "command": "{{PYTHON_CMD}} .cursor/hooks/session-start.py",
+        "timeout": 10
+      }
+    ]
+  }
+}

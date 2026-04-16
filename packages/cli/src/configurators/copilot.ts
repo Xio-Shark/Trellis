@@ -7,18 +7,21 @@ import {
   resolveCommands,
   resolveSkills,
 } from "./shared.js";
+import { getSharedHookScripts } from "../templates/shared-hooks/index.js";
 
 /**
  * Configure GitHub Copilot:
  * - prompts/ — start + finish-work as prompt files
- * - skills/trellis-{name}/SKILL.md — other 7 as auto-triggered skills
- * - copilot/hooks/ — platform-specific hooks
+ * - skills/trellis-{name}/SKILL.md — other 5 as auto-triggered skills
+ * - agents/{name}.agent.md — sub-agent definitions (note .agent.md suffix)
+ * - copilot/hooks/ — platform-specific + shared hook scripts
+ * - hooks config — hooks.json
  */
 export async function configureCopilot(cwd: string): Promise<void> {
-  const ctx = AI_TOOLS.copilot.templateContext;
+  const config = AI_TOOLS.copilot;
+  const ctx = config.templateContext;
   const copilotRoot = path.join(cwd, ".github", "copilot");
 
-  // start + finish-work as prompt files
   const promptsDir = path.join(cwd, ".github", "prompts");
   ensureDir(promptsDir);
   for (const cmd of resolveCommands(ctx)) {
@@ -28,7 +31,7 @@ export async function configureCopilot(cwd: string): Promise<void> {
     );
   }
 
-  // Other 7 as skills
+  // Skills
   const skillsDir = path.join(cwd, ".github", "skills");
   ensureDir(skillsDir);
   for (const skill of resolveSkills(ctx)) {
@@ -37,10 +40,29 @@ export async function configureCopilot(cwd: string): Promise<void> {
     await writeFile(path.join(skillDir, "SKILL.md"), skill.content);
   }
 
-  // Hook scripts (platform-specific)
+  const agentsDir = path.join(cwd, ".github", "agents");
+  ensureDir(agentsDir);
+  // Copilot agents come from Claude's agent definitions (same content)
+  const { getAllAgents: getCursorAgents } =
+    await import("../templates/cursor/index.js");
+  for (const agent of getCursorAgents()) {
+    await writeFile(
+      path.join(agentsDir, `${agent.name}.agent.md`),
+      agent.content,
+    );
+  }
+
+  // Platform-specific hook scripts (Copilot's own session-start.py)
   const hooksDir = path.join(copilotRoot, "hooks");
   ensureDir(hooksDir);
   for (const hook of getAllHooks()) {
+    await writeFile(path.join(hooksDir, hook.name), hook.content);
+  }
+
+  // Shared hook scripts (inject-subagent-context, statusline, etc.)
+  for (const hook of getSharedHookScripts()) {
+    // Skip session-start.py — Copilot has its own version
+    if (hook.name === "session-start.py") continue;
     await writeFile(path.join(hooksDir, hook.name), hook.content);
   }
 

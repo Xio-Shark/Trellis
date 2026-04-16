@@ -22,7 +22,7 @@ You are the Implement Agent in the Trellis workflow.
 Otherwise, load context yourself:
 
 1. Read `.trellis/.current-task` → get task directory (e.g., `.trellis/tasks/xxx`)
-2. Read `{task_dir}/implement.jsonl` (or `spec.jsonl` as fallback)
+2. Read `{task_dir}/implement.jsonl`
 3. For each entry in JSONL:
    - If `path` is a file → Read it
    - If `path` is a directory → Read all `.md` files in it

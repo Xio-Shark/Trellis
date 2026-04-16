@@ -62,7 +62,7 @@ async function copyDirFiltered(
  * Configure Claude Code:
  * - agents/, hooks/, settings.json from platform-specific templates
  * - commands/trellis/ — start + finish-work as slash commands
- * - skills/trellis-{name}/SKILL.md — other 7 as auto-triggered skills
+ * - skills/trellis-{name}/SKILL.md — other 5 as auto-triggered skills
  */
 export async function configureClaude(cwd: string): Promise<void> {
   const sourcePath = getClaudeTemplatePath();
@@ -79,7 +79,7 @@ export async function configureClaude(cwd: string): Promise<void> {
     await writeFile(path.join(commandsDir, `${cmd.name}.md`), cmd.content);
   }
 
-  // Other 7 as skills with trellis- prefix
+  // Other 5 as skills with trellis- prefix
   const skillsDir = path.join(destPath, "skills");
   ensureDir(skillsDir);
   for (const skill of resolveSkills(ctx)) {

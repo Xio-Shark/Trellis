@@ -1,6 +1,6 @@
 # Platform Integration Guide
 
-How to add support for a new AI CLI platform (like Claude Code, Cursor, Gemini CLI, OpenCode, iFlow, Codex, Kilo, Kiro, Qoder, CodeBuddy).
+How to add support for a new AI CLI platform (like Claude Code, Cursor, Gemini CLI, OpenCode, Codex, Kilo, Kiro, Qoder, CodeBuddy, Copilot, Droid, Windsurf, Antigravity).
 
 ---
 
@@ -10,7 +10,10 @@ Platform support uses a **centralized registry pattern** (similar to Turborepo's
 
 - **Data registry**: `src/types/ai-tools.ts` — `AI_TOOLS` record with all platform metadata
 - **Function registry**: `src/configurators/index.ts` — `PLATFORM_FUNCTIONS` with configure/collectTemplates per platform
-- **Shared utilities**: `src/configurators/shared.ts` — `resolvePlaceholders()` used by both init and update paths
+- **Shared configurator utilities**: `src/configurators/shared.ts` — `resolvePlaceholders()`, `writeSkills()`, `writeAgents()`, `writeSharedHooks()`, `resolveAllAsSkills()`, `resolveCommands()`, `resolveSkills()`, `wrapWithSkillFrontmatter()`
+- **Shared template utilities**: `src/templates/template-utils.ts` — `createTemplateReader()` factory that eliminates boilerplate across platform template modules
+- **Shared hooks**: `src/templates/shared-hooks/` — platform-independent Python hook scripts (session-start, inject-subagent-context, statusline) written as-is to any platform's hooks directory
+- **Common templates**: `src/templates/common/` — single source of truth for commands (start, finish-work) and skills (before-dev, brainstorm, check, break-loop, update-spec) with `{{placeholder}}` resolution per platform
 - **Shared utilities**: `src/utils/compare-versions.ts` — `compareVersions()` with full prerelease support (used by cli, update, migrations)
 - **Derived helpers**: `ALL_MANAGED_DIRS`, `getConfiguredPlatforms()`, etc. — consumed by update, init, hash tracking
 
@@ -51,18 +54,32 @@ When adding a new platform `{platform}`, update the following:
 
 ### Step 4: Templates
 
-**Standard pattern** (Python hooks — like Claude, iFlow):
+> **Key concept**: Most platforms now derive their content from `src/templates/common/` (commands + skills) via `resolvePlaceholders()` in `configurators/shared.ts`. Platform-specific template directories only contain **agents**, **settings/hooks config**, and platform-specific overrides. The `createTemplateReader()` factory from `src/templates/template-utils.ts` eliminates boilerplate in platform `index.ts` files.
+
+**Standard with shared hooks** (Qoder, CodeBuddy, Droid, Cursor, Gemini):
 
 | Directory | Contents |
 |-----------|----------|
 | `src/templates/{platform}/` | Root directory |
-| `src/templates/{platform}/index.ts` | Export functions for commands, agents, hooks, settings |
-| `src/templates/{platform}/commands/trellis/` | Slash commands (`.md` files) |
-| `src/templates/{platform}/agents/` | Agent definitions (`.md` files) |
-| `src/templates/{platform}/hooks/` | Hook scripts (`.py` files) |
+| `src/templates/{platform}/index.ts` | Uses `createTemplateReader(import.meta.url)` — exports agents, settings |
+| `src/templates/{platform}/agents/` | Agent definitions (`.md` files — implement, check, research) |
 | `src/templates/{platform}/settings.json` | Platform settings (may use `{{PYTHON_CMD}}` placeholder) |
 
-**JS plugin pattern** (like OpenCode):
+> Note: These platforms use `writeSharedHooks()` from `shared.ts` to copy platform-independent hook scripts from `src/templates/shared-hooks/` into each platform's hooks directory. Commands and skills come from `src/templates/common/` via `resolveCommands()` / `resolveSkills()` / `resolveAllAsSkills()`. The `createTemplateReader()` factory provides `listMdAgents()`, `getSettings()`, etc. without per-platform boilerplate.
+
+**Claude Code pattern** (full hooks + agents + settings):
+
+| Directory | Contents |
+|-----------|----------|
+| `src/templates/claude/` | Root directory |
+| `src/templates/claude/index.ts` | Export functions for agents, hooks, settings |
+| `src/templates/claude/agents/` | Agent definitions (`.md` files — implement, check, research) |
+| `src/templates/claude/hooks/` | Claude-specific hook scripts (`.py` files) |
+| `src/templates/claude/settings.json` | Claude settings (uses `{{PYTHON_CMD}}` placeholder) |
+
+> Note: Claude Code is the reference platform. It has its own hooks directory (not shared-hooks) because Claude hooks have platform-specific integration points. Commands come from `src/templates/common/commands/`.
+
+**JS plugin pattern** (OpenCode):
 
 | Directory | Contents |
 |-----------|----------|
@@ -79,102 +96,104 @@ When adding a new platform `{platform}`, update the following:
 | Directory | Contents |
 |-----------|----------|
 | `src/templates/{platform}/` | Root directory |
-| `src/templates/{platform}/index.ts` | Export functions for listing skills |
-| `src/templates/{platform}/skills/<skill-name>/SKILL.md` | Skill definitions |
+| `src/templates/{platform}/index.ts` | Uses `createTemplateReader(import.meta.url)` — exports agents |
+| `src/templates/{platform}/agents/` | Agent definitions (platform-specific format) |
+| `src/templates/{platform}/settings.json` | Platform settings (optional) |
 
-> Note: Codex/Kiro/Qoder use skills (not slash commands). Skill content should use `$<skill-name>` / `/skills` semantics, not `/trellis:*` syntax. Qoder skills use YAML frontmatter (`---\nname: ...\n---`) at the top of each SKILL.md.
+> Note: Codex/Kiro/Qoder use `resolveAllAsSkills()` from `shared.ts` to generate all 7 templates (2 commands + 5 skills) as SKILL.md files with YAML frontmatter. Skills are written via `writeSkills()`.
 >
-> **Codex has a three-layer directory model:**
+> **Codex has a two-layer directory model:**
 >
 > | Layer | Install Path | Template Source | Purpose |
 > |-------|-------------|-----------------|---------|
-> | Shared skills | `.agents/skills/` | `src/templates/codex/skills/` | Cross-platform skills (agentskills.io standard) |
-> | Codex-specific skills | `.codex/skills/` | `src/templates/codex/codex-skills/` | Platform-specific skills (e.g. `parallel` with `--platform codex`) |
-> | Codex config/agents/hooks | `.codex/` | `src/templates/codex/{agents,hooks,config.toml,hooks.json}` | Config, custom agents, SessionStart hook |
+> | Shared skills | `.agents/skills/` | Generated from `common/` templates | Cross-platform skills (agentskills.io standard) |
+> | Codex config/agents/hooks | `.codex/` | `src/templates/codex/{agents,hooks.json}` | Config, custom agents, SessionStart hook |
 >
 > **Key rules:**
 > - Shared skills in `.agents/skills/` must NOT contain platform-specific references (no `--platform codex`, no `codex exec`)
-> - Codex-specific skills go in `.codex/skills/` (via `codex-skills/` template dir)
 > - Agent TOML format: `name` + `description` + `developer_instructions` + optional `sandbox_mode` (NOT `[sandbox_read_only]` + `prompt`)
 > - Codex hooks require `features.codex_hooks = true` in user config (experimental as of v0.116.0)
 > - Platform detection uses `.codex/` only — `.agents/skills/` alone does NOT trigger codex detection
 > - `configDir` is `".codex"`, with `supportsAgentSkills: true` to auto-include `.agents/skills` in managed paths
 
-**Commands-only with nesting pattern** (CodeBuddy):
+**Kiro JSON agent pattern** (Kiro):
 
 | Directory | Contents |
 |-----------|----------|
-| `src/templates/{platform}/` | Root directory |
-| `src/templates/{platform}/index.ts` | Export `getAllCommands(): CommandTemplate[]` |
-| `src/templates/{platform}/commands/trellis/` | Slash commands (`.md` files) in nested subdirectory |
+| `src/templates/kiro/` | Root directory |
+| `src/templates/kiro/index.ts` | Uses `createTemplateReader(import.meta.url)` — exports agents via `listJsonAgents()` |
+| `src/templates/kiro/agents/` | Agent definitions (`.json` files) |
 
-> Note: CodeBuddy uses nested directory namespacing like Claude/iFlow (`commands/trellis/start.md` → `/trellis:start`), but without hooks, agents, or settings. Same as "Commands-only" pattern but with subdirectory support.
-
-**Commands-only pattern** (Cursor):
-
-| Directory | Contents |
-|-----------|----------|
-| `src/templates/{platform}/` | Root directory |
-| `src/templates/{platform}/index.ts` | Export `getAllCommands(): CommandTemplate[]` |
-| `src/templates/{platform}/commands/` | Slash commands (`.md` files) |
-
-> Note: Cursor uses flat prefix naming (`trellis-start.md` → `/trellis-start`). No hooks, no agents, no settings.
+> Note: Kiro is unique in using JSON format for agent definitions (not Markdown). The `createTemplateReader()` factory provides `listJsonAgents()` specifically for this. Skills are generated from `common/` templates via `resolveAllAsSkills()`.
 
 **Workflows pattern** (Kilo):
 
 | Directory | Contents |
 |-----------|----------|
-| `src/templates/{platform}/` | Root directory |
-| `src/templates/{platform}/index.ts` | Export `getAllWorkflows(): WorkflowTemplate[]` |
-| `src/templates/{platform}/workflows/` | Workflow files (`.md` files) |
+| (no template directory) | Kilo generates from `common/` templates at runtime |
 
-> Note: Kilo uses flat workflow directory (`workflows/start.md` → `/start`). No hooks, no agents, no settings.
-
-**TOML commands pattern** (Gemini CLI):
-
-| Directory | Contents |
-|-----------|----------|
-| `src/templates/{platform}/` | Root directory |
-| `src/templates/{platform}/index.ts` | Export `getAllCommands(): CommandTemplate[]` (filter `.toml` not `.md`) |
-| `src/templates/{platform}/commands/trellis/` | Slash commands (`.toml` files) |
-
-> Note: Gemini CLI is the first platform using TOML for commands instead of Markdown. TOML format: `description = "..."` + `prompt = """..."""`. Subdirectory namespacing works the same as Claude (`commands/trellis/start.toml` → `/trellis:start`). When creating TOML templates, use triple-quoted strings (`"""`) for multi-line prompts.
+> Note: Kilo uses `resolveCommands()` + `resolveSkills()` to generate workflows and skills. No physical template files needed.
 
 **Workflows pattern** (Antigravity):
 
 | Directory | Contents |
 |-----------|----------|
-| `src/templates/{platform}/` | Root directory |
-| `src/templates/{platform}/index.ts` | Export `getAllWorkflows(): WorkflowTemplate[]` |
+| (no template directory) | Antigravity derives from Codex skills at runtime |
 
 > Note: Antigravity has no physical template files — workflow content is **derived from Codex skills at runtime** via `adaptSkillContentToWorkflow()`. The config dir is `.agent/workflows` (not `.agent/`). Workflows are triggered with `/workflow-name` slash commands. When adding a new Codex skill, Antigravity automatically picks it up.
 
-**Required commands/skills**: All platforms must include the following (adapted to each platform's format):
+**Copilot pattern** (prompts + hooks):
 
-| Command | Purpose | Required |
-|---------|---------|----------|
-| `start` | Session initialization | Yes |
-| `finish-work` | Pre-commit checklist | Yes |
-| `brainstorm` | Requirements discovery | Yes |
-| `break-loop` | Post-debug analysis | Yes |
-| `record-session` | Session recording | Yes |
-| `before-dev` | Read development guidelines (auto-discovers package specs) | Yes |
-| `check` | Check code quality (auto-discovers relevant specs) | Yes |
-| `check-cross-layer` | Cross-layer verification | Yes |
-| `create-command` | Create new slash command | Yes |
-| `integrate-skill` | Integrate external skill | Yes |
-| `onboard` | Team onboarding guide | Yes |
-| `update-spec` | Update code-spec docs | Yes |
-| `parallel` | Multi-agent parallel work | Optional (platform capability) |
-| `migrate-specs` | Migrate spec versions | Optional |
+| Directory | Contents |
+|-----------|----------|
+| `src/templates/copilot/` | Root directory |
+| `src/templates/copilot/index.ts` | Export functions for prompts, hooks |
+| `src/templates/copilot/prompts/` | Prompt files (`.prompt.md`) |
+| `src/templates/copilot/hooks/` | Hook scripts (`.py` files) |
+| `src/templates/copilot/hooks.json` | Hooks configuration |
 
-> **Rule**: When a new command is added to any platform, it must be added to ALL platforms. Check `src/templates/claude/commands/trellis/` as the reference list.
+> Note: Copilot uses `.prompt.md` format for commands (not plain `.md`). Hooks use `hooks.json` (not `settings.json`).
+
+**Droid pattern** (droids + settings):
+
+| Directory | Contents |
+|-----------|----------|
+| `src/templates/droid/` | Root directory |
+| `src/templates/droid/index.ts` | Uses `createTemplateReader(import.meta.url)` — exports droids, settings |
+| `src/templates/droid/droids/` | Droid definitions (`.md` files — implement, check, research) |
+| `src/templates/droid/settings.json` | Droid settings |
+
+> Note: Droid uses "droids" terminology instead of "agents" but follows the same pattern. Uses `writeAgents()` with the droids directory.
+
+**Windsurf pattern** (no template directory):
+
+| Directory | Contents |
+|-----------|----------|
+| (no template directory) | Windsurf generates from `common/` templates + shared hooks at runtime |
+
+> Note: Windsurf uses `resolveCommands()` for workflows and `resolveSkills()` for auto-triggered skills. Shared hooks are written via `writeSharedHooks()`. No platform-specific template files needed.
+
+**Required commands/skills**: All platforms must include the following (adapted to each platform's format). Content comes from `src/templates/common/`:
+
+| Type | Name | Purpose | Required |
+|------|------|---------|----------|
+| Command | `start` | Session initialization | Yes |
+| Command | `finish-work` | Pre-commit checklist | Yes |
+| Skill | `before-dev` | Read development guidelines (auto-discovers package specs) | Yes |
+| Skill | `brainstorm` | Requirements discovery | Yes |
+| Skill | `check` | Check code quality (auto-discovers relevant specs) | Yes |
+| Skill | `break-loop` | Post-debug analysis | Yes |
+| Skill | `update-spec` | Update code-spec docs | Yes |
+
+> **Rule**: When a new command/skill is added, it is added to `src/templates/common/commands/` or `src/templates/common/skills/` — ALL platforms pick it up automatically via `resolveCommands()` / `resolveSkills()` / `resolveAllAsSkills()`. Check `src/templates/common/` as the reference source.
 
 ### Step 5: Template Extraction
 
 | File | Change |
 |------|--------|
-| `src/templates/extract.ts` | Add `get{Platform}TemplatePath()` function + `get{Platform}SourcePath()` deprecated alias |
+| `src/templates/extract.ts` | Only needed if platform has a physical template directory. Most new platforms generate from `common/` templates and don't need extraction functions |
+
+> Note: Platforms using `createTemplateReader(import.meta.url)` in their `index.ts` handle their own template reading. The `extract.ts` functions (`getTrellisSourcePath()`, `readTrellisFile()`, `copyTrellisDir()`) are primarily for the `.trellis/` workflow files, not platform templates.
 
 ### Step 6: Python Scripts (independent runtime)
 
@@ -196,10 +215,6 @@ When adding a new platform `{platform}`, update the following:
 | `cli_name` | CLI executable name | `"gemini"`, `"agy"` |
 | `detect_platform()` | Directory detection logic | Check `.gemini/` exists |
 | `get_commands_path()` | Command directory structure | `commands/trellis/` or `workflows/` |
-| `src/templates/trellis/scripts/common/registry.py` | Update default platform if needed |
-| `src/templates/trellis/scripts/multi_agent/plan.py` | Add to `--platform` choices **only if** `build_run_command()` returns a valid command (not `raise ValueError`) |
-| `src/templates/trellis/scripts/multi_agent/start.py` | Add to `--platform` choices **only if** `build_run_command()` returns a valid command (not `raise ValueError`) |
-| `src/templates/trellis/scripts/multi_agent/status.py` | Add platform-specific behavior if needed (only if supported) |
 
 > Note: Python scripts run in user projects at runtime — they cannot import from the TS registry and maintain their own registry in `cli_adapter.py`.
 >
@@ -208,7 +223,6 @@ When adding a new platform `{platform}`, update the following:
 > - `get_agent_path` returns `.toml` for codex (not `.md`)
 > - `requires_agent_definition_file` is `False` — Codex auto-discovers agents from `.codex/agents/*.toml`, no `--agent` CLI flag
 > - `detect_platform` checks `.codex/` existence (not `.agents/skills/`)
-> - Multi-agent scripts (`plan.py`, `start.py`) skip agent file validation for codex via `requires_agent_definition_file`
 > - **CRITICAL**: Template copy (`src/templates/trellis/scripts/`) must be byte-identical to live copy (`.trellis/scripts/`)
 
 ### Step 7: Documentation
@@ -280,7 +294,6 @@ These are now **automatically derived** from the registry:
 | Claude Code | `/trellis:xxx` | Markdown (`.md`) | `/trellis:start` |
 | Cursor | `/trellis-xxx` | Markdown (`.md`) | `/trellis-start` |
 | OpenCode | `/trellis:xxx` | Markdown (`.md`) | `/trellis:start` |
-| iFlow | `/trellis:xxx` | Markdown (`.md`) | `/trellis:start` |
 | Gemini CLI | `/trellis:xxx` | TOML (`.toml`) | `/trellis:start` |
 | Kilo | `/<workflow-name>` | Markdown (`.md`) | `/start` |
 | Codex | `$<skill-name>` / `/skills` | Markdown (`SKILL.md`) | `$start` |
@@ -288,6 +301,9 @@ These are now **automatically derived** from the registry:
 | Qoder | `$<skill-name>` / `/skills` | Markdown (`SKILL.md`) | `$start` |
 | Antigravity | `/<workflow-name>` | Markdown (`.md`) | `/start` |
 | CodeBuddy | `/trellis:xxx` | Markdown (`.md`) | `/trellis:start` |
+| Copilot | `/trellis:xxx` | Markdown (`.prompt.md`) | `/trellis:start` |
+| Droid | `/trellis:xxx` | Markdown (`.md`) | `/trellis:start` |
+| Windsurf | `/trellis-xxx` | Markdown (`.md`) + `SKILL.md` | `/trellis-start` |
 
 When creating platform templates, ensure references match the platform's interaction format and file format.
 
@@ -430,14 +446,6 @@ On the Trellis dev repo (light use), `<guidelines>` is 10.8 KB vs 5.1 KB on vani
 
 **Rule**: When init creates content conditionally based on project type, update must check for directory existence before including files in its template map. The two paths must agree.
 
-### iFlow getAllCommands() reads wrong directory level (FIXED)
-
-**Symptom**: `trellis update` tracked zero iFlow commands — commands were correctly copied during `init` but not tracked for update diffs.
-
-**Cause**: iFlow `getAllCommands()` called `listFiles("commands")` which returned `["trellis"]` (a directory, not `.md` files). Fixed to read `listFiles("commands/trellis")`.
-
-**Status**: Fixed — `getAllCommands()` now reads from correct subdirectory.
-
 ### PRD assumed platform capabilities without research
 
 **Symptom**: Implementation builds the wrong abstraction (e.g., commands instead of skills, or vice versa). Requires major rework after discovery.
@@ -451,85 +459,40 @@ On the Trellis dev repo (light use), `<guidelines>` is 10.8 KB vs 5.1 KB on vani
 
 **Prevention**: Add a "Research" step before PRD finalization. The PRD should cite sources for platform capability claims.
 
-### Added IDE-only platform to multi-agent --platform choices
+### Updated command/skill content in platform template instead of common/
 
-**Symptom**: `python3 plan.py --platform {platform}` accepts the value but fails at `build_run_command()` because the platform has no CLI executable.
+**Symptom**: After updating a command in one platform's template, other platforms still use old content.
 
-**Cause**: Platform was added to `plan.py`/`start.py` `--platform` choices without checking if it supports CLI agents. IDE-only platforms (e.g., Trae, Codex, Kiro) cannot run headless CLI agents.
+**Cause**: Since v0.5.0, command and skill content lives in `src/templates/common/` as the single source of truth. Editing platform-specific copies creates drift.
 
-**Fix**: Only add platforms to `--platform` choices in `plan.py`/`start.py` if they have `supports_cli_agents: true` (i.e., `build_run_command` does NOT raise `ValueError`).
-
-**Rule**: The `--platform` choices in multi-agent scripts should match platforms where `build_run_command()` returns a valid command, not all platforms in the registry.
-
-### Updated command content but forgot other platforms
-
-**Symptom**: After updating `record-session.md` in Claude's template, other platforms (iFlow, Kilo, OpenCode, Gemini) still use old content (e.g., missing `--mode record` flag, outdated command reference table).
-
-**Cause**: Command templates with identical content exist across multiple platforms. Updating one platform's version without syncing others leaves them inconsistent.
-
-**Fix**: After modifying any command template content, check ALL platforms that have the same command:
-
-```bash
-# Find all platforms with this command
-find src/templates/*/commands/trellis/ -name "record-session.*"
-```
-
-**Key distinction**:
-- "Add new command to all platforms" → covered by the Required Commands table above
-- "Update existing command content across platforms" → THIS mistake. Content changes (new flags, rewritten steps, updated reference tables) must propagate to every platform's copy.
-
-**Note**: Gemini uses `.toml` format — content must be adapted (triple-quoted strings, `\\` line continuations). All other platforms use `.md`.
+**Fix**: Always edit templates in `src/templates/common/commands/` or `src/templates/common/skills/`. All platforms derive their content from there via `resolveCommands()` / `resolveSkills()` / `resolveAllAsSkills()`.
 
 ### Stale platform references in copied templates
 
 **Symptom**: A Qoder skill references "Claude Code" syntax or a Kiro-specific invocation pattern.
 
-**Cause**: When creating templates for a new platform by copying from an existing one, platform-specific references (command syntax, platform names, invocation instructions) weren't updated.
+**Cause**: When creating agent templates for a new platform by copying from an existing one, platform-specific references (command syntax, platform names, invocation instructions) weren't updated.
 
-**Fix**: After copying templates, search-and-replace all references to the source platform. Check for:
+**Fix**: After copying agent templates, search-and-replace all references to the source platform. Check for:
 - Platform name mentions (e.g., "Claude Code", "Kiro")
 - Command invocation syntax (e.g., `/trellis:xxx` vs `$skill-name`)
 - Config directory references (e.g., `.claude/` vs `.qoder/`)
 
-### iFlow CLI agent invocation uses wrong syntax
+### Forgot to use shared hooks
 
-**Symptom**: Multi-agent pipeline fails with "iflow: unrecognized option '--agent'" error.
+**Symptom**: Platform's hooks directory contains duplicated Python scripts instead of using `writeSharedHooks()`.
 
-**Cause**: iFlow CLI does NOT support the `--agent` flag (unlike Claude Code, OpenCode). It uses skill-based invocation with `$agent_name` prefix syntax (similar to Codex/Kiro). The `cli_adapter.py` was incorrectly generating `iflow -p --agent plan` instead of `iflow -y -p "$plan prompt"`.
+**Cause**: When adding a new agent-capable platform, developer manually copied hook scripts from another platform instead of calling `writeSharedHooks(hooksDir)` from `shared.ts`.
 
-**Fix**: Update `cli_adapter.py` `build_run_command()` for iFlow:
-```python
-# Wrong:
-cmd = ["iflow", "-p"]
-cmd.extend(["-y", "--agent", mapped_agent])
-cmd.append(prompt)
+**Fix**: Use `writeSharedHooks()` which copies platform-independent scripts from `src/templates/shared-hooks/`. Only create platform-specific hook files when the platform has unique hook integration points (e.g., Claude Code).
 
-# Correct:
-cmd = ["iflow", "-y", "-p"]
-cmd.append(f"${mapped_agent} {prompt}")
-```
+### Hardcoded JSONL fallback paths
 
-**Key points**:
-- iFlow does NOT support `--agent` flag
-- iFlow does NOT support `--verbose` flag
-- Agent name and prompt must be combined: `"$agent_name prompt"`
-- Non-interactive flag is `-y` (before `-p`)
+**Symptom**: Agent definitions reference JSONL files that don't exist (e.g., `debug.jsonl`, `plan.jsonl`).
 
-**Prevention**: When adding a new platform, always verify the actual CLI syntax from official docs or by testing. Do NOT assume all platforms follow the same pattern as Claude Code/OpenCode.
+**Cause**: Only `implement.jsonl` and `check.jsonl` exist as task JSONL files. Agent templates were copied from older versions that referenced removed JSONL types.
 
----
-
-### iFlow collectTemplates missing trellis/ subdirectory (FIXED)
-
-**Symptom**: `trellis update` creates iFlow commands at `.iflow/commands/{name}.md` (flat) instead of `.iflow/commands/trellis/{name}.md` (correct).
-
-**Cause**: When commands migrated from flat to `trellis/` subdirectory, `configure()` uses recursive directory copy (automatically correct), but `collectTemplates()` manually constructs paths with `files.set()` (requires manual update). The iFlow `collectTemplates` was not updated — it produced `.iflow/commands/${cmd.name}.md` instead of `.iflow/commands/trellis/${cmd.name}.md`.
-
-**Fix**: Add `trellis/` to the path in iFlow's `collectTemplates` (line 111 of `configurators/index.ts`).
-
-**Design insight**: `configure()` and `collectTemplates()` use asymmetric mechanisms to produce the same file set — one recursive copies a directory tree, the other manually lists `files.set()` calls. This asymmetry makes path drift likely during structural migrations. When migrating directory structures, always check both paths.
-
-**Regression test**: `regression.test.ts` now verifies all platforms with commands use `/commands/trellis/` in their `collectTemplates` paths.
+**Fix**: Ensure agent `.md` definitions only reference `implement.jsonl` and `check.jsonl`. The debug, plan, and dispatch agents have been removed.
 
 ### `__pycache__` in template hooks directory causes EISDIR crash
 
@@ -547,7 +510,7 @@ cmd.append(f"${mapped_agent} {prompt}")
 
 | PR | Platform | Pattern | Notes |
 |----|----------|---------|-------|
-| #22 | iFlow CLI | Standard (hooks + agents) | Full platform with Python hooks |
-| feat/gemini branch | Gemini CLI | TOML commands-only | First non-Markdown command format, Cursor-level minimal |
+| feat/gemini branch | Gemini CLI | Agents + shared hooks | First non-Markdown command format (TOML settings) |
 | main | Antigravity | Workflows (derived from Codex) | No physical templates — runtime adaptation from Codex skills |
 | #71 | Qoder | Skills (like Codex/Kiro) | Skills with YAML frontmatter; Trae was dropped (IDE-only, no deterministic invocation trigger) |
+| feat/v0.5.0-beta | All 13 platforms | Unified template architecture | Common templates + shared hooks + `createTemplateReader()` factory |

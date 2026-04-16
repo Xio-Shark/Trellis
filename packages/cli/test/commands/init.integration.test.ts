@@ -89,7 +89,6 @@ describe("init() integration", () => {
 
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(false);
-    expect(fs.existsSync(path.join(tmpDir, ".iflow"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".opencode"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".codex"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".agents", "skills"))).toBe(false);
@@ -115,7 +114,6 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".opencode"))).toBe(true);
-    expect(fs.existsSync(path.join(tmpDir, ".iflow"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".codex"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".agents", "skills"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".agent", "workflows"))).toBe(
@@ -148,11 +146,7 @@ describe("init() integration", () => {
         path.join(tmpDir, ".codex", "agents", "check.toml"),
       ),
     ).toBe(true);
-    expect(
-      fs.existsSync(
-        path.join(tmpDir, ".codex", "skills", "parallel", "SKILL.md"),
-      ),
-    ).toBe(true);
+    // parallel skill removed — platform-native worktree features used instead
     expect(fs.existsSync(path.join(tmpDir, ".codex", "hooks.json"))).toBe(
       true,
     );
@@ -174,7 +168,7 @@ describe("init() integration", () => {
       fs.existsSync(path.join(tmpDir, ".kiro", "skills", "trellis-start", "SKILL.md")),
     ).toBe(true);
     expect(
-      fs.existsSync(path.join(tmpDir, ".kiro", "skills", "trellis-parallel", "SKILL.md")),
+      fs.existsSync(path.join(tmpDir, ".kiro", "skills", "trellis-check", "SKILL.md")),
     ).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(false);

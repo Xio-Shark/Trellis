@@ -112,8 +112,6 @@ const SKILL_DESCRIPTIONS: Record<string, string> = {
     "Deep bug analysis to break the fix-forget-repeat cycle. Analyzes root cause category, why fixes failed, prevention mechanisms, and captures knowledge into specs. Use after fixing a bug to prevent the same class of bugs.",
   "update-spec":
     "Captures executable contracts and coding conventions into .trellis/spec/ documents. Use when learning something valuable from debugging, implementing, or discussion that should be preserved for future sessions.",
-  parallel:
-    "Orchestrates multi-agent parallel development using git worktrees. Creates isolated branches, dispatches implement/check agents, and produces draft PRs. Use when a task benefits from isolated parallel execution or background processing.",
 };
 
 /**
@@ -139,6 +137,8 @@ export function wrapWithSkillFrontmatter(
 // Shared configurator helpers
 // ---------------------------------------------------------------------------
 
+import path from "node:path";
+import { ensureDir, writeFile } from "../utils/file-writer.js";
 import {
   getCommandTemplates,
   getSkillTemplates,
@@ -177,7 +177,7 @@ export function resolveCommands(ctx: TemplateContext): ResolvedTemplate[] {
 }
 
 /**
- * Resolve only the 7 skill templates with trellis- prefix + SKILL.md frontmatter.
+ * Resolve only the 5 skill templates with trellis- prefix + SKILL.md frontmatter.
  * Used by "both" platforms for the auto-triggered skills.
  */
 export function resolveSkills(ctx: TemplateContext): ResolvedTemplate[] {
@@ -188,4 +188,43 @@ export function resolveSkills(ctx: TemplateContext): ResolvedTemplate[] {
       resolvePlaceholders(tmpl.content, ctx),
     ),
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Shared configurator write helpers
+// ---------------------------------------------------------------------------
+
+/** Write skill directories from resolved templates */
+export async function writeSkills(
+  skillsRoot: string,
+  skills: { name: string; content: string }[],
+): Promise<void> {
+  ensureDir(skillsRoot);
+  for (const skill of skills) {
+    const skillDir = path.join(skillsRoot, skill.name);
+    ensureDir(skillDir);
+    await writeFile(path.join(skillDir, "SKILL.md"), skill.content);
+  }
+}
+
+/** Write agent/droid definition files */
+export async function writeAgents(
+  agentsDir: string,
+  agents: { name: string; content: string }[],
+  ext = ".md",
+): Promise<void> {
+  ensureDir(agentsDir);
+  for (const agent of agents) {
+    await writeFile(path.join(agentsDir, `${agent.name}${ext}`), agent.content);
+  }
+}
+
+/** Write shared hook scripts to a hooks directory */
+export async function writeSharedHooks(hooksDir: string): Promise<void> {
+  const { getSharedHookScripts } =
+    await import("../templates/shared-hooks/index.js");
+  ensureDir(hooksDir);
+  for (const hook of getSharedHookScripts()) {
+    await writeFile(path.join(hooksDir, hook.name), hook.content);
+  }
 }

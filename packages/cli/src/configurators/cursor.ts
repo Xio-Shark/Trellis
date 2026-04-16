@@ -1,18 +1,30 @@
 import path from "node:path";
 import { AI_TOOLS } from "../types/ai-tools.js";
 import { ensureDir, writeFile } from "../utils/file-writer.js";
-import { resolveCommands, resolveSkills } from "./shared.js";
+import {
+  resolvePlaceholders,
+  resolveCommands,
+  resolveSkills,
+  writeSkills,
+  writeAgents,
+  writeSharedHooks,
+} from "./shared.js";
+import { getAllAgents, getHooksConfig } from "../templates/cursor/index.js";
 
 /**
  * Configure Cursor:
  * - commands/ — start + finish-work as slash commands (trellis- prefix, flat)
- * - skills/trellis-{name}/SKILL.md — other 7 as auto-triggered skills
+ * - skills/trellis-{name}/SKILL.md — other 5 as auto-triggered skills
+ * - agents/{name}.md — sub-agent definitions
+ * - hooks/*.py — shared hook scripts
+ * - hooks.json — hook configuration (separate file, not settings.json)
  */
 export async function configureCursor(cwd: string): Promise<void> {
-  const ctx = AI_TOOLS.cursor.templateContext;
+  const config = AI_TOOLS.cursor;
+  const ctx = config.templateContext;
+  const configRoot = path.join(cwd, config.configDir);
 
-  // start + finish-work as slash commands
-  const commandsDir = path.join(cwd, ".cursor", "commands");
+  const commandsDir = path.join(configRoot, "commands");
   ensureDir(commandsDir);
   for (const cmd of resolveCommands(ctx)) {
     await writeFile(
@@ -21,12 +33,13 @@ export async function configureCursor(cwd: string): Promise<void> {
     );
   }
 
-  // Other 7 as skills
-  const skillsDir = path.join(cwd, ".cursor", "skills");
-  ensureDir(skillsDir);
-  for (const skill of resolveSkills(ctx)) {
-    const skillDir = path.join(skillsDir, skill.name);
-    ensureDir(skillDir);
-    await writeFile(path.join(skillDir, "SKILL.md"), skill.content);
-  }
+  await writeSkills(path.join(configRoot, "skills"), resolveSkills(ctx));
+  await writeAgents(path.join(configRoot, "agents"), getAllAgents());
+  await writeSharedHooks(path.join(configRoot, "hooks"));
+
+  // Hooks config (separate file, not settings.json)
+  await writeFile(
+    path.join(configRoot, "hooks.json"),
+    resolvePlaceholders(getHooksConfig()),
+  );
 }

@@ -6,7 +6,7 @@ import { resolveCommands, resolveSkills } from "./shared.js";
 /**
  * Configure Kilo CLI:
  * - workflows/ — start + finish-work as slash commands
- * - skills/trellis-{name}/SKILL.md — other 7 as auto-triggered skills
+ * - skills/trellis-{name}/SKILL.md — other 5 as auto-triggered skills
  */
 export async function configureKilo(cwd: string): Promise<void> {
   const ctx = AI_TOOLS.kilo.templateContext;

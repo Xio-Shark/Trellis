@@ -427,7 +427,6 @@ If yes, resume from the appropriate step (usually Step 7 or 8).
 | research | Analyze codebase | direct repo inspection |
 | implement | Write code | implement.jsonl |
 | check | Review & fix | check.jsonl |
-| debug | Fix specific issues | debug.jsonl |
 {{/AGENT_CAPABLE}}
 
 ---

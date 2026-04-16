@@ -53,17 +53,9 @@ describe("codex getAllAgents", () => {
 });
 
 describe("codex getAllCodexSkills (platform-specific)", () => {
-  it("returns codex-specific skills", () => {
+  it("returns empty after parallel removal", () => {
     const skills = getAllCodexSkills();
-    const names = skills.map((skill) => skill.name);
-    expect(names).toEqual(["parallel"]);
-  });
-
-  it("codex-specific skills contain --platform codex", () => {
-    const skills = getAllCodexSkills();
-    for (const skill of skills) {
-      expect(skill.content).toContain("--platform codex");
-    }
+    expect(skills).toEqual([]);
   });
 });
 

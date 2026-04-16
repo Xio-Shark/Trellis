@@ -68,7 +68,7 @@ export async function configureOpenCode(cwd: string): Promise<void> {
     await writeFile(path.join(commandsDir, `${cmd.name}.md`), cmd.content);
   }
 
-  // Other 7 as skills
+  // Other 5 as skills
   const skillsDir = path.join(destPath, "skills");
   ensureDir(skillsDir);
   for (const skill of resolveSkills(ctx)) {

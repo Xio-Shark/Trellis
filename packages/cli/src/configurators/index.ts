@@ -20,7 +20,6 @@ import {
 // Platform configurators
 import { configureClaude } from "./claude.js";
 import { configureCursor } from "./cursor.js";
-import { configureIflow } from "./iflow.js";
 import { configureOpenCode } from "./opencode.js";
 import { configureCodex } from "./codex.js";
 import { configureKilo } from "./kilo.js";
@@ -48,11 +47,6 @@ import {
   getSettingsTemplate as getClaudeSettings,
 } from "../templates/claude/index.js";
 import {
-  getAllAgents as getIflowAgents,
-  getAllHooks as getIflowHooks,
-  getSettingsTemplate as getIflowSettings,
-} from "../templates/iflow/index.js";
-import {
   getAllAgents as getCodexAgents,
   getAllCodexSkills as getCodexPlatformSkills,
   getAllHooks as getCodexHooks,
@@ -63,6 +57,28 @@ import {
   getAllHooks as getCopilotHooks,
   getHooksConfig as getCopilotHooksConfig,
 } from "../templates/copilot/index.js";
+import {
+  getAllAgents as getQoderAgents,
+  getSettingsTemplate as getQoderSettings,
+} from "../templates/qoder/index.js";
+import {
+  getAllAgents as getCodebuddyAgents,
+  getSettingsTemplate as getCodebuddySettings,
+} from "../templates/codebuddy/index.js";
+import {
+  getAllDroids as getDroidDroids,
+  getSettingsTemplate as getDroidSettings,
+} from "../templates/droid/index.js";
+import {
+  getAllAgents as getCursorAgents,
+  getHooksConfig as getCursorHooksConfig,
+} from "../templates/cursor/index.js";
+import {
+  getAllAgents as getGeminiAgents,
+  getSettingsTemplate as getGeminiSettings,
+} from "../templates/gemini/index.js";
+import { getAllAgents as getKiroAgents } from "../templates/kiro/index.js";
+import { getSharedHookScripts } from "../templates/shared-hooks/index.js";
 
 // =============================================================================
 // Platform Functions Registry
@@ -79,6 +95,15 @@ interface PlatformFunctions {
  * Platform functions registry — maps each AITool to its behavior.
  * When adding a new platform, add an entry here.
  */
+/** Helper: collect shared hook scripts for a platform */
+function collectSharedHooks(hooksPath: string): Map<string, string> {
+  const files = new Map<string, string>();
+  for (const hook of getSharedHookScripts()) {
+    files.set(`${hooksPath}/${hook.name}`, hook.content);
+  }
+  return files;
+}
+
 /** Helper: collect commands + skills for "both" platforms */
 function collectBothTemplates(
   ctx: import("../types/ai-tools.js").TemplateContext,
@@ -121,38 +146,27 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
   },
   cursor: {
     configure: configureCursor,
-    collectTemplates: () =>
-      collectBothTemplates(
+    collectTemplates: () => {
+      const files = collectBothTemplates(
         AI_TOOLS.cursor.templateContext,
         (n) => `.cursor/commands/trellis-${n}.md`,
         ".cursor/skills",
-      ),
-  },
-  opencode: {
-    configure: configureOpenCode,
-  },
-  iflow: {
-    configure: configureIflow,
-    collectTemplates: () => {
-      const ctx = AI_TOOLS.iflow.templateContext;
-      const files = collectBothTemplates(
-        ctx,
-        (n) => `.iflow/commands/trellis/${n}.md`,
-        ".iflow/skills",
       );
-      for (const agent of getIflowAgents()) {
-        files.set(`.iflow/agents/${agent.name}.md`, agent.content);
+      for (const agent of getCursorAgents()) {
+        files.set(`.cursor/agents/${agent.name}.md`, agent.content);
       }
-      for (const hook of getIflowHooks()) {
-        files.set(`.iflow/${hook.targetPath}`, hook.content);
+      for (const [k, v] of collectSharedHooks(".cursor/hooks")) {
+        files.set(k, v);
       }
-      const settings = getIflowSettings();
       files.set(
-        `.iflow/${settings.targetPath}`,
-        resolvePlaceholders(settings.content),
+        ".cursor/hooks.json",
+        resolvePlaceholders(getCursorHooksConfig()),
       );
       return files;
     },
+  },
+  opencode: {
+    configure: configureOpenCode,
   },
   codex: {
     configure: configureCodex,
@@ -195,6 +209,15 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
       for (const s of resolveAllAsSkills(AI_TOOLS.kiro.templateContext)) {
         files.set(`.kiro/skills/${s.name}/SKILL.md`, s.content);
       }
+      for (const agent of getKiroAgents()) {
+        files.set(
+          `.kiro/agents/${agent.name}.json`,
+          resolvePlaceholders(agent.content),
+        );
+      }
+      for (const [k, v] of collectSharedHooks(".kiro/hooks")) {
+        files.set(k, v);
+      }
       return files;
     },
   },
@@ -210,6 +233,16 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
       for (const skill of resolveSkills(ctx)) {
         files.set(`.gemini/skills/${skill.name}/SKILL.md`, skill.content);
       }
+      for (const agent of getGeminiAgents()) {
+        files.set(`.gemini/agents/${agent.name}.md`, agent.content);
+      }
+      for (const [k, v] of collectSharedHooks(".gemini/hooks")) {
+        files.set(k, v);
+      }
+      files.set(
+        ".gemini/settings.json",
+        resolvePlaceholders(getGeminiSettings()),
+      );
       return files;
     },
   },
@@ -238,17 +271,41 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
       for (const s of resolveAllAsSkills(AI_TOOLS.qoder.templateContext)) {
         files.set(`.qoder/skills/${s.name}/SKILL.md`, s.content);
       }
+      for (const agent of getQoderAgents()) {
+        files.set(`.qoder/agents/${agent.name}.md`, agent.content);
+      }
+      for (const [k, v] of collectSharedHooks(".qoder/hooks")) {
+        files.set(k, v);
+      }
+      const settings = getQoderSettings();
+      files.set(
+        `.qoder/${settings.targetPath}`,
+        resolvePlaceholders(settings.content),
+      );
       return files;
     },
   },
   codebuddy: {
     configure: configureCodebuddy,
-    collectTemplates: () =>
-      collectBothTemplates(
+    collectTemplates: () => {
+      const files = collectBothTemplates(
         AI_TOOLS.codebuddy.templateContext,
         (n) => `.codebuddy/commands/trellis/${n}.md`,
         ".codebuddy/skills",
-      ),
+      );
+      for (const agent of getCodebuddyAgents()) {
+        files.set(`.codebuddy/agents/${agent.name}.md`, agent.content);
+      }
+      for (const [k, v] of collectSharedHooks(".codebuddy/hooks")) {
+        files.set(k, v);
+      }
+      const settings = getCodebuddySettings();
+      files.set(
+        `.codebuddy/${settings.targetPath}`,
+        resolvePlaceholders(settings.content),
+      );
+      return files;
+    },
   },
   copilot: {
     configure: configureCopilot,
@@ -261,8 +318,18 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
       for (const skill of resolveSkills(ctx)) {
         files.set(`.github/skills/${skill.name}/SKILL.md`, skill.content);
       }
+      // Copilot's own session-start hook
       for (const hook of getCopilotHooks()) {
         files.set(`.github/copilot/hooks/${hook.name}`, hook.content);
+      }
+      // Shared hooks (skip session-start.py — Copilot has its own)
+      for (const hook of getSharedHookScripts()) {
+        if (hook.name === "session-start.py") continue;
+        files.set(`.github/copilot/hooks/${hook.name}`, hook.content);
+      }
+      // Agents (Copilot uses .agent.md suffix)
+      for (const agent of getCursorAgents()) {
+        files.set(`.github/agents/${agent.name}.agent.md`, agent.content);
       }
       const hooksConfig = resolvePlaceholders(getCopilotHooksConfig());
       files.set(".github/copilot/hooks.json", hooksConfig);
@@ -272,12 +339,25 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
   },
   droid: {
     configure: configureDroid,
-    collectTemplates: () =>
-      collectBothTemplates(
+    collectTemplates: () => {
+      const files = collectBothTemplates(
         AI_TOOLS.droid.templateContext,
         (n) => `.factory/commands/trellis/${n}.md`,
         ".factory/skills",
-      ),
+      );
+      for (const droid of getDroidDroids()) {
+        files.set(`.factory/droids/${droid.name}.md`, droid.content);
+      }
+      for (const [k, v] of collectSharedHooks(".factory/hooks")) {
+        files.set(k, v);
+      }
+      const settings = getDroidSettings();
+      files.set(
+        `.factory/${settings.targetPath}`,
+        resolvePlaceholders(settings.content),
+      );
+      return files;
+    },
   },
 };
 
@@ -288,7 +368,7 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
 /** All platform IDs */
 export const PLATFORM_IDS = Object.keys(AI_TOOLS) as AITool[];
 
-/** All platform config directory names (e.g., [".claude", ".cursor", ".iflow", ".opencode"]) */
+/** All platform config directory names (e.g., [".claude", ".cursor", ".opencode"]) */
 export const CONFIG_DIRS = PLATFORM_IDS.map((id) => AI_TOOLS[id].configDir);
 
 /** All managed paths for every platform (primary configDir + extra managed paths). */

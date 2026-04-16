@@ -1,27 +1,46 @@
 import path from "node:path";
 import { AI_TOOLS } from "../types/ai-tools.js";
 import { ensureDir, writeFile } from "../utils/file-writer.js";
-import { resolveCommands, resolveSkills } from "./shared.js";
+import {
+  resolvePlaceholders,
+  resolveCommands,
+  resolveSkills,
+  writeSkills,
+  writeAgents,
+  writeSharedHooks,
+} from "./shared.js";
+import {
+  getAllAgents,
+  getSettingsTemplate,
+} from "../templates/codebuddy/index.js";
 
 /**
  * Configure CodeBuddy:
  * - commands/trellis/ — start + finish-work as slash commands
- * - skills/trellis-{name}/SKILL.md — other 7 as auto-triggered skills
+ * - skills/trellis-{name}/SKILL.md — other 5 as auto-triggered skills
+ * - agents/{name}.md — sub-agent definitions
+ * - hooks/*.py — shared hook scripts
+ * - settings.json — hook configuration
  */
 export async function configureCodebuddy(cwd: string): Promise<void> {
-  const ctx = AI_TOOLS.codebuddy.templateContext;
+  const config = AI_TOOLS.codebuddy;
+  const ctx = config.templateContext;
+  const configRoot = path.join(cwd, config.configDir);
 
-  const commandsDir = path.join(cwd, ".codebuddy", "commands", "trellis");
+  // Commands
+  const commandsDir = path.join(configRoot, "commands", "trellis");
   ensureDir(commandsDir);
   for (const cmd of resolveCommands(ctx)) {
     await writeFile(path.join(commandsDir, `${cmd.name}.md`), cmd.content);
   }
 
-  const skillsDir = path.join(cwd, ".codebuddy", "skills");
-  ensureDir(skillsDir);
-  for (const skill of resolveSkills(ctx)) {
-    const skillDir = path.join(skillsDir, skill.name);
-    ensureDir(skillDir);
-    await writeFile(path.join(skillDir, "SKILL.md"), skill.content);
-  }
+  await writeSkills(path.join(configRoot, "skills"), resolveSkills(ctx));
+  await writeAgents(path.join(configRoot, "agents"), getAllAgents());
+  await writeSharedHooks(path.join(configRoot, "hooks"));
+
+  const settings = getSettingsTemplate();
+  await writeFile(
+    path.join(configRoot, settings.targetPath),
+    resolvePlaceholders(settings.content),
+  );
 }

@@ -40,19 +40,6 @@ export function getClaudeTemplatePath(): string {
 }
 
 /**
- * Get the path to the iflow templates directory (hooks, agents, settings).
- */
-export function getIflowTemplatePath(): string {
-  const templatePath = path.join(__dirname, "iflow");
-  if (fs.existsSync(templatePath)) {
-    return templatePath;
-  }
-  throw new Error(
-    "Could not find iflow templates directory. Expected at templates/iflow/",
-  );
-}
-
-/**
  * Get the path to the opencode templates directory (agents, plugins, lib).
  */
 export function getOpenCodeTemplatePath(): string {

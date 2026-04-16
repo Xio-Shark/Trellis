@@ -20,22 +20,50 @@ src/
 │   └── init.ts          # Each command in its own file
 ├── configurators/       # Configuration generators
 │   ├── index.ts         # Platform registry (PLATFORM_FUNCTIONS, derived helpers)
-│   ├── shared.ts        # Shared utilities (resolvePlaceholders)
+│   ├── shared.ts        # Shared utilities (resolvePlaceholders, writeSkills, writeAgents, writeSharedHooks)
+│   ├── antigravity.ts   # Antigravity configurator
 │   ├── claude.ts        # Claude Code configurator
+│   ├── codebuddy.ts     # CodeBuddy configurator
+│   ├── codex.ts         # Codex configurator
+│   ├── copilot.ts       # Copilot configurator
 │   ├── cursor.ts        # Cursor configurator
-│   ├── iflow.ts         # iFlow CLI configurator
+│   ├── droid.ts         # Droid configurator
+│   ├── gemini.ts        # Gemini CLI configurator
+│   ├── kilo.ts          # Kilo configurator
+│   ├── kiro.ts          # Kiro configurator
 │   ├── opencode.ts      # OpenCode configurator
+│   ├── qoder.ts         # Qoder configurator
+│   ├── windsurf.ts      # Windsurf configurator
 │   └── workflow.ts      # Creates .trellis/ structure
 ├── constants/           # Shared constants and paths
 │   └── paths.ts         # Path constants (centralized)
-├── templates/           # Template utilities and generic templates
+├── templates/           # Template utilities and platform templates
+│   ├── template-utils.ts # createTemplateReader() factory — eliminates boilerplate
+│   ├── extract.ts       # Template extraction utilities (.trellis/ files)
+│   ├── common/          # Single source of truth for commands + skills
+│   │   ├── commands/    # Slash commands (start.md, finish-work.md)
+│   │   ├── skills/      # Auto-triggered skills (before-dev, brainstorm, check, break-loop, update-spec)
+│   │   └── index.ts     # getCommandTemplates(), getSkillTemplates()
+│   ├── shared-hooks/    # Platform-independent Python hook scripts
+│   │   ├── index.ts     # getSharedHookScripts()
+│   │   ├── session-start.py
+│   │   ├── inject-subagent-context.py
+│   │   └── statusline.py
+│   ├── claude/          # Claude Code templates (agents, hooks, settings)
+│   ├── codebuddy/       # CodeBuddy templates (agents, settings)
+│   ├── codex/           # Codex templates (agents, hooks.json)
+│   ├── copilot/         # Copilot templates (prompts, hooks, hooks.json)
+│   ├── cursor/          # Cursor templates (agents, hooks.json)
+│   ├── droid/           # Droid templates (droids, settings)
+│   ├── gemini/          # Gemini templates (agents, settings)
+│   ├── kiro/            # Kiro templates (agents as JSON)
+│   ├── opencode/        # OpenCode templates (agents, plugin, lib)
+│   ├── qoder/           # Qoder templates (agents, settings)
 │   ├── markdown/        # Generic markdown templates
 │   │   ├── spec/        # Spec templates (*.md.txt)
-│   │   ├── init-agent.md    # Project root file template
-│   │   ├── agents.md        # Project root file template
-│   │   ├── worktree.yaml.txt # Generic worktree config
+│   │   ├── agents.md    # Project root file template
 │   │   └── index.ts     # Template exports
-│   └── extract.ts       # Template extraction utilities
+│   └── trellis/         # .trellis/ workflow templates (scripts, workflow.md)
 ├── types/               # TypeScript type definitions
 │   └── ai-tools.ts      # AI tool types and registry
 ├── utils/               # Shared utility functions
@@ -66,8 +94,7 @@ These directories are copied to `dist/` during build and used as templates:
 
 .trellis/                # Trellis workflow (partially dogfooded)
 ├── scripts/             # Python scripts (dogfooded)
-│   ├── common/          # Shared utilities (paths.py, developer.py, etc.)
-│   ├── multi_agent/     # Pipeline scripts (start.py, status.py, etc.)
+│   ├── common/          # Shared utilities (paths.py, developer.py, cli_adapter.py, etc.)
 │   ├── hooks/           # Lifecycle hook scripts (project-specific, NOT dogfooded)
 │   └── *.py             # Main scripts (task.py, get_context.py, etc.)
 ├── workspace/           # Developer progress tracking
@@ -77,7 +104,6 @@ These directories are copied to `dist/` during build and used as templates:
 │   ├── docs-site/       # Docs package specs (docs/)
 │   └── guides/          # Thinking guides
 ├── workflow.md          # Workflow documentation (dogfooded)
-├── worktree.yaml        # Worktree config (Trellis-specific)
 └── .gitignore           # Git ignore rules (dogfooded)
 ```
 
@@ -105,8 +131,6 @@ Files that use generic templates (in `src/templates/`):
 | Template Source | Destination | Reason |
 |----------------|-------------|--------|
 | `src/templates/markdown/spec/**/*.md.txt` | `.trellis/spec/**/*.md` | User fills with project-specific content |
-| `src/templates/markdown/worktree.yaml.txt` | `.trellis/worktree.yaml` | Language-agnostic template |
-| `src/templates/markdown/init-agent.md` | `init-agent.md` | Project root file |
 | `src/templates/markdown/agents.md` | `AGENTS.md` | Project root file |
 
 ### Build Process
@@ -120,15 +144,18 @@ dist/
 ├── .cursor/           # From project root .cursor/
 ├── .claude/           # From project root .claude/
 ├── .trellis/          # From project root .trellis/ (filtered)
-│   ├── scripts/       # All scripts
+│   ├── scripts/       # All scripts (no multi_agent/)
 │   ├── workspace/
 │   │   └── index.md   # Only index.md, no developer subdirs
 │   ├── workflow.md
-│   ├── worktree.yaml
 │   └── .gitignore
 └── templates/         # From src/templates/ (no .ts files)
+    ├── common/        # Shared command + skill templates
+    ├── shared-hooks/  # Platform-independent hook scripts
+    ├── claude/        # Claude-specific templates
+    ├── {platform}/    # Other platform templates
     └── markdown/
-        └── spec/      # Generic templates
+        └── spec/      # Generic spec templates
 ```
 
 ---
@@ -187,7 +214,6 @@ copyTrellisDir(srcRelativePath: string, destPath: string, options?: { executable
 | `kebab-case` | `multi-agent/` | All directories |
 | `*.ts` | `init.ts` | TypeScript source files |
 | `*.md.txt` | `index.md.txt` | Template files for markdown |
-| `*.yaml.txt` | `worktree.yaml.txt` | Template files for yaml |
 
 ### Why `.txt` Extension for Templates
 

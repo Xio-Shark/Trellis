@@ -28,25 +28,13 @@ All workflow scripts are written in **Python 3.10+** for cross-platform compatib
 │   ├── task_store.py     # Task CRUD (create, archive, set-branch, etc.)
 │   ├── task_context.py   # JSONL context management (init-context, add-context)
 │   ├── task_queue.py     # Task queue CRUD
-│   ├── phase.py          # Multi-agent phase tracking
-│   ├── registry.py       # Agent registry management
 │   ├── config.py         # Config reader (config.yaml, hooks)
-│   ├── worktree.py       # Git worktree utilities + YAML parser
 │   ├── cli_adapter.py    # Multi-platform CLI abstraction
 │   ├── git_context.py    # Entry shim → session_context + packages_context
 │   ├── session_context.py    # Session context generation (text/json/record)
 │   └── packages_context.py  # Package discovery and context
 ├── hooks/                # Lifecycle hook scripts (project-specific)
 │   └── linear_sync.py    # Example: sync tasks to Linear
-├── multi_agent/          # Multi-agent pipeline scripts
-│   ├── __init__.py
-│   ├── start.py          # Start worktree agent
-│   ├── status.py         # Entry shim → status_display + status_monitor
-│   ├── status_display.py # Agent status formatting and display
-│   ├── status_monitor.py # Log parsing and process monitoring
-│   ├── plan.py           # Start plan agent
-│   ├── cleanup.py        # Cleanup worktree
-│   └── create_pr.py      # Create PR from task
 ├── task.py               # Entry shim → task_store + task_context
 ├── get_context.py        # Session context retrieval
 ├── init_developer.py     # Developer initialization
@@ -69,10 +57,10 @@ Three tiers:
 |------|---------|------|
 | **Foundation** | `io.py`, `log.py`, `git.py`, `paths.py` | Zero internal deps, used by everything |
 | **Domain** | `types.py`, `tasks.py`, `task_store.py`, `task_context.py`, `task_utils.py` | Task data model and operations |
-| **Infra** | `phase.py`, `registry.py`, `config.py`, `worktree.py`, `cli_adapter.py` | Multi-agent pipeline support |
+| **Infra** | `config.py`, `cli_adapter.py` | Platform abstraction and config |
 | **Context** | `session_context.py`, `packages_context.py`, `git_context.py` (shim) | Output generation |
 
-### Entry Scripts (`*.py`, `multi_agent/*.py`)
+### Entry Scripts (`*.py`)
 
 CLI tools that users run directly. Include docstring with usage.
 
@@ -100,19 +88,6 @@ def main() -> int:
 if __name__ == "__main__":
     sys.exit(main())
 ```
-
-### Bootstrap Shim (`multi_agent/_bootstrap.py`)
-
-Scripts in `multi_agent/` can't directly `from common.xxx import yyy` because Python's module resolution doesn't know about the parent `scripts/` directory. The `_bootstrap.py` shim adds it to `sys.path`:
-
-```python
-# Every multi_agent script must start with this:
-import _bootstrap  # noqa: F401 — adds parent scripts/ dir to sys.path
-
-from common.paths import get_repo_root  # now works
-```
-
-**Why not `sys.path.insert` inline?** The bootstrap shim is a single file, tested once, imported everywhere. Inline `sys.path.insert` was duplicated in every `multi_agent/*.py` file and easy to get wrong.
 
 ---
 
@@ -672,17 +647,6 @@ hooks:
     - "python3 .trellis/scripts/hooks/my_hook.py create"
 ```
 
-### Worktree Submodule Initialization
-
-When `start.py` creates a worktree for a task, it calls `_init_submodules_for_task()`:
-
-1. Read `packages` from config.yaml via `get_packages()`
-2. Resolve target package from task data or `default_package`
-3. Check if the package is a submodule via `get_submodule_packages()`
-4. Run `git submodule status <path>` in the worktree
-5. Parse the status prefix (see "Parsing Structured Command Output" above)
-6. If uninitialized (`-` prefix): run `git submodule update --init <path>`
-
 ---
 
 ## Error Handling
@@ -869,7 +833,7 @@ def get_phase_info(task_json: Path) -> str:
     action = _phase_action(data, phase)      # no file I/O
 ```
 
-**When to use**: Any module where public functions compose by calling other public functions that each read the same file (e.g., `phase.py`, `registry.py`).
+**When to use**: Any module where public functions compose by calling other public functions that each read the same file (e.g., `task_store.py`, `config.py`).
 
 ---
 
@@ -908,4 +872,4 @@ See `.trellis/scripts/task.py` for a comprehensive example with:
 
 ## Migration Note
 
-> **Historical Context**: Scripts were migrated from Bash to Python in v0.3.0 for cross-platform compatibility. The old shell scripts are archived in `.trellis/scripts-shell-archive/` (if preserved).
+> **Historical Context**: Scripts were migrated from Bash to Python in v0.3.0 for cross-platform compatibility. In v0.5.0, the `multi_agent/` pipeline directory (`plan.py`, `start.py`, `status.py`, etc.) was removed along with `phase.py`, `registry.py`, and `worktree.py` from `common/`. The `_bootstrap.py` shim is no longer needed.

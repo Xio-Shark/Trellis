@@ -33,10 +33,6 @@ import {
   getAllAgents as getClaudeAgents,
   getAllHooks as getClaudeHooks,
 } from "../src/templates/claude/index.js";
-import {
-  settingsTemplate as iflowSettingsTemplate,
-  getAllHooks as getIflowHooks,
-} from "../src/templates/iflow/index.js";
 import { getAllHooks as getCodexHooks } from "../src/templates/codex/index.js";
 import {
   getCommandTemplates,
@@ -46,14 +42,10 @@ import {
   commonInit,
   taskScript,
   addSessionScript,
-  multiAgentPlan,
-  multiAgentStart,
-  multiAgentCleanup,
-  multiAgentCreatePr,
   commonCliAdapter,
-  commonWorktree,
   commonTaskUtils,
   commonDeveloper,
+  commonConfig,
   getAllScripts,
 } from "../src/templates/trellis/index.js";
 import {
@@ -64,12 +56,6 @@ import { guidesIndexContent, workspaceIndexContent } from "../src/templates/mark
 import * as markdownExports from "../src/templates/markdown/index.js";
 import { TrellisContext } from "../src/templates/opencode/lib/trellis-context.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const opencodeDispatchTemplate = fs.readFileSync(
-  path.join(__dirname, "../src/templates/opencode/agents/dispatch.md"),
-  "utf-8",
-);
 
 afterEach(() => {
   clearManifestCache();
@@ -452,31 +438,12 @@ ${separator}
   });
 });
 
-describe("regression: Windows subprocess flags (beta.2, beta.12)", () => {
-  it("[beta.12] plan.py uses CREATE_NEW_PROCESS_GROUP on win32", () => {
-    expect(multiAgentPlan).toContain("CREATE_NEW_PROCESS_GROUP");
-    expect(multiAgentPlan).toContain('sys.platform == "win32"');
-  });
-
-  it("[beta.12] plan.py uses start_new_session on non-Windows", () => {
-    expect(multiAgentPlan).toContain("start_new_session");
-  });
-
-  it("[beta.12] start.py uses CREATE_NEW_PROCESS_GROUP on win32", () => {
-    expect(multiAgentStart).toContain("CREATE_NEW_PROCESS_GROUP");
-    expect(multiAgentStart).toContain('sys.platform == "win32"');
-  });
-
-  it("[beta.12] start.py uses start_new_session on non-Windows", () => {
-    expect(multiAgentStart).toContain("start_new_session");
-  });
-});
+// Windows subprocess flags tests removed — multi_agent pipeline removed
 
 describe("regression: Windows path separator (beta.12)", () => {
   it("[beta.12] isManagedPath handles Windows backslash paths", () => {
     expect(isManagedPath(".claude\\commands\\foo.md")).toBe(true);
     expect(isManagedPath(".trellis\\spec\\backend")).toBe(true);
-    expect(isManagedPath(".iflow\\hooks\\test.py")).toBe(true);
     expect(isManagedPath(".cursor\\commands\\start.md")).toBe(true);
     expect(isManagedPath(".opencode\\config.json")).toBe(true);
     expect(isManagedPath(".github\\copilot\\hooks\\session-start.py")).toBe(
@@ -666,7 +633,6 @@ describe("regression: update only configured platforms (beta.16)", () => {
     const withTracking = [
       "claude-code",
       "cursor",
-      "iflow",
       "codex",
       "kilo",
       "kiro",
@@ -684,26 +650,7 @@ describe("regression: update only configured platforms (beta.16)", () => {
   });
 });
 
-describe("regression: OpenCode dispatch waits for child sessions (issue-149)", () => {
-  it("[issue-149] OpenCode dispatch uses synchronous Task calls for child phases", () => {
-    expect(opencodeDispatchTemplate).toContain("run_in_background: false");
-    expect(opencodeDispatchTemplate).not.toContain("run_in_background: true");
-  });
-
-  it("[issue-149] OpenCode dispatch forbids TaskOutput polling", () => {
-    expect(opencodeDispatchTemplate).toContain("Do NOT call TaskOutput");
-    expect(opencodeDispatchTemplate).not.toContain("TaskOutput(task_id");
-  });
-
-  it("[issue-149] OpenCode dispatch instructs phase-by-phase blocking execution", () => {
-    expect(opencodeDispatchTemplate).toContain(
-      "Wait for the Task call to return before starting the next phase.",
-    );
-    expect(opencodeDispatchTemplate).toContain(
-      "Start the next phase only after the current `Task(...)` call returns",
-    );
-  });
-});
+// dispatch agent removed — parallel/worktree now handled by platform-native features
 
 // =============================================================================
 // 4. Template Integrity Regressions
@@ -723,17 +670,6 @@ describe("regression: shell to Python migration (beta.0)", () => {
     const scripts = getAllScripts();
     for (const [name] of scripts) {
       expect(name.endsWith(".py"), `${name} should end with .py`).toBe(true);
-    }
-  });
-
-  it("[beta.0] multi_agent uses underscore (not hyphen)", () => {
-    const scripts = getAllScripts();
-    const multiAgentKeys = [...scripts.keys()].filter((k) =>
-      k.includes("multi"),
-    );
-    for (const key of multiAgentKeys) {
-      expect(key).toContain("multi_agent");
-      expect(key).not.toContain("multi-agent");
     }
   });
 
@@ -761,7 +697,7 @@ describe("regression: shell to Python migration (beta.0)", () => {
     const registeredKeys = new Set(scripts.keys());
 
     // Known exclusions: files intentionally not in getAllScripts()
-    const excluded = new Set(["hooks/linear_sync.py", "multi_agent/_bootstrap.py"]);
+    const excluded = new Set(["hooks/linear_sync.py"]);
 
     for (const file of fsFiles) {
       if (excluded.has(file)) continue;
@@ -801,7 +737,6 @@ describe("regression: hook JSON format (beta.7)", () => {
     const allHookEntries = [
       ...settings.hooks.SessionStart,
       ...settings.hooks.PreToolUse,
-      ...settings.hooks.SubagentStop,
     ];
     for (const entry of allHookEntries) {
       for (const hook of entry.hooks) {
@@ -811,25 +746,6 @@ describe("regression: hook JSON format (beta.7)", () => {
     }
   });
 
-  it("[beta.7] iFlow settings.json is valid JSON with hooks", () => {
-    expect(() => JSON.parse(iflowSettingsTemplate)).not.toThrow();
-    const settings = JSON.parse(iflowSettingsTemplate);
-    expect(settings).toHaveProperty("hooks");
-  });
-
-  it("[beta.7] iFlow hook commands use {{PYTHON_CMD}} placeholder", () => {
-    const settings = JSON.parse(iflowSettingsTemplate);
-    const hookTypes = Object.values(settings.hooks) as {
-      hooks: { command: string }[];
-    }[][];
-    for (const entries of hookTypes) {
-      for (const entry of entries) {
-        for (const hook of entry.hooks) {
-          expect(hook.command).toContain("{{PYTHON_CMD}}");
-        }
-      }
-    }
-  });
 });
 
 describe("regression: SessionStart reinject on clear/compact (MIN-231)", () => {
@@ -843,28 +759,13 @@ describe("regression: SessionStart reinject on clear/compact (MIN-231)", () => {
     );
   });
 
-  it("[MIN-231] iFlow SessionStart hooks cover startup, clear, and compress", () => {
-    const settings = JSON.parse(iflowSettingsTemplate);
-    const matchers = settings.hooks.SessionStart.map(
-      (e: { matcher: string }) => e.matcher,
-    );
-    expect(matchers).toEqual(
-      expect.arrayContaining(["startup", "clear", "compress"]),
-    );
-  });
-
   it("[MIN-231] all SessionStart matchers invoke session-start.py", () => {
-    for (const [label, template] of [
-      ["claude", claudeSettingsTemplate],
-      ["iflow", iflowSettingsTemplate],
-    ] as const) {
-      const settings = JSON.parse(template);
-      for (const entry of settings.hooks.SessionStart) {
-        expect(
-          entry.hooks[0].command,
-          `${label} ${entry.matcher} should invoke session-start.py`,
-        ).toContain("session-start.py");
-      }
+    const settings = JSON.parse(claudeSettingsTemplate);
+    for (const entry of settings.hooks.SessionStart) {
+      expect(
+        entry.hooks[0].command,
+        `claude ${entry.matcher} should invoke session-start.py`,
+      ).toContain("session-start.py");
     }
   });
 });
@@ -873,9 +774,6 @@ describe("regression: current-task path normalization", () => {
   let tmpDir: string;
   const pythonCmd = process.platform === "win32" ? "python" : "python3";
   const claudeSessionStart = getClaudeHooks().find(
-    (hook) => hook.targetPath === "hooks/session-start.py",
-  )?.content;
-  const iflowSessionStart = getIflowHooks().find(
     (hook) => hook.targetPath === "hooks/session-start.py",
   )?.content;
   const codexSessionStart = getCodexHooks().find(
@@ -982,25 +880,18 @@ describe("regression: current-task path normalization", () => {
       expectTemplateContent(claudeSessionStart, "claude session-start"),
     );
     writeProjectFile(
-      path.join(".iflow", "hooks", "session-start.py"),
-      expectTemplateContent(iflowSessionStart, "iflow session-start"),
-    );
-    writeProjectFile(
       path.join(".codex", "hooks", "session-start.py"),
       expectTemplateContent(codexSessionStart, "codex session-start"),
     );
 
     const claudeOutput = runPython(path.join(".claude", "hooks", "session-start.py"));
-    const iflowOutput = runPython(path.join(".iflow", "hooks", "session-start.py"));
     const codexOutput = runPython(
       path.join(".codex", "hooks", "session-start.py"),
       JSON.stringify({ cwd: tmpDir }),
     );
 
-    for (const output of [claudeOutput, iflowOutput]) {
-      expect(output).toContain("Status: READY");
-      expect(output).not.toContain("STALE POINTER");
-    }
+    expect(claudeOutput).toContain("Status: READY");
+    expect(claudeOutput).not.toContain("STALE POINTER");
 
     const codexPayload = JSON.parse(codexOutput) as {
       hookSpecificOutput: { additionalContext: string };
@@ -1052,13 +943,6 @@ describe("regression: backslash in markdown templates (beta.12)", () => {
     }
   });
 
-  it("[beta.12] iFlow hook templates do not contain problematic backslash sequences", () => {
-    const hooks = getIflowHooks();
-    for (const hook of hooks) {
-      expect(hook.content).not.toContain("\\--");
-      expect(hook.content).not.toContain("\\->");
-    }
-  });
 });
 
 // =============================================================================
@@ -1074,11 +958,6 @@ describe("regression: platform additions (beta.9, beta.13, beta.16)", () => {
   it("[beta.13] Cursor platform is registered", () => {
     expect(AI_TOOLS).toHaveProperty("cursor");
     expect(AI_TOOLS.cursor.configDir).toBe(".cursor");
-  });
-
-  it("[beta.16] iFlow platform is registered", () => {
-    expect(AI_TOOLS).toHaveProperty("iflow");
-    expect(AI_TOOLS.iflow.configDir).toBe(".iflow");
   });
 
   it("[codex] Codex platform is registered", () => {
@@ -1153,20 +1032,10 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
     expect(commonCliAdapter).toContain(".cursor");
   });
 
-  it("[beta.16] cli_adapter.py supports iflow platform", () => {
-    expect(commonCliAdapter).toContain('"iflow"');
-    expect(commonCliAdapter).toContain(".iflow");
-  });
-
   it("[codex] cli_adapter.py supports codex platform", () => {
     expect(commonCliAdapter).toContain('"codex"');
     expect(commonCliAdapter).toContain(".agents");
     expect(commonCliAdapter).toContain(".codex");
-  });
-
-  it("[codex] multi_agent plan/start scripts allow codex platform", () => {
-    expect(multiAgentPlan).toContain('"codex"');
-    expect(multiAgentStart).toContain('"codex"');
   });
 
   it("[kiro] cli_adapter.py supports kiro platform", () => {
@@ -1211,10 +1080,10 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
 
   it("[droid] cli_adapter.py treats droid as commands-only (no CLI run/resume yet)", () => {
     expect(commonCliAdapter).toContain(
-      "Factory Droid CLI agent run is not yet integrated with Trellis multi-agent.",
+      "Factory Droid CLI agent run is not yet supported.",
     );
     expect(commonCliAdapter).toContain(
-      "Factory Droid CLI resume is not yet integrated with Trellis multi-agent.",
+      "Factory Droid CLI resume is not yet supported.",
     );
     expect(commonCliAdapter).toContain('elif self.platform == "droid":');
     expect(commonCliAdapter).toContain('return "droid"');
@@ -1231,10 +1100,10 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
       /def get_non_interactive_env[\s\S]*?elif self\.platform == "droid":[\s\S]*?return \{\}/,
     );
     expect(commonCliAdapter).toMatch(
-      /def build_run_command[\s\S]*?elif self\.platform == "droid":[\s\S]*?CLI agent run is not yet integrated/,
+      /def build_run_command[\s\S]*?elif self\.platform == "droid":[\s\S]*?CLI agent run is not yet supported/,
     );
     expect(commonCliAdapter).toMatch(
-      /def build_resume_command[\s\S]*?elif self\.platform == "droid":[\s\S]*?CLI resume is not yet integrated/,
+      /def build_resume_command[\s\S]*?elif self\.platform == "droid":[\s\S]*?CLI resume is not yet supported/,
     );
     expect(commonCliAdapter).toMatch(
       /def cli_name[\s\S]*?elif self\.platform == "droid":[\s\S]*?return "droid"/,
@@ -1263,7 +1132,6 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
     expect(commonCliAdapter).toContain(".claude");
     expect(commonCliAdapter).toContain(".cursor");
     expect(commonCliAdapter).toContain(".opencode");
-    expect(commonCliAdapter).toContain(".iflow");
     expect(commonCliAdapter).toContain(".codex");
     expect(commonCliAdapter).toContain(".kiro");
     expect(commonCliAdapter).toContain(".gemini");
@@ -1310,16 +1178,6 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
     );
   });
 
-  it("[0.3.10] iFlow CLI uses correct agent invocation syntax", () => {
-    // iFlow does NOT support --agent flag, uses $agent_name prefix instead
-    // Verify the correct command format exists
-    expect(commonCliAdapter).toContain('cmd = ["iflow", "-y", "-p"]');
-    expect(commonCliAdapter).toContain('f"${mapped_agent} {prompt}"');
-
-    // Verify that the old incorrect format does NOT exist
-    // The bug was: cmd.extend(["-y", "--agent", mapped_agent])
-    expect(commonCliAdapter).not.toContain('cmd.extend(["-y", "--agent", mapped_agent])');
-  });
 });
 
 // =============================================================================
@@ -1450,22 +1308,8 @@ describe("regression: migration manifest consistency", () => {
 // =============================================================================
 
 describe("regression: collectTemplates paths match init directory structure (0.3.1)", () => {
-  it("[0.3.1] iflow collectTemplates uses commands/trellis/ subdirectory", () => {
-    const templates = collectPlatformTemplates("iflow");
-    expect(templates).toBeInstanceOf(Map);
-    const commandKeys = [...(templates as Map<string, string>).keys()].filter(
-      (k) => k.includes("/commands/"),
-    );
-    for (const key of commandKeys) {
-      expect(
-        key,
-        `iflow command path should include trellis/ subdirectory: ${key}`,
-      ).toMatch(/\.iflow\/commands\/trellis\//);
-    }
-  });
-
   it("[0.3.1] all platforms with commands use consistent trellis/ subdirectory", () => {
-    const platformsWithCommands = ["claude-code", "iflow", "gemini"] as const;
+    const platformsWithCommands = ["claude-code", "gemini"] as const;
     for (const id of platformsWithCommands) {
       const templates = collectPlatformTemplates(id);
       if (!templates) continue;
@@ -1514,7 +1358,6 @@ describe("regression: collectTemplates paths match init directory structure (0.3
 
     const keys = [...templates.keys()];
     expect(keys.some((key) => key.startsWith(".agents/skills/"))).toBe(true);
-    expect(keys.some((key) => key.startsWith(".codex/skills/"))).toBe(true);
     expect(keys.some((key) => key.startsWith(".codex/agents/"))).toBe(true);
     expect(keys.some((key) => key.startsWith(".codex/hooks/"))).toBe(true);
     expect(keys).toContain(".codex/hooks.json");
@@ -1542,26 +1385,26 @@ describe("regression: collectTemplates paths match init directory structure (0.3
 // =============================================================================
 
 describe("regression: parse_simple_yaml uses _unquote not greedy strip (0.3.8)", () => {
-  it("worktree.py defines _unquote helper", () => {
-    expect(commonWorktree).toContain("def _unquote(s: str) -> str:");
+  it("config.py defines _unquote helper", () => {
+    expect(commonConfig).toContain("def _unquote(s: str) -> str:");
   });
 
-  it("worktree.py uses _unquote for list items, not .strip('\"')", () => {
+  it("config.py uses _unquote for list items, not .strip('\"')", () => {
     // The bug: .strip('"').strip("'") greedily eats nested quotes
     // e.g. "echo 'hello'" -> strip("'") -> echo 'hello (broken!)
-    expect(commonWorktree).not.toContain(".strip('\"').strip(\"'\")");
-    expect(commonWorktree).toContain("_unquote(stripped[2:].strip())");
+    expect(commonConfig).not.toContain(".strip('\"').strip(\"'\")");
+    expect(commonConfig).toContain("_unquote(stripped[2:].strip())");
   });
 
-  it("worktree.py uses _unquote for key-value, not .strip('\"')", () => {
-    expect(commonWorktree).toContain("_unquote(value.strip())");
+  it("config.py uses _unquote for key-value, not .strip('\"')", () => {
+    expect(commonConfig).toContain("_unquote(value.strip())");
   });
 });
 
 describe("regression: parse_simple_yaml Python execution (0.3.8)", () => {
   // Extract _unquote + _parse_yaml_block + _next_content_line + parse_simple_yaml
-  // from commonWorktree and run them in an isolated Python process.
-  // We can't import worktree.py directly because it has `from .paths import ...`
+  // from commonConfig and run them in an isolated Python process.
+  // We can't import config.py directly because it has `from .paths import ...`
   let tmpDir: string;
   let extractedPy: string;
 
@@ -1569,9 +1412,9 @@ describe("regression: parse_simple_yaml Python execution (0.3.8)", () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-yaml-py-"));
     // Extract _unquote + parse_simple_yaml + _parse_yaml_block + _next_content_line
     // These 4 functions have no external imports — safe to run standalone.
-    const fnStart = commonWorktree.indexOf("def _unquote(");
-    const fnEnd = commonWorktree.indexOf("\ndef _yaml_get_value(");
-    extractedPy = commonWorktree.substring(fnStart, fnEnd);
+    const fnStart = commonConfig.indexOf("def _unquote(");
+    const fnEnd = commonConfig.indexOf("\n# Defaults");
+    extractedPy = commonConfig.substring(fnStart, fnEnd);
     fs.writeFileSync(path.join(tmpDir, "yaml_parser.py"), extractedPy);
   });
 
@@ -1639,46 +1482,7 @@ describe("regression: parse_simple_yaml Python execution (0.3.8)", () => {
 // S4: Submodule + PR Awareness (beta.1)
 // =============================================================================
 
-describe("regression: submodule awareness in multi_agent scripts (beta.1)", () => {
-  it("[S4] start.py checks submodule status prefix before init (prevents detached HEAD)", () => {
-    // Critical: running `git submodule update --init` on already-initialized submodule
-    // detaches HEAD, destroying agent's in-progress work. Must check status prefix first.
-    expect(multiAgentStart).toContain("submodule status");
-    expect(multiAgentStart).toContain('prefix == "-"');
-    expect(multiAgentStart).toContain('prefix == "+"');
-  });
-
-  it("[S4] start.py imports submodule helpers from common.config", () => {
-    expect(multiAgentStart).toContain("get_submodule_packages");
-    expect(multiAgentStart).toContain("validate_package");
-  });
-
-  it("[S4] create_pr.py uses git symbolic-ref for portable base branch detection", () => {
-    // Must use `git symbolic-ref refs/remotes/origin/HEAD` (not grep + English output)
-    // for cross-platform / cross-locale compatibility
-    expect(multiAgentCreatePr).toContain("symbolic-ref");
-    expect(multiAgentCreatePr).toContain("refs/remotes/origin/HEAD");
-  });
-
-  it("[S4] create_pr.py guards submodule_prs read with isinstance", () => {
-    // Prevents TypeError crash when task.json has submodule_prs: null or non-dict
-    expect(multiAgentCreatePr).toContain("isinstance(raw_prs, dict)");
-  });
-
-  it("[S4] create_pr.py has squash-merge warning for submodule PRs", () => {
-    expect(multiAgentCreatePr).toContain("_SUBMODULE_SQUASH_WARNING_MARKER");
-    expect(multiAgentCreatePr).toContain("squash-merged");
-  });
-
-  it("[S4] cleanup.py defines AND calls _warn_submodule_prs", () => {
-    // Bug found during review: function was defined but never called.
-    // Verify both definition and at least one call site exist.
-    expect(multiAgentCleanup).toContain("def _warn_submodule_prs(");
-    // Count occurrences: 1 def + at least 2 calls = at least 3
-    const occurrences = multiAgentCleanup.split("_warn_submodule_prs").length - 1;
-    expect(occurrences).toBeGreaterThanOrEqual(3);
-  });
-});
+// submodule awareness in multi_agent scripts tests removed — multi_agent pipeline removed
 
 describe("regression: cross-platform-thinking-guide dead code removed (0.3.1)", () => {
   it("[0.3.1] guidesCrossPlatformThinkingGuideContent is not exported from markdown/index", () => {

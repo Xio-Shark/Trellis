@@ -3,7 +3,6 @@ import fs from "node:fs";
 import {
   getTrellisTemplatePath,
   getClaudeTemplatePath,
-  getIflowTemplatePath,
   getOpenCodeTemplatePath,
   getTrellisSourcePath,
   readTrellisFile,
@@ -25,12 +24,6 @@ describe("template path functions", () => {
 
   it("getClaudeTemplatePath returns existing directory", () => {
     const p = getClaudeTemplatePath();
-    expect(fs.existsSync(p)).toBe(true);
-    expect(fs.statSync(p).isDirectory()).toBe(true);
-  });
-
-  it("getIflowTemplatePath returns existing directory", () => {
-    const p = getIflowTemplatePath();
     expect(fs.existsSync(p)).toBe(true);
     expect(fs.statSync(p).isDirectory()).toBe(true);
   });

@@ -62,7 +62,6 @@ program
   .description("Initialize trellis in the current project")
   .option("--cursor", "Include Cursor commands")
   .option("--claude", "Include Claude Code commands")
-  .option("--iflow", "Include iFlow CLI commands")
   .option("--opencode", "Include OpenCode commands")
   .option("--codex", "Include Codex skills")
   .option("--kilo", "Include Kilo CLI commands")

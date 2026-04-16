@@ -50,7 +50,7 @@ function getTaskStatus(ctx) {
   }
 
   let hasContext = false
-  for (const jsonlName of ["implement.jsonl", "check.jsonl", "spec.jsonl"]) {
+  for (const jsonlName of ["implement.jsonl", "check.jsonl"]) {
     const jsonlPath = join(taskDir, jsonlName)
     if (existsSync(jsonlPath)) {
       try {

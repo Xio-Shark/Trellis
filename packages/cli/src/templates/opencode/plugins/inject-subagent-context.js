@@ -10,10 +10,10 @@ import { join } from "path"
 import { TrellisContext, debugLog } from "../lib/trellis-context.js"
 
 // Supported subagent types
-const AGENTS_ALL = ["implement", "check", "debug", "research"]
-const AGENTS_REQUIRE_TASK = ["implement", "check", "debug"]
+const AGENTS_ALL = ["implement", "check", "research"]
+const AGENTS_REQUIRE_TASK = ["implement", "check"]
 // Agents that don't update phase (can be called at any time)
-const AGENTS_NO_PHASE_UPDATE = ["debug", "research"]
+const AGENTS_NO_PHASE_UPDATE = ["research"]
 
 /**
  * Update current_phase in task.json based on subagent_type
@@ -66,14 +66,8 @@ function updateCurrentPhase(ctx, taskDir, subagentType) {
 function getImplementContext(ctx, taskDir) {
   const parts = []
 
-  let jsonlPath = join(ctx.directory, taskDir, "implement.jsonl")
-  let entries = ctx.readJsonlWithFiles(jsonlPath)
-
-  if (entries.length === 0) {
-    jsonlPath = join(ctx.directory, taskDir, "spec.jsonl")
-    entries = ctx.readJsonlWithFiles(jsonlPath)
-  }
-
+  const jsonlPath = join(ctx.directory, taskDir, "implement.jsonl")
+  const entries = ctx.readJsonlWithFiles(jsonlPath)
   if (entries.length > 0) {
     parts.push(ctx.buildContextFromEntries(entries))
   }
@@ -99,32 +93,13 @@ function getCheckContext(ctx, taskDir) {
 
   const jsonlPath = join(ctx.directory, taskDir, "check.jsonl")
   const entries = ctx.readJsonlWithFiles(jsonlPath)
-
   if (entries.length > 0) {
     parts.push(ctx.buildContextFromEntries(entries))
-  } else {
-    const checkFiles = [
-      [".opencode/commands/trellis/finish-work.md", "Finish work checklist"],
-      [".opencode/commands/trellis/check-cross-layer.md", "Cross-layer check spec"],
-      [".opencode/commands/trellis/check.md", "Check spec"],
-    ]
-    for (const [f, description] of checkFiles) {
-      const content = ctx.readProjectFile(f)
-      if (content) {
-        parts.push(`=== ${f} (${description}) ===\n${content}`)
-      }
-    }
-
-    const specJsonlPath = join(ctx.directory, taskDir, "spec.jsonl")
-    const specEntries = ctx.readJsonlWithFiles(specJsonlPath)
-    for (const entry of specEntries) {
-      parts.push(`=== ${entry.path} (Dev spec) ===\n${entry.content}`)
-    }
   }
 
   const prd = ctx.readProjectFile(join(taskDir, "prd.md"))
   if (prd) {
-    parts.push(`=== ${taskDir}/prd.md (Requirements - for understanding intent) ===\n${prd}`)
+    parts.push(`=== ${taskDir}/prd.md (Requirements) ===\n${prd}`)
   }
 
   return parts.join("\n\n")
@@ -134,75 +109,15 @@ function getCheckContext(ctx, taskDir) {
  * Get context for finish phase (final check before PR)
  */
 function getFinishContext(ctx, taskDir) {
-  const parts = []
-
-  const jsonlPath = join(ctx.directory, taskDir, "finish.jsonl")
-  const entries = ctx.readJsonlWithFiles(jsonlPath)
-
-  if (entries.length > 0) {
-    parts.push(ctx.buildContextFromEntries(entries))
-  } else {
-    const finishWork = ctx.readProjectFile(".opencode/commands/trellis/finish-work.md")
-    if (finishWork) {
-      parts.push(`=== .opencode/commands/trellis/finish-work.md (Finish checklist) ===\n${finishWork}`)
-    }
-  }
-
-  const updateSpec = ctx.readProjectFile(".opencode/commands/trellis/update-spec.md")
-  if (updateSpec) {
-    parts.push(`=== .opencode/commands/trellis/update-spec.md (Spec update process) ===\n${updateSpec}`)
-  }
-
-  const prd = ctx.readProjectFile(join(taskDir, "prd.md"))
-  if (prd) {
-    parts.push(`=== ${taskDir}/prd.md (Requirements - verify all met) ===\n${prd}`)
-  }
-
-  return parts.join("\n\n")
+  // Finish reuses check context (same JSONL source)
+  return getCheckContext(ctx, taskDir)
 }
 
-/**
- * Get context for debug agent
- */
-function getDebugContext(ctx, taskDir) {
-  const parts = []
-
-  const jsonlPath = join(ctx.directory, taskDir, "debug.jsonl")
-  const entries = ctx.readJsonlWithFiles(jsonlPath)
-
-  if (entries.length > 0) {
-    parts.push(ctx.buildContextFromEntries(entries))
-  } else {
-    const specJsonlPath = join(ctx.directory, taskDir, "spec.jsonl")
-    const specEntries = ctx.readJsonlWithFiles(specJsonlPath)
-    for (const entry of specEntries) {
-      parts.push(`=== ${entry.path} (Dev spec) ===\n${entry.content}`)
-    }
-
-    const checkFiles = [
-      [".opencode/commands/trellis/check.md", "Check spec"],
-      [".opencode/commands/trellis/check-cross-layer.md", "Cross-layer check spec"],
-    ]
-    for (const [f, description] of checkFiles) {
-      const content = ctx.readProjectFile(f)
-      if (content) {
-        parts.push(`=== ${f} (${description}) ===\n${content}`)
-      }
-    }
-  }
-
-  const codex = ctx.readProjectFile(join(taskDir, "codex-review-output.txt"))
-  if (codex) {
-    parts.push(`=== ${taskDir}/codex-review-output.txt (Codex Review Results) ===\n${codex}`)
-  }
-
-  return parts.join("\n\n")
-}
 
 /**
  * Get context for research agent
  */
-function getResearchContext(ctx, taskDir) {
+function getResearchContext(ctx) {
   const parts = []
 
   // Dynamic project structure (scan actual spec directory)
@@ -250,15 +165,6 @@ function getResearchContext(ctx, taskDir) {
 - Known issues: \`.trellis/big-question/\`
 - Code search: Use Glob and Grep tools
 - Tech solutions: Use mcp__exa__web_search_exa or mcp__exa__get_code_context_exa`)
-
-  if (taskDir) {
-    const jsonlPath = join(ctx.directory, taskDir, "research.jsonl")
-    const researchEntries = ctx.readJsonlWithFiles(jsonlPath)
-    if (researchEntries.length > 0) {
-      parts.push("\n## Additional Search Context\n")
-      parts.push(ctx.buildContextFromEntries(researchEntries))
-    }
-  }
 
   return parts.join("\n\n")
 }
@@ -359,34 +265,6 @@ ${originalPrompt}
 - Fix issues yourself, don't just report
 - Must execute complete checklist`,
 
-    debug: `# Debug Agent Task
-
-You are the Debug Agent in the Multi-Agent Pipeline.
-
-## Your Context
-
-${context}
-
----
-
-## Your Task
-
-${originalPrompt}
-
----
-
-## Workflow
-
-1. **Understand issues** - Analyze issues pointed out
-2. **Locate code** - Find positions that need fixing
-3. **Fix against specs** - Fix following dev specs
-4. **Verify fixes** - Run typecheck
-
-## Important Constraints
-
-- Do NOT execute git commit
-- Run typecheck after each fix`,
-
     research: `# Research Agent Task
 
 You are the Research Agent in the Multi-Agent Pipeline.
@@ -484,9 +362,6 @@ export default {
               context = isFinish
                 ? getFinishContext(ctx, taskDir)
                 : getCheckContext(ctx, taskDir)
-              break
-            case "debug":
-              context = getDebugContext(ctx, taskDir)
               break
             case "research":
               context = getResearchContext(ctx, taskDir)

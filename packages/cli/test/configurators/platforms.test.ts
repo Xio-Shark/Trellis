@@ -58,12 +58,6 @@ describe("getConfiguredPlatforms", () => {
     expect(result.has("cursor")).toBe(true);
   });
 
-  it("detects .iflow directory as iflow", () => {
-    fs.mkdirSync(path.join(tmpDir, ".iflow"));
-    const result = getConfiguredPlatforms(tmpDir);
-    expect(result.has("iflow")).toBe(true);
-  });
-
   it("detects .opencode directory as opencode", () => {
     fs.mkdirSync(path.join(tmpDir, ".opencode"));
     const result = getConfiguredPlatforms(tmpDir);
@@ -181,11 +175,6 @@ describe("configurePlatform", () => {
   it("configurePlatform('cursor') creates .cursor directory", async () => {
     await configurePlatform("cursor", tmpDir);
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(true);
-  });
-
-  it("configurePlatform('iflow') creates .iflow directory", async () => {
-    await configurePlatform("iflow", tmpDir);
-    expect(fs.existsSync(path.join(tmpDir, ".iflow"))).toBe(true);
   });
 
   it("configurePlatform('opencode') creates .opencode directory", async () => {

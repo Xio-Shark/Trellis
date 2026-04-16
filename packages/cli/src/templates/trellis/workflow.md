@@ -108,12 +108,6 @@ cat .trellis/spec/<package>/<layer>/conventions.md
 |   |   |-- paths.py         # Path utilities
 |   |   |-- developer.py     # Developer management
 |   |   +-- git_context.py   # Git context implementation
-|   |-- multi_agent/         # Multi-agent pipeline scripts
-|   |   |-- __init__.py
-|   |   |-- start.py         # Start worktree agent
-|   |   |-- status.py        # Monitor agent status
-|   |   |-- create_pr.py     # Create PR
-|   |   +-- cleanup.py       # Cleanup worktree
 |   |-- init_developer.py    # Initialize developer identity
 |   |-- get_developer.py     # Get current developer name
 |   |-- task.py              # Manage tasks

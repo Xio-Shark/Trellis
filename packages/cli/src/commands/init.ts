@@ -535,7 +535,6 @@ async function handleReinit(
 interface InitOptions {
   cursor?: boolean;
   claude?: boolean;
-  iflow?: boolean;
   opencode?: boolean;
   codex?: boolean;
   kilo?: boolean;
@@ -1279,11 +1278,9 @@ export async function init(options: InitOptions): Promise<void> {
   // ==========================================================================
 
   // Create workflow structure with project type
-  // Multi-agent is enabled by default
   console.log(chalk.blue("📁 Creating workflow structure..."));
   await createWorkflowStructure(cwd, {
     projectType,
-    multiAgent: true,
     skipSpecTemplates: useRemoteTemplate,
     packages: monorepoPackages,
     remoteSpecPackages,
@@ -1392,11 +1389,11 @@ function printWhatWeSolve(): void {
       chalk.bold("You'll never say these again!!\n"),
   );
 
-  // Pain point 1: Bug loop → Thinking Guides + Ralph Loop
+  // Pain point 1: Bug loop → Thinking Guides + Check Loop
   console.log(chalk.gray("✗ ") + '"Fix A → break B → fix B → break A..."');
   console.log(
     chalk.green("  ✓ ") +
-      chalk.white("Thinking Guides + Ralph Loop: Think first, verify after"),
+      chalk.white("Thinking Guides + Check Loop: Think first, verify after"),
   );
   // Pain point 2: Instructions ignored/forgotten → Sub-agents + per-agent spec injection
   console.log(

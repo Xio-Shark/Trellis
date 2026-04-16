@@ -1,19 +1,36 @@
 import path from "node:path";
 import { AI_TOOLS } from "../types/ai-tools.js";
-import { ensureDir, writeFile } from "../utils/file-writer.js";
-import { resolveAllAsSkills } from "./shared.js";
+import { writeFile } from "../utils/file-writer.js";
+import {
+  resolvePlaceholders,
+  resolveAllAsSkills,
+  writeSkills,
+  writeAgents,
+  writeSharedHooks,
+} from "./shared.js";
+import { getAllAgents, getSettingsTemplate } from "../templates/qoder/index.js";
 
 /**
- * Configure Qoder — skill-only platform.
- * All templates become .qoder/skills/trellis-<name>/SKILL.md
+ * Configure Qoder:
+ * - skills/trellis-{name}/SKILL.md — all templates as auto-triggered skills
+ * - agents/{name}.md — sub-agent definitions
+ * - hooks/*.py — shared hook scripts
+ * - settings.json — hook configuration
  */
 export async function configureQoder(cwd: string): Promise<void> {
-  const skillsRoot = path.join(cwd, ".qoder", "skills");
-  ensureDir(skillsRoot);
+  const config = AI_TOOLS.qoder;
+  const configRoot = path.join(cwd, config.configDir);
 
-  for (const skill of resolveAllAsSkills(AI_TOOLS.qoder.templateContext)) {
-    const skillDir = path.join(skillsRoot, skill.name);
-    ensureDir(skillDir);
-    await writeFile(path.join(skillDir, "SKILL.md"), skill.content);
-  }
+  await writeSkills(
+    path.join(configRoot, "skills"),
+    resolveAllAsSkills(config.templateContext),
+  );
+  await writeAgents(path.join(configRoot, "agents"), getAllAgents());
+  await writeSharedHooks(path.join(configRoot, "hooks"));
+
+  const settings = getSettingsTemplate();
+  await writeFile(
+    path.join(configRoot, settings.targetPath),
+    resolvePlaceholders(settings.content),
+  );
 }

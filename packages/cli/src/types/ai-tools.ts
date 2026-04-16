@@ -11,7 +11,6 @@ export type AITool =
   | "claude-code"
   | "cursor"
   | "opencode"
-  | "iflow"
   | "codex"
   | "kilo"
   | "kiro"
@@ -31,7 +30,6 @@ export type TemplateDir =
   | "claude"
   | "cursor"
   | "opencode"
-  | "iflow"
   | "codex"
   | "kilo"
   | "kiro"
@@ -51,7 +49,6 @@ export type CliFlag =
   | "claude"
   | "cursor"
   | "opencode"
-  | "iflow"
   | "codex"
   | "kilo"
   | "kiro"
@@ -79,7 +76,7 @@ export interface TemplateContext {
   userActionLabel: "Slash commands" | "Skills" | "Workflows" | "Prompts";
   /** Platform supports spawning sub-agents with isolated context */
   agentCapable: boolean;
-  /** Platform has hook system (SessionStart, PreToolUse, SubagentStop) */
+  /** Platform has hook system (SessionStart, PreToolUse) */
   hasHooks: boolean;
 }
 
@@ -144,7 +141,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     configDir: ".cursor",
     cliFlag: "cursor",
     defaultChecked: true,
-    hasPythonHooks: false,
+    hasPythonHooks: true,
     templateContext: {
       cmdRefPrefix: "/trellis-",
       executorAI: "Bash scripts or Task calls",
@@ -166,21 +163,6 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
       userActionLabel: "Slash commands",
       agentCapable: true,
       hasHooks: false,
-    },
-  },
-  iflow: {
-    name: "iFlow CLI",
-    templateDirs: ["common", "iflow"],
-    configDir: ".iflow",
-    cliFlag: "iflow",
-    defaultChecked: false,
-    hasPythonHooks: true,
-    templateContext: {
-      cmdRefPrefix: "/trellis:",
-      executorAI: "Bash scripts or Task calls",
-      userActionLabel: "Slash commands",
-      agentCapable: true,
-      hasHooks: true,
     },
   },
   codex: {
@@ -218,9 +200,10 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     name: "Kiro Code",
     templateDirs: ["common", "kiro"],
     configDir: ".kiro/skills",
+    extraManagedPaths: [".kiro/agents", ".kiro/hooks"],
     cliFlag: "kiro",
     defaultChecked: false,
-    hasPythonHooks: false,
+    hasPythonHooks: true,
     templateContext: {
       cmdRefPrefix: "$",
       executorAI: "Bash scripts or tool calls",
@@ -235,7 +218,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     configDir: ".gemini",
     cliFlag: "gemini",
     defaultChecked: false,
-    hasPythonHooks: false,
+    hasPythonHooks: true,
     templateContext: {
       cmdRefPrefix: "/trellis:",
       executorAI: "Bash scripts or tool calls",
@@ -282,7 +265,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     configDir: ".qoder",
     cliFlag: "qoder",
     defaultChecked: false,
-    hasPythonHooks: false,
+    hasPythonHooks: true,
     templateContext: {
       cmdRefPrefix: "$",
       executorAI: "Bash scripts or tool calls",
@@ -297,7 +280,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     configDir: ".codebuddy",
     cliFlag: "codebuddy",
     defaultChecked: false,
-    hasPythonHooks: false,
+    hasPythonHooks: true,
     templateContext: {
       cmdRefPrefix: "/trellis:",
       executorAI: "Bash scripts or Task calls",
@@ -310,7 +293,12 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     name: "GitHub Copilot",
     templateDirs: ["common", "copilot"],
     configDir: ".github/copilot",
-    extraManagedPaths: [".github/hooks", ".github/prompts", ".github/skills"],
+    extraManagedPaths: [
+      ".github/agents",
+      ".github/hooks",
+      ".github/prompts",
+      ".github/skills",
+    ],
     cliFlag: "copilot",
     defaultChecked: false,
     hasPythonHooks: true,
@@ -328,7 +316,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     configDir: ".factory",
     cliFlag: "droid",
     defaultChecked: false,
-    hasPythonHooks: false,
+    hasPythonHooks: true,
     templateContext: {
       cmdRefPrefix: "/trellis-",
       executorAI: "Bash scripts or Task calls",

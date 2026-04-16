@@ -62,7 +62,6 @@ describe("isManagedPath", () => {
   it("matches platform config sub-paths", () => {
     expect(isManagedPath(".claude/commands/foo.md")).toBe(true);
     expect(isManagedPath(".cursor/rules/bar.md")).toBe(true);
-    expect(isManagedPath(".iflow/hooks/test.py")).toBe(true);
     expect(isManagedPath(".opencode/config.json")).toBe(true);
     expect(isManagedPath(".agents/skills/start/SKILL.md")).toBe(true);
     expect(isManagedPath(".codex/agents/check.toml")).toBe(true);
@@ -78,7 +77,6 @@ describe("isManagedPath", () => {
   it("matches exact managed directory names", () => {
     expect(isManagedPath(".claude")).toBe(true);
     expect(isManagedPath(".cursor")).toBe(true);
-    expect(isManagedPath(".iflow")).toBe(true);
     expect(isManagedPath(".opencode")).toBe(true);
     expect(isManagedPath(".agents/skills")).toBe(true);
     expect(isManagedPath(".codex")).toBe(true);
@@ -135,7 +133,6 @@ describe("isManagedPath", () => {
   it("matches Windows-style backslash paths", () => {
     expect(isManagedPath(".claude\\commands\\foo.md")).toBe(true);
     expect(isManagedPath(".trellis\\spec\\backend")).toBe(true);
-    expect(isManagedPath(".iflow\\hooks\\test.py")).toBe(true);
     expect(isManagedPath(".agents\\skills\\start\\SKILL.md")).toBe(true);
     expect(isManagedPath(".codex\\agents\\check.toml")).toBe(true);
     expect(isManagedPath(".agent\\workflows\\start.md")).toBe(true);
