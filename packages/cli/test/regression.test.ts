@@ -30,7 +30,6 @@ import { AI_TOOLS } from "../src/types/ai-tools.js";
 import { PATHS } from "../src/constants/paths.js";
 import {
   settingsTemplate as claudeSettingsTemplate,
-  getAllCommands as getClaudeCommands,
   getAllAgents as getClaudeAgents,
   getAllHooks as getClaudeHooks,
 } from "../src/templates/claude/index.js";
@@ -39,6 +38,10 @@ import {
   getAllHooks as getIflowHooks,
 } from "../src/templates/iflow/index.js";
 import { getAllHooks as getCodexHooks } from "../src/templates/codex/index.js";
+import {
+  getCommandTemplates,
+  getSkillTemplates,
+} from "../src/templates/common/index.js";
 import {
   commonInit,
   taskScript,
@@ -1025,11 +1028,11 @@ describe("regression: current-task path normalization", () => {
 });
 
 describe("regression: backslash in markdown templates (beta.12)", () => {
-  it("[beta.12] Claude command templates do not contain problematic backslash sequences", () => {
-    const commands = getClaudeCommands();
-    for (const cmd of commands) {
-      expect(cmd.content).not.toContain("\\--");
-      expect(cmd.content).not.toContain("\\->");
+  it("[beta.12] Common command/skill templates do not contain problematic backslash sequences", () => {
+    const templates = [...getCommandTemplates(), ...getSkillTemplates()];
+    for (const tmpl of templates) {
+      expect(tmpl.content).not.toContain("\\--");
+      expect(tmpl.content).not.toContain("\\->");
     }
   });
 
@@ -1478,18 +1481,16 @@ describe("regression: collectTemplates paths match init directory structure (0.3
     }
   });
 
-  it("[0.3.4] kilo uses workflows/ instead of commands/trellis/", () => {
+  it("[0.3.4] kilo uses workflows/ for commands and skills/ for skills", () => {
     const templates = collectPlatformTemplates("kilo");
     expect(templates).toBeInstanceOf(Map);
     if (!templates) return;
     const keys = [...templates.keys()];
     for (const key of keys) {
-      expect(key, `kilo path should use workflows/: ${key}`).toContain(
-        ".kilocode/workflows/",
-      );
-      expect(key, `kilo should not use commands/: ${key}`).not.toContain(
-        "/commands/",
-      );
+      expect(
+        key.startsWith(".kilocode/workflows/") || key.startsWith(".kilocode/skills/"),
+        `kilo path should use workflows/ or skills/: ${key}`,
+      ).toBe(true);
     }
   });
 
@@ -1499,15 +1500,10 @@ describe("regression: collectTemplates paths match init directory structure (0.3
     if (!templates) return;
     const keys = [...templates.keys()];
     for (const key of keys) {
-      expect(key, `windsurf path should use workflows/: ${key}`).toContain(
-        ".windsurf/workflows/",
-      );
-      expect(key, `windsurf file should use trellis- prefix: ${key}`).toContain(
-        ".windsurf/workflows/trellis-",
-      );
-      expect(key, `windsurf should not use commands/: ${key}`).not.toContain(
-        "/commands/",
-      );
+      expect(
+        key.startsWith(".windsurf/workflows/") || key.startsWith(".windsurf/skills/"),
+        `windsurf path should use workflows/ or skills/: ${key}`,
+      ).toBe(true);
     }
   });
 

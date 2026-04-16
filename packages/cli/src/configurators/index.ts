@@ -34,19 +34,21 @@ import { configureCopilot } from "./copilot.js";
 import { configureDroid } from "./droid.js";
 
 // Shared utilities
-import { resolvePlaceholders } from "./shared.js";
+import {
+  resolvePlaceholders,
+  resolveAllAsSkills,
+  resolveCommands,
+  resolveSkills,
+} from "./shared.js";
 
-// Template content for update tracking
+// Platform-specific template content (hooks, agents, settings — NOT commands/skills)
 import {
   getAllAgents as getClaudeAgents,
-  getAllCommands as getClaudeCommands,
   getAllHooks as getClaudeHooks,
   getSettingsTemplate as getClaudeSettings,
 } from "../templates/claude/index.js";
-import { getAllCommands as getCursorCommands } from "../templates/cursor/index.js";
 import {
   getAllAgents as getIflowAgents,
-  getAllCommands as getIflowCommands,
   getAllHooks as getIflowHooks,
   getSettingsTemplate as getIflowSettings,
 } from "../templates/iflow/index.js";
@@ -54,23 +56,13 @@ import {
   getAllAgents as getCodexAgents,
   getAllCodexSkills as getCodexPlatformSkills,
   getAllHooks as getCodexHooks,
-  getAllSkills as getCodexSkills,
   getConfigTemplate as getCodexConfigTemplate,
   getHooksConfig as getCodexHooksConfig,
 } from "../templates/codex/index.js";
-import { getAllWorkflows as getKiloWorkflows } from "../templates/kilo/index.js";
-import { getAllSkills as getKiroSkills } from "../templates/kiro/index.js";
-import { getAllCommands as getGeminiCommands } from "../templates/gemini/index.js";
-import { getAllWorkflows as getAntigravityWorkflows } from "../templates/antigravity/index.js";
-import { getAllWorkflows as getAllWindsurfWorkflows } from "../templates/windsurf/index.js";
-import { getAllSkills as getQoderSkills } from "../templates/qoder/index.js";
-import { getAllCommands as getCodebuddyCommands } from "../templates/codebuddy/index.js";
 import {
   getAllHooks as getCopilotHooks,
-  getAllPrompts as getCopilotPrompts,
   getHooksConfig as getCopilotHooksConfig,
 } from "../templates/copilot/index.js";
-import { getAllCommands as getDroidCommands } from "../templates/droid/index.js";
 
 // =============================================================================
 // Platform Functions Registry
@@ -87,24 +79,38 @@ interface PlatformFunctions {
  * Platform functions registry — maps each AITool to its behavior.
  * When adding a new platform, add an entry here.
  */
+/** Helper: collect commands + skills for "both" platforms */
+function collectBothTemplates(
+  ctx: import("../types/ai-tools.js").TemplateContext,
+  cmdPath: (name: string) => string,
+  skillRoot: string,
+): Map<string, string> {
+  const files = new Map<string, string>();
+  for (const cmd of resolveCommands(ctx)) {
+    files.set(cmdPath(cmd.name), cmd.content);
+  }
+  for (const skill of resolveSkills(ctx)) {
+    files.set(`${skillRoot}/${skill.name}/SKILL.md`, skill.content);
+  }
+  return files;
+}
+
 const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
   "claude-code": {
     configure: configureClaude,
     collectTemplates: () => {
-      const files = new Map<string, string>();
-      // Commands (in trellis/ subdirectory for namespace)
-      for (const cmd of getClaudeCommands()) {
-        files.set(`.claude/commands/trellis/${cmd.name}.md`, cmd.content);
-      }
-      // Agents
+      const ctx = AI_TOOLS["claude-code"].templateContext;
+      const files = collectBothTemplates(
+        ctx,
+        (n) => `.claude/commands/trellis/${n}.md`,
+        ".claude/skills",
+      );
       for (const agent of getClaudeAgents()) {
         files.set(`.claude/agents/${agent.name}.md`, agent.content);
       }
-      // Hooks
       for (const hook of getClaudeHooks()) {
         files.set(`.claude/${hook.targetPath}`, hook.content);
       }
-      // Settings (resolve {{PYTHON_CMD}} to match what configure() writes)
       const settings = getClaudeSettings();
       files.set(
         `.claude/${settings.targetPath}`,
@@ -115,36 +121,31 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
   },
   cursor: {
     configure: configureCursor,
-    collectTemplates: () => {
-      const files = new Map<string, string>();
-      // Commands (flat structure with trellis- prefix, Cursor doesn't support subdirs)
-      for (const cmd of getCursorCommands()) {
-        files.set(`.cursor/commands/${cmd.name}.md`, cmd.content);
-      }
-      return files;
-    },
+    collectTemplates: () =>
+      collectBothTemplates(
+        AI_TOOLS.cursor.templateContext,
+        (n) => `.cursor/commands/trellis-${n}.md`,
+        ".cursor/skills",
+      ),
   },
   opencode: {
     configure: configureOpenCode,
-    // OpenCode uses plugin system, templates handled separately during init
   },
   iflow: {
     configure: configureIflow,
     collectTemplates: () => {
-      const files = new Map<string, string>();
-      // Commands
-      for (const cmd of getIflowCommands()) {
-        files.set(`.iflow/commands/trellis/${cmd.name}.md`, cmd.content);
-      }
-      // Agents
+      const ctx = AI_TOOLS.iflow.templateContext;
+      const files = collectBothTemplates(
+        ctx,
+        (n) => `.iflow/commands/trellis/${n}.md`,
+        ".iflow/skills",
+      );
       for (const agent of getIflowAgents()) {
         files.set(`.iflow/agents/${agent.name}.md`, agent.content);
       }
-      // Hooks
       for (const hook of getIflowHooks()) {
         files.set(`.iflow/${hook.targetPath}`, hook.content);
       }
-      // Settings (resolve {{PYTHON_CMD}} to match what configure() writes)
       const settings = getIflowSettings();
       files.set(
         `.iflow/${settings.targetPath}`,
@@ -157,8 +158,8 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
     configure: configureCodex,
     collectTemplates: () => {
       const files = new Map<string, string>();
-      for (const skill of getCodexSkills()) {
-        files.set(`.agents/skills/${skill.name}/SKILL.md`, skill.content);
+      for (const s of resolveAllAsSkills(AI_TOOLS.codex.templateContext)) {
+        files.set(`.agents/skills/${s.name}/SKILL.md`, s.content);
       }
       for (const skill of getCodexPlatformSkills()) {
         files.set(`.codex/skills/${skill.name}/SKILL.md`, skill.content);
@@ -180,20 +181,19 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
   },
   kilo: {
     configure: configureKilo,
-    collectTemplates: () => {
-      const files = new Map<string, string>();
-      for (const wf of getKiloWorkflows()) {
-        files.set(`.kilocode/workflows/${wf.name}.md`, wf.content);
-      }
-      return files;
-    },
+    collectTemplates: () =>
+      collectBothTemplates(
+        AI_TOOLS.kilo.templateContext,
+        (n) => `.kilocode/workflows/${n}.md`,
+        ".kilocode/skills",
+      ),
   },
   kiro: {
     configure: configureKiro,
     collectTemplates: () => {
       const files = new Map<string, string>();
-      for (const skill of getKiroSkills()) {
-        files.set(`.kiro/skills/${skill.name}/SKILL.md`, skill.content);
+      for (const s of resolveAllAsSkills(AI_TOOLS.kiro.templateContext)) {
+        files.set(`.kiro/skills/${s.name}/SKILL.md`, s.content);
       }
       return files;
     },
@@ -201,87 +201,83 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
   gemini: {
     configure: configureGemini,
     collectTemplates: () => {
+      const ctx = AI_TOOLS.gemini.templateContext;
       const files = new Map<string, string>();
-      for (const cmd of getGeminiCommands()) {
-        files.set(`.gemini/commands/trellis/${cmd.name}.toml`, cmd.content);
+      for (const cmd of resolveCommands(ctx)) {
+        const toml = `description = "Trellis: ${cmd.name}"\n\nprompt = """\n${cmd.content}\n"""\n`;
+        files.set(`.gemini/commands/trellis/${cmd.name}.toml`, toml);
+      }
+      for (const skill of resolveSkills(ctx)) {
+        files.set(`.gemini/skills/${skill.name}/SKILL.md`, skill.content);
       }
       return files;
     },
   },
   antigravity: {
     configure: configureAntigravity,
-    collectTemplates: () => {
-      const files = new Map<string, string>();
-      for (const workflow of getAntigravityWorkflows()) {
-        files.set(`.agent/workflows/${workflow.name}.md`, workflow.content);
-      }
-      return files;
-    },
+    collectTemplates: () =>
+      collectBothTemplates(
+        AI_TOOLS.antigravity.templateContext,
+        (n) => `.agent/workflows/${n}.md`,
+        ".agent/skills",
+      ),
   },
   windsurf: {
     configure: configureWindsurf,
-    collectTemplates: () => {
-      const files = new Map<string, string>();
-      for (const workflow of getAllWindsurfWorkflows()) {
-        files.set(`.windsurf/workflows/${workflow.name}.md`, workflow.content);
-      }
-      return files;
-    },
+    collectTemplates: () =>
+      collectBothTemplates(
+        AI_TOOLS.windsurf.templateContext,
+        (n) => `.windsurf/workflows/trellis-${n}.md`,
+        ".windsurf/skills",
+      ),
   },
   qoder: {
     configure: configureQoder,
     collectTemplates: () => {
       const files = new Map<string, string>();
-      for (const skill of getQoderSkills()) {
-        files.set(`.qoder/skills/${skill.name}/SKILL.md`, skill.content);
+      for (const s of resolveAllAsSkills(AI_TOOLS.qoder.templateContext)) {
+        files.set(`.qoder/skills/${s.name}/SKILL.md`, s.content);
       }
       return files;
     },
   },
   codebuddy: {
     configure: configureCodebuddy,
-    collectTemplates: () => {
-      const files = new Map<string, string>();
-      // Commands in trellis/ subdirectory (CodeBuddy supports nested dirs)
-      for (const cmd of getCodebuddyCommands()) {
-        files.set(`.codebuddy/commands/trellis/${cmd.name}.md`, cmd.content);
-      }
-      return files;
-    },
+    collectTemplates: () =>
+      collectBothTemplates(
+        AI_TOOLS.codebuddy.templateContext,
+        (n) => `.codebuddy/commands/trellis/${n}.md`,
+        ".codebuddy/skills",
+      ),
   },
   copilot: {
     configure: configureCopilot,
     collectTemplates: () => {
+      const ctx = AI_TOOLS.copilot.templateContext;
       const files = new Map<string, string>();
-      for (const prompt of getCopilotPrompts()) {
-        files.set(`.github/prompts/${prompt.name}.prompt.md`, prompt.content);
+      for (const cmd of resolveCommands(ctx)) {
+        files.set(`.github/prompts/${cmd.name}.prompt.md`, cmd.content);
+      }
+      for (const skill of resolveSkills(ctx)) {
+        files.set(`.github/skills/${skill.name}/SKILL.md`, skill.content);
       }
       for (const hook of getCopilotHooks()) {
         files.set(`.github/copilot/hooks/${hook.name}`, hook.content);
       }
-      // Tracked copy under platform config directory
-      files.set(
-        ".github/copilot/hooks.json",
-        resolvePlaceholders(getCopilotHooksConfig()),
-      );
-      // VS Code Copilot discovery entry written by configureCopilot
-      files.set(
-        ".github/hooks/trellis.json",
-        resolvePlaceholders(getCopilotHooksConfig()),
-      );
+      const hooksConfig = resolvePlaceholders(getCopilotHooksConfig());
+      files.set(".github/copilot/hooks.json", hooksConfig);
+      files.set(".github/hooks/trellis.json", hooksConfig);
       return files;
     },
   },
   droid: {
     configure: configureDroid,
-    collectTemplates: () => {
-      const files = new Map<string, string>();
-      // Commands live under .factory/commands/trellis/ (nested namespace, like Claude)
-      for (const cmd of getDroidCommands()) {
-        files.set(`.factory/commands/trellis/${cmd.name}.md`, cmd.content);
-      }
-      return files;
-    },
+    collectTemplates: () =>
+      collectBothTemplates(
+        AI_TOOLS.droid.templateContext,
+        (n) => `.factory/commands/trellis/${n}.md`,
+        ".factory/skills",
+      ),
   },
 };
 

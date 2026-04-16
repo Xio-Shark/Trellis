@@ -6,7 +6,6 @@
  *
  * Directory structure:
  *   iflow/
- *   ├── commands/       # Slash commands
  *   ├── agents/         # Multi-agent pipeline agents
  *   ├── hooks/          # Context injection hooks
  *   └── settings.json   # Settings configuration
@@ -35,14 +34,6 @@ function listFiles(dir: string): string[] {
 export const settingsTemplate = readTemplate("settings.json");
 
 /**
- * Command template with name and content
- */
-export interface CommandTemplate {
-  name: string;
-  content: string;
-}
-
-/**
  * Agent template with name and content
  */
 export interface AgentTemplate {
@@ -58,25 +49,7 @@ export interface HookTemplate {
   content: string;
 }
 
-/**
- * Get all command templates
- * Commands are stored in commands/trellis/ subdirectory
- * This creates commands like /trellis:start, /trellis:finish-work, etc.
- */
-export function getAllCommands(): CommandTemplate[] {
-  const commands: CommandTemplate[] = [];
-  const files = listFiles("commands/trellis");
-
-  for (const file of files) {
-    if (file.endsWith(".md")) {
-      const name = file.replace(".md", "");
-      const content = readTemplate(`commands/trellis/${file}`);
-      commands.push({ name, content });
-    }
-  }
-
-  return commands;
-}
+// Commands are now sourced from common/ templates (see templates/common/index.ts)
 
 /**
  * Get all agent templates

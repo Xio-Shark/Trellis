@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   settingsTemplate,
-  getAllCommands,
   getAllAgents,
   getAllHooks,
   getSettingsTemplate,
@@ -22,7 +21,7 @@ describe("iflow settingsTemplate", () => {
 });
 
 // =============================================================================
-// settingsTemplate — SessionStart hook matchers (MIN-231)
+// settingsTemplate — SessionStart hook matchers
 // =============================================================================
 
 describe("iflow settingsTemplate SessionStart matchers", () => {
@@ -53,41 +52,7 @@ describe("iflow settingsTemplate SessionStart matchers", () => {
   });
 });
 
-// =============================================================================
-// getAllCommands — reads iflow command templates
-// =============================================================================
-
-const EXPECTED_COMMAND_NAMES = [
-  "before-dev",
-  "brainstorm",
-  "break-loop",
-  "check-cross-layer",
-  "check",
-  "create-command",
-  "finish-work",
-  "integrate-skill",
-  "onboard",
-  "parallel",
-  "record-session",
-  "start",
-  "update-spec",
-];
-
-describe("iflow getAllCommands", () => {
-  it("returns the expected command set", () => {
-    const commands = getAllCommands();
-    const names = commands.map((c) => c.name);
-    expect(names).toEqual(EXPECTED_COMMAND_NAMES);
-  });
-
-  it("each command has name and content", () => {
-    const commands = getAllCommands();
-    for (const command of commands) {
-      expect(command.name.length).toBeGreaterThan(0);
-      expect(command.content.length).toBeGreaterThan(0);
-    }
-  });
-});
+// Commands are now sourced from common/ templates and tested in platforms.test.ts
 
 // =============================================================================
 // getAllAgents — reads iflow agent templates

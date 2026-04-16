@@ -39,6 +39,7 @@ This creates:
 - Human developers: Use your name, e.g., `john-doe`
 - Cursor AI: `cursor-agent` or `cursor-<task>`
 - Claude Code: `claude-agent` or `claude-<task>`
+- iFlow cli: `iflow-agent` or `iflow-<task>`
 
 ### Step 1: Understand Current Context
 
@@ -57,21 +58,31 @@ git status && git log --oneline -10              # Git state
 **CRITICAL**: Read guidelines before writing any code:
 
 ```bash
-# Discover packages and their spec layers
+# Discover available packages and spec layers
 python3 ./.trellis/scripts/get_context.py --mode packages
 
-# Read index.md for the package you'll work on
+# Read the spec index for each relevant module
 cat .trellis/spec/<package>/<layer>/index.md
 
-# Always read shared thinking guides
+# Always read shared guides
 cat .trellis/spec/guides/index.md
 ```
 
-Each `index.md` contains a **Pre-Development Checklist** listing the specific guideline files to read for that module. Follow it.
+**Why this matters?**
+- Understand which spec layers apply to your task
+- Know coding standards for the packages you'll modify
+- Learn the overall code quality requirements
 
 ### Step 3: Before Coding - Read Specific Guidelines (Required)
 
-Based on your task, follow the Pre-Development Checklist in the relevant spec `index.md`. It will point you to the exact guideline files for your work type (hooks, components, database, types, etc.).
+Based on your task, read the **detailed** guideline files listed in each spec index's **Pre-Development Checklist**:
+
+```bash
+# The index points to specific files — read those, not just the index
+cat .trellis/spec/<package>/<layer>/error-handling.md
+cat .trellis/spec/<package>/<layer>/conventions.md
+# etc. — based on what the Pre-Development Checklist lists
+```
 
 ---
 
@@ -117,13 +128,16 @@ Based on your task, follow the Pre-Development Checklist in the relevant spec `i
 |   +-- {MM}-{DD}-{name}/
 |       +-- task.json
 |-- spec/                # [!] MUST READ before coding
-|   |-- <package>/       # Per-package specs (e.g., cli/, docs-site/)
-|   |   +-- <layer>/     # Per-layer (e.g., backend/, frontend/, unit-test/)
-|   |       |-- index.md # Start here — Pre-Dev Checklist & Quality Check
-|   |       +-- *.md     # Topic-specific docs
-|   +-- guides/          # Cross-package thinking guides
-|       |-- index.md     # Guides index
-|       +-- *.md         # Guide-specific docs
+|   |-- frontend/        # Frontend guidelines (if applicable)
+|   |   |-- index.md               # Start here - guidelines index
+|   |   +-- *.md                   # Topic-specific docs
+|   |-- backend/         # Backend guidelines (if applicable)
+|   |   |-- index.md               # Start here - guidelines index
+|   |   +-- *.md                   # Topic-specific docs
+|   +-- guides/          # Thinking guides
+|       |-- index.md                      # Guides index
+|       |-- cross-layer-thinking-guide.md # Pre-implementation checklist
+|       +-- *.md                          # Other guides
 +-- workflow.md             # This document
 ```
 
@@ -150,17 +164,15 @@ python3 ./.trellis/scripts/get_context.py --json
 Based on what you'll develop, read the corresponding guidelines:
 
 ```bash
-# Discover packages and their spec layers
+# Discover available packages and spec layers
 python3 ./.trellis/scripts/get_context.py --mode packages
 
-# Read the index for your target package and layer
+# Read spec indexes for relevant modules
 cat .trellis/spec/<package>/<layer>/index.md
 
-# Always read shared thinking guides
-cat .trellis/spec/guides/index.md
+# For cross-layer features
+cat .trellis/spec/guides/cross-layer-thinking-guide.md
 ```
-
-Each `index.md` contains a **Pre-Development Checklist** that lists the specific guideline files to read. Follow it for your work type.
 
 ### Step 3: Select Task to Develop
 
@@ -201,13 +213,11 @@ python3 ./.trellis/scripts/task.py create "<title>" --slug <task-name>
    --> git commit -m "type(scope): description"
        Format: feat/fix/docs/refactor/test/chore
 
-6. Record session (one command)
-   --> python3 ./.trellis/scripts/add_session.py --title "Title" --commit "hash"
-
-7. Finish task (clear current)
-   --> python3 ./.trellis/scripts/task.py finish
-   --> Only when the task is fully done; otherwise leave it set so the
-       next session resumes where you left off
+6. Finish work + record session
+   --> /trellis:finish-work (runs checklist + records session)
+   --> python3 ./.trellis/scripts/task.py finish (clear current task)
+   --> Only finish when the task is fully done; otherwise leave it set so
+       the next session resumes where you left off
 ```
 
 ### Code Quality Checklist
@@ -218,38 +228,17 @@ python3 ./.trellis/scripts/task.py create "<title>" --slug <task-name>
 - [OK] Manual feature testing passes
 
 **Project-specific checks**:
-- Run `/trellis:check` — it auto-discovers relevant spec modules based on changed files
-- Or manually check the **Quality Check** section in the relevant `spec/<package>/<layer>/index.md`
+- See `.trellis/spec/<package>/<layer>/quality-guidelines.md` for package-specific checks
 
 ---
 
 ## Session End
 
-### One-Click Session Recording
-
-After code is committed, use:
-
-```bash
-python3 ./.trellis/scripts/add_session.py \
-  --title "Session Title" \
-  --commit "abc1234" \
-  --summary "Brief summary"
-```
-
-This automatically:
-1. Detects current journal file
-2. Creates new file if 2000-line limit exceeded
-3. Appends session content
-4. Updates index.md (sessions count, history table)
-
-### Pre-end Checklist
-
-Use `/trellis:finish-work` command to run through:
+Use `/trellis:finish-work` — it runs through:
 1. [OK] All code committed, commit message follows convention
-2. [OK] Session recorded via `add_session.py`
-3. [OK] No lint/test errors
-4. [OK] Working directory clean (or WIP noted)
-5. [OK] Spec docs updated if needed
+2. [OK] No lint/test errors
+3. [OK] Spec docs updated if needed
+4. [OK] Session recorded (archive tasks + add session entry)
 
 ---
 
@@ -277,20 +266,19 @@ workspace/
 
 **Purpose**: Documented standards for consistent development
 
-**Structure** (Package-scoped, auto-discoverable):
+**Structure** (Multi-doc format):
 ```
 spec/
-|-- <package>/          # One per package (e.g., cli/, docs-site/)
-|   |-- <layer>/        # One per layer (e.g., backend/, frontend/, unit-test/)
-|   |   |-- index.md    # Start here — has Pre-Dev Checklist & Quality Check
-|   |   +-- *.md        # Topic-specific guideline docs
-|   +-- ...
-+-- guides/             # Cross-package thinking guides (always read)
-    |-- index.md        # Guides index
+|-- frontend/           # Frontend docs (if applicable)
+|   |-- index.md        # Start here
+|   +-- *.md            # Topic-specific docs
+|-- backend/            # Backend docs (if applicable)
+|   |-- index.md        # Start here
+|   +-- *.md            # Topic-specific docs
++-- guides/             # Thinking guides
+    |-- index.md        # Start here
     +-- *.md            # Guide-specific docs
 ```
-
-**Discovery**: `python3 ./.trellis/scripts/get_context.py --mode packages` lists all packages, their paths, types, and spec layers. Adding a new package only requires updating `config.yaml` and creating `spec/<package>/`.
 
 **When to update**:
 - [OK] New pattern discovered
@@ -335,15 +323,14 @@ python3 ./.trellis/scripts/task.py list-archive    # List archived tasks
 
 2. **During development**:
    - [!] **Follow** `.trellis/spec/` guidelines
-   - For cross-layer features, use `/trellis:check-cross-layer`
+   - The `trellis-check` skill includes cross-layer verification when applicable
    - Develop only one task at a time
    - Run lint and tests frequently
 
 3. **After development complete**:
-   - Use `/trellis:finish-work` for completion checklist
-   - After fix bug, use `/trellis:break-loop` for deep analysis
+   - Use `/trellis:finish-work` for completion checklist + session recording
+   - After fixing a bug, the `trellis-break-loop` skill triggers for deep analysis
    - Human commits after testing passes
-   - Use `add_session.py` to record progress
 
 ### [X] DON'T - Should Not Do
 
@@ -360,10 +347,11 @@ python3 ./.trellis/scripts/task.py list-archive    # List archived tasks
 
 ### Must-read Before Development
 
-1. Discover packages: `python3 ./.trellis/scripts/get_context.py --mode packages`
-2. Read `spec/<package>/<layer>/index.md` for your target package
-3. Follow its **Pre-Development Checklist**
-4. Always read `spec/guides/index.md` for cross-cutting concerns
+| Task Type | Must-read Document |
+|-----------|-------------------|
+| Frontend work | `frontend/index.md` → relevant docs |
+| Backend work | `backend/index.md` → relevant docs |
+| Cross-Layer Feature | `guides/cross-layer-thinking-guide.md` |
 
 ### Commit Convention
 
@@ -385,10 +373,16 @@ python3 ./.trellis/scripts/add_session.py    # Record session
 python3 ./.trellis/scripts/task.py list      # List tasks
 python3 ./.trellis/scripts/task.py create "<title>" # Create task
 
-# Slash commands
-/trellis:finish-work          # Pre-commit checklist
-/trellis:break-loop           # Post-debug analysis
-/trellis:check-cross-layer    # Cross-layer verification
+# Slash commands (user-invoked)
+/trellis:start                # Begin a session
+/trellis:finish-work          # Pre-commit checklist + record session
+
+# Skills (AI auto-triggered based on context)
+# trellis-before-dev          # Read spec guidelines before coding
+# trellis-check               # Validate code against specs
+# trellis-brainstorm          # Requirements discovery
+# trellis-break-loop          # Post-debug analysis
+# (cross-layer checks are included in trellis-check)
 ```
 
 ---

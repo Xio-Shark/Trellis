@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   settingsTemplate,
-  getAllCommands,
   getAllAgents,
   getAllHooks,
   getSettingsTemplate,
@@ -22,7 +21,7 @@ describe("settingsTemplate", () => {
 });
 
 // =============================================================================
-// settingsTemplate — SessionStart hook matchers (MIN-231)
+// settingsTemplate — SessionStart hook matchers
 // =============================================================================
 
 describe("settingsTemplate SessionStart matchers", () => {
@@ -53,48 +52,7 @@ describe("settingsTemplate SessionStart matchers", () => {
   });
 });
 
-// =============================================================================
-// getAllCommands — reads command templates from filesystem
-// =============================================================================
-
-const EXPECTED_COMMAND_NAMES = [
-  "before-dev",
-  "brainstorm",
-  "break-loop",
-  "check-cross-layer",
-  "check",
-  "create-command",
-  "finish-work",
-  "integrate-skill",
-  "onboard",
-  "parallel",
-  "record-session",
-  "start",
-  "update-spec",
-];
-
-describe("getAllCommands", () => {
-  it("returns the expected command set", () => {
-    const commands = getAllCommands();
-    const names = commands.map((cmd) => cmd.name);
-    expect(names).toEqual(EXPECTED_COMMAND_NAMES);
-  });
-
-  it("each command has name and content", () => {
-    const commands = getAllCommands();
-    for (const cmd of commands) {
-      expect(cmd.name.length).toBeGreaterThan(0);
-      expect(cmd.content.length).toBeGreaterThan(0);
-    }
-  });
-
-  it("command names do not include .md extension", () => {
-    const commands = getAllCommands();
-    for (const cmd of commands) {
-      expect(cmd.name).not.toContain(".md");
-    }
-  });
-});
+// Commands are now sourced from common/ templates and tested in platforms.test.ts
 
 // =============================================================================
 // getAllAgents — reads agent templates

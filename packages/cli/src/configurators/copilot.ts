@@ -1,46 +1,52 @@
 import path from "node:path";
-import {
-  getAllHooks,
-  getAllPrompts,
-  getHooksConfig,
-} from "../templates/copilot/index.js";
+import { AI_TOOLS } from "../types/ai-tools.js";
+import { getAllHooks, getHooksConfig } from "../templates/copilot/index.js";
 import { ensureDir, writeFile } from "../utils/file-writer.js";
-import { resolvePlaceholders } from "./shared.js";
+import {
+  resolvePlaceholders,
+  resolveCommands,
+  resolveSkills,
+} from "./shared.js";
 
 /**
- * Configure GitHub Copilot by writing:
- * - .github/prompts/*.prompt.md            (slash command prompt files, e.g. /start)
- * - .github/copilot/hooks/session-start.py   (hook scripts)
- * - .github/copilot/hooks.json               (hooks config, tracked by trellis update)
- * - .github/hooks/trellis.json               (hooks config for VS Code Copilot discovery)
+ * Configure GitHub Copilot:
+ * - prompts/ — start + finish-work as prompt files
+ * - skills/trellis-{name}/SKILL.md — other 7 as auto-triggered skills
+ * - copilot/hooks/ — platform-specific hooks
  */
 export async function configureCopilot(cwd: string): Promise<void> {
+  const ctx = AI_TOOLS.copilot.templateContext;
   const copilotRoot = path.join(cwd, ".github", "copilot");
 
-  // Prompt files → .github/prompts/*.prompt.md
+  // start + finish-work as prompt files
   const promptsDir = path.join(cwd, ".github", "prompts");
   ensureDir(promptsDir);
-
-  for (const prompt of getAllPrompts()) {
+  for (const cmd of resolveCommands(ctx)) {
     await writeFile(
-      path.join(promptsDir, `${prompt.name}.prompt.md`),
-      prompt.content,
+      path.join(promptsDir, `${cmd.name}.prompt.md`),
+      cmd.content,
     );
   }
 
-  // Hook scripts → .github/copilot/hooks/
+  // Other 7 as skills
+  const skillsDir = path.join(cwd, ".github", "skills");
+  ensureDir(skillsDir);
+  for (const skill of resolveSkills(ctx)) {
+    const skillDir = path.join(skillsDir, skill.name);
+    ensureDir(skillDir);
+    await writeFile(path.join(skillDir, "SKILL.md"), skill.content);
+  }
+
+  // Hook scripts (platform-specific)
   const hooksDir = path.join(copilotRoot, "hooks");
   ensureDir(hooksDir);
-
   for (const hook of getAllHooks()) {
     await writeFile(path.join(hooksDir, hook.name), hook.content);
   }
 
-  // Hooks config → .github/copilot/hooks.json (tracked copy)
+  // Hooks config
   const resolvedConfig = resolvePlaceholders(getHooksConfig());
   await writeFile(path.join(copilotRoot, "hooks.json"), resolvedConfig);
-
-  // Hooks config → .github/hooks/trellis.json (VS Code Copilot discovery)
   const githubHooksDir = path.join(cwd, ".github", "hooks");
   ensureDir(githubHooksDir);
   await writeFile(path.join(githubHooksDir, "trellis.json"), resolvedConfig);

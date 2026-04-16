@@ -1,13 +1,14 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
+import { AI_TOOLS } from "../types/ai-tools.js";
 import { getClaudeTemplatePath } from "../templates/extract.js";
 import { ensureDir, writeFile } from "../utils/file-writer.js";
-import { resolvePlaceholders } from "./shared.js";
+import {
+  resolvePlaceholders,
+  resolveCommands,
+  resolveSkills,
+} from "./shared.js";
 
-/**
- * Files to exclude when copying templates
- * These are TypeScript compilation artifacts
- */
 const EXCLUDE_PATTERNS = [
   ".d.ts",
   ".d.ts.map",
@@ -16,9 +17,6 @@ const EXCLUDE_PATTERNS = [
   "__pycache__",
 ];
 
-/**
- * Check if a file should be excluded
- */
 function shouldExclude(filename: string): boolean {
   for (const pattern of EXCLUDE_PATTERNS) {
     if (filename.endsWith(pattern) || filename === pattern) {
@@ -29,14 +27,18 @@ function shouldExclude(filename: string): boolean {
 }
 
 /**
- * Recursively copy directory, excluding build artifacts
- * Uses writeFile to handle file conflicts with the global writeMode setting
+ * Recursively copy directory, excluding build artifacts and the commands/ dir
+ * (commands are now written from common templates).
  */
-async function copyDirFiltered(src: string, dest: string): Promise<void> {
+async function copyDirFiltered(
+  src: string,
+  dest: string,
+  skipDirs: string[] = [],
+): Promise<void> {
   ensureDir(dest);
 
   for (const entry of readdirSync(src)) {
-    if (shouldExclude(entry)) {
+    if (shouldExclude(entry) || skipDirs.includes(entry)) {
       continue;
     }
 
@@ -48,7 +50,6 @@ async function copyDirFiltered(src: string, dest: string): Promise<void> {
       await copyDirFiltered(srcPath, destPath);
     } else {
       let content = readFileSync(srcPath, "utf-8");
-      // Replace placeholders in settings.json
       if (entry === "settings.json") {
         content = resolvePlaceholders(content);
       }
@@ -58,50 +59,32 @@ async function copyDirFiltered(src: string, dest: string): Promise<void> {
 }
 
 /**
- * Configure Claude Code by copying from templates
- *
- * The claude templates include:
- * - commands/ - Slash commands
- * - agents/ - Multi-agent pipeline configurations
- * - hooks/ - Context injection hooks
- * - settings.json - Hook and tool configurations
+ * Configure Claude Code:
+ * - agents/, hooks/, settings.json from platform-specific templates
+ * - commands/trellis/ — start + finish-work as slash commands
+ * - skills/trellis-{name}/SKILL.md — other 7 as auto-triggered skills
  */
 export async function configureClaude(cwd: string): Promise<void> {
   const sourcePath = getClaudeTemplatePath();
   const destPath = path.join(cwd, ".claude");
+  const ctx = AI_TOOLS["claude-code"].templateContext;
 
-  // Copy templates, excluding build artifacts
-  await copyDirFiltered(sourcePath, destPath);
-}
+  // Copy platform-specific files (agents, hooks, settings)
+  await copyDirFiltered(sourcePath, destPath, ["commands"]);
 
-/**
- * Configure Claude Code agents for Multi-Agent Pipeline
- *
- * @deprecated Agents are now included in the main .claude directory copy.
- * This function is kept for backwards compatibility but does nothing.
- */
-export async function configureClaudeAgents(_cwd: string): Promise<void> {
-  // Agents are now copied as part of configureClaude
-  // This function is kept for API compatibility
-}
+  // start + finish-work as slash commands
+  const commandsDir = path.join(destPath, "commands", "trellis");
+  ensureDir(commandsDir);
+  for (const cmd of resolveCommands(ctx)) {
+    await writeFile(path.join(commandsDir, `${cmd.name}.md`), cmd.content);
+  }
 
-/**
- * Configure Claude Code hooks for context injection
- *
- * @deprecated Hooks are now included in the main .claude directory copy.
- * This function is kept for backwards compatibility but does nothing.
- */
-export async function configureClaudeHooks(_cwd: string): Promise<void> {
-  // Hooks are now copied as part of configureClaude
-  // This function is kept for API compatibility
-}
-
-/**
- * Configure Claude Code with full Multi-Agent Pipeline support
- *
- * This is now equivalent to just calling configureClaude since the entire
- * .claude directory is copied at once.
- */
-export async function configureClaudeFull(cwd: string): Promise<void> {
-  await configureClaude(cwd);
+  // Other 7 as skills with trellis- prefix
+  const skillsDir = path.join(destPath, "skills");
+  ensureDir(skillsDir);
+  for (const skill of resolveSkills(ctx)) {
+    const skillDir = path.join(skillsDir, skill.name);
+    ensureDir(skillDir);
+    await writeFile(path.join(skillDir, "SKILL.md"), skill.content);
+  }
 }

@@ -213,13 +213,11 @@ python3 ./.trellis/scripts/task.py create "<title>" --slug <task-name>
    --> git commit -m "type(scope): description"
        Format: feat/fix/docs/refactor/test/chore
 
-6. Record session (one command)
-   --> python3 ./.trellis/scripts/add_session.py --title "Title" --commit "hash"
-
-7. Finish task (clear current)
-   --> python3 ./.trellis/scripts/task.py finish
-   --> Only when the task is fully done; otherwise leave it set so the
-       next session resumes where you left off
+6. Finish work + record session
+   --> /trellis:finish-work (runs checklist + records session)
+   --> python3 ./.trellis/scripts/task.py finish (clear current task)
+   --> Only finish when the task is fully done; otherwise leave it set so
+       the next session resumes where you left off
 ```
 
 ### Code Quality Checklist
@@ -236,31 +234,11 @@ python3 ./.trellis/scripts/task.py create "<title>" --slug <task-name>
 
 ## Session End
 
-### One-Click Session Recording
-
-After code is committed, use:
-
-```bash
-python3 ./.trellis/scripts/add_session.py \
-  --title "Session Title" \
-  --commit "abc1234" \
-  --summary "Brief summary"
-```
-
-This automatically:
-1. Detects current journal file
-2. Creates new file if 2000-line limit exceeded
-3. Appends session content
-4. Updates index.md (sessions count, history table)
-
-### Pre-end Checklist
-
-Use `/trellis:finish-work` command to run through:
+Use `/trellis:finish-work` — it runs through:
 1. [OK] All code committed, commit message follows convention
-2. [OK] Session recorded via `add_session.py`
-3. [OK] No lint/test errors
-4. [OK] Working directory clean (or WIP noted)
-5. [OK] Spec docs updated if needed
+2. [OK] No lint/test errors
+3. [OK] Spec docs updated if needed
+4. [OK] Session recorded (archive tasks + add session entry)
 
 ---
 
@@ -345,15 +323,14 @@ python3 ./.trellis/scripts/task.py list-archive    # List archived tasks
 
 2. **During development**:
    - [!] **Follow** `.trellis/spec/` guidelines
-   - For cross-layer features, use `/trellis:check-cross-layer`
+   - The `trellis-check` skill includes cross-layer verification when applicable
    - Develop only one task at a time
    - Run lint and tests frequently
 
 3. **After development complete**:
-   - Use `/trellis:finish-work` for completion checklist
-   - After fix bug, use `/trellis:break-loop` for deep analysis
+   - Use `/trellis:finish-work` for completion checklist + session recording
+   - After fixing a bug, the `trellis-break-loop` skill triggers for deep analysis
    - Human commits after testing passes
-   - Use `add_session.py` to record progress
 
 ### [X] DON'T - Should Not Do
 
@@ -396,10 +373,16 @@ python3 ./.trellis/scripts/add_session.py    # Record session
 python3 ./.trellis/scripts/task.py list      # List tasks
 python3 ./.trellis/scripts/task.py create "<title>" # Create task
 
-# Slash commands
-/trellis:finish-work          # Pre-commit checklist
-/trellis:break-loop           # Post-debug analysis
-/trellis:check-cross-layer    # Cross-layer verification
+# Slash commands (user-invoked)
+/trellis:start                # Begin a session
+/trellis:finish-work          # Pre-commit checklist + record session
+
+# Skills (AI auto-triggered based on context)
+# trellis-before-dev          # Read spec guidelines before coding
+# trellis-check               # Validate code against specs
+# trellis-brainstorm          # Requirements discovery
+# trellis-break-loop          # Post-debug analysis
+# (cross-layer checks are included in trellis-check)
 ```
 
 ---

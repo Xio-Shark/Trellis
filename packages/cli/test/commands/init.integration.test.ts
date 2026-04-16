@@ -139,7 +139,7 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".agents", "skills"))).toBe(true);
     expect(
       fs.existsSync(
-        path.join(tmpDir, ".agents", "skills", "start", "SKILL.md"),
+        path.join(tmpDir, ".agents", "skills", "trellis-start", "SKILL.md"),
       ),
     ).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".codex", "config.toml"))).toBe(true);
@@ -171,11 +171,11 @@ describe("init() integration", () => {
 
     expect(fs.existsSync(path.join(tmpDir, ".kiro", "skills"))).toBe(true);
     expect(
-      fs.existsSync(path.join(tmpDir, ".kiro", "skills", "start", "SKILL.md")),
+      fs.existsSync(path.join(tmpDir, ".kiro", "skills", "trellis-start", "SKILL.md")),
     ).toBe(true);
     expect(
-      fs.existsSync(path.join(tmpDir, ".kiro", "skills", "parallel")),
-    ).toBe(false);
+      fs.existsSync(path.join(tmpDir, ".kiro", "skills", "trellis-parallel", "SKILL.md")),
+    ).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(false);
   });
@@ -217,7 +217,7 @@ describe("init() integration", () => {
     ).toBe(true);
     expect(
       fs.existsSync(
-        path.join(tmpDir, ".qoder", "skills", "start", "SKILL.md"),
+        path.join(tmpDir, ".qoder", "skills", "trellis-start", "SKILL.md"),
       ),
     ).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(false);
@@ -287,23 +287,16 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(false);
   });
 
-  it("#3j droid platform creates .factory/commands/trellis", async () => {
+  it("#3j droid platform creates commands + skills", async () => {
     await init({ yes: true, droid: true });
+    // Commands (start, finish-work)
     expect(
-      fs.existsSync(path.join(tmpDir, ".factory", "commands", "trellis")),
+      fs.existsSync(path.join(tmpDir, ".factory", "commands", "trellis", "start.md")),
     ).toBe(true);
+    // Skills (trellis- prefix)
     expect(
-      fs.existsSync(
-        path.join(tmpDir, ".factory", "commands", "trellis", "start.md"),
-      ),
+      fs.existsSync(path.join(tmpDir, ".factory", "skills", "trellis-check", "SKILL.md")),
     ).toBe(true);
-    // Frontmatter with description should be present
-    const startContent = fs.readFileSync(
-      path.join(tmpDir, ".factory", "commands", "trellis", "start.md"),
-      "utf-8",
-    );
-    expect(startContent.startsWith("---\n")).toBe(true);
-    expect(startContent).toMatch(/\ndescription:/);
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(false);
   });

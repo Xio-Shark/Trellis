@@ -1,30 +1,27 @@
 import path from "node:path";
+import { AI_TOOLS } from "../types/ai-tools.js";
 import {
   getAllAgents,
   getAllCodexSkills,
   getAllHooks,
-  getAllSkills,
   getConfigTemplate,
   getHooksConfig,
 } from "../templates/codex/index.js";
 import { ensureDir, writeFile } from "../utils/file-writer.js";
-import { resolvePlaceholders } from "./shared.js";
+import { resolvePlaceholders, resolveAllAsSkills } from "./shared.js";
 
 /**
  * Configure Codex by writing:
- * - .agents/skills/<skill-name>/SKILL.md   (shared, cross-platform)
- * - .codex/skills/<skill-name>/SKILL.md    (Codex-specific)
- * - .codex/agents/<agent-name>.toml
- * - .codex/hooks/session-start.py
- * - .codex/hooks.json
- * - .codex/config.toml
+ * - .agents/skills/ — shared skills from common source
+ * - .codex/skills/ — Codex-specific skills (platform-specific templates)
+ * - .codex/agents/, hooks/, hooks.json, config.toml — platform-specific
  */
 export async function configureCodex(cwd: string): Promise<void> {
-  // Shared skills → .agents/skills/
+  // Shared skills from common source → .agents/skills/
   const sharedSkillsRoot = path.join(cwd, ".agents", "skills");
   ensureDir(sharedSkillsRoot);
 
-  for (const skill of getAllSkills()) {
+  for (const skill of resolveAllAsSkills(AI_TOOLS.codex.templateContext)) {
     const skillDir = path.join(sharedSkillsRoot, skill.name);
     ensureDir(skillDir);
     await writeFile(path.join(skillDir, "SKILL.md"), skill.content);
@@ -32,7 +29,7 @@ export async function configureCodex(cwd: string): Promise<void> {
 
   const codexRoot = path.join(cwd, ".codex");
 
-  // Codex-specific skills → .codex/skills/
+  // Codex-specific skills (platform-specific) → .codex/skills/
   const codexSkillsRoot = path.join(codexRoot, "skills");
   ensureDir(codexSkillsRoot);
 

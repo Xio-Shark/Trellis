@@ -1,59 +1,19 @@
-/**
- * Qoder configurator
- *
- * Configures Qoder by copying templates from src/templates/qoder/.
- * Qoder uses skills (SKILL.md), no hooks or agents.
- */
-
-import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
-import { getQoderTemplatePath } from "../templates/extract.js";
+import { AI_TOOLS } from "../types/ai-tools.js";
 import { ensureDir, writeFile } from "../utils/file-writer.js";
+import { resolveAllAsSkills } from "./shared.js";
 
-const EXCLUDE_PATTERNS = [
-  ".d.ts",
-  ".d.ts.map",
-  ".js",
-  ".js.map",
-  "__pycache__",
-  "node_modules",
-  "bun.lock",
-  ".gitignore",
-];
-
-function shouldExclude(filename: string): boolean {
-  for (const pattern of EXCLUDE_PATTERNS) {
-    if (filename.endsWith(pattern) || filename === pattern) {
-      return true;
-    }
-  }
-  return false;
-}
-
-async function copyDirFiltered(src: string, dest: string): Promise<void> {
-  ensureDir(dest);
-
-  for (const entry of readdirSync(src)) {
-    if (shouldExclude(entry)) {
-      continue;
-    }
-
-    const srcPath = path.join(src, entry);
-    const destPath = path.join(dest, entry);
-    const stat = statSync(srcPath);
-
-    if (stat.isDirectory()) {
-      await copyDirFiltered(srcPath, destPath);
-    } else {
-      const content = readFileSync(srcPath, "utf-8");
-      await writeFile(destPath, content);
-    }
-  }
-}
-
+/**
+ * Configure Qoder — skill-only platform.
+ * All templates become .qoder/skills/trellis-<name>/SKILL.md
+ */
 export async function configureQoder(cwd: string): Promise<void> {
-  const sourcePath = getQoderTemplatePath();
-  const destPath = path.join(cwd, ".qoder");
+  const skillsRoot = path.join(cwd, ".qoder", "skills");
+  ensureDir(skillsRoot);
 
-  await copyDirFiltered(sourcePath, destPath);
+  for (const skill of resolveAllAsSkills(AI_TOOLS.qoder.templateContext)) {
+    const skillDir = path.join(skillsRoot, skill.name);
+    ensureDir(skillDir);
+    await writeFile(path.join(skillDir, "SKILL.md"), skill.content);
+  }
 }
