@@ -147,10 +147,10 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     hasPythonHooks: false,
     templateContext: {
       cmdRefPrefix: "/trellis-",
-      executorAI: "Bash scripts or file reads",
+      executorAI: "Bash scripts or Task calls",
       userActionLabel: "Slash commands",
-      agentCapable: false,
-      hasHooks: false,
+      agentCapable: true,
+      hasHooks: true,
     },
   },
   opencode: {
@@ -225,8 +225,8 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
       cmdRefPrefix: "$",
       executorAI: "Bash scripts or tool calls",
       userActionLabel: "Skills",
-      agentCapable: false,
-      hasHooks: false,
+      agentCapable: true,
+      hasHooks: true,
     },
   },
   gemini: {
@@ -238,10 +238,10 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     hasPythonHooks: false,
     templateContext: {
       cmdRefPrefix: "/trellis:",
-      executorAI: "Bash scripts or file reads",
+      executorAI: "Bash scripts or tool calls",
       userActionLabel: "Slash commands",
-      agentCapable: false,
-      hasHooks: false,
+      agentCapable: true,
+      hasHooks: true,
     },
   },
   antigravity: {
@@ -287,8 +287,8 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
       cmdRefPrefix: "$",
       executorAI: "Bash scripts or tool calls",
       userActionLabel: "Skills",
-      agentCapable: false,
-      hasHooks: false,
+      agentCapable: true,
+      hasHooks: true,
     },
   },
   codebuddy: {
@@ -300,10 +300,10 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     hasPythonHooks: false,
     templateContext: {
       cmdRefPrefix: "/trellis:",
-      executorAI: "Bash scripts or file reads",
+      executorAI: "Bash scripts or Task calls",
       userActionLabel: "Slash commands",
-      agentCapable: false,
-      hasHooks: false,
+      agentCapable: true,
+      hasHooks: true,
     },
   },
   copilot: {
@@ -316,10 +316,10 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     hasPythonHooks: true,
     templateContext: {
       cmdRefPrefix: "/",
-      executorAI: "Bash scripts or file reads",
+      executorAI: "Bash scripts or tool calls",
       userActionLabel: "Prompts",
-      agentCapable: false,
-      hasHooks: false,
+      agentCapable: true,
+      hasHooks: true,
     },
   },
   droid: {
@@ -331,10 +331,10 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     hasPythonHooks: false,
     templateContext: {
       cmdRefPrefix: "/trellis-",
-      executorAI: "Bash scripts or file reads",
+      executorAI: "Bash scripts or Task calls",
       userActionLabel: "Slash commands",
-      agentCapable: false,
-      hasHooks: false,
+      agentCapable: true,
+      hasHooks: true,
     },
   },
 };
