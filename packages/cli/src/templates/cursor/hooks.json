@@ -13,6 +13,12 @@
         "command": "{{PYTHON_CMD}} .cursor/hooks/session-start.py",
         "timeout": 10
       }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "{{PYTHON_CMD}} .cursor/hooks/inject-workflow-state.py",
+        "timeout": 5
+      }
     ]
   }
 }

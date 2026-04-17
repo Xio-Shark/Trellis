@@ -5,60 +5,13 @@
  * Uses OpenCode's tool.execute.before hook.
  */
 
-import { existsSync, writeFileSync, readdirSync } from "fs"
+import { existsSync, readdirSync } from "fs"
 import { join } from "path"
 import { TrellisContext, debugLog } from "../lib/trellis-context.js"
 
 // Supported subagent types
 const AGENTS_ALL = ["implement", "check", "research"]
 const AGENTS_REQUIRE_TASK = ["implement", "check"]
-// Agents that don't update phase (can be called at any time)
-const AGENTS_NO_PHASE_UPDATE = ["research"]
-
-/**
- * Update current_phase in task.json based on subagent_type
- */
-function updateCurrentPhase(ctx, taskDir, subagentType) {
-  if (AGENTS_NO_PHASE_UPDATE.includes(subagentType)) {
-    return
-  }
-
-  const taskJsonPath = join(ctx.directory, taskDir, "task.json")
-  const content = ctx.readFile(taskJsonPath)
-  if (!content) return
-
-  try {
-    const taskData = JSON.parse(content)
-    const currentPhase = taskData.current_phase || 0
-    const nextActions = taskData.next_action || []
-
-    const actionToAgent = {
-      "implement": "implement",
-      "check": "check",
-      "finish": "check"
-    }
-
-    let newPhase = null
-    for (const action of nextActions) {
-      const phaseNum = action.phase || 0
-      const actionName = action.action || ""
-      const expectedAgent = actionToAgent[actionName]
-
-      if (phaseNum > currentPhase && expectedAgent === subagentType) {
-        newPhase = phaseNum
-        break
-      }
-    }
-
-    if (newPhase !== null) {
-      taskData.current_phase = newPhase
-      writeFileSync(taskJsonPath, JSON.stringify(taskData, null, 2))
-      debugLog("inject", "Updated current_phase to:", newPhase)
-    }
-  } catch (e) {
-    debugLog("inject", "Error updating phase:", e.message)
-  }
-}
 
 /**
  * Get context for implement agent
@@ -345,8 +298,6 @@ export default {
               debugLog("inject", "Skipping - task directory not found")
               return
             }
-
-            updateCurrentPhase(ctx, taskDir, subagentType)
           }
 
           // Check for [finish] marker

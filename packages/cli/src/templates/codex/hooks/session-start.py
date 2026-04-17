@@ -125,30 +125,48 @@ def _get_task_status(trellis_dir: Path) -> str:
     return f"Status: READY\nTask: {task_title}\nNext: Continue with implement or check"
 
 
-def _build_workflow_toc(workflow_path: Path) -> str:
-    """Build a compact section index for workflow.md (lazy-load the full file on demand).
+def _extract_range(content: str, start_header: str, end_header: str) -> str:
+    """Extract lines starting at `## start_header` up to (but excluding) `## end_header`."""
+    lines = content.splitlines()
+    start: "int | None" = None
+    end: int = len(lines)
+    start_match = f"## {start_header}"
+    end_match = f"## {end_header}"
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if start is None and stripped == start_match:
+            start = i
+            continue
+        if start is not None and stripped == end_match:
+            end = i
+            break
+    if start is None:
+        return ""
+    return "\n".join(lines[start:end]).rstrip()
 
-    Replaces full-file injection to keep additionalContext payload small.
-    The full file is accessible via: Read tool on .trellis/workflow.md
-    """
+
+def _build_workflow_toc(workflow_path: Path) -> str:
+    """Inject workflow guide: TOC + Phase Index + Phase 1/2/3 step details."""
     content = read_file(workflow_path)
     if not content:
         return "No workflow.md found"
 
-    toc_lines = [
+    out_lines = [
         "# Development Workflow — Section Index",
         "Full guide: .trellis/workflow.md  (read on demand)",
         "",
+        "## Table of Contents",
     ]
     for line in content.splitlines():
         if line.startswith("## "):
-            toc_lines.append(line)
+            out_lines.append(line)
+    out_lines += ["", "---", ""]
 
-    toc_lines += [
-        "",
-        "To read a section: use the Read tool on .trellis/workflow.md",
-    ]
-    return "\n".join(toc_lines)
+    phases = _extract_range(content, "Phase Index", "Workflow State Breadcrumbs")
+    if phases:
+        out_lines.append(phases)
+
+    return "\n".join(out_lines).rstrip()
 
 
 def main() -> None:
@@ -183,38 +201,56 @@ Read and follow all instructions below carefully.
     output.write("\n</workflow>\n\n")
 
     output.write("<guidelines>\n")
-    output.write("**Note**: The guidelines below are index files — they list available guideline documents and their locations.\n")
-    output.write("During actual development, you MUST read the specific guideline files listed in each index's Pre-Development Checklist.\n\n")
+    output.write(
+        "Project spec indexes are listed by path below. Each index contains a "
+        "**Pre-Development Checklist** listing the specific guideline files to "
+        "read before coding.\n\n"
+        "- If you're spawning an implement/check sub-agent, context is injected "
+        "automatically via `{task}/implement.jsonl` / `check.jsonl`. You do NOT "
+        "need to read these indexes yourself.\n"
+        "- If you're editing code directly in the main session, Read the relevant "
+        "index(es) on-demand and follow their Pre-Dev Checklist.\n\n"
+    )
 
+    # guides/ inlined (cross-package thinking, broadly useful)
+    guides_index = trellis_dir / "spec" / "guides" / "index.md"
+    if guides_index.is_file():
+        output.write("## guides (inlined — cross-package thinking guides)\n")
+        output.write(read_file(guides_index))
+        output.write("\n\n")
+
+    # Other indexes — paths only
+    paths: list[str] = []
     spec_dir = trellis_dir / "spec"
     if spec_dir.is_dir():
         for sub in sorted(spec_dir.iterdir()):
             if not sub.is_dir() or sub.name.startswith("."):
                 continue
-
             if sub.name == "guides":
-                index_file = sub / "index.md"
-                if index_file.is_file():
-                    output.write(f"## {sub.name}\n")
-                    output.write(read_file(index_file))
-                    output.write("\n\n")
                 continue
-
             index_file = sub / "index.md"
             if index_file.is_file():
-                output.write(f"## {sub.name}\n")
-                output.write(read_file(index_file))
-                output.write("\n\n")
+                paths.append(f".trellis/spec/{sub.name}/index.md")
             else:
                 for nested in sorted(sub.iterdir()):
                     if not nested.is_dir():
                         continue
                     nested_index = nested / "index.md"
                     if nested_index.is_file():
-                        output.write(f"## {sub.name}/{nested.name}\n")
-                        output.write(read_file(nested_index))
-                        output.write("\n\n")
+                        paths.append(
+                            f".trellis/spec/{sub.name}/{nested.name}/index.md"
+                        )
 
+    if paths:
+        output.write("## Available spec indexes (read on demand)\n")
+        for p in paths:
+            output.write(f"- {p}\n")
+        output.write("\n")
+
+    output.write(
+        "Discover more via: "
+        "`python3 ./.trellis/scripts/get_context.py --mode packages`\n"
+    )
     output.write("</guidelines>\n\n")
 
     task_status = _get_task_status(trellis_dir)

@@ -227,35 +227,39 @@ Read and follow all instructions below carefully.
     }
   }
 
-  // 3. Workflow Guide (ToC + Phase Index — full guide + per-step detail on demand)
+  // 3. Workflow Guide — TOC + Phase Index + Phase 1/2/3 step details.
+  //    Meta sections (Core Principles / Trellis System / Breadcrumbs) are NOT
+  //    injected: Core Principles is short prose; Trellis System duplicates
+  //    commands in step bodies; Breadcrumbs are consumed by UserPromptSubmit hook.
   const workflowContent = ctx.readProjectFile(".trellis/workflow.md")
   if (workflowContent) {
     const allLines = workflowContent.split("\n")
     const overviewLines = [
       "# Development Workflow — Section Index",
       "Full guide: .trellis/workflow.md  (read on demand)",
-      "Step detail: python3 ./.trellis/scripts/get_context.py --mode phase --step <X.X>",
       "",
       "## Table of Contents",
     ]
     for (const line of allLines) {
       if (line.startsWith("## ")) overviewLines.push(line)
     }
+    overviewLines.push("", "---", "")
 
-    // Extract the "## Phase Index" section
-    let phaseStart = -1
-    let phaseEnd = allLines.length
+    // Extract range from "## Phase Index" up to (but excluding)
+    // "## Workflow State Breadcrumbs". Captures Phase Index + Phase 1/2/3.
+    let rangeStart = -1
+    let rangeEnd = allLines.length
     for (let i = 0; i < allLines.length; i++) {
-      if (allLines[i].trim() === "## Phase Index") {
-        phaseStart = i
-      } else if (phaseStart !== -1 && i > phaseStart && allLines[i].startsWith("## ")) {
-        phaseEnd = i
+      const stripped = allLines[i].trim()
+      if (rangeStart === -1 && stripped === "## Phase Index") {
+        rangeStart = i
+      } else if (rangeStart !== -1 && stripped === "## Workflow State Breadcrumbs") {
+        rangeEnd = i
         break
       }
     }
-    if (phaseStart !== -1) {
-      overviewLines.push("", "---", "")
-      overviewLines.push(...allLines.slice(phaseStart, phaseEnd))
+    if (rangeStart !== -1) {
+      overviewLines.push(...allLines.slice(rangeStart, rangeEnd))
     }
 
     parts.push("<workflow>")
@@ -263,12 +267,34 @@ Read and follow all instructions below carefully.
     parts.push("</workflow>")
   }
 
-  // 4. Guidelines Index (dynamic discovery, matching Claude's session-start.py)
+  // 4. Guidelines — paths-only for most indexes; guides/ inlined (cross-package,
+  //    broadly useful). Sub-agents get their specific specs via jsonl injection —
+  //    main agent reads paths on demand when editing code directly.
   parts.push("<guidelines>")
-  parts.push("**Note**: The guidelines below are index files — they list available guideline documents and their locations.")
-  parts.push("During actual development, you MUST read the specific guideline files listed in each index's Pre-Development Checklist.\n")
+  parts.push(
+    "Project spec indexes are listed by path below. Each index contains a " +
+    "**Pre-Development Checklist** listing the specific guideline files to " +
+    "read before coding.\n\n" +
+    "- If you're spawning an implement/check sub-agent, context is injected " +
+    "automatically via `{task}/implement.jsonl` / `check.jsonl`. You do NOT " +
+    "need to read these indexes yourself.\n" +
+    "- If you're editing code directly in the main session, Read the relevant " +
+    "index(es) on-demand and follow their Pre-Dev Checklist.\n"
+  )
 
   const specDir = join(directory, ".trellis", "spec")
+
+  // guides/ inlined
+  const guidesIndex = join(specDir, "guides", "index.md")
+  if (existsSync(guidesIndex)) {
+    const content = ctx.readFile(guidesIndex)
+    if (content) {
+      parts.push(`## guides (inlined — cross-package thinking guides)\n${content}\n`)
+    }
+  }
+
+  // Other indexes — paths only
+  const paths = []
   if (existsSync(specDir)) {
     try {
       const subs = readdirSync(specDir).filter(name => {
@@ -281,27 +307,13 @@ Read and follow all instructions below carefully.
       }).sort()
 
       for (const sub of subs) {
-        if (sub === "guides") {
-          const indexFile = join(specDir, sub, "index.md")
-          if (existsSync(indexFile)) {
-            const content = ctx.readFile(indexFile)
-            if (content) {
-              parts.push(`## ${sub}\n${content}\n`)
-            }
-          }
-          continue
-        }
+        if (sub === "guides") continue  // already inlined above
 
         const indexFile = join(specDir, sub, "index.md")
         if (existsSync(indexFile)) {
-          const content = ctx.readFile(indexFile)
-          if (content) {
-            parts.push(`## ${sub}\n${content}\n`)
-          }
+          paths.push(`.trellis/spec/${sub}/index.md`)
         } else {
-          if (allowedPkgs !== null && !allowedPkgs.has(sub)) {
-            continue
-          }
+          if (allowedPkgs !== null && !allowedPkgs.has(sub)) continue
           try {
             const nested = readdirSync(join(specDir, sub)).filter(name => {
               try {
@@ -310,14 +322,10 @@ Read and follow all instructions below carefully.
                 return false
               }
             }).sort()
-
             for (const layer of nested) {
               const nestedIndex = join(specDir, sub, layer, "index.md")
               if (existsSync(nestedIndex)) {
-                const content = ctx.readFile(nestedIndex)
-                if (content) {
-                  parts.push(`## ${sub}/${layer}\n${content}\n`)
-                }
+                paths.push(`.trellis/spec/${sub}/${layer}/index.md`)
               }
             }
           } catch {
@@ -330,6 +338,18 @@ Read and follow all instructions below carefully.
     }
   }
 
+  if (paths.length > 0) {
+    parts.push("## Available spec indexes (read on demand)")
+    for (const p of paths) {
+      parts.push(`- ${p}`)
+    }
+    parts.push("")
+  }
+
+  parts.push(
+    "Discover more via: " +
+    "`python3 ./.trellis/scripts/get_context.py --mode packages`"
+  )
   parts.push("</guidelines>")
 
   // 6. Task status

@@ -918,6 +918,229 @@ describe("regression: current-task path normalization", () => {
       path.join(tmpDir, ".trellis", "tasks", "issue-106"),
     );
   });
+
+  // ------------------------------------------------------------
+  // inject-workflow-state.py hook (workflow-enforcement-v2)
+  // ------------------------------------------------------------
+
+  const injectWorkflowStateScript = getSharedHookScripts().find(
+    (hook) => hook.name === "inject-workflow-state.py",
+  )?.content;
+
+  function writeWorkflowStateHook(): void {
+    writeProjectFile(
+      path.join(".trellis", "hooks", "inject-workflow-state.py"),
+      expectTemplateContent(injectWorkflowStateScript, "inject-workflow-state"),
+    );
+  }
+
+  function setStatus(status: string): void {
+    const taskJsonPath = path.join(
+      tmpDir,
+      ".trellis",
+      "tasks",
+      "issue-106",
+      "task.json",
+    );
+    const data = JSON.parse(fs.readFileSync(taskJsonPath, "utf-8")) as {
+      status: string;
+    };
+    data.status = status;
+    fs.writeFileSync(taskJsonPath, JSON.stringify(data, null, 2));
+  }
+
+  function writeWorkflowMd(body: string): void {
+    writeProjectFile(path.join(".trellis", "workflow.md"), body);
+  }
+
+  function runInjectWorkflowState(cwdOverride?: string): string {
+    return runPython(
+      path.join(".trellis", "hooks", "inject-workflow-state.py"),
+      JSON.stringify({ cwd: cwdOverride ?? tmpDir }),
+    );
+  }
+
+  it("[workflow-state] in_progress default hardcoded fallback works without workflow.md", () => {
+    setupTaskRepo();
+    writeWorkflowStateHook();
+    // overwrite workflow.md with empty content (no tag blocks)
+    writeWorkflowMd("# Empty\n");
+
+    const output = runInjectWorkflowState();
+    const parsed = JSON.parse(output) as {
+      hookSpecificOutput: { additionalContext: string };
+    };
+    expect(parsed.hookSpecificOutput.additionalContext).toContain(
+      "Task: issue-106 (in_progress)",
+    );
+    expect(parsed.hookSpecificOutput.additionalContext).toContain(
+      "implement → check",
+    );
+  });
+
+  it("[workflow-state] workflow.md tag overrides hardcoded fallback", () => {
+    setupTaskRepo();
+    writeWorkflowStateHook();
+    writeWorkflowMd(
+      "[workflow-state:in_progress]\nCUSTOM BODY from workflow.md\n[/workflow-state:in_progress]\n",
+    );
+
+    const parsed = JSON.parse(runInjectWorkflowState()) as {
+      hookSpecificOutput: { additionalContext: string };
+    };
+    expect(parsed.hookSpecificOutput.additionalContext).toContain(
+      "CUSTOM BODY from workflow.md",
+    );
+    expect(parsed.hookSpecificOutput.additionalContext).not.toContain(
+      "implement → check",
+    );
+  });
+
+  it("[workflow-state] custom status with hyphen matches via regex", () => {
+    setupTaskRepo();
+    writeWorkflowStateHook();
+    setStatus("in-review");
+    writeWorkflowMd(
+      "[workflow-state:in-review]\nTeam review pending\n[/workflow-state:in-review]\n",
+    );
+
+    const parsed = JSON.parse(runInjectWorkflowState()) as {
+      hookSpecificOutput: { additionalContext: string };
+    };
+    expect(parsed.hookSpecificOutput.additionalContext).toContain(
+      "Task: issue-106 (in-review)",
+    );
+    expect(parsed.hookSpecificOutput.additionalContext).toContain(
+      "Team review pending",
+    );
+  });
+
+  it("[workflow-state] unknown status with no tag emits generic fallback, not silent", () => {
+    setupTaskRepo();
+    writeWorkflowStateHook();
+    setStatus("weirdstate");
+    writeWorkflowMd("# no matching tags\n");
+
+    const output = runInjectWorkflowState();
+    expect(output.trim()).not.toBe("");
+    const parsed = JSON.parse(output) as {
+      hookSpecificOutput: { additionalContext: string };
+    };
+    expect(parsed.hookSpecificOutput.additionalContext).toContain(
+      "Task: issue-106 (weirdstate)",
+    );
+    expect(parsed.hookSpecificOutput.additionalContext).toContain(
+      "Refer to workflow.md",
+    );
+  });
+
+  it("[workflow-state] CWD drift: hook finds .trellis/ when invoked from subdirectory", () => {
+    setupTaskRepo();
+    writeWorkflowStateHook();
+    // Create a subdirectory and invoke hook with that CWD
+    const subDir = path.join(tmpDir, "packages", "cli");
+    fs.mkdirSync(subDir, { recursive: true });
+
+    const parsed = JSON.parse(runInjectWorkflowState(subDir)) as {
+      hookSpecificOutput: { additionalContext: string };
+    };
+    expect(parsed.hookSpecificOutput.additionalContext).toContain(
+      "Task: issue-106",
+    );
+  });
+
+  it("[workflow-state] no_task breadcrumb emitted when .current-task missing", () => {
+    writeTrellisScripts();
+    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "workflow.md"), "# Empty\n");
+    writeWorkflowStateHook();
+    // no .current-task file → should emit no_task breadcrumb (not silent)
+    const output = runInjectWorkflowState();
+    expect(output.trim()).not.toBe("");
+    const parsed = JSON.parse(output) as {
+      hookSpecificOutput: { additionalContext: string };
+    };
+    expect(parsed.hookSpecificOutput.additionalContext).toContain(
+      "Status: no_task",
+    );
+    expect(parsed.hookSpecificOutput.additionalContext).toContain(
+      "trellis-brainstorm",
+    );
+  });
+
+  it("[workflow-state] silent exit 0 when not a Trellis project (no .trellis/ dir)", () => {
+    // No .trellis/ at all — hook should silently exit
+    writeWorkflowStateHook();
+    fs.rmSync(path.join(tmpDir, ".trellis"), { recursive: true, force: true });
+    fs.mkdirSync(path.join(tmpDir, ".trellis", "hooks"), { recursive: true });
+    fs.copyFileSync(
+      path.join(
+        __dirname,
+        "..",
+        "src",
+        "templates",
+        "shared-hooks",
+        "inject-workflow-state.py",
+      ),
+      path.join(tmpDir, ".trellis", "hooks", "inject-workflow-state.py"),
+    );
+    // Now .trellis/ exists only as a parent for the hook script — need to move
+    // the hook out of .trellis/ so root-finding fails. Use a fully separate dir.
+    const nonTrellisDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), "non-trellis-"),
+    );
+    try {
+      const hookPath = path.join(nonTrellisDir, "hook.py");
+      fs.copyFileSync(
+        path.join(
+          __dirname,
+          "..",
+          "src",
+          "templates",
+          "shared-hooks",
+          "inject-workflow-state.py",
+        ),
+        hookPath,
+      );
+      const result = execSync(
+        `${pythonCmd} ${JSON.stringify(hookPath)}`,
+        {
+          cwd: nonTrellisDir,
+          input: JSON.stringify({ cwd: nonTrellisDir }),
+          encoding: "utf-8",
+        },
+      );
+      expect(result.trim()).toBe("");
+    } finally {
+      fs.rmSync(nonTrellisDir, { recursive: true, force: true });
+    }
+  });
+
+  // ------------------------------------------------------------
+  // Legacy current_phase / next_action field removal (FP round 3 cleanup)
+  // ------------------------------------------------------------
+
+  it("[workflow-v2] task.py create does NOT write legacy current_phase / next_action fields", () => {
+    setupTaskRepo("");
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    execSync(
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "dummy task" --slug dummy-task --assignee test-dev`,
+      { cwd: tmpDir, encoding: "utf-8" },
+    );
+    // Locate the newly created task dir
+    const tasksDir = path.join(tmpDir, ".trellis", "tasks");
+    const newDirs = fs
+      .readdirSync(tasksDir)
+      .filter((d) => d.includes("dummy-task"));
+    expect(newDirs.length).toBeGreaterThan(0);
+    const newTaskJsonPath = path.join(tasksDir, newDirs[0], "task.json");
+    const data = JSON.parse(fs.readFileSync(newTaskJsonPath, "utf-8")) as {
+      current_phase?: unknown;
+      next_action?: unknown;
+    };
+    expect(data.current_phase).toBeUndefined();
+    expect(data.next_action).toBeUndefined();
+  });
 });
 
 describe("regression: backslash in markdown templates (beta.12)", () => {

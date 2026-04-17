@@ -407,18 +407,25 @@ Claude Code truncates `hookSpecificOutput.additionalContext` at **~20 KB**. When
 
 Codex has even tighter limits — users report 40-80 KB payloads consuming most of the context window on large projects.
 
-### Size Budget (measured on vanilla `trellis init --claude`)
+### Size Budget (measured on Trellis dev repo)
 
-| Block | v0.4.0-beta.10 | Notes |
+| Block | Size | Notes |
 |---|---:|---|
 | `<session-context>` | 0.1 KB | Fixed |
-| `<current-state>` | 1.0 KB | Grows with tasks/git state |
-| `<workflow>` | 0.1 KB | Pointer only (was 11.6 KB before lazy-load) |
-| `<guidelines>` | 5.1 KB | **Grows with spec count** — watch this |
-| `<instructions>` | 16.1 KB | start.md content |
+| `<current-state>` | 2.3 KB | Grows with tasks/git state |
+| `<workflow>` | 9.5 KB | TOC + Phase Index + Phase 1/2/3 step bodies. Meta sections (Core Principles / Trellis System / Breadcrumbs) excluded — they are either short prose Readable on demand or consumed by other hooks |
+| `<guidelines>` | 4.6 KB | `guides/index.md` inlined + paths-only for other indexes |
 | `<task-status>` | 0.2 KB | Fixed |
 | `<ready>` | 0.3 KB | Fixed |
-| **Total** | **17.9 KB** | **Under 20 KB ✓** |
+| **Total** | **16.7 KB** | **Under 20 KB ✓** |
+
+Historical note: pre-workflow-rewrite (v0.4.0-beta.10) the payload included a 16 KB `<instructions>` block (start.md content). That block was removed — start.md is now only sent as the `/start` command body for agent-less platforms (Kilo/Antigravity/Windsurf); agent-capable platforms get workflow overview via `<workflow>` instead.
+
+### Guidelines: Paths-only vs Inline
+
+Before: every `.trellis/spec/*/index.md` was inlined in `<guidelines>` (10 KB+ on this repo). Main agent rarely uses index content (work is delegated to sub-agents, which get their own specific specs via `{task}/implement.jsonl` / `check.jsonl`).
+
+Now: paths only for most indexes; `guides/index.md` (cross-package thinking guides) stays inlined because it's small and applies broadly. When main agent edits code directly, it Reads the relevant index on demand.
 
 ### Design Decision: Inject Instructions, Not Reference Content
 
@@ -435,6 +442,62 @@ Codex has even tighter limits — users report 40-80 KB payloads consuming most 
 ### Gotcha: `<guidelines>` Is the Next Growth Risk
 
 On the Trellis dev repo (light use), `<guidelines>` is 10.8 KB vs 5.1 KB on vanilla — it grows linearly with spec `index.md` file count. Combined with `<instructions>` (16.1 KB), a project with many spec layers can still exceed 20 KB. Monitor this and consider the same lazy-load pattern for guidelines if it becomes a problem.
+
+---
+
+## Workflow State Injection: Per-Turn Breadcrumb
+
+### Problem
+
+`SessionStart` only fires once per session. In long conversations, Claude's context compression can push the SessionStart message out of recent context, and the AI forgets the active Trellis task — resulting in workflow drift (skips `check`, forgets to `update-spec`, doesn't return to `finish` after user interruptions).
+
+### Solution: `UserPromptSubmit` hook injecting per-turn breadcrumb
+
+A lightweight hook (`shared-hooks/inject-workflow-state.py`) fires on **every user prompt**, emitting a short `<workflow-state>` block reminding the AI of the active task + expected flow. Sub-200-byte payload, no perceptible latency.
+
+### Single Source of Truth: `workflow.md` Tag Blocks
+
+Breadcrumb text lives in `workflow.md` as `[workflow-state:STATUS]...[/workflow-state:STATUS]` blocks (same tag style as existing `[Platform, ...]` blocks). Users who fork the Trellis workflow edit **only the markdown**; the hook script stays untouched.
+
+```markdown
+[workflow-state:in_progress]
+Flow: implement → check → update-spec → finish
+Check conversation history + git status to determine current step; do NOT skip check.
+[/workflow-state:in_progress]
+```
+
+STATUS matches `task.json.status`. Built-in: `planning` / `in_progress` / `completed`. Custom statuses (including hyphenated like `in-review`) are recognized — STATUS regex is `[A-Za-z0-9_-]+`.
+
+### Fallback Strategy (hook never crashes)
+
+1. `workflow.md` missing → hardcoded defaults for 3 built-in statuses
+2. Tag block missing for a status → same hardcoded default
+3. Status unknown (no tag, no default) → generic `"Refer to workflow.md for current step."`
+
+### Platform Support Matrix
+
+| Platform | Event | Config File | Notes |
+|---|---|---|---|
+| Claude Code | `UserPromptSubmit` | `.claude/settings.json` | Auto-distributes via `writeSharedHooks()` |
+| Cursor | `beforeSubmitPrompt` | `.cursor/hooks.json` | Auto |
+| Qoder | `UserPromptSubmit` | `.qoder/settings.json` | Auto |
+| CodeBuddy | `UserPromptSubmit` | `.codebuddy/settings.json` | Auto |
+| Droid (Factory) | `UserPromptSubmit` | `.factory/settings.json` | Auto |
+| Gemini CLI | `UserPromptSubmit` | `.gemini/settings.json` | Auto |
+| Copilot CLI | `userPromptSubmitted` (camelCase) | `.github/copilot/hooks.json` | `bash` + `powershell` dual field |
+| Codex | `UserPromptSubmit` | `.codex/hooks.json` | **Requires `features.codex_hooks = true` in user's `~/.codex/config.toml`** — without this flag, hooks never fire |
+| OpenCode | `chat.message` (Bun plugin) | `plugins/inject-workflow-state.js` | Equivalent JS implementation |
+| Kiro | ⚠️ Not supported | n/a | Kiro's only hook is `agentSpawn` (sub-agent lifecycle). No per-turn main-conversation hook exists; awaiting upstream. Sub-agent context injection still works via shared-hooks `inject-subagent-context.py` |
+
+### CWD Robustness
+
+The hook uses `find_trellis_root()` to walk up from CWD until it finds `.trellis/`, so it works when the terminal is in a subdirectory (monorepo package, etc.) or when sub-agent spawn inherits a drifted CWD.
+
+### Why No State Machine / No Extra `task.json` Fields
+
+After first-principles analysis (see `.trellis/tasks/04-17-workflow-enforcement-v2/prd.md`), we dropped the original design's `current_phase` string / `phase_history` / `checkpoints` / 7 new `task.py` commands / skill tail blocks. The core insight: **workflow.md Phase 1.0/1.1/... is documentation layering, not runtime state**. The existing `task.json.status` (`planning` / `in_progress` / `completed`) is sufficient to express task lifecycle; sub-phase position is inferred by the AI from conversation history + git state.
+
+This keeps state minimal, avoids the "task.json drifts from filesystem reality" class of bugs, and is trivially customizable — users modify one markdown file, not Python/TypeScript.
 
 ---
 

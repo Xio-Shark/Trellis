@@ -12,6 +12,7 @@ import {
   resolvePlaceholders,
   resolveAllAsSkills,
   applyPullBasedPreludeToml,
+  writeSharedHooks,
 } from "./shared.js";
 
 /**
@@ -61,15 +62,35 @@ export async function configureCodex(cwd: string): Promise<void> {
   const hooksDir = path.join(codexRoot, "hooks");
   ensureDir(hooksDir);
 
+  // Codex-specific hooks (e.g., session-start.py tailored for Codex)
   for (const hook of getAllHooks()) {
     await writeFile(path.join(hooksDir, hook.name), hook.content);
   }
+
+  // Shared hooks (inject-workflow-state.py etc.) — Codex hooks.json references
+  // these paths. inject-subagent-context.py is skipped because Codex sub-agents
+  // can't reliably receive hook-modified prompts (class-2 pull-based).
+  await writeSharedHooks(hooksDir, {
+    exclude: ["session-start.py", "inject-subagent-context.py"],
+  });
 
   // Hooks config → .codex/hooks.json
   await writeFile(
     path.join(codexRoot, "hooks.json"),
     resolvePlaceholders(getHooksConfig()),
   );
+
+  // NOTE: Codex hooks require `features.codex_hooks = true` in the user's
+  // ~/.codex/config.toml. Without this flag the hooks.json is ignored and
+  // inject-workflow-state.py will never fire. This prerequisite is documented
+  // in spec/cli/backend/platform-integration.md.
+  if (!process.env.VITEST && !process.env.TRELLIS_QUIET) {
+    process.stderr.write(
+      "⚠️  Codex hooks require `features.codex_hooks = true` in your " +
+        "~/.codex/config.toml. Without it the Trellis workflow breadcrumb " +
+        "won't fire. See Trellis docs for details.\n",
+    );
+  }
 
   // Config → .codex/config.toml
   const config = getConfigTemplate();

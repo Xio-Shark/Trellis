@@ -43,6 +43,17 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON_CMD}} .codebuddy/hooks/inject-workflow-state.py",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }

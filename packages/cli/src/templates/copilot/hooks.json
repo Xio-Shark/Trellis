@@ -6,6 +6,14 @@
         "command": "{{PYTHON_CMD}} .github/copilot/hooks/session-start.py",
         "timeout": 10
       }
+    ],
+    "userPromptSubmitted": [
+      {
+        "type": "command",
+        "bash": "{{PYTHON_CMD}} .github/copilot/hooks/inject-workflow-state.py",
+        "powershell": "{{PYTHON_CMD}} .github/copilot/hooks/inject-workflow-state.py",
+        "timeoutSec": 5
+      }
     ]
   }
 }

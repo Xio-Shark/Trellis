@@ -34,10 +34,8 @@ _MARKER_RE = re.compile(r"^\[(/?)([A-Za-z][^\[\]]*)\]\s*$")
 # Step heading: "#### 1.0 Title" or "#### 1.0 ..."
 _STEP_HEADING_RE = re.compile(r"^####\s+(\d+\.\d+)\b.*$")
 
-# Phase Index starts here
+# Phase Index starts here; Phase 1/2/3 step bodies follow; ends at Breadcrumbs.
 _PHASE_INDEX_HEADING = "## Phase Index"
-# Phase Index ends at next top-level section (e.g. "## Phase 1: Plan")
-_TOP_HEADING_RE = re.compile(r"^##\s+")
 
 
 def _read_workflow() -> str:
@@ -62,17 +60,24 @@ def _parse_marker(line: str) -> tuple[bool, list[str]] | None:
 
 
 def get_phase_index() -> str:
-    """Return the Phase Index section of workflow.md (header + body)."""
+    """Return Phase Index + Phase 1/2/3 step bodies from workflow.md.
+
+    Matches what the SessionStart hook injects into the `<workflow>` block:
+    starts at `## Phase Index`, continues through `## Phase 1: Plan`,
+    `## Phase 2: Execute`, `## Phase 3: Finish`, stops at
+    `## Workflow State Breadcrumbs` (consumed by UserPromptSubmit hook).
+    """
     text = _read_workflow()
     lines = text.splitlines()
 
     start: int | None = None
     end: int | None = None
     for i, line in enumerate(lines):
-        if line.strip() == _PHASE_INDEX_HEADING:
+        stripped = line.strip()
+        if start is None and stripped == _PHASE_INDEX_HEADING:
             start = i
             continue
-        if start is not None and i > start and _TOP_HEADING_RE.match(line):
+        if start is not None and stripped == "## Workflow State Breadcrumbs":
             end = i
             break
 

@@ -48,9 +48,6 @@ DIR_SPEC = "spec"
 FILE_CURRENT_TASK = ".current-task"
 FILE_TASK_JSON = "task.json"
 
-# Agents that don't update phase (can be called at any time)
-AGENTS_NO_PHASE_UPDATE = {"research"}
-
 # =============================================================================
 # Subagent Constants (change here to rename subagent types)
 # =============================================================================
@@ -105,62 +102,6 @@ def get_current_task(repo_root: str) -> str | None:
             return normalized
     except Exception:
         return None
-
-
-def update_current_phase(repo_root: str, task_dir: str, subagent_type: str) -> None:
-    """
-    Update current_phase in task.json based on subagent_type.
-
-    This ensures phase tracking is always accurate.
-
-    Logic:
-    - Read next_action array from task.json
-    - Find the next phase whose action matches subagent_type
-    - Only move forward, never backward
-    - research doesn't update phase
-    """
-    if subagent_type in AGENTS_NO_PHASE_UPDATE:
-        return
-
-    task_json_path = os.path.join(repo_root, task_dir, FILE_TASK_JSON)
-    if not os.path.exists(task_json_path):
-        return
-
-    try:
-        with open(task_json_path, "r", encoding="utf-8") as f:
-            task_data = json.load(f)
-
-        current_phase = task_data.get("current_phase", 0)
-        next_actions = task_data.get("next_action", [])
-
-        # Map action names to subagent types
-        # "implement" -> "implement", "check" -> "check", "finish" -> "check"
-        action_to_agent = {
-            "implement": "implement",
-            "check": "check",
-            "finish": "check",  # finish uses check agent
-        }
-
-        # Find the next phase that matches this subagent_type
-        new_phase = None
-        for action in next_actions:
-            phase_num = action.get("phase", 0)
-            action_name = action.get("action", "")
-            expected_agent = action_to_agent.get(action_name)
-
-            # Only consider phases after current_phase
-            if phase_num > current_phase and expected_agent == subagent_type:
-                new_phase = phase_num
-                break
-
-        if new_phase is not None:
-            task_data["current_phase"] = new_phase
-
-            with open(task_json_path, "w", encoding="utf-8") as f:
-                json.dump(task_data, f, indent=2, ensure_ascii=False)
-    except Exception:
-        # Don't fail the hook if phase update fails
-        pass
 
 
 def read_file_content(base_path: str, file_path: str) -> str | None:
@@ -618,9 +559,6 @@ def main():
         task_dir_full = os.path.join(repo_root, task_dir)
         if not os.path.exists(task_dir_full):
             sys.exit(0)
-
-        # Update current_phase in task.json (system-level enforcement)
-        update_current_phase(repo_root, task_dir, subagent_type)
 
     # Check for [finish] marker in prompt (check agent with finish context)
     is_finish_phase = "[finish]" in original_prompt.lower()

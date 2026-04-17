@@ -39,7 +39,7 @@ From Step 1 you know the current task. Check the task directory:
   {{PYTHON_CMD}} ./.trellis/scripts/get_context.py --mode phase --step 2.1 --platform {{CLI_FLAG}}
   ```
 - **Active task + no `prd.md`** → Phase 1.1. Load the `trellis-brainstorm` skill.
-- **No active task** → ask the user what to work on, then create one via `task.py create`.
+- **No active task** → when the user describes multi-step work, load the `trellis-brainstorm` skill to clarify requirements, then create a task via `task.py create`. For simple one-off questions or trivial edits, skip this and just answer directly — no task needed.
 
 ---
 

@@ -316,20 +316,24 @@ def _resolve_spec_scope(
     return None  # Unknown scope type: full scan
 
 
-def _extract_phase_index(content: str) -> str:
-    """Extract the `## Phase Index` section from workflow.md content.
+def _extract_range(content: str, start_header: str, end_header: str) -> str:
+    """Extract lines starting at `## start_header` up to (but excluding) `## end_header`.
 
-    Returns the section including header + body, ending at the next `## ` heading.
-    Empty string if not found.
+    Both parameters are full header lines WITHOUT the `## ` prefix (e.g. "Phase Index").
+    Returns empty string if start header is not found.
+    End header missing → extracts to end of file.
     """
     lines = content.splitlines()
     start: int | None = None
     end: int = len(lines)
+    start_match = f"## {start_header}"
+    end_match = f"## {end_header}"
     for i, line in enumerate(lines):
-        if line.strip() == "## Phase Index":
+        stripped = line.strip()
+        if start is None and stripped == start_match:
             start = i
             continue
-        if start is not None and i > start and line.startswith("## "):
+        if start is not None and stripped == end_match:
             end = i
             break
     if start is None:
@@ -338,36 +342,45 @@ def _extract_phase_index(content: str) -> str:
 
 
 def _build_workflow_overview(workflow_path: Path) -> str:
-    """Inject a compact workflow overview for the session.
+    """Inject the workflow guide for the session.
 
     Contents:
       1. Section index (all `## ` headings — navigation)
       2. Phase Index section (rules, skill routing table, anti-rationalization table)
+      3. Phase 1/2/3 step-level details (the actual how-to for each step)
 
-    Full workflow.md is still available via Read tool for step-level detail.
-    Per-step detail is lazy-loaded via:
-      python3 ./.trellis/scripts/get_context.py --mode phase --step <X.X>
+    The meta sections (Core Principles / Trellis System / Workflow State
+    Breadcrumbs) are NOT injected — Core Principles is short prose the AI can
+    Read on demand; Trellis System lists reference commands duplicated in
+    step bodies; Breadcrumbs are consumed by the UserPromptSubmit hook.
+
+    Total budget: Phase Index ~2 KB + Phase 1/2/3 ~7 KB = ~9 KB.
     """
     content = read_file(workflow_path)
     if not content:
         return "No workflow.md found"
 
-    toc_lines = [
+    out_lines = [
         "# Development Workflow — Section Index",
         "Full guide: .trellis/workflow.md  (read on demand)",
-        "Step detail: python3 ./.trellis/scripts/get_context.py --mode phase --step <X.X>",
         "",
         "## Table of Contents",
     ]
     for line in content.splitlines():
         if line.startswith("## "):
-            toc_lines.append(line)
+            out_lines.append(line)
+    out_lines += ["", "---", ""]
 
-    phase_index = _extract_phase_index(content)
-    if phase_index:
-        toc_lines += ["", "---", "", phase_index]
+    # Extract Phase Index through the end of Phase 3 (before Breadcrumbs).
+    # Since sections appear in order Phase Index → Phase 1 → Phase 2 → Phase 3
+    # → Workflow State Breadcrumbs, a single range grab captures all four.
+    phases = _extract_range(
+        content, "Phase Index", "Workflow State Breadcrumbs"
+    )
+    if phases:
+        out_lines.append(phases)
 
-    return "\n".join(toc_lines)
+    return "\n".join(out_lines).rstrip()
 
 
 def main():
@@ -424,30 +437,39 @@ Read and follow all instructions below carefully.
     output.write("\n</workflow>\n\n")
 
     output.write("<guidelines>\n")
-    output.write("**Note**: The guidelines below are index files — they list available guideline documents and their locations.\n")
-    output.write("During actual development, you MUST read the specific guideline files listed in each index's Pre-Development Checklist.\n\n")
+    output.write(
+        "Project spec indexes are listed by path below. Each index contains a "
+        "**Pre-Development Checklist** listing the specific guideline files to "
+        "read before coding.\n\n"
+        "- If you're spawning an implement/check sub-agent, context is injected "
+        "automatically via `{task}/implement.jsonl` / `check.jsonl`. You do NOT "
+        "need to read these indexes yourself.\n"
+        "- If you're editing code directly in the main session, Read the relevant "
+        "index(es) on-demand and follow their Pre-Dev Checklist.\n\n"
+    )
 
+    # guides/ is cross-package thinking — always include inline (small, broadly useful)
+    guides_index = trellis_dir / "spec" / "guides" / "index.md"
+    if guides_index.is_file():
+        output.write("## guides (inlined — cross-package thinking guides)\n")
+        output.write(read_file(guides_index))
+        output.write("\n\n")
+
+    # Other spec indexes — paths only (main agent reads on demand;
+    # sub-agents get their specific specs via jsonl injection)
+    paths: list[str] = []
     spec_dir = trellis_dir / "spec"
     if spec_dir.is_dir():
         for sub in sorted(spec_dir.iterdir()):
             if not sub.is_dir() or sub.name.startswith("."):
                 continue
-
-            # Always include guides/ regardless of scope
             if sub.name == "guides":
-                index_file = sub / "index.md"
-                if index_file.is_file():
-                    output.write(f"## {sub.name}\n")
-                    output.write(read_file(index_file))
-                    output.write("\n\n")
-                continue
+                continue  # already inlined above
 
             index_file = sub / "index.md"
             if index_file.is_file():
                 # Flat spec dir (single-repo layer like spec/backend/)
-                output.write(f"## {sub.name}\n")
-                output.write(read_file(index_file))
-                output.write("\n\n")
+                paths.append(f".trellis/spec/{sub.name}/index.md")
             else:
                 # Nested package dirs (monorepo: spec/<pkg>/<layer>/index.md)
                 # Apply scope filter
@@ -458,10 +480,20 @@ Read and follow all instructions below carefully.
                         continue
                     nested_index = nested / "index.md"
                     if nested_index.is_file():
-                        output.write(f"## {sub.name}/{nested.name}\n")
-                        output.write(read_file(nested_index))
-                        output.write("\n\n")
+                        paths.append(
+                            f".trellis/spec/{sub.name}/{nested.name}/index.md"
+                        )
 
+    if paths:
+        output.write("## Available spec indexes (read on demand)\n")
+        for p in paths:
+            output.write(f"- {p}\n")
+        output.write("\n")
+
+    output.write(
+        "Discover more via: "
+        "`python3 ./.trellis/scripts/get_context.py --mode packages`\n"
+    )
     output.write("</guidelines>\n\n")
 
     # Check task status and inject structured tag

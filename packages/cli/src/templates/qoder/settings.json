@@ -31,6 +31,17 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON_CMD}} .qoder/hooks/inject-workflow-state.py",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }
