@@ -104,19 +104,33 @@ def _resolve_task_dir(trellis_dir: Path, task_ref: str) -> Path:
 
 
 def _get_task_status(trellis_dir: Path) -> str:
-    """Check current task status and return structured status string."""
+    """Check current task status and return structured status string with explicit next action.
+
+    Returns a block with three fields:
+    - Status: current state
+    - Task: task identifier (when applicable)
+    - Next-Action: explicit skill/command/tool call the AI should invoke
+    """
     current_task_file = trellis_dir / ".current-task"
-    if not current_task_file.is_file():
-        return "Status: NO ACTIVE TASK\nNext: Describe what you want to work on"
+
+    # Case 1: No active task — waiting for user to describe intent
+    if not current_task_file.is_file() or not current_task_file.read_text(encoding="utf-8").strip():
+        return (
+            "Status: NO ACTIVE TASK\n"
+            "Next-Action: After the user describes their intent, load skill `trellis-brainstorm` "
+            "to clarify requirements and create a task via `python3 ./.trellis/scripts/task.py create`."
+        )
 
     task_ref = _normalize_task_ref(current_task_file.read_text(encoding="utf-8").strip())
-    if not task_ref:
-        return "Status: NO ACTIVE TASK\nNext: Describe what you want to work on"
 
-    # Resolve task directory
+    # Case 2: Stale pointer — task dir was deleted
     task_dir = _resolve_task_dir(trellis_dir, task_ref)
     if not task_dir.is_dir():
-        return f"Status: STALE POINTER\nTask: {task_ref}\nNext: Task directory not found. Run: python3 ./.trellis/scripts/task.py finish"
+        return (
+            f"Status: STALE POINTER\nTask: {task_ref}\n"
+            f"Next-Action: Run `python3 ./.trellis/scripts/task.py finish` to clear the stale pointer, "
+            "then ask the user what to work on next."
+        )
 
     # Read task.json
     task_json_path = task_dir / "task.json"
@@ -130,26 +144,31 @@ def _get_task_status(trellis_dir: Path) -> str:
     task_title = task_data.get("title", task_ref)
     task_status = task_data.get("status", "unknown")
 
+    # Case 3: Task completed — time to archive
     if task_status == "completed":
-        return f"Status: COMPLETED\nTask: {task_title}\nNext: Archive with `python3 ./.trellis/scripts/task.py archive {task_dir.name}` or start a new task"
-
-    # Check if context is configured (jsonl files exist and non-empty)
-    has_context = False
-    for jsonl_name in ("implement.jsonl", "check.jsonl"):
-        jsonl_path = task_dir / jsonl_name
-        if jsonl_path.is_file() and jsonl_path.stat().st_size > 0:
-            has_context = True
-            break
+        return (
+            f"Status: COMPLETED\nTask: {task_title}\n"
+            f"Next-Action: Load skill `trellis-update-spec` to capture learnings, "
+            f"then archive with `python3 ./.trellis/scripts/task.py archive {task_dir.name}`."
+        )
 
     has_prd = (task_dir / "prd.md").is_file()
 
+    # Case 4: No PRD — still in Plan phase
     if not has_prd:
-        return f"Status: NOT READY\nTask: {task_title}\nMissing: prd.md not created\nNext: Write PRD, then research → init-context → start"
+        return (
+            f"Status: PLANNING\nTask: {task_title}\n"
+            "Next-Action: Load skill `trellis-brainstorm` to clarify requirements with the user "
+            "and produce prd.md in the task directory."
+        )
 
-    if not has_context:
-        return f"Status: NOT READY\nTask: {task_title}\nMissing: Context not configured (no jsonl files)\nNext: Complete Phase 2 (research → init-context → start) before implementing"
-
-    return f"Status: READY\nTask: {task_title}\nNext: Continue with implement or check"
+    # Case 5: PRD ready — enter Execute phase
+    return (
+        f"Status: READY\nTask: {task_title}\n"
+        "Next-Action: Load skill `trellis-before-dev` to read relevant specs, "
+        "then spawn `implement` sub-agent via the Task tool. "
+        "After implementation, spawn `check` sub-agent for quality verification."
+    )
 
 
 def _load_trellis_config(trellis_dir: Path) -> tuple:

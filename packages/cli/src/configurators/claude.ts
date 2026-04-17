@@ -7,6 +7,7 @@ import {
   resolvePlaceholders,
   resolveCommands,
   resolveSkills,
+  writeSharedHooks,
 } from "./shared.js";
 
 const EXCLUDE_PATTERNS = [
@@ -60,7 +61,8 @@ async function copyDirFiltered(
 
 /**
  * Configure Claude Code:
- * - agents/, hooks/, settings.json from platform-specific templates
+ * - agents/, settings.json from platform-specific templates
+ * - hooks/ from shared-hooks/ (unified with other platforms)
  * - commands/trellis/ — start + finish-work as slash commands
  * - skills/trellis-{name}/SKILL.md — other 5 as auto-triggered skills
  */
@@ -69,8 +71,11 @@ export async function configureClaude(cwd: string): Promise<void> {
   const destPath = path.join(cwd, ".claude");
   const ctx = AI_TOOLS["claude-code"].templateContext;
 
-  // Copy platform-specific files (agents, hooks, settings)
-  await copyDirFiltered(sourcePath, destPath, ["commands"]);
+  // Copy platform-specific files (agents, settings) — hooks come from shared-hooks
+  await copyDirFiltered(sourcePath, destPath, ["commands", "hooks"]);
+
+  // Shared hook scripts (same source as 7 other platforms)
+  await writeSharedHooks(path.join(destPath, "hooks"));
 
   // start + finish-work as slash commands
   const commandsDir = path.join(destPath, "commands", "trellis");

@@ -45,7 +45,6 @@ import {
 // Platform-specific template content (hooks, agents, settings — NOT commands/skills)
 import {
   getAllAgents as getClaudeAgents,
-  getAllHooks as getClaudeHooks,
   getSettingsTemplate as getClaudeSettings,
 } from "../templates/claude/index.js";
 import {
@@ -150,8 +149,8 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
       for (const agent of getClaudeAgents()) {
         files.set(`.claude/agents/${agent.name}.md`, agent.content);
       }
-      for (const hook of getClaudeHooks()) {
-        files.set(`.claude/${hook.targetPath}`, hook.content);
+      for (const [k, v] of collectSharedHooks(".claude/hooks")) {
+        files.set(k, v);
       }
       const settings = getClaudeSettings();
       files.set(

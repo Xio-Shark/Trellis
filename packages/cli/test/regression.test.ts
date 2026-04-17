@@ -31,9 +31,9 @@ import { PATHS } from "../src/constants/paths.js";
 import {
   settingsTemplate as claudeSettingsTemplate,
   getAllAgents as getClaudeAgents,
-  getAllHooks as getClaudeHooks,
 } from "../src/templates/claude/index.js";
 import { getAllHooks as getCodexHooks } from "../src/templates/codex/index.js";
+import { getSharedHookScripts } from "../src/templates/shared-hooks/index.js";
 import {
   getCommandTemplates,
   getSkillTemplates,
@@ -775,8 +775,8 @@ describe("regression: SessionStart reinject on clear/compact (MIN-231)", () => {
 describe("regression: current-task path normalization", () => {
   let tmpDir: string;
   const pythonCmd = process.platform === "win32" ? "python" : "python3";
-  const claudeSessionStart = getClaudeHooks().find(
-    (hook) => hook.targetPath === "hooks/session-start.py",
+  const claudeSessionStart = getSharedHookScripts().find(
+    (hook) => hook.name === "session-start.py",
   )?.content;
   const codexSessionStart = getCodexHooks().find(
     (hook) => hook.name === "session-start.py",
@@ -937,8 +937,8 @@ describe("regression: backslash in markdown templates (beta.12)", () => {
     }
   });
 
-  it("[beta.12] Claude hook templates do not contain problematic backslash sequences", () => {
-    const hooks = getClaudeHooks();
+  it("[beta.12] Shared hook templates do not contain problematic backslash sequences", () => {
+    const hooks = getSharedHookScripts();
     for (const hook of hooks) {
       expect(hook.content).not.toContain("\\--");
       expect(hook.content).not.toContain("\\->");

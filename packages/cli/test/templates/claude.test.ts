@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   settingsTemplate,
   getAllAgents,
-  getAllHooks,
   getSettingsTemplate,
 } from "../../src/templates/claude/index.js";
 
@@ -69,21 +68,7 @@ describe("getAllAgents", () => {
 });
 
 // =============================================================================
-// getAllHooks — reads hook templates
-// =============================================================================
-
-describe("getAllHooks", () => {
-  it("each hook has targetPath and content", () => {
-    const hooks = getAllHooks();
-    for (const hook of hooks) {
-      expect(hook.targetPath.startsWith("hooks/")).toBe(true);
-      expect(hook.content.length).toBeGreaterThan(0);
-    }
-  });
-});
-
-// =============================================================================
-// getSettingsTemplate — returns settings as HookTemplate
+// getSettingsTemplate — returns settings as SettingsTemplate
 // =============================================================================
 
 describe("getSettingsTemplate", () => {

@@ -1,14 +1,12 @@
 /**
  * Claude Code templates
  *
- * These are GENERIC templates for user projects.
- * Do NOT use Trellis project's own .claude/ directory (which may be customized).
- *
  * Directory structure:
  *   claude/
- *   ├── agents/         # Multi-agent pipeline agents
- *   ├── hooks/          # Context injection hooks
+ *   ├── agents/         # Sub-agent definitions
  *   └── settings.json   # Settings configuration
+ *
+ * Hooks come from shared-hooks/ (unified with other platforms).
  */
 
 import { readdirSync, readFileSync } from "node:fs";
@@ -30,30 +28,18 @@ function listFiles(dir: string): string[] {
   }
 }
 
-// Settings
 export const settingsTemplate = readTemplate("settings.json");
 
-/**
- * Agent template with name and content
- */
 export interface AgentTemplate {
   name: string;
   content: string;
 }
 
-/**
- * Hook template with target path and content
- */
-export interface HookTemplate {
+export interface SettingsTemplate {
   targetPath: string;
   content: string;
 }
 
-// Commands are now sourced from common/ templates (see templates/common/index.ts)
-
-/**
- * Get all agent templates
- */
 export function getAllAgents(): AgentTemplate[] {
   const agents: AgentTemplate[] = [];
   const files = listFiles("agents");
@@ -69,25 +55,7 @@ export function getAllAgents(): AgentTemplate[] {
   return agents;
 }
 
-/**
- * Get all hook templates
- */
-export function getAllHooks(): HookTemplate[] {
-  const hooks: HookTemplate[] = [];
-  const files = listFiles("hooks");
-
-  for (const file of files) {
-    const content = readTemplate(`hooks/${file}`);
-    hooks.push({ targetPath: `hooks/${file}`, content });
-  }
-
-  return hooks;
-}
-
-/**
- * Get settings template
- */
-export function getSettingsTemplate(): HookTemplate {
+export function getSettingsTemplate(): SettingsTemplate {
   return {
     targetPath: "settings.json",
     content: settingsTemplate,
