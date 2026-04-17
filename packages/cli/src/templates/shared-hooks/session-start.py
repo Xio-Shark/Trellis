@@ -297,11 +297,37 @@ def _resolve_spec_scope(
     return None  # Unknown scope type: full scan
 
 
-def _build_workflow_toc(workflow_path: Path) -> str:
-    """Build a compact section index for workflow.md (lazy-load the full file on demand).
+def _extract_phase_index(content: str) -> str:
+    """Extract the `## Phase Index` section from workflow.md content.
 
-    Replaces full-file injection to keep additionalContext payload small.
-    The full file is accessible via: Read tool on .trellis/workflow.md
+    Returns the section including header + body, ending at the next `## ` heading.
+    Empty string if not found.
+    """
+    lines = content.splitlines()
+    start: int | None = None
+    end: int = len(lines)
+    for i, line in enumerate(lines):
+        if line.strip() == "## Phase Index":
+            start = i
+            continue
+        if start is not None and i > start and line.startswith("## "):
+            end = i
+            break
+    if start is None:
+        return ""
+    return "\n".join(lines[start:end]).rstrip()
+
+
+def _build_workflow_overview(workflow_path: Path) -> str:
+    """Inject a compact workflow overview for the session.
+
+    Contents:
+      1. Section index (all `## ` headings — navigation)
+      2. Phase Index section (rules, skill routing table, anti-rationalization table)
+
+    Full workflow.md is still available via Read tool for step-level detail.
+    Per-step detail is lazy-loaded via:
+      python3 ./.trellis/scripts/get_context.py --mode phase --step <X.X>
     """
     content = read_file(workflow_path)
     if not content:
@@ -310,16 +336,18 @@ def _build_workflow_toc(workflow_path: Path) -> str:
     toc_lines = [
         "# Development Workflow — Section Index",
         "Full guide: .trellis/workflow.md  (read on demand)",
+        "Step detail: python3 ./.trellis/scripts/get_context.py --mode phase --step <X.X>",
         "",
+        "## Table of Contents",
     ]
     for line in content.splitlines():
         if line.startswith("## "):
             toc_lines.append(line)
 
-    toc_lines += [
-        "",
-        "To read a section: use the Read tool on .trellis/workflow.md",
-    ]
+    phase_index = _extract_phase_index(content)
+    if phase_index:
+        toc_lines += ["", "---", "", phase_index]
+
     return "\n".join(toc_lines)
 
 
@@ -373,7 +401,7 @@ Read and follow all instructions below carefully.
     output.write("\n</current-state>\n\n")
 
     output.write("<workflow>\n")
-    output.write(_build_workflow_toc(trellis_dir / "workflow.md"))
+    output.write(_build_workflow_overview(trellis_dir / "workflow.md"))
     output.write("\n</workflow>\n\n")
 
     output.write("<guidelines>\n")

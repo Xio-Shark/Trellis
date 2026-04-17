@@ -8,7 +8,11 @@ import {
   getHooksConfig,
 } from "../templates/codex/index.js";
 import { ensureDir, writeFile } from "../utils/file-writer.js";
-import { resolvePlaceholders, resolveAllAsSkills } from "./shared.js";
+import {
+  resolvePlaceholders,
+  resolveAllAsSkills,
+  applyPullBasedPreludeToml,
+} from "./shared.js";
 
 /**
  * Configure Codex by writing:
@@ -43,7 +47,10 @@ export async function configureCodex(cwd: string): Promise<void> {
   const codexAgentsRoot = path.join(codexRoot, "agents");
   ensureDir(codexAgentsRoot);
 
-  for (const agent of getAllAgents()) {
+  // Codex is a class-2 (pull-based) platform: PreToolUse only fires for Bash
+  // and CollabAgentSpawn hook is not implemented (#15486). Sub-agents must
+  // load Trellis context themselves via the prelude injected here.
+  for (const agent of applyPullBasedPreludeToml(getAllAgents())) {
     await writeFile(
       path.join(codexAgentsRoot, `${agent.name}.toml`),
       agent.content,

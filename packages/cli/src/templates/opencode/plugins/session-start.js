@@ -227,20 +227,39 @@ Read and follow all instructions below carefully.
     }
   }
 
-  // 3. Workflow Guide (ToC only — lazy-load the full file on demand)
+  // 3. Workflow Guide (ToC + Phase Index — full guide + per-step detail on demand)
   const workflowContent = ctx.readProjectFile(".trellis/workflow.md")
   if (workflowContent) {
-    const tocLines = [
+    const allLines = workflowContent.split("\n")
+    const overviewLines = [
       "# Development Workflow — Section Index",
       "Full guide: .trellis/workflow.md  (read on demand)",
+      "Step detail: python3 ./.trellis/scripts/get_context.py --mode phase --step <X.X>",
       "",
+      "## Table of Contents",
     ]
-    for (const line of workflowContent.split("\n")) {
-      if (line.startsWith("## ")) tocLines.push(line)
+    for (const line of allLines) {
+      if (line.startsWith("## ")) overviewLines.push(line)
     }
-    tocLines.push("", "To read a section: use the Read tool on .trellis/workflow.md")
+
+    // Extract the "## Phase Index" section
+    let phaseStart = -1
+    let phaseEnd = allLines.length
+    for (let i = 0; i < allLines.length; i++) {
+      if (allLines[i].trim() === "## Phase Index") {
+        phaseStart = i
+      } else if (phaseStart !== -1 && i > phaseStart && allLines[i].startsWith("## ")) {
+        phaseEnd = i
+        break
+      }
+    }
+    if (phaseStart !== -1) {
+      overviewLines.push("", "---", "")
+      overviewLines.push(...allLines.slice(phaseStart, phaseEnd))
+    }
+
     parts.push("<workflow>")
-    parts.push(tocLines.join("\n"))
+    parts.push(overviewLines.join("\n").trimEnd())
     parts.push("</workflow>")
   }
 

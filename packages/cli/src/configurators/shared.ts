@@ -100,6 +100,8 @@ export function resolvePlaceholders(
 const SKILL_DESCRIPTIONS: Record<string, string> = {
   start:
     "Initializes an AI development session by reading workflow guides, developer identity, git status, active tasks, and project guidelines from .trellis/. Classifies incoming tasks and routes to brainstorm, direct edit, or task workflow. Use when beginning a new coding session, resuming work, starting a new task, or re-establishing project context.",
+  continue:
+    "Resume work on the current task. Loads the workflow Phase Index, figures out which phase/step to pick up at, then pulls the step-level detail via get_context.py --mode phase. Use when coming back to an in-progress task and you need to know what to do next.",
   "finish-work":
     "Wrap up the current session: verify quality gate passed, remind user to commit, archive completed tasks, and record session progress to the developer journal. Use when done coding and ready to end the session.",
   "before-dev":
@@ -140,6 +142,7 @@ export function wrapWithSkillFrontmatter(
 import path from "node:path";
 import { ensureDir, writeFile } from "../utils/file-writer.js";
 import {
+  type CommonTemplate,
   getCommandTemplates,
   getSkillTemplates,
 } from "../templates/common/index.js";
@@ -151,11 +154,35 @@ export interface ResolvedTemplate {
 }
 
 /**
+ * Filter command templates based on platform capabilities.
+ *
+ * `start.md` is only emitted for agent-less platforms (kilo, antigravity,
+ * windsurf). On agent-capable platforms, the session-start hook / plugin
+ * already injects the workflow overview, so a user-facing `start` command
+ * would be redundant.
+ */
+function filterCommands(
+  templates: CommonTemplate[],
+  ctx: TemplateContext,
+): CommonTemplate[] {
+  if (ctx.agentCapable) {
+    return templates.filter((t) => t.name !== "start");
+  }
+  return templates;
+}
+
+/**
  * Resolve ALL templates as skills with trellis- prefix.
  * Used by skill-only platforms (Kiro, Qoder, Codex) where everything is a skill.
+ *
+ * `start` is filtered out on agent-capable platforms — the session-start hook
+ * injects the workflow overview instead.
  */
 export function resolveAllAsSkills(ctx: TemplateContext): ResolvedTemplate[] {
-  const templates = [...getCommandTemplates(), ...getSkillTemplates()];
+  const templates = [
+    ...filterCommands(getCommandTemplates(), ctx),
+    ...getSkillTemplates(),
+  ];
   return templates.map((tmpl) => ({
     name: `trellis-${tmpl.name}`,
     content: wrapWithSkillFrontmatter(
@@ -166,11 +193,13 @@ export function resolveAllAsSkills(ctx: TemplateContext): ResolvedTemplate[] {
 }
 
 /**
- * Resolve only start + finish-work as plain commands (no wrapping).
- * Used by "both" platforms for the 2 user-ritual commands.
+ * Resolve command templates as plain commands (no wrapping).
+ * Used by "both" platforms for the user-ritual commands.
+ *
+ * `start` is filtered out on agent-capable platforms.
  */
 export function resolveCommands(ctx: TemplateContext): ResolvedTemplate[] {
-  return getCommandTemplates().map((tmpl) => ({
+  return filterCommands(getCommandTemplates(), ctx).map((tmpl) => ({
     name: tmpl.name,
     content: resolvePlaceholders(tmpl.content, ctx),
   }));
@@ -220,11 +249,138 @@ export async function writeAgents(
 }
 
 /** Write shared hook scripts to a hooks directory */
-export async function writeSharedHooks(hooksDir: string): Promise<void> {
+export async function writeSharedHooks(
+  hooksDir: string,
+  options: { exclude?: readonly string[] } = {},
+): Promise<void> {
   const { getSharedHookScripts } =
     await import("../templates/shared-hooks/index.js");
+  const exclude = new Set(options.exclude ?? []);
   ensureDir(hooksDir);
   for (const hook of getSharedHookScripts()) {
+    if (exclude.has(hook.name)) continue;
     await writeFile(path.join(hooksDir, hook.name), hook.content);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Pull-based sub-agent prelude (for class-2 platforms whose hook can't
+// inject sub-agent prompts: gemini, qoder, codex, copilot)
+//
+// Only implement & check need task-level context (prd + jsonl specs).
+// research is orthogonal: it searches the spec tree and doesn't depend on an
+// active task. Hook-based platforms mirror this (their `get_research_context`
+// injects a spec-tree overview, not prd/jsonl). We leave research untouched.
+// ---------------------------------------------------------------------------
+
+export type SubAgentType = "implement" | "check";
+
+/** Build the standard "load Trellis context first" prelude block. */
+export function buildPullBasedPrelude(agentType: SubAgentType): string {
+  const jsonl = agentType === "check" ? "check.jsonl" : "implement.jsonl";
+
+  return `## Required: Load Trellis Context First
+
+This platform does NOT auto-inject task context via hook. Before doing anything else, you MUST load context yourself:
+
+1. Read \`.trellis/.current-task\` to find the current task path (e.g. \`.trellis/tasks/04-17-foo/\`).
+2. Read the task's \`prd.md\` (requirements) and \`info.md\` if it exists (technical design).
+3. Read \`<task-path>/${jsonl}\` — JSONL list of dev spec files relevant to this agent.
+4. For each entry in the JSONL, Read its \`file\` path — these are the dev specs you must follow.
+
+If \`.current-task\` is missing or the task has no \`prd.md\`, ask the user what to work on; do NOT proceed without context.
+
+---
+
+`;
+}
+
+/** Insert prelude into a markdown agent definition (after YAML frontmatter). */
+export function injectPullBasedPreludeMarkdown(
+  content: string,
+  agentType: SubAgentType,
+): string {
+  const prelude = buildPullBasedPrelude(agentType);
+  const lines = content.split("\n");
+
+  if (lines[0] !== "---") {
+    return prelude + content;
+  }
+  // Find closing frontmatter
+  let close = -1;
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i] === "---") {
+      close = i;
+      break;
+    }
+  }
+  if (close === -1) {
+    return prelude + content;
+  }
+  const head = lines.slice(0, close + 1).join("\n");
+  const tail = lines.slice(close + 1).join("\n");
+  // Skip leading blank lines in tail to keep things tidy
+  const tailTrimmed = tail.replace(/^\n+/, "");
+  return `${head}\n\n${prelude}${tailTrimmed}`;
+}
+
+/** Insert prelude into a TOML agent (codex `developer_instructions`). */
+export function injectPullBasedPreludeToml(
+  content: string,
+  agentType: SubAgentType,
+): string {
+  const prelude = buildPullBasedPrelude(agentType);
+  // Match: developer_instructions = """  followed by newline
+  const re = /(developer_instructions\s*=\s*""")(\r?\n)/;
+  if (!re.test(content)) {
+    return content;
+  }
+  return content.replace(re, `$1$2${prelude}`);
+}
+
+/** Best-effort detect agent type from filename ("implement.md" → "implement").
+ *  Returns null for research and unknown names — they skip the prelude.
+ */
+export function detectSubAgentType(name: string): SubAgentType | null {
+  const base = name.replace(/\.(md|toml|prompt\.md)$/, "");
+  if (base === "implement" || base === "check") {
+    return base;
+  }
+  return null;
+}
+
+/** Shared transform: given a list of agents, prepend pull-based prelude to
+ *  implement/check definitions. Used by both configurator (init-time write)
+ *  and collectPlatformTemplates (update-time hash comparison) so the two
+ *  code paths always agree on what's on disk.
+ */
+export interface AgentContent {
+  name: string;
+  content: string;
+}
+
+export function applyPullBasedPreludeMarkdown(
+  agents: readonly AgentContent[],
+): AgentContent[] {
+  return agents.map((a) => {
+    const t = detectSubAgentType(a.name);
+    if (!t) return { ...a };
+    return {
+      ...a,
+      content: injectPullBasedPreludeMarkdown(a.content, t),
+    };
+  });
+}
+
+export function applyPullBasedPreludeToml(
+  agents: readonly AgentContent[],
+): AgentContent[] {
+  return agents.map((a) => {
+    const t = detectSubAgentType(a.name);
+    if (!t) return { ...a };
+    return {
+      ...a,
+      content: injectPullBasedPreludeToml(a.content, t),
+    };
+  });
 }

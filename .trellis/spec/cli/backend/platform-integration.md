@@ -289,23 +289,96 @@ These are now **automatically derived** from the registry:
 
 ## Command Format by Platform
 
-| Platform | Command Format | File Format | Example |
-|----------|---------------|-------------|---------|
-| Claude Code | `/trellis:xxx` | Markdown (`.md`) | `/trellis:start` |
-| Cursor | `/trellis-xxx` | Markdown (`.md`) | `/trellis-start` |
-| OpenCode | `/trellis:xxx` | Markdown (`.md`) | `/trellis:start` |
-| Gemini CLI | `/trellis:xxx` | TOML (`.toml`) | `/trellis:start` |
-| Kilo | `/<workflow-name>` | Markdown (`.md`) | `/start` |
-| Codex | `$<skill-name>` / `/skills` | Markdown (`SKILL.md`) | `$start` |
-| Kiro | `$<skill-name>` / `/skills` | Markdown (`SKILL.md`) | `$start` |
-| Qoder | `$<skill-name>` / `/skills` | Markdown (`SKILL.md`) | `$start` |
-| Antigravity | `/<workflow-name>` | Markdown (`.md`) | `/start` |
-| CodeBuddy | `/trellis:xxx` | Markdown (`.md`) | `/trellis:start` |
-| Copilot | `/trellis:xxx` | Markdown (`.prompt.md`) | `/trellis:start` |
-| Droid | `/trellis:xxx` | Markdown (`.md`) | `/trellis:start` |
-| Windsurf | `/trellis-xxx` | Markdown (`.md`) + `SKILL.md` | `/trellis-start` |
+| Platform | Command Format | File Format | Example (finish-work) |
+|----------|---------------|-------------|-----------------------|
+| Claude Code | `/trellis:xxx` | Markdown (`.md`) | `/trellis:finish-work` |
+| Cursor | `/trellis-xxx` | Markdown (`.md`) | `/trellis-finish-work` |
+| OpenCode | `/trellis:xxx` | Markdown (`.md`) | `/trellis:finish-work` |
+| Gemini CLI | `/trellis:xxx` | TOML (`.toml`) | `/trellis:finish-work` |
+| Kilo | `/<workflow-name>` | Markdown (`.md`) | `/finish-work` |
+| Codex | `$<skill-name>` / `/skills` | Markdown (`SKILL.md`) | `$finish-work` |
+| Kiro | `$<skill-name>` / `/skills` | Markdown (`SKILL.md`) | `$finish-work` |
+| Qoder | `$<skill-name>` / `/skills` | Markdown (`SKILL.md`) | `$finish-work` |
+| Antigravity | `/<workflow-name>` | Markdown (`.md`) | `/finish-work` |
+| CodeBuddy | `/trellis:xxx` | Markdown (`.md`) | `/trellis:finish-work` |
+| Copilot | `/trellis:xxx` | Markdown (`.prompt.md`) | `/trellis:finish-work` |
+| Droid | `/trellis:xxx` | Markdown (`.md`) | `/trellis:finish-work` |
+| Windsurf | `/trellis-xxx` | Markdown (`.md`) + `SKILL.md` | `/trellis-finish-work` |
 
 When creating platform templates, ensure references match the platform's interaction format and file format.
+
+## Command Set by Platform Capability
+
+Commands emitted by `resolveCommands(ctx)` / `resolveAllAsSkills(ctx)` in `src/configurators/shared.ts`:
+
+| Command | Agent-capable platforms (10) | Agent-less platforms (3) |
+|---------|------------------------------|--------------------------|
+| `start` | ❌ not emitted (hook/plugin injects workflow overview on session start) | ✅ emitted — manual equivalent of session-start hook |
+| `continue` | ✅ emitted | ✅ emitted |
+| `finish-work` | ✅ emitted | ✅ emitted |
+
+**Rule**: filter is by `ctx.agentCapable`, not `hasHooks`. `agentCapable` is authoritative because it also correlates with "has a session-start mechanism" (Python hook or JS plugin).
+
+- Agent-capable: `claude-code, cursor, opencode, codex, kiro, gemini, qoder, codebuddy, copilot, droid`
+- Agent-less: `kilo, antigravity, windsurf`
+
+## Subagent Context Injection: Hook-based vs Pull-based
+
+Trellis sub-agents (implement / check / research) need task context (`prd.md` + spec files listed in `implement.jsonl` / `check.jsonl`) at startup. There are two delivery modes depending on the platform's hook capabilities:
+
+### Mode A — Hook-inject (6 platforms)
+
+Platform's PreToolUse-equivalent hook can fire on the sub-agent spawn tool AND modify the tool's prompt input. Trellis's `inject-subagent-context.py` (or OpenCode's plugin) reads `prd.md` + the JSONL-referenced spec files and rewrites the sub-agent's initial prompt.
+
+| Platform | Hook event | Mechanism |
+|---|---|---|
+| Claude Code | `PreToolUse` + matcher `Task`/`Agent` | `updatedInput.prompt` |
+| CodeBuddy | `PreToolUse` + matcher `Task` | `modifiedInput.prompt` (same as Claude) |
+| Cursor | `preToolUse` + matcher `Task` | `updated_input.prompt` (fixed 2026-04-07) |
+| Factory Droid | `PreToolUse` + matcher `Task` | `updatedInput.prompt` |
+| Kiro | per-agent `agentSpawn` hook | direct stdout context |
+| OpenCode | JS plugin `tool.execute.before` | `args.prompt` mutation |
+
+### Mode B — Pull-based (4 platforms)
+
+Platform's hook either doesn't expose a sub-agent spawn event or can't modify the prompt. Sub-agents must Read context themselves at startup. Trellis injects a "Required: Load Trellis Context First" prelude into each sub-agent definition file.
+
+| Platform | Why hook-inject is unavailable |
+|---|---|
+| Gemini CLI | `BeforeTool` fires but [#18128](https://github.com/google-gemini/gemini-cli/issues/18128) hides chain-of-thought; reliability margin too thin |
+| Qoder | No `Task` tool concept; `SubagentStart` input has no `prompt` field; Context Isolation |
+| Codex | `PreToolUse` only fires for Bash; `CollabAgentSpawn` hook unimplemented ([#15486](https://github.com/openai/codex/issues/15486)) |
+| Copilot | `preToolUse` doesn't enforce on subagents ([#2392](https://github.com/github/copilot-cli/issues/2392), [#2540](https://github.com/github/copilot-cli/issues/2540)) |
+
+### Implementation
+
+Pull-based prelude is injected by `injectPullBasedPreludeMarkdown()` / `injectPullBasedPreludeToml()` in `src/configurators/shared.ts`. Each pull-based platform's configurator:
+
+1. Calls `writeSharedHooks(dir, { exclude: ["inject-subagent-context.py"] })` — no inject hook installed
+2. Calls `detectSubAgentType(name)` → `injectPullBasedPrelude*()` on every sub-agent definition before writing
+
+Hook-inject platforms keep using `writeSharedHooks(dir)` and their hook-config JSON references `inject-subagent-context.py` as before.
+
+### Audit reference
+
+Full reliability audit (per-platform evidence, GitHub issues, Cursor staff confirmations, Claude Code canary test) lives at:
+`.trellis/tasks/04-17-subagent-hook-reliability-audit/research/platform-hook-audit.md`
+
+---
+
+## Workflow Step Detail Loading
+
+`.trellis/workflow.md` contains per-phase step detail under `#### X.X` headings, with per-platform variants demarcated by `[Platform Name, ...]` … `[/Platform Name, ...]` blocks.
+
+Load step detail on demand (both commands and hooks use this):
+
+```bash
+python3 ./.trellis/scripts/get_context.py --mode phase                                   # Phase Index (no --step)
+python3 ./.trellis/scripts/get_context.py --mode phase --step 1.1                        # Step 1.1 (all platforms)
+python3 ./.trellis/scripts/get_context.py --mode phase --step 1.2 --platform cursor      # Step 1.2, cursor-filtered
+```
+
+Platform markers are filtered by matching `[...]` block membership against the given platform name (case-insensitive; accepts `claude-code` and `Claude Code`). Lines outside any marker block are always kept.
 
 ---
 

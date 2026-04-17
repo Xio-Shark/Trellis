@@ -6,6 +6,7 @@ import {
   resolvePlaceholders,
   resolveCommands,
   resolveSkills,
+  applyPullBasedPreludeMarkdown,
 } from "./shared.js";
 import { getSharedHookScripts } from "../templates/shared-hooks/index.js";
 
@@ -42,10 +43,12 @@ export async function configureCopilot(cwd: string): Promise<void> {
 
   const agentsDir = path.join(cwd, ".github", "agents");
   ensureDir(agentsDir);
-  // Copilot agents come from Claude's agent definitions (same content)
+  // Copilot is a class-2 (pull-based) platform: hook events don't reliably
+  // fire for sub-agents (#2392/#2540). Reuse Cursor's agent content and
+  // prepend the pull-based prelude so sub-agents Read Trellis context themselves.
   const { getAllAgents: getCursorAgents } =
     await import("../templates/cursor/index.js");
-  for (const agent of getCursorAgents()) {
+  for (const agent of applyPullBasedPreludeMarkdown(getCursorAgents())) {
     await writeFile(
       path.join(agentsDir, `${agent.name}.agent.md`),
       agent.content,
@@ -59,10 +62,11 @@ export async function configureCopilot(cwd: string): Promise<void> {
     await writeFile(path.join(hooksDir, hook.name), hook.content);
   }
 
-  // Shared hook scripts (inject-subagent-context, statusline, etc.)
+  // Shared hook scripts: skip session-start (Copilot has its own) and
+  // inject-subagent-context (Copilot is pull-based, hook can't reach sub-agents)
   for (const hook of getSharedHookScripts()) {
-    // Skip session-start.py — Copilot has its own version
     if (hook.name === "session-start.py") continue;
+    if (hook.name === "inject-subagent-context.py") continue;
     await writeFile(path.join(hooksDir, hook.name), hook.content);
   }
 

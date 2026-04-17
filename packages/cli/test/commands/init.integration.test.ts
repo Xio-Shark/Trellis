@@ -135,9 +135,20 @@ describe("init() integration", () => {
     await init({ yes: true, codex: true });
 
     expect(fs.existsSync(path.join(tmpDir, ".agents", "skills"))).toBe(true);
+    // Codex is agent-capable → trellis-start skill not emitted.
     expect(
       fs.existsSync(
         path.join(tmpDir, ".agents", "skills", "trellis-start", "SKILL.md"),
+      ),
+    ).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".agents", "skills", "trellis-finish-work", "SKILL.md"),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".agents", "skills", "trellis-continue", "SKILL.md"),
       ),
     ).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".codex", "config.toml"))).toBe(true);
@@ -164,8 +175,15 @@ describe("init() integration", () => {
     await init({ yes: true, kiro: true });
 
     expect(fs.existsSync(path.join(tmpDir, ".kiro", "skills"))).toBe(true);
+    // Kiro is agent-capable → trellis-start skill not emitted.
     expect(
       fs.existsSync(path.join(tmpDir, ".kiro", "skills", "trellis-start", "SKILL.md")),
+    ).toBe(false);
+    expect(
+      fs.existsSync(path.join(tmpDir, ".kiro", "skills", "trellis-finish-work", "SKILL.md")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(tmpDir, ".kiro", "skills", "trellis-continue", "SKILL.md")),
     ).toBe(true);
     expect(
       fs.existsSync(path.join(tmpDir, ".kiro", "skills", "trellis-check", "SKILL.md")),
@@ -209,9 +227,20 @@ describe("init() integration", () => {
     expect(
       fs.existsSync(path.join(tmpDir, ".qoder", "skills")),
     ).toBe(true);
+    // Qoder is agent-capable → trellis-start skill not emitted.
     expect(
       fs.existsSync(
         path.join(tmpDir, ".qoder", "skills", "trellis-start", "SKILL.md"),
+      ),
+    ).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".qoder", "skills", "trellis-finish-work", "SKILL.md"),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".qoder", "skills", "trellis-continue", "SKILL.md"),
       ),
     ).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(false);
@@ -224,9 +253,20 @@ describe("init() integration", () => {
     expect(
       fs.existsSync(path.join(tmpDir, ".codebuddy", "commands", "trellis")),
     ).toBe(true);
+    // CodeBuddy is agent-capable → start.md not emitted.
     expect(
       fs.existsSync(
         path.join(tmpDir, ".codebuddy", "commands", "trellis", "start.md"),
+      ),
+    ).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".codebuddy", "commands", "trellis", "finish-work.md"),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".codebuddy", "commands", "trellis", "continue.md"),
       ),
     ).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(false);
@@ -237,8 +277,15 @@ describe("init() integration", () => {
     await init({ yes: true, copilot: true });
 
     expect(fs.existsSync(path.join(tmpDir, ".github", "prompts"))).toBe(true);
+    // Copilot is agent-capable → start.prompt.md not emitted.
     expect(
       fs.existsSync(path.join(tmpDir, ".github", "prompts", "start.prompt.md")),
+    ).toBe(false);
+    expect(
+      fs.existsSync(path.join(tmpDir, ".github", "prompts", "finish-work.prompt.md")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(tmpDir, ".github", "prompts", "continue.prompt.md")),
     ).toBe(true);
 
     expect(fs.existsSync(path.join(tmpDir, ".github", "copilot", "hooks"))).toBe(
@@ -265,7 +312,9 @@ describe("init() integration", () => {
       fs.readFileSync(hashFile, "utf-8"),
     ) as Record<string, string>;
     const trackedPaths = Object.keys(hashes).map((p) => p.replace(/\\/g, "/"));
-    expect(trackedPaths).toContain(".github/prompts/start.prompt.md");
+    expect(trackedPaths).not.toContain(".github/prompts/start.prompt.md");
+    expect(trackedPaths).toContain(".github/prompts/finish-work.prompt.md");
+    expect(trackedPaths).toContain(".github/prompts/continue.prompt.md");
     expect(trackedPaths).toContain(".github/copilot/hooks.json");
     expect(trackedPaths).toContain(".github/hooks/trellis.json");
 
@@ -276,16 +325,25 @@ describe("init() integration", () => {
   it("#3e gemini platform creates .gemini/commands/trellis", async () => {
     await init({ yes: true, gemini: true });
     expect(fs.existsSync(path.join(tmpDir, ".gemini", "commands", "trellis"))).toBe(true);
-    expect(fs.existsSync(path.join(tmpDir, ".gemini", "commands", "trellis", "start.toml"))).toBe(true);
+    // Gemini is agent-capable → start.toml not emitted.
+    expect(fs.existsSync(path.join(tmpDir, ".gemini", "commands", "trellis", "start.toml"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".gemini", "commands", "trellis", "finish-work.toml"))).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, ".gemini", "commands", "trellis", "continue.toml"))).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(false);
   });
 
   it("#3j droid platform creates commands + skills", async () => {
     await init({ yes: true, droid: true });
-    // Commands (start, finish-work)
+    // Droid is agent-capable → start.md not emitted.
     expect(
       fs.existsSync(path.join(tmpDir, ".factory", "commands", "trellis", "start.md")),
+    ).toBe(false);
+    expect(
+      fs.existsSync(path.join(tmpDir, ".factory", "commands", "trellis", "finish-work.md")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(tmpDir, ".factory", "commands", "trellis", "continue.md")),
     ).toBe(true);
     // Skills (trellis- prefix)
     expect(

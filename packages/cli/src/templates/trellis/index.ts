@@ -52,6 +52,9 @@ export const commonSessionContext = readTemplate(
 export const commonPackagesContext = readTemplate(
   "scripts/common/packages_context.py",
 );
+export const commonWorkflowPhase = readTemplate(
+  "scripts/common/workflow_phase.py",
+);
 
 // Python scripts - main
 export const getDeveloperScript = readTemplate("scripts/get_developer.py");
@@ -95,6 +98,7 @@ export function getAllScripts(): Map<string, string> {
   scripts.set("common/task_store.py", commonTaskStore);
   scripts.set("common/session_context.py", commonSessionContext);
   scripts.set("common/packages_context.py", commonPackagesContext);
+  scripts.set("common/workflow_phase.py", commonWorkflowPhase);
 
   // Main
   scripts.set("get_developer.py", getDeveloperScript);

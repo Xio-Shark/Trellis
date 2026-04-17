@@ -336,7 +336,10 @@ describe("collectPlatformTemplates", () => {
   it("copilot collectTemplates includes both tracked and discovery config files", () => {
     const result = collectPlatformTemplates("copilot");
     expect(result).toBeInstanceOf(Map);
-    expect(result?.has(".github/prompts/start.prompt.md")).toBe(true);
+    // Copilot is agent-capable → start.prompt.md is not generated.
+    expect(result?.has(".github/prompts/start.prompt.md")).toBe(false);
+    expect(result?.has(".github/prompts/finish-work.prompt.md")).toBe(true);
+    expect(result?.has(".github/prompts/continue.prompt.md")).toBe(true);
     expect(result?.has(".github/copilot/hooks.json")).toBe(true);
     expect(result?.has(".github/hooks/trellis.json")).toBe(true);
   });

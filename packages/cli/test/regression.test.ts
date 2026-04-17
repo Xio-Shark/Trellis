@@ -50,8 +50,10 @@ import {
 } from "../src/templates/trellis/index.js";
 import {
   collectPlatformTemplates,
+  configurePlatform,
   PLATFORM_IDS,
 } from "../src/configurators/index.js";
+import { setWriteMode } from "../src/utils/file-writer.js";
 import { guidesIndexContent, workspaceIndexContent } from "../src/templates/markdown/index.js";
 import * as markdownExports from "../src/templates/markdown/index.js";
 import { TrellisContext } from "../src/templates/opencode/lib/trellis-context.js";
@@ -1371,7 +1373,11 @@ describe("regression: collectTemplates paths match init directory structure (0.3
 
     const keys = [...templates.keys()];
     expect(keys.some((key) => key.startsWith(".github/prompts/"))).toBe(true);
-    expect(keys).toContain(".github/prompts/start.prompt.md");
+    // Copilot is agent-capable → start.prompt.md is not generated;
+    // session-start hook injects workflow overview instead.
+    expect(keys).not.toContain(".github/prompts/start.prompt.md");
+    expect(keys).toContain(".github/prompts/finish-work.prompt.md");
+    expect(keys).toContain(".github/prompts/continue.prompt.md");
     expect(keys.some((key) => key.startsWith(".github/copilot/hooks/"))).toBe(
       true,
     );
@@ -1494,5 +1500,169 @@ describe("regression: cross-platform-thinking-guide dead code removed (0.3.1)", 
   it("[0.3.1] guides index.md does not reference cross-platform-thinking-guide", () => {
     expect(guidesIndexContent).not.toContain("cross-platform-thinking-guide");
     expect(guidesIndexContent).not.toContain("Cross-Platform Thinking Guide");
+  });
+});
+
+// =============================================================================
+// Pull-based Class-2 Platforms (0.5)
+// =============================================================================
+
+describe("regression: class-2 platforms use pull-based sub-agent context", () => {
+  // Class 2: gemini, qoder, codex, copilot — hooks can't reliably inject
+  // sub-agent prompts, so sub-agents Read jsonl/prd themselves.
+  // implement/check get the pull-based prelude; research does not (it
+  // searches the spec tree and has no task-level context dependency).
+  const class2 = [
+    {
+      id: "qoder" as const,
+      hooksDir: ".qoder/hooks",
+      preludeAgents: [".qoder/agents/implement.md", ".qoder/agents/check.md"],
+      nonPreludeAgents: [".qoder/agents/research.md"],
+    },
+    {
+      id: "gemini" as const,
+      hooksDir: ".gemini/hooks",
+      preludeAgents: [".gemini/agents/implement.md", ".gemini/agents/check.md"],
+      nonPreludeAgents: [".gemini/agents/research.md"],
+    },
+    {
+      id: "codex" as const,
+      hooksDir: ".codex/hooks",
+      preludeAgents: [
+        ".codex/agents/implement.toml",
+        ".codex/agents/check.toml",
+      ],
+      nonPreludeAgents: [".codex/agents/research.toml"],
+    },
+    {
+      id: "copilot" as const,
+      hooksDir: ".github/copilot/hooks",
+      preludeAgents: [
+        ".github/agents/implement.agent.md",
+        ".github/agents/check.agent.md",
+      ],
+      nonPreludeAgents: [".github/agents/research.agent.md"],
+    },
+  ];
+
+  for (const { id, hooksDir, preludeAgents, nonPreludeAgents } of class2) {
+    describe(`[${id}]`, () => {
+      let tmpDir: string;
+
+      beforeEach(async () => {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), `trellis-c2-${id}-`));
+        setWriteMode("force");
+        await configurePlatform(id, tmpDir);
+      });
+
+      afterEach(() => {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      });
+
+      it("does NOT install inject-subagent-context.py", () => {
+        const hooks = fs.readdirSync(path.join(tmpDir, hooksDir));
+        expect(hooks).not.toContain("inject-subagent-context.py");
+      });
+
+      it("implement/check definitions contain pull-based prelude", () => {
+        for (const file of preludeAgents) {
+          const content = fs.readFileSync(path.join(tmpDir, file), "utf-8");
+          expect(content).toContain("Required: Load Trellis Context First");
+          expect(content).toContain(".trellis/.current-task");
+        }
+      });
+
+      it("research definition does NOT contain pull-based prelude", () => {
+        // research is orthogonal: it searches .trellis/spec/ and doesn't
+        // depend on an active task. Prelude would make it fail when Phase 1.2
+        // runs before init-context.
+        for (const file of nonPreludeAgents) {
+          const content = fs.readFileSync(path.join(tmpDir, file), "utf-8");
+          expect(content).not.toContain("Required: Load Trellis Context First");
+        }
+      });
+
+      it("hook config does not reference inject-subagent-context.py", () => {
+        const configPaths = [
+          ".qoder/settings.json",
+          ".gemini/settings.json",
+          ".codex/hooks.json",
+          ".github/copilot/hooks.json",
+          ".github/hooks/trellis.json",
+        ];
+        for (const p of configPaths) {
+          const full = path.join(tmpDir, p);
+          if (fs.existsSync(full)) {
+            const txt = fs.readFileSync(full, "utf-8");
+            expect(txt).not.toContain("inject-subagent-context.py");
+          }
+        }
+      });
+    });
+  }
+});
+
+// =============================================================================
+// Research agent must persist findings (0.5)
+// =============================================================================
+
+describe("regression: research agent persists findings to task dir", () => {
+  // Every platform's research agent must:
+  //   1. Have a Write tool (or platform equivalent) — otherwise it cannot
+  //      fulfill workflow.md step 1.2 "调研产出必须写入文件".
+  //   2. Explicitly tell the agent to write under {TASK_DIR}/research/.
+  //   3. NOT have "Modify any files" as a blanket forbidden rule (that
+  //      contradicts the persist requirement).
+  //
+  // Before 0.5, research agents were read-only and only emitted chat
+  // replies, which got compacted away.
+  const markdownPlatforms = [
+    "packages/cli/src/templates/claude/agents/research.md",
+    "packages/cli/src/templates/cursor/agents/research.md",
+    "packages/cli/src/templates/qoder/agents/research.md",
+    "packages/cli/src/templates/gemini/agents/research.md",
+    "packages/cli/src/templates/codebuddy/agents/research.md",
+    "packages/cli/src/templates/droid/droids/research.md",
+  ];
+
+  const __dirname2 = path.dirname(fileURLToPath(import.meta.url));
+  const repoRoot = path.resolve(__dirname2, "../../..");
+
+  for (const rel of markdownPlatforms) {
+    it(`[${rel}] has Write tool and persist instruction`, () => {
+      const content = fs.readFileSync(path.join(repoRoot, rel), "utf-8");
+      // Frontmatter tool list must include Write (capitalized form)
+      const fm = content.split("---\n")[1] ?? "";
+      expect(fm).toMatch(/tools:\s*[^\n]*\bWrite\b/);
+      // Body must reference persist target
+      expect(content).toContain("{TASK_DIR}/research/");
+      expect(content).toMatch(/PERSIST|[Pp]ersist/);
+      // Must not have blanket "Modify any files" forbidden rule
+      expect(content).not.toMatch(/^- Modify any files\s*$/m);
+    });
+  }
+
+  it("codex research.toml uses workspace-write sandbox and persist instruction", () => {
+    const content = fs.readFileSync(
+      path.join(repoRoot, "packages/cli/src/templates/codex/agents/research.toml"),
+      "utf-8",
+    );
+    expect(content).toMatch(/sandbox_mode\s*=\s*"workspace-write"/);
+    expect(content).toContain("{TASK_DIR}/research/");
+    expect(content).toMatch(/persist|Persist/);
+  });
+
+  it("kiro research.json includes write tool and persist instruction", () => {
+    const content = fs.readFileSync(
+      path.join(repoRoot, "packages/cli/src/templates/kiro/agents/research.json"),
+      "utf-8",
+    );
+    const data = JSON.parse(content) as {
+      tools: string[];
+      instructions: string;
+    };
+    expect(data.tools).toContain("write");
+    expect(data.instructions).toContain("{TASK_DIR}/research/");
+    expect(data.instructions).toMatch(/PERSIST|persist/);
   });
 });

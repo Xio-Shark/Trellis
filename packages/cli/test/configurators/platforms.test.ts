@@ -225,7 +225,26 @@ describe("configurePlatform", () => {
     for (const agent of expectedAgents) {
       const agentPath = path.join(codexAgentsRoot, `${agent.name}.toml`);
       expect(fs.existsSync(agentPath)).toBe(true);
-      expect(fs.readFileSync(agentPath, "utf-8")).toBe(agent.content);
+      const written = fs.readFileSync(agentPath, "utf-8");
+      // Codex is a class-2 (pull-based) platform. Prelude is injected into
+      // implement/check only — research is orthogonal (searches spec tree,
+      // no task dependency) and must stay pristine.
+      const needsPrelude = ["implement", "check"].includes(agent.name);
+      if (needsPrelude) {
+        expect(written).toContain("Required: Load Trellis Context First");
+        expect(written).toContain(".trellis/.current-task");
+        // Original body must still be present (prepend, not replace)
+        const originalBody = agent.content
+          .split("developer_instructions")[1]
+          ?.split('"""')[1]
+          ?.trim()
+          .split("\n")[0];
+        if (originalBody) {
+          expect(written).toContain(originalBody);
+        }
+      } else {
+        expect(written).toBe(agent.content);
+      }
     }
 
     const config = getCodexConfigTemplate();
@@ -536,9 +555,13 @@ describe("configurePlatform", () => {
 
   it("droid configuration writes commands + skills", async () => {
     await configurePlatform("droid", tmpDir);
-    // Commands (plain md, no frontmatter)
+    // Commands (plain md, no frontmatter). Droid is agent-capable → no start.md.
     const startPath = path.join(tmpDir, ".factory", "commands", "trellis", "start.md");
-    expect(fs.existsSync(startPath)).toBe(true);
+    expect(fs.existsSync(startPath)).toBe(false);
+    const finishPath = path.join(tmpDir, ".factory", "commands", "trellis", "finish-work.md");
+    expect(fs.existsSync(finishPath)).toBe(true);
+    const continuePath = path.join(tmpDir, ".factory", "commands", "trellis", "continue.md");
+    expect(fs.existsSync(continuePath)).toBe(true);
     // Skills (SKILL.md with frontmatter)
     const skillPath = path.join(tmpDir, ".factory", "skills", "trellis-check", "SKILL.md");
     expect(fs.existsSync(skillPath)).toBe(true);
@@ -550,9 +573,13 @@ describe("configurePlatform", () => {
   it("collectPlatformTemplates('droid') maps commands under .factory/commands/trellis/", () => {
     const templates = collectPlatformTemplates("droid");
     expect(templates).toBeInstanceOf(Map);
-    expect(templates?.get(".factory/commands/trellis/start.md")).toBeDefined();
+    // Droid is agent-capable → start.md not emitted.
+    expect(templates?.get(".factory/commands/trellis/start.md")).toBeUndefined();
     expect(
       templates?.get(".factory/commands/trellis/finish-work.md"),
+    ).toBeDefined();
+    expect(
+      templates?.get(".factory/commands/trellis/continue.md"),
     ).toBeDefined();
   });
 
@@ -586,7 +613,10 @@ describe("configurePlatform", () => {
   it("collectPlatformTemplates('copilot') includes tracked + discovery hooks config", () => {
     const templates = collectPlatformTemplates("copilot");
     expect(templates).toBeInstanceOf(Map);
-    expect(templates?.get(".github/prompts/start.prompt.md")).toBeDefined();
+    // Copilot is agent-capable → start.prompt.md not emitted.
+    expect(templates?.get(".github/prompts/start.prompt.md")).toBeUndefined();
+    expect(templates?.get(".github/prompts/finish-work.prompt.md")).toBeDefined();
+    expect(templates?.get(".github/prompts/continue.prompt.md")).toBeDefined();
     expect(templates?.get(".github/copilot/hooks.json")).toBe(
       resolvePlaceholders(getCopilotHooksConfig()),
     );

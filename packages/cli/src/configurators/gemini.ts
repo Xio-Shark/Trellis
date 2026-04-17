@@ -8,6 +8,7 @@ import {
   writeSkills,
   writeAgents,
   writeSharedHooks,
+  applyPullBasedPreludeMarkdown,
 } from "./shared.js";
 import {
   getAllAgents,
@@ -15,12 +16,14 @@ import {
 } from "../templates/gemini/index.js";
 
 /**
- * Configure Gemini CLI:
+ * Configure Gemini CLI (pull-based class-2 platform):
  * - commands/trellis/ — start + finish-work as TOML slash commands
  * - skills/trellis-{name}/SKILL.md — other 5 as auto-triggered skills
- * - agents/{name}.md — sub-agent definitions
- * - hooks/*.py — shared hook scripts
- * - settings.json — hook configuration (BeforeTool/AfterTool events)
+ * - agents/{name}.md — sub-agent definitions, with pull-based prelude
+ * - hooks/*.py — session-start only (no inject-subagent-context.py — Gemini
+ *   BeforeTool can fire but #18128 limits chain-of-thought visibility; sub-agents
+ *   Read jsonl/prd themselves)
+ * - settings.json — hook configuration (SessionStart only)
  */
 export async function configureGemini(cwd: string): Promise<void> {
   const config = AI_TOOLS.gemini;
@@ -35,8 +38,13 @@ export async function configureGemini(cwd: string): Promise<void> {
   }
 
   await writeSkills(path.join(configRoot, "skills"), resolveSkills(ctx));
-  await writeAgents(path.join(configRoot, "agents"), getAllAgents());
-  await writeSharedHooks(path.join(configRoot, "hooks"));
+  await writeAgents(
+    path.join(configRoot, "agents"),
+    applyPullBasedPreludeMarkdown(getAllAgents()),
+  );
+  await writeSharedHooks(path.join(configRoot, "hooks"), {
+    exclude: ["inject-subagent-context.py"],
+  });
 
   await writeFile(
     path.join(configRoot, "settings.json"),
