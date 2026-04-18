@@ -1141,6 +1141,196 @@ describe("regression: current-task path normalization", () => {
     expect(data.current_phase).toBeUndefined();
     expect(data.next_action).toBeUndefined();
   });
+
+  // ------------------------------------------------------------
+  // workflow_phase.get_phase_index() expansion (FP round 3)
+  //   Now returns Phase Index + Phase 1/2/3 bodies (was Phase Index only).
+  // ------------------------------------------------------------
+
+  function templateWorkflowMd(): string {
+    const { readFileSync } = fs;
+    const { dirname, join: pathJoin } = path;
+    const templatePath = pathJoin(
+      dirname(fileURLToPath(import.meta.url)),
+      "..",
+      "src",
+      "templates",
+      "trellis",
+      "workflow.md",
+    );
+    return readFileSync(templatePath, "utf-8");
+  }
+
+  it("[workflow-v2] get_context.py --mode phase returns Phase Index + Phase 1/2/3 step bodies", () => {
+    writeTrellisScripts();
+    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "workflow.md"), templateWorkflowMd());
+
+    const contextScript = path.join(tmpDir, ".trellis", "scripts", "get_context.py");
+    const output = execSync(
+      `${pythonCmd} ${JSON.stringify(contextScript)} --mode phase`,
+      { cwd: tmpDir, encoding: "utf-8" },
+    );
+
+    // Phase Index section always present
+    expect(output).toContain("## Phase Index");
+    // Phase 1/2/3 bodies now inlined (the expansion)
+    expect(output).toContain("## Phase 1: Plan");
+    expect(output).toContain("#### 1.1 Requirement exploration");
+    expect(output).toContain("## Phase 2: Execute");
+    expect(output).toContain("#### 2.1 Implement");
+    expect(output).toContain("## Phase 3: Finish");
+    expect(output).toContain("#### 3.3 Spec update");
+    // Stops at Workflow State Breadcrumbs (consumed by UserPromptSubmit hook)
+    expect(output).not.toContain("## Workflow State Breadcrumbs");
+  });
+
+  // ------------------------------------------------------------
+  // session-start.py <workflow> + <guidelines> block restructure
+  // ------------------------------------------------------------
+
+  it("[workflow-v2] session-start.py <workflow> block contains Phase 1/2/3 step bodies", () => {
+    writeTrellisScripts();
+    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "workflow.md"), templateWorkflowMd());
+    writeProjectFile(
+      path.join(".claude", "hooks", "session-start.py"),
+      expectTemplateContent(claudeSessionStart, "shared session-start"),
+    );
+
+    const rawOutput = runPython(path.join(".claude", "hooks", "session-start.py"));
+    const payload = JSON.parse(rawOutput) as {
+      hookSpecificOutput: { additionalContext: string };
+    };
+    const ctx = payload.hookSpecificOutput.additionalContext;
+
+    const workflowMatch = /<workflow>([\s\S]*?)<\/workflow>/.exec(ctx);
+    if (!workflowMatch) throw new Error("workflow block not found in payload");
+    const workflowBlock = workflowMatch[1];
+
+    // Step bodies inlined (not just TOC)
+    expect(workflowBlock).toContain("## Phase 1: Plan");
+    expect(workflowBlock).toContain("#### 1.1 Requirement exploration");
+    expect(workflowBlock).toContain("#### 2.1 Implement");
+    expect(workflowBlock).toContain("#### 3.3 Spec update");
+    // Breadcrumbs BODY excluded (different hook consumes the tag blocks);
+    // the TOC line "## Workflow State Breadcrumbs" is fine, but the tag
+    // blocks themselves must NOT appear here.
+    expect(workflowBlock).not.toContain("[workflow-state:planning]");
+    expect(workflowBlock).not.toContain("[workflow-state:in_progress]");
+  });
+
+  it("[workflow-v2] session-start.py <guidelines> block lists spec paths, not inlined content", () => {
+    writeTrellisScripts();
+    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "workflow.md"), templateWorkflowMd());
+    // Guides — must be inlined
+    writeProjectFile(
+      path.join(".trellis", "spec", "guides", "index.md"),
+      "# Thinking Guides\n\nGUIDES_INLINE_MARKER\n",
+    );
+    // Package index — must be paths-only (content should NOT appear)
+    writeProjectFile(
+      path.join(".trellis", "spec", "cli", "backend", "index.md"),
+      "# Backend\n\nBACKEND_INDEX_CONTENT_SHOULD_NOT_APPEAR\n",
+    );
+    writeProjectFile(
+      path.join(".claude", "hooks", "session-start.py"),
+      expectTemplateContent(claudeSessionStart, "shared session-start"),
+    );
+
+    const rawOutput = runPython(path.join(".claude", "hooks", "session-start.py"));
+    const payload = JSON.parse(rawOutput) as {
+      hookSpecificOutput: { additionalContext: string };
+    };
+    const ctx = payload.hookSpecificOutput.additionalContext;
+
+    const guidelinesMatch = /<guidelines>([\s\S]*?)<\/guidelines>/.exec(ctx);
+    if (!guidelinesMatch)
+      throw new Error("guidelines block not found in payload");
+    const guidelinesBlock = guidelinesMatch[1];
+
+    // guides/index.md stays inlined (cross-package thinking guides)
+    expect(guidelinesBlock).toContain("GUIDES_INLINE_MARKER");
+    // Other package index listed as path, content NOT inlined
+    expect(guidelinesBlock).toContain(".trellis/spec/cli/backend/index.md");
+    expect(guidelinesBlock).not.toContain("BACKEND_INDEX_CONTENT_SHOULD_NOT_APPEAR");
+    // Pointer to discovery command
+    expect(guidelinesBlock).toContain("--mode packages");
+  });
+
+  // ------------------------------------------------------------
+  // inject-subagent-context.py update_current_phase() removal
+  //   Hook must NOT write current_phase back to task.json on spawn.
+  // ------------------------------------------------------------
+
+  it("[workflow-v2] inject-subagent-context.py does NOT write current_phase when implement spawns", () => {
+    const sharedInject = getSharedHookScripts().find(
+      (hook) => hook.name === "inject-subagent-context.py",
+    )?.content;
+
+    writeTrellisScripts();
+    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "workflow.md"), "# Minimal\n");
+    // Active task WITHOUT current_phase field (post-migration state)
+    writeProjectFile(path.join(".trellis", ".current-task"), ".trellis/tasks/issue-106\n");
+    writeProjectFile(
+      path.join(".trellis", "tasks", "issue-106", "task.json"),
+      JSON.stringify(
+        {
+          id: "issue-106",
+          title: "Issue 106",
+          status: "in_progress",
+          package: null,
+        },
+        null,
+        2,
+      ),
+    );
+    writeProjectFile(path.join(".trellis", "tasks", "issue-106", "prd.md"), "# PRD\n");
+    writeProjectFile(
+      path.join(".trellis", "tasks", "issue-106", "implement.jsonl"),
+      '{"file":"src/example.ts","reason":"spec"}\n',
+    );
+    writeProjectFile(
+      path.join(".claude", "hooks", "inject-subagent-context.py"),
+      expectTemplateContent(sharedInject, "shared inject-subagent-context"),
+    );
+
+    // Simulate Task tool spawn (Claude-style input)
+    const input = JSON.stringify({
+      tool_name: "Task",
+      tool_input: {
+        subagent_type: "implement",
+        prompt: "do work",
+      },
+      cwd: tmpDir,
+    });
+    runPython(path.join(".claude", "hooks", "inject-subagent-context.py"), input);
+
+    // Assert task.json is NOT modified with current_phase
+    const taskJson = JSON.parse(
+      fs.readFileSync(
+        path.join(tmpDir, ".trellis", "tasks", "issue-106", "task.json"),
+        "utf-8",
+      ),
+    ) as Record<string, unknown>;
+    expect(taskJson.current_phase).toBeUndefined();
+    expect(taskJson.next_action).toBeUndefined();
+    // Sanity: other fields intact
+    expect(taskJson.status).toBe("in_progress");
+  });
+
+  it("[workflow-v2] inject-subagent-context.py source does NOT contain update_current_phase function", () => {
+    const sharedInject = getSharedHookScripts().find(
+      (hook) => hook.name === "inject-subagent-context.py",
+    )?.content;
+    expect(sharedInject).toBeTruthy();
+    expect(sharedInject).not.toContain("def update_current_phase");
+    expect(sharedInject).not.toContain("update_current_phase(");
+    // AGENTS_NO_PHASE_UPDATE constant was only used by the removed function
+    expect(sharedInject).not.toContain("AGENTS_NO_PHASE_UPDATE");
+  });
 });
 
 describe("regression: backslash in markdown templates (beta.12)", () => {
