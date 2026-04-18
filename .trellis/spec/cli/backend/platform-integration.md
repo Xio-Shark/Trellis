@@ -473,6 +473,30 @@ STATUS matches `task.json.status`. Built-in: `planning` / `in_progress` / `compl
 1. `workflow.md` missing → hardcoded defaults for 3 built-in statuses
 2. Tag block missing for a status → same hardcoded default
 3. Status unknown (no tag, no default) → generic `"Refer to workflow.md for current step."`
+4. No active task (`.current-task` missing or empty) → emit `no_task` pseudo-status breadcrumb instead of silent-exit. Header is `Status: no_task`; body nudges AI to load `trellis-brainstorm` + `task.py create` for multi-step work (or answer directly for trivial asks).
+
+### Design Principle: Per-Turn Hooks Must Not Silent-Exit on "Nothing to Say"
+
+A hook whose job is to **re-ground the AI every turn** should always emit *something*. Silent-exit looks cheaper but defeats the whole purpose — the turn where there's "nothing" is often the most important one (e.g. user switches topics, hops into a fresh subject without an active task).
+
+**Wrong** — hook exits silently when `.current-task` is missing:
+```python
+task = get_active_task(root)
+if task is None:
+    return 0  # nothing to inject; goodbye
+```
+Net effect on a "no task" session: AI sees the Next-Action only at SessionStart; after 20 turns of context compression, the guidance is gone and AI forgets to use `trellis-brainstorm` for new multi-step requests.
+
+**Correct** — treat "no task" as its own pseudo-status with a dedicated breadcrumb template:
+```python
+task = get_active_task(root)
+if task is None:
+    breadcrumb = build_breadcrumb(task_id=None, status="no_task", templates=...)
+else:
+    breadcrumb = build_breadcrumb(*task, templates=...)
+```
+
+The same rule applies to every other hook that's positioned as "repeated reminder": if the hook isn't emitting, the reminder loop is broken. The only legitimate silent-exit case is when **the hook doesn't own this codebase at all** (e.g. `.trellis/` not found → definitely not a Trellis project → OK to no-op).
 
 ### Platform Support Matrix
 

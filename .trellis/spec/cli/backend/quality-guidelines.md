@@ -261,6 +261,81 @@ let mutableCount = 0;
 
 ---
 
+## Schema Deprecation: Audit ALL Writers, Not Just the Creator
+
+**Trigger**: Removing a field from a persisted schema (e.g. `task.json`, migration manifests, config files).
+
+**Common mistake**: Remove the field from the creator (`cmd_create` / init) and the reader (normalize / load), but forget that **other writers** (hooks, triggers, sub-processes) still re-populate the field on every event. Net effect: field "deprecated" in docs, but still appears in newly-written files — you've declared a cleanup but haven't executed it.
+
+### Scope / Trigger
+- Any commit that removes a field from a schema struct or JSON output.
+- Trigger is independent of whether the reader still tolerates the field.
+
+### Audit Contract
+Before landing the removal, produce a writer inventory:
+
+```bash
+# Find every place that writes the field (not just the schema definition)
+grep -rn "<field_name>" --include="*.py" --include="*.ts" --include="*.js" .
+```
+
+Classify each hit:
+
+| Kind | Example | Action |
+|------|---------|--------|
+| **Schema / creator** | `task_store.cmd_create`, `create_bootstrap.py` | Drop field from output |
+| **Writer / updater** | `inject-subagent-context.py:update_current_phase`, OpenCode plugin equivalent | **Drop the write call OR delete the function entirely** |
+| **Reader / getter** | `phase.py:get_current_phase` | Keep with tolerance default (`data.get("field", null)`) — handles legacy files |
+| **Docs / comments** | spec, README, PRDs | Update references |
+| **Tests** | Assertions on field presence | Flip to "must NOT contain field" |
+
+### Validation & Error Matrix
+| Condition | Expected behaviour |
+|-----------|-------------------|
+| Fresh task: field present in `task.json` | ❌ regression — writer missed |
+| Old task still has field | ✅ tolerated (reader defaults) |
+| Two runs of the same lifecycle op | ✅ field never re-appears |
+
+### Tests Required
+- **Writer regression**: call creator → assert field NOT in output. Example: `test task.py create does NOT write legacy current_phase / next_action`.
+- **Writer-after-event regression**: simulate the downstream event that historically re-wrote the field (e.g. spawn sub-agent → hook fires) → re-read file → assert field still absent.
+- **Reader compatibility**: mock a legacy file containing the field → assert reader does not raise.
+
+### Wrong vs Correct
+#### Wrong — cleanup only touches the creator
+```python
+# task_store.cmd_create — dropped current_phase
+task_data = {"status": "planning", ...}  # current_phase removed
+```
+```python
+# inject-subagent-context.py — still writes it on every spawn
+def update_current_phase(task_dir, subagent_type):
+    task = read_json(task_dir / "task.json")
+    task["current_phase"] = next_phase(...)  # ← re-populates deprecated field
+    write_json(task_dir / "task.json", task)
+```
+Net: after the first `implement` spawn, `task.json` contains `current_phase` again. Deprecation undone silently.
+
+#### Correct — delete every writer, or route through a single entry point
+Option A: delete the writer function.
+```python
+# inject-subagent-context.py
+# (update_current_phase + its call removed; the hook no longer writes phase)
+```
+Option B: keep the writer but have it stop emitting the field.
+```python
+def update_task_state(task_dir, subagent_type):
+    task = read_json(task_dir / "task.json")
+    task["last_subagent"] = subagent_type  # new field
+    # current_phase not written
+    write_json(task_dir / "task.json", task)
+```
+
+### Why
+A field is "gone" only after every code path that could produce it is removed. Silently leaving ghost writers makes the deprecation non-executable and forces future readers to keep supporting the field forever.
+
+---
+
 ## Quality Checklist
 
 Before committing, ensure:
