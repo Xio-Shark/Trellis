@@ -1,4 +1,4 @@
-name = "implement"
+name = "trellis-implement"
 description = "Workspace-write Trellis implementer that follows specs and keeps generated templates in sync."
 sandbox_mode = "workspace-write"
 

@@ -1,0 +1,220 @@
+{
+  "version": "0.5.0-beta.5",
+  "description": "Sub-agent rename + remove model: opus from all agent templates. Prefixes implement/check/research with trellis- to prevent accidental invocation by user's own agents or the main agent's description heuristics. Drops hardcoded model: opus from agent frontmatter across all 10 platforms — this caused Cursor users real cost pain because Cursor mapped opus to Claude Opus (~5x Sonnet pricing).",
+  "breaking": true,
+  "recommendMigrate": true,
+  "changelog": "**Breaking Changes:**\n- rename(agents): `implement` / `check` / `research` sub-agents are now `trellis-implement` / `trellis-check` / `trellis-research` across all 10 platforms (claude, cursor, opencode, codex, kiro, gemini, qoder, codebuddy, copilot, droid). Generic names were colliding with user-defined agents and being matched by the main agent's description heuristics on some platforms. Prefixing with `trellis-` makes them unambiguously Trellis sub-agents. `workflow.md`, copilot start prompt, `shared-hooks/inject-subagent-context.py`, and configurator detection all updated to use the new names.\n\n**Bug Fixes:**\n- fix(agents): drop `model: opus` from all 18 markdown agent frontmatters + the example `Task()` calls in `copilot/prompts/start.prompt.md`. On Claude Code this merely hardcoded Opus for all sub-agent runs (ignoring user preference); on Cursor it actively mapped to Claude Opus billing at ~5x Sonnet cost and surprised users; on Gemini/Droid/Codebuddy/Qoder `opus` isn't even a valid model identifier. Agents now inherit whatever model the user configured for their platform.",
+  "migrations": [
+    {
+      "type": "rename",
+      "from": ".claude/agents/implement.md",
+      "to": ".claude/agents/trellis-implement.md",
+      "description": "v0.5.0-beta.5: prefix claude sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".claude/agents/check.md",
+      "to": ".claude/agents/trellis-check.md",
+      "description": "v0.5.0-beta.5: prefix claude sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".claude/agents/research.md",
+      "to": ".claude/agents/trellis-research.md",
+      "description": "v0.5.0-beta.5: prefix claude sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".cursor/agents/implement.md",
+      "to": ".cursor/agents/trellis-implement.md",
+      "description": "v0.5.0-beta.5: prefix cursor sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".cursor/agents/check.md",
+      "to": ".cursor/agents/trellis-check.md",
+      "description": "v0.5.0-beta.5: prefix cursor sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".cursor/agents/research.md",
+      "to": ".cursor/agents/trellis-research.md",
+      "description": "v0.5.0-beta.5: prefix cursor sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".opencode/agents/implement.md",
+      "to": ".opencode/agents/trellis-implement.md",
+      "description": "v0.5.0-beta.5: prefix opencode sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".opencode/agents/check.md",
+      "to": ".opencode/agents/trellis-check.md",
+      "description": "v0.5.0-beta.5: prefix opencode sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".opencode/agents/research.md",
+      "to": ".opencode/agents/trellis-research.md",
+      "description": "v0.5.0-beta.5: prefix opencode sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".codex/agents/implement.toml",
+      "to": ".codex/agents/trellis-implement.toml",
+      "description": "v0.5.0-beta.5: prefix codex sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".codex/agents/check.toml",
+      "to": ".codex/agents/trellis-check.toml",
+      "description": "v0.5.0-beta.5: prefix codex sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".codex/agents/research.toml",
+      "to": ".codex/agents/trellis-research.toml",
+      "description": "v0.5.0-beta.5: prefix codex sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".kiro/agents/implement.json",
+      "to": ".kiro/agents/trellis-implement.json",
+      "description": "v0.5.0-beta.5: prefix kiro sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".kiro/agents/check.json",
+      "to": ".kiro/agents/trellis-check.json",
+      "description": "v0.5.0-beta.5: prefix kiro sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".kiro/agents/research.json",
+      "to": ".kiro/agents/trellis-research.json",
+      "description": "v0.5.0-beta.5: prefix kiro sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".gemini/agents/implement.md",
+      "to": ".gemini/agents/trellis-implement.md",
+      "description": "v0.5.0-beta.5: prefix gemini sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".gemini/agents/check.md",
+      "to": ".gemini/agents/trellis-check.md",
+      "description": "v0.5.0-beta.5: prefix gemini sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".gemini/agents/research.md",
+      "to": ".gemini/agents/trellis-research.md",
+      "description": "v0.5.0-beta.5: prefix gemini sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".qoder/agents/implement.md",
+      "to": ".qoder/agents/trellis-implement.md",
+      "description": "v0.5.0-beta.5: prefix qoder sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".qoder/agents/check.md",
+      "to": ".qoder/agents/trellis-check.md",
+      "description": "v0.5.0-beta.5: prefix qoder sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".qoder/agents/research.md",
+      "to": ".qoder/agents/trellis-research.md",
+      "description": "v0.5.0-beta.5: prefix qoder sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".codebuddy/agents/implement.md",
+      "to": ".codebuddy/agents/trellis-implement.md",
+      "description": "v0.5.0-beta.5: prefix codebuddy sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".codebuddy/agents/check.md",
+      "to": ".codebuddy/agents/trellis-check.md",
+      "description": "v0.5.0-beta.5: prefix codebuddy sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".codebuddy/agents/research.md",
+      "to": ".codebuddy/agents/trellis-research.md",
+      "description": "v0.5.0-beta.5: prefix codebuddy sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".github/agents/implement.agent.md",
+      "to": ".github/agents/trellis-implement.agent.md",
+      "description": "v0.5.0-beta.5: prefix copilot sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".github/agents/check.agent.md",
+      "to": ".github/agents/trellis-check.agent.md",
+      "description": "v0.5.0-beta.5: prefix copilot sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".github/agents/research.agent.md",
+      "to": ".github/agents/trellis-research.agent.md",
+      "description": "v0.5.0-beta.5: prefix copilot sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".factory/droids/implement.md",
+      "to": ".factory/droids/trellis-implement.md",
+      "description": "v0.5.0-beta.5: prefix droid sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".factory/droids/check.md",
+      "to": ".factory/droids/trellis-check.md",
+      "description": "v0.5.0-beta.5: prefix droid sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    },
+    {
+      "type": "rename",
+      "from": ".factory/droids/research.md",
+      "to": ".factory/droids/trellis-research.md",
+      "description": "v0.5.0-beta.5: prefix droid sub-agent with trellis- to prevent accidental invocation",
+      "reason": "Generic names like 'implement'/'check'/'research' can collide with the user's own agent definitions or get picked up by the main agent's description heuristics. Prefixing with 'trellis-' makes them explicit Trellis agents."
+    }
+  ],
+  "notes": "This is a breaking rename for sub-agent invocation. The migration is automatic for unmodified agent files (hash-matched via .trellis/.template-hashes.json). If you customized an agent, you'll see the usual `Modified by you` confirm prompt with diff — pick `[1] Overwrite` to adopt the new name, or `[3] Skip` if you've built your own workflow on the old names (in which case you must update `workflow.md`, any skill prompts, and hook constants yourself).\n\n`update.skip` is BYPASSED for this release (breaking + recommendMigrate both true, invoked with `--migrate`) to prevent a half-migrated state where workflow.md points to `trellis-implement` but your `.claude/agents/` still has `implement.md`.\n\nAction required: run `trellis update --migrate`."
+}

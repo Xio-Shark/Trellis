@@ -277,6 +277,8 @@ export type SubAgentType = "implement" | "check";
 
 /** Build the standard "load Trellis context first" prelude block. */
 export function buildPullBasedPrelude(agentType: SubAgentType): string {
+  // JSONL filenames stay as implement.jsonl / check.jsonl — they are internal
+  // context buckets keyed by role (not by platform-visible agent name).
   const jsonl = agentType === "check" ? "check.jsonl" : "implement.jsonl";
 
   return `## Required: Load Trellis Context First
@@ -338,13 +340,13 @@ export function injectPullBasedPreludeToml(
   return content.replace(re, `$1$2${prelude}`);
 }
 
-/** Best-effort detect agent type from filename ("implement.md" → "implement").
+/** Best-effort detect agent type from filename ("trellis-implement.md" → "implement").
  *  Returns null for research and unknown names — they skip the prelude.
  */
 export function detectSubAgentType(name: string): SubAgentType | null {
   const base = name.replace(/\.(md|toml|prompt\.md)$/, "");
-  if (base === "implement" || base === "check") {
-    return base;
+  if (base === "trellis-implement" || base === "trellis-check") {
+    return base === "trellis-implement" ? "implement" : "check";
   }
   return null;
 }

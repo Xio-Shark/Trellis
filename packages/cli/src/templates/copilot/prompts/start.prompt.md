@@ -54,7 +54,7 @@ cat .trellis/spec/<package>/<layer>/index.md   # Package-specific guidelines
 cat .trellis/spec/guides/index.md              # Thinking guides (always read)
 ```
 
-> **Important**: The index files are navigation â€?they list the actual guideline files (e.g., `error-handling.md`, `conventions.md`, `mock-strategies.md`).
+> **Important**: The index files are navigation ï¿½?they list the actual guideline files (e.g., `error-handling.md`, `conventions.md`, `mock-strategies.md`).
 > At this step, just read the indexes to understand what's available.
 > When you start actual development, you MUST go back and read the specific guideline files relevant to your task, as listed in the index's Pre-Development Checklist.
 
@@ -72,8 +72,8 @@ When user describes a task, classify it:
 |------|----------|----------|
 | **Question** | User asks about code, architecture, or how something works | Answer directly |
 | **Trivial Fix** | Typo fix, comment update, single-line change | Direct Edit |
-| **Simple Task** | Clear goal, 1-2 files, well-defined scope | Quick confirm â†?Implement |
-| **Complex Task** | Vague goal, multiple files, architectural decisions | **Brainstorm â†?Task Workflow** |
+| **Simple Task** | Clear goal, 1-2 files, well-defined scope | Quick confirm ï¿½?Implement |
+| **Complex Task** | Vague goal, multiple files, architectural decisions | **Brainstorm ï¿½?Task Workflow** |
 
 ### Classification Signals
 
@@ -128,7 +128,7 @@ For simple, well-defined tasks:
 
 ## Complex Task - Brainstorm First
 
-For complex or vague tasks, **automatically start the brainstorm process** â€?do NOT skip directly to implementation.
+For complex or vague tasks, **automatically start the brainstorm process** ï¿½?do NOT skip directly to implementation.
 
 See `/` for the full process. Summary:
 
@@ -167,10 +167,10 @@ See `/` for the full process. Summary:
 
 ```
 From Brainstorm (Complex Task):
-  PRD confirmed â†?Research â†?Configure Context â†?Activate â†?Implement â†?Check â†?Complete
+  PRD confirmed ï¿½?Research ï¿½?Configure Context ï¿½?Activate ï¿½?Implement ï¿½?Check ï¿½?Complete
 
 From Simple Task:
-  Confirm â†?Create Task â†?Write PRD â†?Research â†?Configure Context â†?Activate â†?Implement â†?Check â†?Complete
+  Confirm ï¿½?Create Task ï¿½?Write PRD ï¿½?Research ï¿½?Configure Context ï¿½?Activate ï¿½?Implement ï¿½?Check ï¿½?Complete
 ```
 
 **Key principle: Research happens AFTER requirements are clear (PRD exists).**
@@ -248,7 +248,7 @@ Based on the confirmed PRD, call Research Agent to find relevant specs and patte
 
 ```
 Task(
-  subagent_type: "research",
+  subagent_type: "trellis-research",
   prompt: "Analyze the codebase for this task:
 
   Task: <goal from PRD>
@@ -267,8 +267,7 @@ Task(
   - <pattern>: <example file path>
 
   ## Files to Modify
-  - <path>: <what change>",
-  model: "opus"
+  - <path>: <what change>"
 )
 ```
 
@@ -307,12 +306,11 @@ Call Implement Agent (code-spec context is auto-injected by hook):
 
 ```
 Task(
-  subagent_type: "implement",
+  subagent_type: "trellis-implement",
   prompt: "Implement the task described in prd.md.
 
   Follow all code-spec files that have been injected into your context.
-  Run lint and typecheck before finishing.",
-  model: "opus"
+  Run lint and typecheck before finishing."
 )
 ```
 
@@ -322,12 +320,11 @@ Call Check Agent (code-spec context is auto-injected by hook):
 
 ```
 Task(
-  subagent_type: "check",
+  subagent_type: "trellis-check",
   prompt: "Review all code changes against the code-spec requirements.
 
   Fix any issues you find directly.
-  Ensure lint and typecheck pass.",
-  model: "opus"
+  Ensure lint and typecheck pass."
 )
 ```
 

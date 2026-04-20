@@ -154,7 +154,7 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".codex", "config.toml"))).toBe(true);
     expect(
       fs.existsSync(
-        path.join(tmpDir, ".codex", "agents", "check.toml"),
+        path.join(tmpDir, ".codex", "agents", "trellis-check.toml"),
       ),
     ).toBe(true);
     // parallel skill removed — platform-native worktree features used instead

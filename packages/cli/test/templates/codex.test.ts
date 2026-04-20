@@ -8,9 +8,9 @@ import { resolveAllAsSkills } from "../../src/configurators/shared.js";
 import { AI_TOOLS } from "../../src/types/ai-tools.js";
 
 const EXPECTED_AGENT_NAMES = [
-  "check",
-  "implement",
-  "research",
+  "trellis-check",
+  "trellis-implement",
+  "trellis-research",
 ];
 
 // Shared skills are now sourced from common/ via resolveAllAsSkills

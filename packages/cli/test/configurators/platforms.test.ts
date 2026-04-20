@@ -229,7 +229,7 @@ describe("configurePlatform", () => {
       // Codex is a class-2 (pull-based) platform. Prelude is injected into
       // implement/check only — research is orthogonal (searches spec tree,
       // no task dependency) and must stay pristine.
-      const needsPrelude = ["implement", "check"].includes(agent.name);
+      const needsPrelude = ["trellis-implement", "trellis-check"].includes(agent.name);
       if (needsPrelude) {
         expect(written).toContain("Required: Load Trellis Context First");
         expect(written).toContain(".trellis/.current-task");

@@ -1301,7 +1301,7 @@ describe("regression: current-task path normalization", () => {
     const input = JSON.stringify({
       tool_name: "Task",
       tool_input: {
-        subagent_type: "implement",
+        subagent_type: "trellis-implement",
         prompt: "do work",
       },
       cwd: tmpDir,
@@ -2000,32 +2000,32 @@ describe("regression: class-2 platforms use pull-based sub-agent context", () =>
     {
       id: "qoder" as const,
       hooksDir: ".qoder/hooks",
-      preludeAgents: [".qoder/agents/implement.md", ".qoder/agents/check.md"],
-      nonPreludeAgents: [".qoder/agents/research.md"],
+      preludeAgents: [".qoder/agents/trellis-implement.md", ".qoder/agents/trellis-check.md"],
+      nonPreludeAgents: [".qoder/agents/trellis-research.md"],
     },
     {
       id: "gemini" as const,
       hooksDir: ".gemini/hooks",
-      preludeAgents: [".gemini/agents/implement.md", ".gemini/agents/check.md"],
-      nonPreludeAgents: [".gemini/agents/research.md"],
+      preludeAgents: [".gemini/agents/trellis-implement.md", ".gemini/agents/trellis-check.md"],
+      nonPreludeAgents: [".gemini/agents/trellis-research.md"],
     },
     {
       id: "codex" as const,
       hooksDir: ".codex/hooks",
       preludeAgents: [
-        ".codex/agents/implement.toml",
-        ".codex/agents/check.toml",
+        ".codex/agents/trellis-implement.toml",
+        ".codex/agents/trellis-check.toml",
       ],
-      nonPreludeAgents: [".codex/agents/research.toml"],
+      nonPreludeAgents: [".codex/agents/trellis-research.toml"],
     },
     {
       id: "copilot" as const,
       hooksDir: ".github/copilot/hooks",
       preludeAgents: [
-        ".github/agents/implement.agent.md",
-        ".github/agents/check.agent.md",
+        ".github/agents/trellis-implement.agent.md",
+        ".github/agents/trellis-check.agent.md",
       ],
-      nonPreludeAgents: [".github/agents/research.agent.md"],
+      nonPreludeAgents: [".github/agents/trellis-research.agent.md"],
     },
   ];
 
@@ -2101,12 +2101,12 @@ describe("regression: research agent persists findings to task dir", () => {
   // Before 0.5, research agents were read-only and only emitted chat
   // replies, which got compacted away.
   const markdownPlatforms = [
-    "packages/cli/src/templates/claude/agents/research.md",
-    "packages/cli/src/templates/cursor/agents/research.md",
-    "packages/cli/src/templates/qoder/agents/research.md",
-    "packages/cli/src/templates/gemini/agents/research.md",
-    "packages/cli/src/templates/codebuddy/agents/research.md",
-    "packages/cli/src/templates/droid/droids/research.md",
+    "packages/cli/src/templates/claude/agents/trellis-research.md",
+    "packages/cli/src/templates/cursor/agents/trellis-research.md",
+    "packages/cli/src/templates/qoder/agents/trellis-research.md",
+    "packages/cli/src/templates/gemini/agents/trellis-research.md",
+    "packages/cli/src/templates/codebuddy/agents/trellis-research.md",
+    "packages/cli/src/templates/droid/droids/trellis-research.md",
   ];
 
   const __dirname2 = path.dirname(fileURLToPath(import.meta.url));
@@ -2128,7 +2128,7 @@ describe("regression: research agent persists findings to task dir", () => {
 
   it("codex research.toml uses workspace-write sandbox and persist instruction", () => {
     const content = fs.readFileSync(
-      path.join(repoRoot, "packages/cli/src/templates/codex/agents/research.toml"),
+      path.join(repoRoot, "packages/cli/src/templates/codex/agents/trellis-research.toml"),
       "utf-8",
     );
     expect(content).toMatch(/sandbox_mode\s*=\s*"workspace-write"/);
@@ -2138,7 +2138,7 @@ describe("regression: research agent persists findings to task dir", () => {
 
   it("kiro research.json includes write tool and persist instruction", () => {
     const content = fs.readFileSync(
-      path.join(repoRoot, "packages/cli/src/templates/kiro/agents/research.json"),
+      path.join(repoRoot, "packages/cli/src/templates/kiro/agents/trellis-research.json"),
       "utf-8",
     );
     const data = JSON.parse(content) as {
