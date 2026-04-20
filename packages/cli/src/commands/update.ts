@@ -36,6 +36,7 @@ import {
   // Configuration
   configYamlTemplate,
   gitignoreTemplate,
+  workflowMdTemplate,
 } from "../templates/trellis/index.js";
 
 import {
@@ -379,7 +380,15 @@ function collectTemplateFiles(
   // Configuration
   files.set(`${DIR_NAMES.WORKFLOW}/config.yaml`, configYamlTemplate);
   files.set(`${DIR_NAMES.WORKFLOW}/.gitignore`, gitignoreTemplate);
-  // workflow.md and workspace/index.md are user-customizable; only created during init
+  // workflow.md is included here (starting v0.5.0-beta.4) because it's no longer
+  // just user-facing documentation — `## Phase Index`, `## Phase 1/2/3` headings,
+  // and `[workflow-state:STATUS]` tag blocks are parsed by get_context.py /
+  // shared hooks, so scripts break silently when workflow.md drifts from the
+  // CLI version. Users who customized their copy land in the normal
+  // "Modified by you" confirm prompt at write time (not force-overwritten).
+  files.set(`${DIR_NAMES.WORKFLOW}/workflow.md`, workflowMdTemplate);
+  // workspace/index.md stays excluded — it's runtime-appended by add_session.py
+  // (journal index) and has no script-parsed structure.
 
   // Platform-specific templates (only for configured platforms)
   for (const platformId of platforms) {
