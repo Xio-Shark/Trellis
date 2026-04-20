@@ -116,6 +116,14 @@ function collectSafeFileDeletes(
   migrations: MigrationItem[],
   cwd: string,
   skipPaths: string[],
+  /**
+   * Bypass `update.skip` for safe-file-delete. Enable this for breaking releases
+   * where honoring skip would leave the project half-migrated (old files at
+   * protected paths sitting next to the new architecture forever). The hash
+   * check in `allowed_hashes` is still the ultimate safety net — user-modified
+   * files still stay put with a "skip-modified" warning.
+   */
+  bypassUpdateSkip = false,
 ): SafeFileDeleteClassified[] {
   const safeDeletes = migrations.filter((m) => m.type === "safe-file-delete");
   const results: SafeFileDeleteClassified[] = [];
@@ -129,14 +137,15 @@ function collectSafeFileDeletes(
       continue;
     }
 
-    // Check: protected path?
+    // Check: protected path? (user data dirs — always protected, never bypassed)
     if (isProtectedPath(item.from)) {
       results.push({ item, action: "skip-protected" });
       continue;
     }
 
-    // Check: update.skip?
+    // Check: update.skip? (can be bypassed for breaking releases)
     if (
+      !bypassUpdateSkip &&
       skipPaths.some(
         (skip) =>
           item.from === skip ||
@@ -344,6 +353,15 @@ function needsCodexUpgrade(cwd: string): boolean {
 function collectTemplateFiles(
   cwd: string,
   extraPlatforms?: Set<AITool>,
+  /**
+   * Bypass `update.skip` when collecting templates. Enable this for breaking
+   * releases so new files (e.g. `continue.md` added in 0.5.0) and template
+   * updates can land even under skip-protected paths. Without this, users with
+   * `.claude/commands/` in their skip list would silently miss new commands.
+   * Existing user customizations are still guarded at WRITE time via the
+   * "Modified by you" conflict prompt — they can skip per-file there.
+   */
+  bypassUpdateSkip = false,
 ): Map<string, string> {
   const files = new Map<string, string>();
   const platforms = getConfiguredPlatforms(cwd);
@@ -373,18 +391,20 @@ function collectTemplateFiles(
     }
   }
 
-  // Apply update.skip from config.yaml
-  const skipPaths = loadUpdateSkipPaths(cwd);
-  if (skipPaths.length > 0) {
-    for (const [filePath] of [...files]) {
-      if (
-        skipPaths.some(
-          (skip) =>
-            filePath === skip ||
-            filePath.startsWith(skip.endsWith("/") ? skip : skip + "/"),
-        )
-      ) {
-        files.delete(filePath);
+  // Apply update.skip from config.yaml (unless bypassed for breaking release)
+  if (!bypassUpdateSkip) {
+    const skipPaths = loadUpdateSkipPaths(cwd);
+    if (skipPaths.length > 0) {
+      for (const [filePath] of [...files]) {
+        if (
+          skipPaths.some(
+            (skip) =>
+              filePath === skip ||
+              filePath.startsWith(skip.endsWith("/") ? skip : skip + "/"),
+          )
+        ) {
+          files.delete(filePath);
+        }
       }
     }
   }
@@ -1428,10 +1448,28 @@ export async function update(options: UpdateOptions): Promise<void> {
     );
   }
 
+  // For breaking releases with recommendMigrate + --migrate, bypass update.skip
+  // across the board (safe-file-delete, new file writes, template updates).
+  // Why: honoring skip here leaves users forever half-migrated — old deprecated
+  // files persist under skip-protected paths, new commands like `continue.md`
+  // never land, and every future update re-flags the same mess. Rename
+  // migrations already ignore update.skip; this makes the rest consistent
+  // during a breaking upgrade. User customizations are still guarded by the
+  // per-file conflict prompt ("Modified by you") at write time.
+  const breakingBypass =
+    options.migrate === true &&
+    cliVsProject > 0 &&
+    projectVersion !== "unknown" &&
+    (() => {
+      const md = getMigrationMetadata(projectVersion, cliVersion);
+      return md.breaking && md.recommendMigrate;
+    })();
+
   // Collect templates (used for both migration classification and change analysis)
   const templates = collectTemplateFiles(
     cwd,
     codexUpgradeNeeded ? new Set<AITool>(["codex"]) : undefined,
+    breakingBypass,
   );
 
   // Load update.skip paths (used for both safe-file-delete and template collection)
@@ -1440,7 +1478,12 @@ export async function update(options: UpdateOptions): Promise<void> {
   // Collect safe-file-delete items from ALL manifests (hash match is the safety net)
   // This runs regardless of version — unknown version still gets safe cleanup
   const allMigrations = getAllMigrations();
-  const safeFileDeletes = collectSafeFileDeletes(allMigrations, cwd, skipPaths);
+  const safeFileDeletes = collectSafeFileDeletes(
+    allMigrations,
+    cwd,
+    skipPaths,
+    breakingBypass,
+  );
   const hasSafeDeletes =
     safeFileDeletes.filter((c) => c.action === "delete").length > 0;
 
@@ -1658,6 +1701,33 @@ export async function update(options: UpdateOptions): Promise<void> {
           chalk.bgGreen.black.bold(" 💡 RECOMMENDED ") +
             chalk.green.bold(" Run with --migrate to complete the migration"),
         );
+      }
+      // Notice when update.skip is bypassed so user isn't surprised when
+      // skipPaths-protected files get cleaned up during this breaking upgrade.
+      if (breakingBypass && skipPaths.length > 0) {
+        const willBypass = safeFileDeletes.filter(
+          (c) =>
+            c.action === "delete" &&
+            skipPaths.some(
+              (skip) =>
+                c.item.from === skip ||
+                c.item.from.startsWith(skip.endsWith("/") ? skip : skip + "/"),
+            ),
+        );
+        if (willBypass.length > 0) {
+          console.log("");
+          console.log(
+            chalk.bgYellow.black.bold(" ⚠ update.skip BYPASSED ") +
+              chalk.yellow.bold(
+                ` Breaking release — ${willBypass.length.toString()} file(s) under your update.skip paths will be cleaned up.`,
+              ),
+          );
+          console.log(
+            chalk.gray(
+              "  Hash-verified: only files matching known Trellis templates are deleted. Your local customizations (hash mismatch) are still preserved.",
+            ),
+          );
+        }
       }
       console.log(chalk.cyan("═".repeat(60)));
       console.log("");
