@@ -455,9 +455,6 @@ def cmd_set_branch(args: argparse.Namespace) -> int:
     write_json(task_json, data)
 
     print(colored(f"✓ Branch set to: {branch}", Colors.GREEN))
-    print()
-    print(colored("Now you can start the multi-agent pipeline:", Colors.BLUE))
-    print(f"  python3 ./.trellis/scripts/multi_agent/start.py {args.dir}")
     return 0
 
 
