@@ -17,6 +17,21 @@ describe("settingsTemplate", () => {
   it("is a non-empty string", () => {
     expect(settingsTemplate.length).toBeGreaterThan(0);
   });
+
+  // v0.5.0-beta.8: pin CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=1 at the project
+  // level so Bash tool cwd changes don't leak into subsequent hook invocations.
+  // Without this, a user who runs `cd frontend/` via Bash tool leaves cwd stuck
+  // in `frontend/`, and the next UserPromptSubmit hook (which resolves
+  // `.claude/hooks/inject-workflow-state.py` relative to cwd) crashes with
+  // ENOENT. We can't fix this via command-string rewriting because
+  // $CLAUDE_PROJECT_DIR doesn't expand on Windows shells (see CC issue #6023).
+  // The env-var approach is read by CC internally, identical on all platforms.
+  it("sets CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=1 in env", () => {
+    const settings = JSON.parse(settingsTemplate) as {
+      env?: Record<string, string>;
+    };
+    expect(settings.env?.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR).toBe("1");
+  });
 });
 
 // =============================================================================

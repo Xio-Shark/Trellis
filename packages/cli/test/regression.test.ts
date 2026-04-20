@@ -625,16 +625,32 @@ describe("regression: migration data integrity (beta.14)", () => {
 });
 
 describe("regression: update only configured platforms (beta.16)", () => {
-  it("[beta.16] collectPlatformTemplates returns undefined for opencode (no collectTemplates)", () => {
-    // OpenCode uses plugin system, templates tracked separately
+  // NOTE: v0.5.0-beta.8 added collectTemplates for opencode. Before that,
+  // opencode was the only configured platform with no update tracking —
+  // `trellis update` silently ignored .opencode/, so CLI-side changes to
+  // opencode plugins / agents / package.json never reached installed projects.
+  // That was a bug, not a design choice. This test used to assert the bug;
+  // now it asserts the fix.
+  it("[beta.8] collectPlatformTemplates returns Map for opencode (plugins + agents + lib + package.json + commands + skills)", () => {
     const result = collectPlatformTemplates("opencode");
-    expect(result).toBeUndefined();
+    expect(result).toBeInstanceOf(Map);
+    if (!result) throw new Error("unreachable");
+    // Sanity: must include the three plugin files — the bug that prompted this
+    // fix was a plugin-shape change that couldn't be delivered via `trellis update`.
+    expect(result.has(".opencode/plugins/inject-subagent-context.js")).toBe(true);
+    expect(result.has(".opencode/plugins/session-start.js")).toBe(true);
+    expect(result.has(".opencode/plugins/inject-workflow-state.js")).toBe(true);
+    // Plus agents, lib, package.json, at least one command, at least one skill
+    expect(result.has(".opencode/agents/trellis-implement.md")).toBe(true);
+    expect(result.has(".opencode/lib/trellis-context.js")).toBe(true);
+    expect(result.has(".opencode/package.json")).toBe(true);
   });
 
   it("[beta.16] collectPlatformTemplates returns Map for platforms with tracking", () => {
     const withTracking = [
       "claude-code",
       "cursor",
+      "opencode",
       "codex",
       "kilo",
       "kiro",

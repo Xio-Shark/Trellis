@@ -98,7 +98,7 @@
   ".cursor/agents/trellis-check.md": "bfef8b996ae19a23fc8a71b63cd0e5d1cbc9f37fb6e879c2cbb3724448872e70",
   ".cursor/agents/trellis-research.md": "c367aa32c0c67d7d978a3cd5191c3c2462f7ddfcc9644419a3ef2b0b16bac0b5",
   ".codex/agents/trellis-implement.toml": "d11be9c86204be67b053192d362294efd1d476b82f4d2e280941e54056717471",
-  ".codex/agents/trellis-check.toml": "e6b18f9d5b625401412786221d6825baf16e553794073e64e229a45a513b7919",
+  ".codex/agents/trellis-check.toml": "1f332eebd315821003fcb729647ec02a6490a9ab26e23931a998ef2fbe1c099a",
   ".codex/agents/trellis-research.toml": "1792ecfaaffade7cb4cd4e4376e9e87ae82b3bf42352054cb2fb0e74dfbee3a2",
   ".trellis/config.yaml": "cb5216826e1091bfa0d4ebae257d6f43fa60ca2bafbf3d9a6489b2c1a51a99df"
 }

@@ -5,6 +5,12 @@ import { getOpenCodeTemplatePath } from "../templates/extract.js";
 import { ensureDir, writeFile } from "../utils/file-writer.js";
 import { resolveCommands, resolveSkills } from "./shared.js";
 
+/**
+ * Files under packages/cli/src/templates/opencode/ that are NOT user-facing
+ * assets (build artifacts, runtime caches, etc.). The template dir has a
+ * real package.json that declares the @opencode-ai/plugin dep — that one
+ * IS user-facing and must be shipped.
+ */
 const EXCLUDE_PATTERNS = [
   ".d.ts",
   ".d.ts.map",
@@ -24,56 +30,67 @@ function shouldExclude(filename: string): boolean {
   return false;
 }
 
-async function copyDirFiltered(
-  src: string,
-  dest: string,
-  skipDirs: string[] = [],
-): Promise<void> {
-  ensureDir(dest);
+/**
+ * Walk the opencode template directory and produce a `Map<relPath, content>`
+ * rooted at `.opencode/`. Shared by both `configureOpenCode` (init-time write)
+ * and `collectOpenCodeTemplates` (update-time hash tracking) so the two paths
+ * always agree on the exact file set. `commands/` is handled separately (sourced
+ * from common template context, not from this directory tree).
+ */
+function walkOpenCodeTemplateDir(): Map<string, string> {
+  const files = new Map<string, string>();
+  const sourcePath = getOpenCodeTemplatePath();
 
-  for (const entry of readdirSync(src)) {
-    if (shouldExclude(entry) || skipDirs.includes(entry)) {
-      continue;
-    }
-
-    const srcPath = path.join(src, entry);
-    const destPath = path.join(dest, entry);
-    const stat = statSync(srcPath);
-
-    if (stat.isDirectory()) {
-      await copyDirFiltered(srcPath, destPath);
-    } else {
-      const content = readFileSync(srcPath, "utf-8");
-      await writeFile(destPath, content);
+  function walk(relDir: string): void {
+    const absDir = path.join(sourcePath, relDir);
+    for (const entry of readdirSync(absDir)) {
+      if (shouldExclude(entry)) continue;
+      const absEntry = path.join(absDir, entry);
+      const relEntry = relDir ? path.join(relDir, entry) : entry;
+      const stat = statSync(absEntry);
+      if (stat.isDirectory()) {
+        // Skip commands/ — that's sourced from common/ templates, not the
+        // opencode/ dir. Including both paths would double-write.
+        if (relEntry === "commands") continue;
+        walk(relEntry);
+      } else {
+        const content = readFileSync(absEntry, "utf-8");
+        files.set(path.join(".opencode", relEntry), content);
+      }
     }
   }
+
+  walk("");
+  return files;
 }
 
 /**
- * Configure OpenCode:
- * - agents/, plugins/, lib/, package.json from platform-specific templates
- * - commands/trellis/ from common templates (resolved with OpenCode context)
+ * Collect all opencode template files that `trellis update` should track.
+ *
+ * Must stay in sync with `configureOpenCode`: both paths produce the same
+ * `Map<relPath, content>`. If they drift, update will spuriously flag newly
+ * init'd files as modifications on the next run.
+ */
+export function collectOpenCodeTemplates(): Map<string, string> {
+  const files = walkOpenCodeTemplateDir();
+  const ctx = AI_TOOLS.opencode.templateContext;
+  for (const cmd of resolveCommands(ctx)) {
+    files.set(`.opencode/commands/trellis/${cmd.name}.md`, cmd.content);
+  }
+  for (const skill of resolveSkills(ctx)) {
+    files.set(`.opencode/skills/${skill.name}/SKILL.md`, skill.content);
+  }
+  return files;
+}
+
+/**
+ * Configure OpenCode at init time by writing the same file set enumerated
+ * by `collectOpenCodeTemplates`.
  */
 export async function configureOpenCode(cwd: string): Promise<void> {
-  const sourcePath = getOpenCodeTemplatePath();
-  const destPath = path.join(cwd, ".opencode");
-  const ctx = AI_TOOLS.opencode.templateContext;
-
-  await copyDirFiltered(sourcePath, destPath, ["commands"]);
-
-  // start + finish-work as slash commands
-  const commandsDir = path.join(destPath, "commands", "trellis");
-  ensureDir(commandsDir);
-  for (const cmd of resolveCommands(ctx)) {
-    await writeFile(path.join(commandsDir, `${cmd.name}.md`), cmd.content);
-  }
-
-  // Other 5 as skills
-  const skillsDir = path.join(destPath, "skills");
-  ensureDir(skillsDir);
-  for (const skill of resolveSkills(ctx)) {
-    const skillDir = path.join(skillsDir, skill.name);
-    ensureDir(skillDir);
-    await writeFile(path.join(skillDir, "SKILL.md"), skill.content);
+  for (const [relPath, content] of collectOpenCodeTemplates()) {
+    const absPath = path.join(cwd, relPath);
+    ensureDir(path.dirname(absPath));
+    await writeFile(absPath, content);
   }
 }
