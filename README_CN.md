@@ -37,10 +37,6 @@
 <img src="assets/trellis-demo-zh.gif" alt="Trellis 工作流演示" width="100%">
 </p>
 
-<p align="center">
-<img src="assets/trellis-demo-zh.gif" alt="Trellis 工作流演示" width="100%">
-</p>
-
 ## 为什么用 Trellis？
 
 | 能力 | 带来的变化 |
