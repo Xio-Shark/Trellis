@@ -1716,6 +1716,77 @@ describe("regression: migration manifest consistency", () => {
     );
     expect(claudeRenames.length).toBeGreaterThan(0);
   });
+
+  // v0.5.0-beta.0: 5 user-facing commands became auto-triggered skills across all platforms.
+  // Manifest must contain 13 source layers × 5 commands = 65 rename entries so upgraders
+  // don't end up with old command files alongside new skill files.
+  describe("[0.5.0-beta.0] command→skill rename coverage", () => {
+    const COMMANDS = [
+      "before-dev",
+      "brainstorm",
+      "break-loop",
+      "check",
+      "update-spec",
+    ] as const;
+
+    type PathFn = (name: string) => string;
+    const PLATFORMS: { id: string; from: PathFn; to: PathFn }[] = [
+      { id: "claude",      from: (n) => `.claude/commands/trellis/${n}.md`,     to: (n) => `.claude/skills/trellis-${n}/SKILL.md` },
+      { id: "cursor",      from: (n) => `.cursor/commands/trellis-${n}.md`,     to: (n) => `.cursor/skills/trellis-${n}/SKILL.md` },
+      { id: "opencode",    from: (n) => `.opencode/commands/trellis/${n}.md`,   to: (n) => `.opencode/skills/trellis-${n}/SKILL.md` },
+      { id: "codebuddy",   from: (n) => `.codebuddy/commands/trellis/${n}.md`,  to: (n) => `.codebuddy/skills/trellis-${n}/SKILL.md` },
+      { id: "droid",       from: (n) => `.factory/commands/trellis/${n}.md`,    to: (n) => `.factory/skills/trellis-${n}/SKILL.md` },
+      { id: "gemini",      from: (n) => `.gemini/commands/trellis/${n}.toml`,   to: (n) => `.gemini/skills/trellis-${n}/SKILL.md` },
+      { id: "copilot",     from: (n) => `.github/prompts/${n}.prompt.md`,       to: (n) => `.github/skills/trellis-${n}/SKILL.md` },
+      { id: "kilo",        from: (n) => `.kilocode/workflows/${n}.md`,          to: (n) => `.kilocode/skills/trellis-${n}/SKILL.md` },
+      { id: "antigravity", from: (n) => `.agent/workflows/${n}.md`,             to: (n) => `.agent/skills/trellis-${n}/SKILL.md` },
+      { id: "windsurf",    from: (n) => `.windsurf/workflows/trellis-${n}.md`,  to: (n) => `.windsurf/skills/trellis-${n}/SKILL.md` },
+      { id: "kiro",        from: (n) => `.kiro/skills/${n}/SKILL.md`,           to: (n) => `.kiro/skills/trellis-${n}/SKILL.md` },
+      { id: "qoder",       from: (n) => `.qoder/skills/${n}/SKILL.md`,          to: (n) => `.qoder/skills/trellis-${n}/SKILL.md` },
+      { id: "shared",      from: (n) => `.agents/skills/${n}/SKILL.md`,         to: (n) => `.agents/skills/trellis-${n}/SKILL.md` },
+    ];
+
+    it("has at least 65 rename entries for command→skill (13 platforms × 5 commands)", () => {
+      const migrations = getMigrationsForVersion("0.4.0", "0.5.0-beta.0");
+      const renames = migrations.filter((m) => m.type === "rename");
+      // >= because additional non-command→skill renames may exist (e.g. finish-work
+      // relocation under trellis- namespace on skill-only platforms).
+      expect(renames.length).toBeGreaterThanOrEqual(
+        PLATFORMS.length * COMMANDS.length,
+      );
+    });
+
+    it("every platform × command pair has a matching rename entry", () => {
+      const migrations = getMigrationsForVersion("0.4.0", "0.5.0-beta.0");
+      const renames = migrations.filter((m) => m.type === "rename");
+      const index = new Map(renames.map((m) => [m.from, m.to]));
+
+      for (const p of PLATFORMS) {
+        for (const c of COMMANDS) {
+          const expectedFrom = p.from(c);
+          const expectedTo = p.to(c);
+          expect(index.has(expectedFrom), `missing rename for ${p.id}:${c} (${expectedFrom})`).toBe(true);
+          expect(index.get(expectedFrom)).toBe(expectedTo);
+        }
+      }
+    });
+
+    it("breaking + recommendMigrate flags are both set (drives gate)", () => {
+      // The update.ts breaking-change gate only fires when BOTH flags are true.
+      // If either gets dropped accidentally, users upgrading from 0.4.x can half-migrate
+      // by running `trellis update` without `--migrate`.
+      const manifestPath = path.join(
+        path.dirname(fileURLToPath(import.meta.url)),
+        "../src/migrations/manifests/0.5.0-beta.0.json",
+      );
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8")) as {
+        breaking?: boolean;
+        recommendMigrate?: boolean;
+      };
+      expect(manifest.breaking).toBe(true);
+      expect(manifest.recommendMigrate).toBe(true);
+    });
+  });
 });
 
 // =============================================================================

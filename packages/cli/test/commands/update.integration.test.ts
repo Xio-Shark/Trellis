@@ -489,4 +489,64 @@ describe("update() integration", () => {
     // File should be DELETED (hash matched allowed_hashes, no update.skip protection)
     expect(fs.existsSync(deprecatedFile)).toBe(false);
   });
+
+  // --- Breaking-change migration gate (v0.5.0-beta.0+) ---
+  // Gate: if upgrading from a version that spans a breaking manifest with
+  // recommendMigrate=true, `update` must be invoked with --migrate (or --dry-run
+  // for preview). Without either, exit 1 with a clear error.
+
+  /** Simulate a 0.4.0 project by writing a legacy command file that the manifest renames */
+  function stageLegacy040Project(): void {
+    const versionPath = path.join(tmpDir, DIR_NAMES.WORKFLOW, ".version");
+    fs.writeFileSync(versionPath, "0.4.0");
+    // Create one legacy file that matches a `rename` entry in 0.5.0-beta.0 manifest.
+    // Without this, classifyMigrations finds no work → early-exit before gate.
+    const legacyDir = path.join(tmpDir, ".claude", "commands", "trellis");
+    fs.mkdirSync(legacyDir, { recursive: true });
+    fs.writeFileSync(path.join(legacyDir, "before-dev.md"), "legacy content");
+  }
+
+  it("#22 breaking-change gate exits 1 when --migrate is missing", async () => {
+    await setupProject();
+    stageLegacy040Project();
+
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => undefined as never);
+
+    await update({});
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it("#23 breaking-change gate allows --dry-run without --migrate", async () => {
+    await setupProject();
+    stageLegacy040Project();
+
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => undefined as never);
+
+    await update({ dryRun: true });
+
+    // Gate must not fire for preview mode (users need to inspect before migrating)
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it("#24 breaking-change gate allows --migrate to proceed", async () => {
+    await setupProject();
+    stageLegacy040Project();
+
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => undefined as never);
+
+    await update({ migrate: true, force: true });
+
+    // Gate passes when --migrate is present; update proceeds to completion
+    expect(exitSpy).not.toHaveBeenCalled();
+    // Version must advance to current CLI after the migrate run
+    const versionPath = path.join(tmpDir, DIR_NAMES.WORKFLOW, ".version");
+    expect(fs.readFileSync(versionPath, "utf-8")).toBe(VERSION);
+  });
 });

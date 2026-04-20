@@ -4,8 +4,422 @@
   "breaking": true,
   "recommendMigrate": true,
   "changelog": "**Skill-first template architecture.** Commands and skills now live under `packages/cli/src/templates/common/` as a single source of truth (3 commands + 5 skills). All 13 platforms resolve from common/ + per-platform adapters. Eliminates the prior N-copies-of-same-content drift that caused stale commands to linger on some platforms but not others.\n\n## Hooks + agents for 7 new platforms\n\nQoder, CodeBuddy, Factory Droid, Cursor, Gemini CLI, Kiro, and GitHub Copilot go from commands-only to fully agent-capable. Each ships:\n- Sub-agent definitions (implement / check / research) in the platform's native format (Claude-like Markdown, Kiro JSON, Gemini settings.json, Copilot agent.md, Droid droids/, CodeBuddy nested commands)\n- Hook configuration wired via `shared-hooks/` Python scripts (session-start, inject-subagent-context, statusline) — single implementation, cross-platform output adapters\n- Claude Code hooks migrated from its own 1,435-line set to the shared-hooks implementation (dead fallback code removed — `AGENT_DEBUG`, `spec.jsonl`/`research.jsonl` reads, hardcoded `check-cross-layer.md` reference)\n\n## Sub-agent context injection: class-1 hook vs class-2 pull-based\n\nCodex, Copilot, Gemini, and Qoder (class-2) can't reliably receive hook-modified sub-agent prompts (platform bugs or architectural limits: Codex PreToolUse only fires for Bash; Copilot #2392/#2540; Gemini #18128; Qoder has no Task tool). These 4 platforms now use a **pull-based prelude**: sub-agent definitions include an up-front instruction block that makes the sub-agent Read `.current-task` + `prd.md` + `implement.jsonl`/`check.jsonl` themselves on first turn. Class-1 platforms (Claude / Cursor / OpenCode / Kiro / CodeBuddy / Droid) continue with hook-based push injection. Both paths implemented in shared infrastructure so future platforms only pick one.\n\n## Workflow enforcement v2: per-turn breadcrumb hook\n\nNew `inject-workflow-state.py` shared hook fires on every user prompt (UserPromptSubmit equivalent on 8 platforms; `chat.message` on OpenCode Bun plugin). Injects a <200-byte `<workflow-state>` block nudging AI toward the next workflow step based on current `task.json.status`. Tag-block content is pulled from `workflow.md` `[workflow-state:STATUS]` blocks — users who fork the workflow edit one markdown file, not Python. Covers four states: `no_task` / `planning` / `in_progress` / `completed`; recognizes hyphenated custom statuses (`in-review`, etc.). Three-tier fallback (workflow.md missing → partial tag → unknown status) so the hook never breaks a conversation. Kiro downgraded — no per-turn main-session hook available upstream.\n\n## SessionStart payload restructure\n\nThe SessionStart `<workflow>` block grew from 2.7 KB (TOC + Phase Index) to 9.5 KB by inlining Phase 1/2/3 step bodies — AI now has step-level how-to up front instead of lazy-loading via `get_context.py --mode phase --step X.Y`. Funded by shrinking `<guidelines>` from 10.9 KB to 4.6 KB: the cross-package `guides/index.md` stays inlined, but other `spec/<pkg>/<layer>/index.md` files are listed as paths only (sub-agents get their specific specs via jsonl injection, main agent doesn't need index content in context). Total session-start payload: 16.7 KB (under Claude Code's ~20 KB truncate threshold). `workflow.md` itself slimmed 17 KB → 14 KB: English-only (was bilingual), removed `What is Trellis` intro + File Structure tree + redundant Best Practices section, task.py command table expanded from 5 → 16 subcommands per PR #169's structure.\n\n## Legacy cleanup (126-entry safe-file-delete migration)\n\nThis release removes four categories of primitives whose replacement is now the default:\n\n- **iFlow platform** — CLI unmaintained; entire `.iflow/` tree + template source removed\n- **Multi-agent pipeline** (`.trellis/scripts/multi_agent/` + `worktree.yaml`) — all major CLIs now ship their own worktree support; Trellis doesn't need to reimplement\n- **Ralph Loop hook** (`ralph-loop.py`) — SubagentStop + exit-code-2 enforcement not portable across platforms; check agent's self-fix loop is sufficient\n- **Six commands + three sub-agents** — `parallel` (superseded by native worktrees), `onboard`/`create-command`/`integrate-skill` (low usage), `check-cross-layer` (merged into `check`), `record-session` (subsumed by `/finish-work`); `dispatch`/`debug`/`plan` agents (replaced by skill routing)\n\nAll cleanup is hash-verified: if you modified any of these files locally they stay put with a warning; only pristine Trellis-written copies get removed. 126 safe-file-delete entries cover the full surface across all 13 platforms.\n\n## Other improvements\n\n- `task.py create` stops writing legacy `current_phase` / `next_action` fields (FP-analysis outcome: workflow.md's Phase N.M is documentation layering, not runtime state; `task.json.status` is the sole task-level state)\n- `inject-subagent-context.py` `update_current_phase()` function deleted (was re-writing legacy `current_phase` on every Task spawn, undoing the deprecation)\n- Codex hooks integration: `configureCodex` now auto-writes shared-hooks (was skipping them); stderr warning on `trellis init --codex` about `features.codex_hooks = true` requirement in user's `~/.codex/config.toml`\n- `get_context.py --mode phase` (no `--step`) returns Phase Index + Phase 1/2/3 bodies (was Phase Index only) — agent-less platforms running `/start` manually get the same content as hook-based platforms\n- Workflow.md `[workflow-state:STATUS]` tag convention: supports hyphens in custom statuses (`in-review`, `blocked-by-team`); unknown statuses emit a generic fallback instead of silent-exit\n- Hook-path CWD robustness (partial): `inject-workflow-state.py` walks up from CWD to find `.trellis/` — fixes subdirectory / submodule CWD drift for this hook. Full coverage across all hooks is a post-beta task.\n\n## Deferred to post-beta\n\n- Kiro `agentSpawn` hook output-format validation in real environment\n- Cursor / CodeBuddy / Droid sub-agent hook injection real-env testing\n- Full hook-path CWD-robustness across all platforms (Windows cmd/PowerShell)\n- Parent-child Trellis config (issue #172 — submodule inheriting root spec)\n\n## Spec docs updated\n\n- `platform-integration.md` — new sections: Workflow State Injection (per-turn breadcrumb), Subagent Context Injection: Hook-based vs Pull-based, Guidelines: Paths-only vs Inline, Per-Turn Hook design principle (no silent-exit on \"nothing to say\")\n- `quality-guidelines.md` — new section: Schema Deprecation: Audit ALL Writers, Not Just the Creator (based on a Codex cross-review finding where `cmd_create` dropped a field but a hook kept re-writing it)\n- `workflow.md` — full English translation; slim structure; task.py 16-subcommand reference table\n- `directory-structure.md` + `script-conventions.md` — multi-agent references removed",
-  "notes": "**Breaking release — run `trellis update` to sync.**\n\nExisting projects on 0.4.x:\n1. `trellis update` runs the 126-entry safe-file-delete migration automatically (hash-verified — your locally modified files are preserved with a warning, only pristine Trellis-written files are removed)\n2. Then writes new templates for the 7 newly-agent-capable platforms and the shared-hooks set\n3. iFlow users: the .iflow/ directory will be removed. If you want to keep it, copy it out before running update.\n\nIf you had customized the removed commands (parallel / onboard / check-cross-layer / record-session / create-command / integrate-skill) or the dispatch/debug/plan sub-agents, the safe-file-delete hash check will skip them and log a warning. Remove manually after reviewing whether the new skill routing (trellis-brainstorm / before-dev / check / break-loop / update-spec) covers your use case.\n\nCodex users: enable `features.codex_hooks = true` in `~/.codex/config.toml` to get SessionStart + UserPromptSubmit breadcrumb injection (the feature-flag is gated by Codex; without it hooks.json is silently ignored).\n\nInstall: `npm install -g @mindfoldhq/trellis@beta`",
+  "notes": "**Breaking release — run `trellis update` to sync.**\n\nExisting projects on 0.4.x:\n1. Run `trellis update --migrate` (the `--migrate` flag is REQUIRED — 68 rename entries don't auto-execute without it, and the new breaking-change gate will exit 1 telling you to add it)\n2. The 138-entry safe-file-delete runs next (hash-verified — locally modified files are preserved with a warning, only pristine Trellis-written files are removed)\n3. New templates are written for the 7 newly-agent-capable platforms and the shared-hooks set\n4. iFlow users: the .iflow/ directory will be removed. Copy it out first if you want to keep it.\n\n**A few confirmation prompts are expected** and safe to accept. Trellis 0.4.0 failed to track certain skill-only `finish-work` and `update-spec` SKILL.md hashes in `.template-hashes.json`, so pristine copies show as modified. The prompt's per-entry `reason` field explains this inline; pressing Enter (default = backup-rename) is always safe.\n\nIf you had customized the removed commands (parallel / onboard / check-cross-layer / record-session / create-command / integrate-skill) or the dispatch/debug/plan sub-agents, the safe-file-delete hash check will skip them and log a warning. Remove manually after reviewing whether the new skill routing (trellis-brainstorm / before-dev / check / break-loop / update-spec) covers your use case.\n\n`/trellis:record-session` is gone — its one job (writing the session journal via add_session.py) is now Step 3 of `/trellis:finish-work`. Replace any aliases / scripts that call `record-session` with `finish-work`.\n\nCodex users: enable `features.codex_hooks = true` in `~/.codex/config.toml` to get SessionStart + UserPromptSubmit breadcrumb injection (the feature-flag is gated by Codex; without it hooks.json is silently ignored).\n\nInstall: `npm install -g @mindfoldhq/trellis@beta`",
   "migrations": [
+    {
+      "type": "rename",
+      "from": ".claude/commands/trellis/before-dev.md",
+      "to": ".claude/skills/trellis-before-dev/SKILL.md",
+      "description": "v0.5.0 command→skill: before-dev migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".claude/commands/trellis/brainstorm.md",
+      "to": ".claude/skills/trellis-brainstorm/SKILL.md",
+      "description": "v0.5.0 command→skill: brainstorm migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".claude/commands/trellis/break-loop.md",
+      "to": ".claude/skills/trellis-break-loop/SKILL.md",
+      "description": "v0.5.0 command→skill: break-loop migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".claude/commands/trellis/check.md",
+      "to": ".claude/skills/trellis-check/SKILL.md",
+      "description": "v0.5.0 command→skill: check migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".claude/commands/trellis/update-spec.md",
+      "to": ".claude/skills/trellis-update-spec/SKILL.md",
+      "description": "v0.5.0 command→skill: update-spec migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".cursor/commands/trellis-before-dev.md",
+      "to": ".cursor/skills/trellis-before-dev/SKILL.md",
+      "description": "v0.5.0 command→skill: before-dev migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".cursor/commands/trellis-brainstorm.md",
+      "to": ".cursor/skills/trellis-brainstorm/SKILL.md",
+      "description": "v0.5.0 command→skill: brainstorm migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".cursor/commands/trellis-break-loop.md",
+      "to": ".cursor/skills/trellis-break-loop/SKILL.md",
+      "description": "v0.5.0 command→skill: break-loop migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".cursor/commands/trellis-check.md",
+      "to": ".cursor/skills/trellis-check/SKILL.md",
+      "description": "v0.5.0 command→skill: check migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".cursor/commands/trellis-update-spec.md",
+      "to": ".cursor/skills/trellis-update-spec/SKILL.md",
+      "description": "v0.5.0 command→skill: update-spec migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".opencode/commands/trellis/before-dev.md",
+      "to": ".opencode/skills/trellis-before-dev/SKILL.md",
+      "description": "v0.5.0 command→skill: before-dev migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".opencode/commands/trellis/brainstorm.md",
+      "to": ".opencode/skills/trellis-brainstorm/SKILL.md",
+      "description": "v0.5.0 command→skill: brainstorm migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".opencode/commands/trellis/break-loop.md",
+      "to": ".opencode/skills/trellis-break-loop/SKILL.md",
+      "description": "v0.5.0 command→skill: break-loop migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".opencode/commands/trellis/check.md",
+      "to": ".opencode/skills/trellis-check/SKILL.md",
+      "description": "v0.5.0 command→skill: check migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".opencode/commands/trellis/update-spec.md",
+      "to": ".opencode/skills/trellis-update-spec/SKILL.md",
+      "description": "v0.5.0 command→skill: update-spec migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".codebuddy/commands/trellis/before-dev.md",
+      "to": ".codebuddy/skills/trellis-before-dev/SKILL.md",
+      "description": "v0.5.0 command→skill: before-dev migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".codebuddy/commands/trellis/brainstorm.md",
+      "to": ".codebuddy/skills/trellis-brainstorm/SKILL.md",
+      "description": "v0.5.0 command→skill: brainstorm migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".codebuddy/commands/trellis/break-loop.md",
+      "to": ".codebuddy/skills/trellis-break-loop/SKILL.md",
+      "description": "v0.5.0 command→skill: break-loop migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".codebuddy/commands/trellis/check.md",
+      "to": ".codebuddy/skills/trellis-check/SKILL.md",
+      "description": "v0.5.0 command→skill: check migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".codebuddy/commands/trellis/update-spec.md",
+      "to": ".codebuddy/skills/trellis-update-spec/SKILL.md",
+      "description": "v0.5.0 command→skill: update-spec migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".factory/commands/trellis/before-dev.md",
+      "to": ".factory/skills/trellis-before-dev/SKILL.md",
+      "description": "v0.5.0 command→skill: before-dev migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".factory/commands/trellis/brainstorm.md",
+      "to": ".factory/skills/trellis-brainstorm/SKILL.md",
+      "description": "v0.5.0 command→skill: brainstorm migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".factory/commands/trellis/break-loop.md",
+      "to": ".factory/skills/trellis-break-loop/SKILL.md",
+      "description": "v0.5.0 command→skill: break-loop migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".factory/commands/trellis/check.md",
+      "to": ".factory/skills/trellis-check/SKILL.md",
+      "description": "v0.5.0 command→skill: check migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".factory/commands/trellis/update-spec.md",
+      "to": ".factory/skills/trellis-update-spec/SKILL.md",
+      "description": "v0.5.0 command→skill: update-spec migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".gemini/commands/trellis/before-dev.toml",
+      "to": ".gemini/skills/trellis-before-dev/SKILL.md",
+      "description": "v0.5.0 command→skill: before-dev migrated to auto-triggered skill (format change — review diff, then adopt new template)"
+    },
+    {
+      "type": "rename",
+      "from": ".gemini/commands/trellis/brainstorm.toml",
+      "to": ".gemini/skills/trellis-brainstorm/SKILL.md",
+      "description": "v0.5.0 command→skill: brainstorm migrated to auto-triggered skill (format change — review diff, then adopt new template)"
+    },
+    {
+      "type": "rename",
+      "from": ".gemini/commands/trellis/break-loop.toml",
+      "to": ".gemini/skills/trellis-break-loop/SKILL.md",
+      "description": "v0.5.0 command→skill: break-loop migrated to auto-triggered skill (format change — review diff, then adopt new template)"
+    },
+    {
+      "type": "rename",
+      "from": ".gemini/commands/trellis/check.toml",
+      "to": ".gemini/skills/trellis-check/SKILL.md",
+      "description": "v0.5.0 command→skill: check migrated to auto-triggered skill (format change — review diff, then adopt new template)"
+    },
+    {
+      "type": "rename",
+      "from": ".gemini/commands/trellis/update-spec.toml",
+      "to": ".gemini/skills/trellis-update-spec/SKILL.md",
+      "description": "v0.5.0 command→skill: update-spec migrated to auto-triggered skill (format change — review diff, then adopt new template)"
+    },
+    {
+      "type": "rename",
+      "from": ".github/prompts/before-dev.prompt.md",
+      "to": ".github/skills/trellis-before-dev/SKILL.md",
+      "description": "v0.5.0 command→skill: before-dev migrated to auto-triggered skill (format change — review diff, then adopt new template)"
+    },
+    {
+      "type": "rename",
+      "from": ".github/prompts/brainstorm.prompt.md",
+      "to": ".github/skills/trellis-brainstorm/SKILL.md",
+      "description": "v0.5.0 command→skill: brainstorm migrated to auto-triggered skill (format change — review diff, then adopt new template)"
+    },
+    {
+      "type": "rename",
+      "from": ".github/prompts/break-loop.prompt.md",
+      "to": ".github/skills/trellis-break-loop/SKILL.md",
+      "description": "v0.5.0 command→skill: break-loop migrated to auto-triggered skill (format change — review diff, then adopt new template)"
+    },
+    {
+      "type": "rename",
+      "from": ".github/prompts/check.prompt.md",
+      "to": ".github/skills/trellis-check/SKILL.md",
+      "description": "v0.5.0 command→skill: check migrated to auto-triggered skill (format change — review diff, then adopt new template)"
+    },
+    {
+      "type": "rename",
+      "from": ".github/prompts/update-spec.prompt.md",
+      "to": ".github/skills/trellis-update-spec/SKILL.md",
+      "description": "v0.5.0 command→skill: update-spec migrated to auto-triggered skill (format change — review diff, then adopt new template)"
+    },
+    {
+      "type": "rename",
+      "from": ".kilocode/workflows/before-dev.md",
+      "to": ".kilocode/skills/trellis-before-dev/SKILL.md",
+      "description": "v0.5.0 command→skill: before-dev migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".kilocode/workflows/brainstorm.md",
+      "to": ".kilocode/skills/trellis-brainstorm/SKILL.md",
+      "description": "v0.5.0 command→skill: brainstorm migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".kilocode/workflows/break-loop.md",
+      "to": ".kilocode/skills/trellis-break-loop/SKILL.md",
+      "description": "v0.5.0 command→skill: break-loop migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".kilocode/workflows/check.md",
+      "to": ".kilocode/skills/trellis-check/SKILL.md",
+      "description": "v0.5.0 command→skill: check migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".kilocode/workflows/update-spec.md",
+      "to": ".kilocode/skills/trellis-update-spec/SKILL.md",
+      "description": "v0.5.0 command→skill: update-spec migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".agent/workflows/before-dev.md",
+      "to": ".agent/skills/trellis-before-dev/SKILL.md",
+      "description": "v0.5.0 command→skill: before-dev migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".agent/workflows/brainstorm.md",
+      "to": ".agent/skills/trellis-brainstorm/SKILL.md",
+      "description": "v0.5.0 command→skill: brainstorm migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".agent/workflows/break-loop.md",
+      "to": ".agent/skills/trellis-break-loop/SKILL.md",
+      "description": "v0.5.0 command→skill: break-loop migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".agent/workflows/check.md",
+      "to": ".agent/skills/trellis-check/SKILL.md",
+      "description": "v0.5.0 command→skill: check migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".agent/workflows/update-spec.md",
+      "to": ".agent/skills/trellis-update-spec/SKILL.md",
+      "description": "v0.5.0 command→skill: update-spec migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".windsurf/workflows/trellis-before-dev.md",
+      "to": ".windsurf/skills/trellis-before-dev/SKILL.md",
+      "description": "v0.5.0 command→skill: before-dev migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".windsurf/workflows/trellis-brainstorm.md",
+      "to": ".windsurf/skills/trellis-brainstorm/SKILL.md",
+      "description": "v0.5.0 command→skill: brainstorm migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".windsurf/workflows/trellis-break-loop.md",
+      "to": ".windsurf/skills/trellis-break-loop/SKILL.md",
+      "description": "v0.5.0 command→skill: break-loop migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".windsurf/workflows/trellis-check.md",
+      "to": ".windsurf/skills/trellis-check/SKILL.md",
+      "description": "v0.5.0 command→skill: check migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".windsurf/workflows/trellis-update-spec.md",
+      "to": ".windsurf/skills/trellis-update-spec/SKILL.md",
+      "description": "v0.5.0 command→skill: update-spec migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".kiro/skills/before-dev/SKILL.md",
+      "to": ".kiro/skills/trellis-before-dev/SKILL.md",
+      "description": "v0.5.0 command→skill: before-dev migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".kiro/skills/brainstorm/SKILL.md",
+      "to": ".kiro/skills/trellis-brainstorm/SKILL.md",
+      "description": "v0.5.0 command→skill: brainstorm migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".kiro/skills/break-loop/SKILL.md",
+      "to": ".kiro/skills/trellis-break-loop/SKILL.md",
+      "description": "v0.5.0 command→skill: break-loop migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".kiro/skills/check/SKILL.md",
+      "to": ".kiro/skills/trellis-check/SKILL.md",
+      "description": "v0.5.0 command→skill: check migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".kiro/skills/update-spec/SKILL.md",
+      "to": ".kiro/skills/trellis-update-spec/SKILL.md",
+      "description": "v0.5.0 command→skill: update-spec migrated to auto-triggered skill",
+      "reason": "Why prompted: Trellis 0.4.0 init skipped hashing this path (known CLI bug), so even an unmodified file appears as 'modified' here. If you haven't edited it, [r] rename anyway is safe and equivalent to [b] backup-rename."
+    },
+    {
+      "type": "rename",
+      "from": ".qoder/skills/before-dev/SKILL.md",
+      "to": ".qoder/skills/trellis-before-dev/SKILL.md",
+      "description": "v0.5.0 command→skill: before-dev migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".qoder/skills/brainstorm/SKILL.md",
+      "to": ".qoder/skills/trellis-brainstorm/SKILL.md",
+      "description": "v0.5.0 command→skill: brainstorm migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".qoder/skills/break-loop/SKILL.md",
+      "to": ".qoder/skills/trellis-break-loop/SKILL.md",
+      "description": "v0.5.0 command→skill: break-loop migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".qoder/skills/check/SKILL.md",
+      "to": ".qoder/skills/trellis-check/SKILL.md",
+      "description": "v0.5.0 command→skill: check migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".qoder/skills/update-spec/SKILL.md",
+      "to": ".qoder/skills/trellis-update-spec/SKILL.md",
+      "description": "v0.5.0 command→skill: update-spec migrated to auto-triggered skill",
+      "reason": "Why prompted: Trellis 0.4.0 init skipped hashing this path (known CLI bug), so even an unmodified file appears as 'modified' here. If you haven't edited it, [r] rename anyway is safe and equivalent to [b] backup-rename."
+    },
+    {
+      "type": "rename",
+      "from": ".agents/skills/before-dev/SKILL.md",
+      "to": ".agents/skills/trellis-before-dev/SKILL.md",
+      "description": "v0.5.0 command→skill: before-dev migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".agents/skills/brainstorm/SKILL.md",
+      "to": ".agents/skills/trellis-brainstorm/SKILL.md",
+      "description": "v0.5.0 command→skill: brainstorm migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".agents/skills/break-loop/SKILL.md",
+      "to": ".agents/skills/trellis-break-loop/SKILL.md",
+      "description": "v0.5.0 command→skill: break-loop migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".agents/skills/check/SKILL.md",
+      "to": ".agents/skills/trellis-check/SKILL.md",
+      "description": "v0.5.0 command→skill: check migrated to auto-triggered skill"
+    },
+    {
+      "type": "rename",
+      "from": ".agents/skills/update-spec/SKILL.md",
+      "to": ".agents/skills/trellis-update-spec/SKILL.md",
+      "description": "v0.5.0 command→skill: update-spec migrated to auto-triggered skill",
+      "reason": "Why prompted: Trellis 0.4.0 init skipped hashing this path (known CLI bug), so even an unmodified file appears as 'modified' here. If you haven't edited it, [r] rename anyway is safe and equivalent to [b] backup-rename."
+    },
+    {
+      "type": "rename",
+      "from": ".kiro/skills/finish-work/SKILL.md",
+      "to": ".kiro/skills/trellis-finish-work/SKILL.md",
+      "description": "v0.5.0 finish-work skill relocated under trellis- namespace",
+      "reason": "Why prompted: Trellis 0.4.0 init didn't hash this path (known CLI bug), so even an unmodified file appears modified here. If you haven't edited it, [r] rename anyway is safe and equivalent to [b] backup-rename."
+    },
+    {
+      "type": "rename",
+      "from": ".qoder/skills/finish-work/SKILL.md",
+      "to": ".qoder/skills/trellis-finish-work/SKILL.md",
+      "description": "v0.5.0 finish-work skill relocated under trellis- namespace",
+      "reason": "Why prompted: Trellis 0.4.0 init didn't hash this path (known CLI bug), so even an unmodified file appears modified here. If you haven't edited it, [r] rename anyway is safe and equivalent to [b] backup-rename."
+    },
+    {
+      "type": "rename",
+      "from": ".agents/skills/finish-work/SKILL.md",
+      "to": ".agents/skills/trellis-finish-work/SKILL.md",
+      "description": "v0.5.0 finish-work skill relocated under trellis- namespace",
+      "reason": "Why prompted: Trellis 0.4.0 init didn't hash this path (known CLI bug), so even an unmodified file appears modified here. If you haven't edited it, [r] rename anyway is safe and equivalent to [b] backup-rename."
+    },
     {
       "type": "safe-file-delete",
       "from": ".claude/commands/trellis/onboard.md",
@@ -1128,6 +1542,102 @@
       "description": "Removed in v0.5.0 (shell-archive cleanup)",
       "allowed_hashes": [
         "85457600b714f6b6ca851939e31b223b7a9ae7858fa7a0abc713bdafb2212a3a"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".agents/skills/start/SKILL.md",
+      "description": "Removed in v0.5.0 — session-start hook (UserPromptSubmit breadcrumb) replaces the /start command",
+      "allowed_hashes": [
+        "8853e4ddc1681e043dec34be76c7c6fd961a3d52cbd0a2320225d72440425639"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".claude/commands/trellis/start.md",
+      "description": "Removed in v0.5.0 — session-start hook (UserPromptSubmit breadcrumb) replaces the /start command",
+      "allowed_hashes": [
+        "34ecead84912a4338575f8648a9d449f89dfb4d4725416c889dac03586f98800"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".codebuddy/commands/trellis/start.md",
+      "description": "Removed in v0.5.0 — session-start hook (UserPromptSubmit breadcrumb) replaces the /start command",
+      "allowed_hashes": [
+        "110f0976b965b4d50adb2898e609cee7f5f57f19ea48750c727895bb9bc1d2f3"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".cursor/commands/trellis-start.md",
+      "description": "Removed in v0.5.0 — session-start hook (UserPromptSubmit breadcrumb) replaces the /start command",
+      "allowed_hashes": [
+        "f03c7c1fde78c60ac8604938f1af7b2b54ef3cb4caf200d88edbbc8fc8d58c8f"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".factory/commands/trellis/start.md",
+      "description": "Removed in v0.5.0 — session-start hook (UserPromptSubmit breadcrumb) replaces the /start command",
+      "allowed_hashes": [
+        "bf9800dff1819312e6a00fb8382c58ee7ca9d6828048ae447c036683f3801fb9"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".gemini/commands/trellis/start.toml",
+      "description": "Removed in v0.5.0 — session-start hook (UserPromptSubmit breadcrumb) replaces the /start command",
+      "allowed_hashes": [
+        "ed53363d1d98c5d7ff1493cf585493820743339cf33e7ecd63349e46b28156c7"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".github/prompts/start.prompt.md",
+      "description": "Removed in v0.5.0 — session-start hook (UserPromptSubmit breadcrumb) replaces the /start command",
+      "allowed_hashes": [
+        "7c99eedf8649a7242f741c099e80bb92df111de36292b33505760f7c0cb105f9"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".kiro/skills/start/SKILL.md",
+      "description": "Removed in v0.5.0 — session-start hook (UserPromptSubmit breadcrumb) replaces the /start command",
+      "allowed_hashes": [
+        "8853e4ddc1681e043dec34be76c7c6fd961a3d52cbd0a2320225d72440425639"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".opencode/commands/trellis/start.md",
+      "description": "Removed in v0.5.0 — session-start hook (UserPromptSubmit breadcrumb) replaces the /start command",
+      "allowed_hashes": [
+        "84e76dea69542515e234f8b551491ca6bb31fe441ef702a43ff12c3b8397d5fe"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".qoder/skills/start/SKILL.md",
+      "description": "Removed in v0.5.0 — session-start hook (UserPromptSubmit breadcrumb) replaces the /start command",
+      "allowed_hashes": [
+        "ec6034801518a14aaf09fbf4aeab5f210a3d16177bafdd01b5a11883efa85b9e"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".agent/workflows/improve-ut.md",
+      "description": "Removed in v0.5.0 — improve-ut skill dropped (low usage; use /trellis:check instead)",
+      "allowed_hashes": [
+        "48ec1a0178adf224709773a90a95a6c5a16587c39940393fa4a1a1631bc4c920"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".agents/skills/improve-ut/SKILL.md",
+      "description": "Removed in v0.5.0 — improve-ut skill dropped (low usage; use /trellis:check instead)",
+      "allowed_hashes": [
+        "b63988e1b7de101dedc79cf7acba53f8d4bbcc05750aab19bbe23c74ee2e693e"
       ]
     }
   ]

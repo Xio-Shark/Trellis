@@ -632,12 +632,22 @@ const BACKUP_EXCLUDE_PATTERNS = [
   "/spec/", // Spec files (user-customized content)
   "/backlog/", // Backlog data (user data)
   "/agent-traces/", // Agent traces (user data, legacy name)
+  // Platform-native worktree dirs — these are full sub-repos the CLI
+  // spawns for parallel sessions. Backing them up on every update would
+  // snapshot the entire nested working tree. Confirmed conventions:
+  //   Claude Code: .claude/worktrees/
+  //   Cursor CLI:  .cursor/worktrees/
+  //   Gemini CLI:  .gemini/worktrees/
+  // Matches any platform using the same convention (future-proof).
+  "/worktrees/",
+  "/worktree/",
 ];
 
 /**
  * Check if a path should be excluded from backup
+ * @internal Exported for testing only
  */
-function shouldExcludeFromBackup(relativePath: string): boolean {
+export function shouldExcludeFromBackup(relativePath: string): boolean {
   for (const pattern of BACKUP_EXCLUDE_PATTERNS) {
     if (relativePath.includes(pattern)) {
       return true;
@@ -975,37 +985,75 @@ function printMigrationSummary(classified: ClassifiedMigrations): void {
 }
 
 /**
- * Prompt user for migration action on a single item
+ * Prompt user for migration action on a single item.
+ *
+ * Design notes:
+ * - Default is `backup-rename`: safest — preserves user's content as a .backup
+ *   alongside the rename, so Enter-to-continue never destroys work or leaves
+ *   stale paths behind.
+ * - "Skip" leaves a stale old path that won't be cleaned by later updates —
+ *   warn explicitly so users understand the consequence.
+ * - Show manifest description + why-flagged so users can make an informed
+ *   choice without needing to dig through the diff.
  */
 async function promptMigrationAction(
   item: MigrationItem,
 ): Promise<MigrationAction> {
-  const action =
+  const headline =
     item.type === "rename"
-      ? `${item.from} → ${item.to}`
-      : `Delete ${item.from}`;
+      ? `${chalk.cyan(item.from)} → ${chalk.green(item.to)}`
+      : `${chalk.red("Delete")} ${chalk.cyan(item.from)}`;
+
+  const description =
+    item.description ?? "No description provided in manifest.";
+
+  // Actions with inline guidance so users see the trade-off per choice.
+  const renameLabel =
+    item.type === "rename"
+      ? "[r] Rename anyway — use if the file is unchanged, or any edits are fine to move as-is"
+      : "[d] Delete anyway — use if you don't need this file (already migrated to replacement)";
+  const backupLabel =
+    "[b] Backup original, then proceed — SAFEST: keeps a .backup copy + completes the migration";
+  const skipLabel =
+    item.type === "rename"
+      ? "[s] Skip — leaves the old path in place (you'll see it flagged on future updates until cleaned up manually)"
+      : "[s] Skip — keeps the deprecated file (you'll see it flagged on future updates until cleaned up manually)";
+
+  // Prefer the per-migration `reason` (version-specific context authored in the
+  // manifest) over a generic fallback. Hardcoding version-specific hints here
+  // rots fast — every release gets a new set of edge cases.
+  const whyFlagged = item.reason
+    ? chalk.gray(
+        item.reason
+          .split("\n")
+          .map((line) => `  ${line}`)
+          .join("\n"),
+      )
+    : chalk.gray(
+        `  Why prompted: file content doesn't match the Trellis template hash\n` +
+          `  for this path — usually local customization. If unsure, pick [b].`,
+      );
+
+  const message = [
+    headline,
+    "",
+    chalk.bold("  What:") + " " + description,
+    whyFlagged,
+    "",
+    chalk.bold("  Choose:"),
+  ].join("\n");
 
   const { choice } = await inquirer.prompt<{ choice: MigrationAction }>([
     {
       type: "list",
       name: "choice",
-      message: `${action}\nThis file has been modified. What would you like to do?`,
+      message,
       choices: [
-        {
-          name:
-            item.type === "rename" ? "[r] Rename anyway" : "[d] Delete anyway",
-          value: "rename" as MigrationAction,
-        },
-        {
-          name: "[b] Backup original, then proceed",
-          value: "backup-rename" as MigrationAction,
-        },
-        {
-          name: "[s] Skip this migration",
-          value: "skip" as MigrationAction,
-        },
+        { name: backupLabel, value: "backup-rename" as MigrationAction },
+        { name: renameLabel, value: "rename" as MigrationAction },
+        { name: skipLabel, value: "skip" as MigrationAction },
       ],
-      default: "skip",
+      default: "backup-rename",
     },
   ]);
 
@@ -1432,7 +1480,45 @@ export async function update(options: UpdateOptions): Promise<void> {
 
     printMigrationSummary(classifiedMigrations);
 
-    // Show hint about --migrate flag (execution happens later after backup)
+    // Hard-stop: pending rename/delete work from a breaking release requires --migrate.
+    // Why: without --migrate, those entries are skipped and update()'s later path silently
+    // bumps the version stamp, leaving old paths orphaned next to new templates. Force
+    // explicit opt-in so the user can't half-migrate by accident.
+    const pendingMigrationCount =
+      classifiedMigrations.auto.length +
+      classifiedMigrations.confirm.length +
+      classifiedMigrations.conflict.length;
+
+    if (
+      pendingMigrationCount > 0 &&
+      !options.migrate &&
+      !options.dryRun &&
+      cliVsProject > 0 &&
+      projectVersion !== "unknown"
+    ) {
+      const gateMetadata = getMigrationMetadata(projectVersion, cliVersion);
+      if (gateMetadata.breaking && gateMetadata.recommendMigrate) {
+        console.log(
+          chalk.bgRed.white.bold(" ✖ MIGRATION REQUIRED ") +
+            chalk.red(
+              ` Breaking changes between ${projectVersion} → ${cliVersion} require --migrate.`,
+            ),
+        );
+        console.log("");
+        console.log(chalk.yellow(`  Run: trellis update --migrate`));
+        console.log("");
+        console.log(
+          chalk.gray(
+            "  Without --migrate, renamed/relocated files from breaking releases aren't moved,\n" +
+              "  leaving your project with stale paths alongside new templates.\n" +
+              "  Use --dry-run to preview what --migrate will do.",
+          ),
+        );
+        process.exit(1);
+      }
+    }
+
+    // Soft hint: non-breaking migrations or projects that chose not to set recommendMigrate
     if (!options.migrate) {
       const autoCount = classifiedMigrations.auto.length;
       const confirmCount = classifiedMigrations.confirm.length;
