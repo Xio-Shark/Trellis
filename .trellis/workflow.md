@@ -194,7 +194,7 @@ Research can happen at any time during requirement exploration. It isn't limited
 
 Spawn the research sub-agent:
 
-- **Agent type**: `research`
+- **Agent type**: `trellis-research`
 - **Task description**: Research <specific question>
 - **Key requirement**: Research output MUST be persisted to `{TASK_DIR}/research/`
 
@@ -272,7 +272,7 @@ Goal: turn the prd into code that passes quality checks.
 
 Spawn the implement sub-agent:
 
-- **Agent type**: `implement`
+- **Agent type**: `trellis-implement`
 - **Task description**: Implement the requirements per prd.md, consulting materials under `{TASK_DIR}/research/`; finish by running project lint and type-check
 
 The platform hook auto-handles:
@@ -297,7 +297,7 @@ The platform hook auto-handles:
 
 Spawn the check sub-agent:
 
-- **Agent type**: `check`
+- **Agent type**: `trellis-check`
 - **Task description**: Review all code changes against spec and prd; fix any findings directly; ensure lint and type-check pass
 
 The check agent's job:

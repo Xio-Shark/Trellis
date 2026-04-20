@@ -52,9 +52,9 @@ FILE_TASK_JSON = "task.json"
 # Subagent Constants (change here to rename subagent types)
 # =============================================================================
 
-AGENT_IMPLEMENT = "implement"
-AGENT_CHECK = "check"
-AGENT_RESEARCH = "research"
+AGENT_IMPLEMENT = "trellis-implement"
+AGENT_CHECK = "trellis-check"
+AGENT_RESEARCH = "trellis-research"
 
 # Agents that require a task directory
 AGENTS_REQUIRE_TASK = (AGENT_IMPLEMENT, AGENT_CHECK)

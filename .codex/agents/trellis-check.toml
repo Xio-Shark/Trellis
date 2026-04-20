@@ -1,4 +1,4 @@
-name = "check"
+name = "trellis-check"
 description = "Read-only Trellis reviewer focused on correctness, missing tests, and spec drift."
 sandbox_mode = "read-only"
 
