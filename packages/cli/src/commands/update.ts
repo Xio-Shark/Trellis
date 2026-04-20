@@ -1013,7 +1013,9 @@ async function promptMigrationAction(
       ? "[r] Rename anyway — use if the file is unchanged, or any edits are fine to move as-is"
       : "[d] Delete anyway — use if you don't need this file (already migrated to replacement)";
   const backupLabel =
-    "[b] Backup original, then proceed — SAFEST: keeps a .backup copy + completes the migration";
+    item.type === "rename"
+      ? "[b] Backup original, then proceed — SAFEST: writes <new-path>.backup with your current content, then renames"
+      : "[b] Backup original, then proceed — SAFEST: writes <path>.backup with your current content, then deletes";
   const skipLabel =
     item.type === "rename"
       ? "[s] Skip — leaves the old path in place (you'll see it flagged on future updates until cleaned up manually)"
@@ -1240,13 +1242,23 @@ async function executeMigrations(
       continue;
     }
 
-    // For backup-rename, just proceed (backup already done)
-    // Proceed with rename or delete
+    // For `backup-rename`, leave an inline .backup copy of the user's modified
+    // original next to the new location (for rename) or in place (for delete).
+    // This is in addition to the full project snapshot at .trellis/.backup-*/;
+    // the inline copy is more discoverable when the user wants to diff or merge
+    // their customizations against the new template.
     if (item.type === "rename" && item.to) {
       const oldPath = path.join(cwd, item.from);
       const newPath = path.join(cwd, item.to);
 
       fs.mkdirSync(path.dirname(newPath), { recursive: true });
+
+      if (action === "backup-rename") {
+        // Copy original alongside the new path before the rename overwrites nothing
+        // (target dir is guaranteed fresh since `conflict` is handled elsewhere).
+        fs.copyFileSync(oldPath, newPath + ".backup");
+      }
+
       fs.renameSync(oldPath, newPath);
       renameHash(cwd, item.from, item.to);
 
@@ -1260,6 +1272,13 @@ async function executeMigrations(
       result.renamed++;
     } else if (item.type === "delete") {
       const filePath = path.join(cwd, item.from);
+
+      if (action === "backup-rename") {
+        // Keep a .backup copy in place before deletion so the user can recover
+        // inline without digging through .trellis/.backup-*/.
+        fs.copyFileSync(filePath, filePath + ".backup");
+      }
+
       fs.unlinkSync(filePath);
       removeHash(cwd, item.from);
 

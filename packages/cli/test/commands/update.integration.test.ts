@@ -506,6 +506,15 @@ describe("update() integration", () => {
     fs.writeFileSync(path.join(legacyDir, "before-dev.md"), "legacy content");
   }
 
+  /** Delete the post-init target so classifyMigrations hits the "new doesn't exist"
+   *  branch and respects `isTemplateModified` on the source (→ confirm bucket). */
+  function clearMigrationTarget(): void {
+    fs.rmSync(
+      path.join(tmpDir, ".claude/skills/trellis-before-dev"),
+      { recursive: true, force: true },
+    );
+  }
+
   it("#22 breaking-change gate exits 1 when --migrate is missing", async () => {
     await setupProject();
     stageLegacy040Project();
@@ -548,5 +557,82 @@ describe("update() integration", () => {
     // Version must advance to current CLI after the migrate run
     const versionPath = path.join(tmpDir, DIR_NAMES.WORKFLOW, ".version");
     expect(fs.readFileSync(versionPath, "utf-8")).toBe(VERSION);
+  });
+
+  // The [b] Backup-rename path in the confirm prompt promises "keeps a .backup
+  // copy". Previously it was identical to [r] (both relied on the full project
+  // snapshot). We now write an INLINE .backup next to the new path so users can
+  // diff/merge their customizations without digging through .trellis/.backup-*/.
+  /** Install a mock that returns a specific migration choice for the per-file prompt
+   *  and {proceed: true} for the top-level confirm. Resolves the flakiness of
+   *  matching on `name` field in the dynamic import path. */
+  async function installChoiceMock(choice: "rename" | "backup-rename" | "skip") {
+    const inquirer = (await import("inquirer")).default;
+    vi.mocked(inquirer.prompt).mockImplementation(((questions: unknown) => {
+      const q = Array.isArray(questions) ? questions[0] : questions;
+      const name = (q as { name?: string }).name;
+      if (name === "choice") return Promise.resolve({ choice });
+      return Promise.resolve({ proceed: true });
+    }) as never);
+  }
+
+  // The [b] Backup-rename path in the confirm prompt promises "keeps a .backup
+  // copy". Previously it was identical to [r] (both relied on the full project
+  // snapshot). We now write an INLINE .backup next to the new path so users can
+  // diff/merge their customizations without digging through .trellis/.backup-*/.
+  it("#25 backup-rename leaves inline <new-path>.backup with original content", async () => {
+    await setupProject();
+    stageLegacy040Project();
+    clearMigrationTarget();
+
+    // User-modified content that differs from the 0.5 template (forces confirm)
+    const legacyPath = path.join(
+      tmpDir,
+      ".claude/commands/trellis/before-dev.md",
+    );
+    const userContent = "## My custom before-dev notes\nEdited by user.\n";
+    fs.writeFileSync(legacyPath, userContent);
+
+    await installChoiceMock("backup-rename");
+
+    await update({ migrate: true });
+
+    // After migration:
+    //   - new-path exists (rename completed)
+    //   - new-path.backup exists with the user's content (inline preservation)
+    //   - old-path is gone
+    const newPath = path.join(
+      tmpDir,
+      ".claude/skills/trellis-before-dev/SKILL.md",
+    );
+    expect(fs.existsSync(newPath)).toBe(true);
+    expect(fs.existsSync(newPath + ".backup")).toBe(true);
+    expect(fs.readFileSync(newPath + ".backup", "utf-8")).toBe(userContent);
+    expect(fs.existsSync(legacyPath)).toBe(false);
+  });
+
+  it("#26 rename-anyway does NOT leave an inline .backup (relies on project snapshot)", async () => {
+    await setupProject();
+    stageLegacy040Project();
+    clearMigrationTarget();
+
+    const legacyPath = path.join(
+      tmpDir,
+      ".claude/commands/trellis/before-dev.md",
+    );
+    fs.writeFileSync(legacyPath, "## user edits\n");
+
+    await installChoiceMock("rename");
+
+    await update({ migrate: true });
+
+    const newPath = path.join(
+      tmpDir,
+      ".claude/skills/trellis-before-dev/SKILL.md",
+    );
+    expect(fs.existsSync(newPath)).toBe(true);
+    // No inline .backup — the full-project snapshot under .trellis/.backup-*
+    // is the single source of recovery for this mode.
+    expect(fs.existsSync(newPath + ".backup")).toBe(false);
   });
 });
