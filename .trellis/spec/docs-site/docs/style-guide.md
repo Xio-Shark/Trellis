@@ -302,6 +302,88 @@ were removed in 0.5.0-beta.0 along with…
 
 ---
 
+## Managing the Release / Beta Dual Track
+
+The docs-site has two version tracks: **Beta** (tracks the latest `@beta` npm release, currently 0.5.x) and **Release** (tracks the latest stable, currently 0.4.0 GA). Users pick one from the version dropdown. Only part of the content is version-coupled.
+
+### What's dual, what's single-source
+
+| Lives in `release/` and `zh/release/` too | Single-source (top-level only) |
+|---|---|
+| `guide/ch01` – `ch13` (concepts, commands, platform matrix) | `use-cases/` |
+| `guide/appendix-a` – `appendix-f` | `showcase/` |
+| `guide/index.mdx`, `index.mdx` (landing) | `blog/` |
+| `changelog/` (version entries) | `skills-market/` |
+|  | `templates/` |
+|  | `contribute/` |
+
+**Rule of thumb**: anything that describes *how Trellis works right now* is dual (because that changes per version). Anything marketing, community, or resource-discovery stays single-source — those pages don't change per version, so maintaining two drift-prone copies burns effort for no user benefit.
+
+When in doubt, ask: "Would a 0.4 user genuinely see something different on this page than a 0.5 user?" If no, it's single-source.
+
+### Source of truth for platform counts
+
+Platform count drifts across releases (0.4 = 14 platforms, 0.5 = 13 after iFlow removal). **Always derive the count from the CLI source for the version you're documenting, not from prior docs.**
+
+```bash
+# For Release track (documents 0.4.0 GA)
+git ls-tree v0.4.0 packages/cli/src/configurators/ | grep '\.ts$' \
+  | awk -F'[\t/]' '{print $NF}' | grep -v 'index\|shared\|workflow'
+
+# For Beta track (documents current HEAD)
+ls packages/cli/src/configurators/*.ts | xargs -n1 basename \
+  | grep -v 'index\|shared\|workflow'
+```
+
+The count is `(number of configurator files) - (index.ts + shared.ts + workflow.ts)`.
+
+### Per-platform directory layout for a specific version
+
+To document what `trellis init --<platform>` actually writes in a given version:
+
+```bash
+git show v0.4.0:packages/cli/src/configurators/qoder.ts | head -60
+git ls-tree -r v0.4.0 packages/cli/src/templates/qoder/
+```
+
+Don't infer from memory or from current beta templates — 0.5 adds `hooks/` and `rules/` to platforms that didn't have them in 0.4, so a current-beta listing will mis-describe 0.4.
+
+### Orphan changelog files
+
+When a `release/changelog/v*.mdx` file exists on disk but has no entry in `docs.json`'s Release dropdown, it's dead content — Mintlify doesn't render it in any nav, users can only reach it by guessing a URL. Delete it.
+
+```bash
+# List orphans (files on disk, not in docs.json)
+cd docs-site
+for f in release/changelog/*.mdx; do
+  base=$(basename "$f" .mdx)
+  grep -q "\"release/changelog/$base\"" docs.json || echo "$f"
+done
+```
+
+Common source: when the track was forked from beta with `cp -r`, pre-release changelog files came along but the Release dropdown was manually whitelisted to stable versions only. Result: 30+ orphan MDX per locale.
+
+### What each track is called
+
+- **Beta track** = `guide/`, `changelog/`, `index.mdx` (at the top level) — latest `@beta` content
+- **Release track** = `release/guide/`, `release/changelog/`, `release/index.mdx` — snapshot of the latest stable
+- `docs.json` navigation has separate blocks for Beta and Release. Each language (EN, ZH) has both, so there are **4 navigation blocks total**.
+
+Switching content between tracks is a `cp -r` with manual `docs.json` updates — there's no automation. Remember to update **all four navigation blocks** (EN Beta, EN Release, ZH Beta, ZH Release) when restructuring.
+
+### When the stable GA bumps
+
+When 0.5 reaches GA:
+
+1. Decide whether to promote beta content → release (overwriting the frozen 0.4 snapshot) or keep both tracks. Usually promote.
+2. `cp -r guide/ release/guide/` (EN) and `cp -r zh/guide/ zh/release/guide/` (ZH)
+3. Update the release-track Changelog whitelist in `docs.json` to include the new stable version
+4. Update the version-switcher label in the docs.json navbar (Release = "latest stable" not "0.4")
+5. Delete pre-release changelog files from `release/changelog/` that shouldn't be in the stable-only whitelist
+6. Beta track continues evolving toward the next major (0.6)
+
+---
+
 ## Quality Checklist
 
 Before publishing:
@@ -316,3 +398,7 @@ Before publishing:
 - [ ] For code-level reference pages: every field / subcommand / flag traces to a named source file you opened while writing
 - [ ] JSONL examples inject specs or research, not raw code
 - [ ] No "removed in vX.Y" tombstone sections for features already absent
+- [ ] If you touched a dual-track page (`guide/*`, `appendix-*`, `index.mdx`), you updated both Beta and Release copies (EN and ZH each = 4 files to touch)
+- [ ] If you touched a single-source page (`use-cases/`, `showcase/`, `blog/`, `skills-market/`, `templates/`, `contribute/`), you did NOT create a duplicate under `release/`
+- [ ] Platform counts / lists trace to `git ls-tree v<target-version> packages/cli/src/configurators/`, not to prior docs or memory
+- [ ] All four `docs.json` navigation blocks (EN Beta / EN Release / ZH Beta / ZH Release) are consistent
