@@ -646,6 +646,76 @@ hooks:
     - "python3 .trellis/scripts/hooks/my_hook.py create"
 ```
 
+### Task → Package Binding Contract
+
+**Rule**: The `package` field on a task is **bound at `task create` time and frozen into `task.json.package`**. Downstream scripts read that field; they do **not** re-resolve package from path, cwd, or runtime context.
+
+**Why it matters**: Once a task exists, changing `default_package` in `config.yaml` will not retroactively rebind existing tasks. Path-based inference is not implemented anywhere in the script layer — callers (human or AI) must pass `--package` explicitly if they want non-default binding.
+
+**Resolution order at `task create`** (`common/task_store.py:cmd_create`):
+
+| Priority | Source | Behavior on invalid value |
+|---|---|---|
+| 1 | CLI `--package <pkg>` (explicit) | **Fail-fast**: print available packages, exit 1 |
+| 2 | `default_package` (config.yaml) | Warn to stderr, fall through to `None` |
+| 3 | `None` | Task stored with `package: null` (allowed; spec scope falls back to full scan) |
+
+Single-repo mode (`packages:` absent from config): `--package` triggers a stderr warning and is silently ignored; stored `package` is always `None`.
+
+**Resolution order at read-time** (any script reading an existing task):
+
+| Priority | Source |
+|---|---|
+| 1 | `task.json.package` (the frozen binding) |
+| 2 | `resolve_package(task_package=..., repo_root=...)` — falls back to `default_package` if `task.json.package` is missing/invalid |
+
+Do **not** re-infer package from cwd, worktree path, or git remote. If the task is mis-bound, fix the stored field, do not wrap reads in path logic.
+
+**Spec scope is a separate layer** (`common/packages_context.py:_resolve_scope_set`). It consumes `task.package` but also has its own config surface `session.spec_scope`:
+
+| `session.spec_scope` value | Behavior |
+|---|---|
+| omitted / `null` | Full scan — all packages in `spec_scope` |
+| `"active_task"` | Use current task's `package`; fall back to `default_package` if missing |
+| `list[str]` | Use the explicit list; invalid entries fall back to task / default |
+
+### Wrong vs Correct
+
+#### Wrong — re-inferring package at read-time
+
+```python
+# DON'T: re-derive package from cwd
+def get_task_package(task_dir: Path) -> str | None:
+    cwd = Path.cwd()
+    for name, cfg in get_packages(repo_root).items():
+        if cwd.is_relative_to(repo_root / cfg["path"]):
+            return name
+    return get_default_package(repo_root)
+```
+
+Why wrong: silently diverges from `task.json.package`. A task created under `packages/cli` but later read from `docs-site/` would flip package, breaking spec scope, session context, and Linear sync idempotency.
+
+#### Correct — read the frozen field, fall back through `resolve_package`
+
+```python
+task = load_task(task_dir)
+task_package = task.package if task and isinstance(task.package, str) else None
+package = resolve_package(task_package=task_package, repo_root=repo_root)
+# package is now: task.json binding → default_package → None (in that order)
+```
+
+### Tests Required
+
+When changing `cmd_create`, `resolve_package`, or `validate_package`:
+
+- `test/commands/task_store.test.ts` (or equivalent Python test):
+  - `--package <valid>` in monorepo → `task.json.package == <valid>`
+  - `--package <invalid>` in monorepo → exit 1, stderr lists available packages, no `task.json` written
+  - `--package <anything>` in single-repo → warning on stderr, `task.json.package is None`
+  - no `--package` in monorepo with `default_package` set → `task.json.package == default_package`
+  - no `--package` in monorepo with `default_package` missing from `packages:` → warning, `task.json.package is None`
+- Assertion points: `task_json_path.exists()`, `read_json(task_json_path)["package"]`, captured stderr.
+
 ---
 
 ## Error Handling
