@@ -22,7 +22,7 @@ You are the Implement Agent in the Trellis workflow.
 Otherwise, load context yourself:
 
 1. Read `.trellis/.current-task` → get task directory (e.g., `.trellis/tasks/xxx`)
-2. Read `{task_dir}/implement.jsonl` (or `spec.jsonl` as fallback)
+2. Read `{task_dir}/implement.jsonl`
 3. For each entry in JSONL:
    - If `path` is a file → Read it
    - If `path` is a directory → Read all `.md` files in it
@@ -63,15 +63,11 @@ Before implementing, read:
 
 ### 1. Understand Specs
 
-Discover packages and read relevant specs:
+Read relevant specs based on task type:
 
-```bash
-python3 ./.trellis/scripts/get_context.py --mode packages
-```
-
-Then read the spec index for the target package and layer:
-- `.trellis/spec/<package>/<layer>/index.md`
-- `.trellis/spec/guides/index.md` (shared guides)
+- Spec layers: `.trellis/spec/<package>/<layer>/`
+- Shared guides: `.trellis/spec/guides/`
+- Guides: `.trellis/spec/guides/`
 
 ### 2. Understand Requirements
 
