@@ -1,0 +1,30 @@
+{
+  "version": "0.5.0-beta.10",
+  "description": "Qoder: move session-boundary commands (finish-work, continue) out of the skill matcher into native `.qoder/commands/` Custom Commands. The 5 auto-trigger workflows stay as `.qoder/skills/`. Aligns Qoder with the command/skill split used by every other peer platform.",
+  "breaking": false,
+  "recommendMigrate": false,
+  "changelog": "**Qoder UX fix:**\n- feat(qoder): deliver session-boundary commands as native Qoder Custom Commands (`.qoder/commands/trellis-{finish-work,continue}.md`) with YAML frontmatter (`name` + `description`), per docs.qoder.com/en/cli/user-guide/command. Previously these were buried in the skill matcher alongside the 5 auto-trigger workflows, so users had no deterministic way to invoke them — they had to hope their chat wording matched the skill's description. Now they type `/trellis-finish-work` or `/trellis-continue` explicitly.\n- chore(qoder): the 5 auto-trigger workflows (brainstorm, before-dev, check, update-spec, break-loop) stay as `.qoder/skills/trellis-{name}/SKILL.md`. `start` is filtered out because Qoder is agent-capable and its SessionStart hook already injects the workflow overview (same rule that applies to every other agent-capable platform).\n- chore(shared): new `wrapWithCommandFrontmatter` + `COMMAND_DESCRIPTIONS` registry in `configurators/shared.ts` — short, human-facing, imperative one-liners for the `/` palette, distinct from the long auto-trigger prose in `SKILL_DESCRIPTIONS` (which is written for the skill matcher, not a command list).\n- chore(migration): upgraders have their old `.qoder/skills/trellis-{finish-work,continue}/SKILL.md` hash-verified and auto-deleted on `trellis update` (pristine copies removed silently, locally-modified copies land on the standard confirm prompt).",
+  "migrations": [
+    {
+      "type": "safe-file-delete",
+      "from": ".qoder/skills/trellis-finish-work/SKILL.md",
+      "description": "Qoder session-boundary skill → moved to .qoder/commands/trellis-finish-work.md",
+      "reason": "In 0.5.0-beta.10, session-boundary commands move out of the Qoder skill matcher into native Custom Commands so users can invoke them deterministically as `/trellis-finish-work`.",
+      "allowed_hashes": [
+        "c0f3ffa74e1e9990f93e5d44d03bd088c8698da1db4750b74d3eee4809a84aea",
+        "2027d8ea610e0a929a7ce147b29045406db8a8c9c2a767f98d779e5d53162f0c"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".qoder/skills/trellis-continue/SKILL.md",
+      "description": "Qoder session-boundary skill → moved to .qoder/commands/trellis-continue.md",
+      "reason": "In 0.5.0-beta.10, session-boundary commands move out of the Qoder skill matcher into native Custom Commands so users can invoke them deterministically as `/trellis-continue`.",
+      "allowed_hashes": [
+        "914545dab290e508a4c6b84d0a9f8debe68bcf9117cebe0fa85be0ef709d8fc1",
+        "3d2c83ad710b3b667851e28a473fb259a1330475e6b7417c769432f4a55a76f9"
+      ]
+    }
+  ],
+  "notes": "Two hashes per file cover Unix (python3) and Windows (python) {{PYTHON_CMD}} variants of the current skill content, which has been stable since 0.5.0-beta.0. Users on older betas (unlikely at this point) whose skill content pre-dates the 2026 breaking-change gate will see a 'Modified by you' confirm prompt and can pick [1] Overwrite to complete the split, or [3] Skip to keep the old skill as-is. The new .qoder/commands/ files are written by the standard configure step on `trellis update`."
+}

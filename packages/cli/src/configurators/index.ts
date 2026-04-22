@@ -38,6 +38,7 @@ import {
   resolveAllAsSkills,
   resolveCommands,
   resolveSkills,
+  wrapWithCommandFrontmatter,
   applyPullBasedPreludeMarkdown,
   applyPullBasedPreludeToml,
 } from "./shared.js";
@@ -125,10 +126,12 @@ function collectBothTemplates(
   ctx: import("../types/ai-tools.js").TemplateContext,
   cmdPath: (name: string) => string,
   skillRoot: string,
+  wrapCmd?: (filePath: string, content: string) => string,
 ): Map<string, string> {
   const files = new Map<string, string>();
   for (const cmd of resolveCommands(ctx)) {
-    files.set(cmdPath(cmd.name), cmd.content);
+    const filePath = cmdPath(cmd.name);
+    files.set(filePath, wrapCmd ? wrapCmd(filePath, cmd.content) : cmd.content);
   }
   for (const skill of resolveSkills(ctx)) {
     files.set(`${skillRoot}/${skill.name}/SKILL.md`, skill.content);
@@ -292,10 +295,15 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
   qoder: {
     configure: configureQoder,
     collectTemplates: () => {
-      const files = new Map<string, string>();
-      for (const s of resolveAllAsSkills(AI_TOOLS.qoder.templateContext)) {
-        files.set(`.qoder/skills/${s.name}/SKILL.md`, s.content);
-      }
+      const files = collectBothTemplates(
+        AI_TOOLS.qoder.templateContext,
+        (n) => `.qoder/commands/trellis-${n}.md`,
+        ".qoder/skills",
+        (filePath, content) => {
+          const name = path.basename(filePath, ".md");
+          return wrapWithCommandFrontmatter(name, content);
+        },
+      );
       for (const agent of applyPullBasedPreludeMarkdown(getQoderAgents())) {
         files.set(`.qoder/agents/${agent.name}.md`, agent.content);
       }

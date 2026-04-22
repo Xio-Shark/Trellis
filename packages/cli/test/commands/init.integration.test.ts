@@ -221,26 +221,17 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(false);
   });
 
-  it("#3g qoder platform creates .qoder/skills", async () => {
+  it("#3g qoder platform creates .qoder/commands + .qoder/skills", async () => {
     await init({ yes: true, qoder: true });
 
     expect(
-      fs.existsSync(path.join(tmpDir, ".qoder", "skills")),
-    ).toBe(true);
-    // Qoder is agent-capable → trellis-start skill not emitted.
-    expect(
       fs.existsSync(
-        path.join(tmpDir, ".qoder", "skills", "trellis-start", "SKILL.md"),
-      ),
-    ).toBe(false);
-    expect(
-      fs.existsSync(
-        path.join(tmpDir, ".qoder", "skills", "trellis-finish-work", "SKILL.md"),
+        path.join(tmpDir, ".qoder", "commands", "trellis-finish-work.md"),
       ),
     ).toBe(true);
     expect(
       fs.existsSync(
-        path.join(tmpDir, ".qoder", "skills", "trellis-continue", "SKILL.md"),
+        path.join(tmpDir, ".qoder", "skills", "trellis-brainstorm", "SKILL.md"),
       ),
     ).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(false);

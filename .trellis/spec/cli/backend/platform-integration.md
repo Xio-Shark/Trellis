@@ -91,7 +91,7 @@ When adding a new platform `{platform}`, update the following:
 
 > Note: OpenCode uses JS plugins instead of Python hooks, has no `index.ts` template module, and has no `collectTemplates` — so `trellis update` does not track OpenCode template files. If a new platform uses JS plugins, follow this pattern.
 
-**Skills pattern** (Codex, Kiro, Qoder):
+**Skills pattern** (Codex, Kiro):
 
 | Directory | Contents |
 |-----------|----------|
@@ -100,7 +100,9 @@ When adding a new platform `{platform}`, update the following:
 | `src/templates/{platform}/agents/` | Agent definitions (platform-specific format) |
 | `src/templates/{platform}/settings.json` | Platform settings (optional) |
 
-> Note: Codex/Kiro/Qoder use `resolveAllAsSkills()` from `shared.ts` to generate all 7 templates (2 commands + 5 skills) as SKILL.md files with YAML frontmatter. Skills are written via `writeSkills()`.
+> Note: Codex/Kiro use `resolveAllAsSkills()` from `shared.ts` to generate all templates as SKILL.md files with YAML frontmatter. Skills are written via `writeSkills()`.
+>
+> **Qoder is a hybrid** — it has native Custom Commands (`.qoder/commands/{name}.md`) with required YAML frontmatter (`name` + `description`, flat layout per Qoder CLI docs), so session-boundary commands (`finish-work`, `continue`) go there via `resolveCommands()` + `wrapWithCommandFrontmatter()`, while the 5 auto-trigger workflows stay as `.qoder/skills/` via `resolveSkills()`. Use the `COMMAND_DESCRIPTIONS` registry in `shared.ts` (separate from `SKILL_DESCRIPTIONS`) for the short palette blurbs — command descriptions are one-line imperatives aimed at the user; skill descriptions are long prose aimed at the AI matcher.
 >
 > **Codex has a two-layer directory model:**
 >
@@ -298,7 +300,7 @@ These are now **automatically derived** from the registry:
 | Kilo | `/<workflow-name>` | Markdown (`.md`) | `/finish-work` |
 | Codex | `$<skill-name>` / `/skills` | Markdown (`SKILL.md`) | `$finish-work` |
 | Kiro | `$<skill-name>` / `/skills` | Markdown (`SKILL.md`) | `$finish-work` |
-| Qoder | `$<skill-name>` / `/skills` | Markdown (`SKILL.md`) | `$finish-work` |
+| Qoder | `/trellis-<name>` (commands) + `$<skill-name>` / `/skills` (workflows) | Markdown (`.md` with frontmatter + `SKILL.md`) | `/trellis-finish-work` |
 | Antigravity | `/<workflow-name>` | Markdown (`.md`) | `/finish-work` |
 | CodeBuddy | `/trellis:xxx` | Markdown (`.md`) | `/trellis:finish-work` |
 | Copilot | `/trellis:xxx` | Markdown (`.prompt.md`) | `/trellis:finish-work` |

@@ -24,6 +24,7 @@ import {
   resolveAllAsSkills,
   resolveCommands,
   resolveSkills,
+  wrapWithCommandFrontmatter,
 } from "../../src/configurators/shared.js";
 
 // =============================================================================
@@ -391,27 +392,44 @@ describe("configurePlatform", () => {
     expect(fs.existsSync(path.join(tmpDir, ".qoder"))).toBe(true);
   });
 
-  it("configurePlatform('qoder') writes all skill templates from common source", async () => {
+  it("configurePlatform('qoder') writes commands + skills with the correct split", async () => {
     await configurePlatform("qoder", tmpDir);
 
-    const expected = resolveAllAsSkills(AI_TOOLS.qoder.templateContext);
+    const ctx = AI_TOOLS.qoder.templateContext;
+    const expectedCommands = resolveCommands(ctx);
+    const expectedSkills = resolveSkills(ctx);
+
+    const commandsDir = path.join(tmpDir, ".qoder", "commands");
+    const actualCommandFiles = fs
+      .readdirSync(commandsDir)
+      .filter((f) => f.endsWith(".md"))
+      .sort();
+    expect(actualCommandFiles).toEqual(
+      expectedCommands.map((c) => `trellis-${c.name}.md`).sort(),
+    );
+    for (const cmd of expectedCommands) {
+      const name = `trellis-${cmd.name}`;
+      const filePath = path.join(commandsDir, `${name}.md`);
+      const actual = fs.readFileSync(filePath, "utf-8");
+      expect(actual).toBe(wrapWithCommandFrontmatter(name, cmd.content));
+      expect(actual.startsWith(`---\nname: ${name}\ndescription: `)).toBe(true);
+    }
 
     const skillsDir = path.join(tmpDir, ".qoder", "skills");
-    expect(fs.existsSync(skillsDir)).toBe(true);
-
-    const actualDirs = fs
+    const actualSkillDirs = fs
       .readdirSync(skillsDir, { withFileTypes: true })
       .filter((e) => e.isDirectory())
       .map((e) => e.name)
       .sort();
-
-    expect(actualDirs).toEqual(expected.map((s) => s.name).sort());
-
-    for (const skill of expected) {
+    expect(actualSkillDirs).toEqual(expectedSkills.map((s) => s.name).sort());
+    for (const skill of expectedSkills) {
       const filePath = path.join(skillsDir, skill.name, "SKILL.md");
-      expect(fs.existsSync(filePath)).toBe(true);
       expect(fs.readFileSync(filePath, "utf-8")).toBe(skill.content);
     }
+
+    expect(actualSkillDirs).not.toContain("trellis-finish-work");
+    expect(actualSkillDirs).not.toContain("trellis-continue");
+    expect(actualSkillDirs).not.toContain("trellis-start");
   });
 
   it("configurePlatform('qoder') does not include compiled artifacts", async () => {

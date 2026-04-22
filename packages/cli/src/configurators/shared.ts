@@ -135,6 +135,32 @@ export function wrapWithSkillFrontmatter(
   return `---\nname: ${name}\ndescription: "${description}"\n---\n\n${content}`;
 }
 
+/**
+ * One-line blurbs shown in a `/` command palette — kept separate from
+ * SKILL_DESCRIPTIONS, which is long prose aimed at the skill matcher.
+ */
+const COMMAND_DESCRIPTIONS: Record<string, string> = {
+  start: "Initialize a Trellis development session.",
+  continue: "Resume work on the current task at the correct phase.",
+  "finish-work":
+    "Wrap up the current session: quality gate, commit reminder, archive, journal.",
+};
+
+/** Wrap resolved command content with YAML frontmatter (name + description). */
+export function wrapWithCommandFrontmatter(
+  name: string,
+  content: string,
+): string {
+  const baseName = name.replace(/^trellis-/, "");
+  const description = COMMAND_DESCRIPTIONS[baseName];
+  if (!description) {
+    throw new Error(
+      `Missing command description for "${baseName}". Add it to COMMAND_DESCRIPTIONS in shared.ts.`,
+    );
+  }
+  return `---\nname: ${name}\ndescription: ${description}\n---\n\n${content}`;
+}
+
 // ---------------------------------------------------------------------------
 // Shared configurator helpers
 // ---------------------------------------------------------------------------
