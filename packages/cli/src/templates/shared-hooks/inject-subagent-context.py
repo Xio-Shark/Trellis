@@ -19,6 +19,7 @@ Context Source: .trellis/.current-task points to task directory
 - info.md         - Technical design
 - codex-review-output.txt - Code Review results
 """
+from __future__ import annotations
 
 # IMPORTANT: Suppress all warnings FIRST
 import warnings

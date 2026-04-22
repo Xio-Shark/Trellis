@@ -3,6 +3,7 @@
 """
 Session Start Hook - Inject structured context
 """
+from __future__ import annotations
 
 # IMPORTANT: Suppress all warnings FIRST
 import warnings
