@@ -527,6 +527,69 @@ This keeps state minimal, avoids the "task.json drifts from filesystem reality" 
 
 ---
 
+## Bootstrap & Joiner Task Auto-Generation
+
+`trellis init` generates a first-session task based on checkout state. Three branches dispatch off two filesystem flags:
+
+| `.trellis/` exists? | `.trellis/.developer` exists? | Meaning | Task generated |
+|---|---|---|---|
+| no | n/a | First-time `init` on this project | `00-bootstrap-guidelines` (creator flow) |
+| yes | no | Fresh clone / per-checkout first-init (new machine, new teammate) | `00-join-<slug>` (joiner flow) |
+| yes | yes | Same dev re-running init | none (no-op) |
+
+### Design Decision: `.developer` File Is the Per-Checkout Signal
+
+**Context**: we need a signal for "this checkout has never been init'd by this developer before" to trigger joiner onboarding.
+
+**Options Considered**:
+1. `.trellis/workspace/<name>/` directory existence — ❌ this dir is committed to git, so a fresh clone already has it
+2. A registry file listing onboarded developers — ❌ needs migration + bookkeeping, over-engineered for single-user checkouts
+3. `.trellis/.developer` file existence — ✅ **chosen**
+
+**Decision**: Use `.trellis/.developer` (gitignored) as the per-checkout onboarding signal.
+
+**Why**: `.trellis/.developer` is declared in `.trellis/.gitignore` (template `gitignore.txt`), so it is never committed. A fresh clone has an empty `.developer` slot by construction; the first `init` writes it. Subsequent same-machine re-inits see the file and no-op.
+
+**Consequence (accepted)**: Same developer on two machines (laptop A + laptop B) gets a joiner task on laptop B. This is fine — it's a chance to re-read the spec, and archiving is one command.
+
+**Anti-pattern**: Do not use `.trellis/workspace/<name>/` existence as "this developer already onboarded" — that directory is the journal archive and belongs to git.
+
+### Gotcha: Joiner Dispatch Must Be Wired in Two Places
+
+`trellis init` has two code paths that both reach the end of initialization but through different branches of `init()`. Any new init-time trigger (joiner onboarding, future first-session tasks, etc.) must be registered in **both**:
+
+**Path 1 — Main dispatch** (`src/commands/init.ts`, near the end of `init()`):
+
+- Reached only when `!isFirstInit` is false **OR** `options.force` / `options.skipExisting` is set
+- Fires from the block that runs after `createWorkflowStructure` + `init_developer.py`
+
+**Path 2 — Re-init fast path** (`handleReinit`, inside `doAddDeveloper` branch):
+
+- Reached when `.trellis/` already exists AND user runs default `trellis init --user <name>` (no `--force`, no `--skip-existing`)
+- `init()` short-circuits via `if (!isFirstInit && !options.force && !options.skipExisting) { await handleReinit(...); return; }` — main dispatch is **never executed**
+
+Both paths must capture the pre-existing `.developer` state **before** running `init_developer.py` (which writes the file), then use that snapshot to decide whether joiner generation applies.
+
+```typescript
+// Path 1 (init end) — snapshot at init() start
+const hadDeveloperFileAtStart = fs.existsSync(developerFilePath);
+// ... later, after init_developer.py:
+if (!isFirstInit && !hadDeveloperFileAtStart) {
+  createJoinerOnboardingTask(cwd, developerName);
+}
+
+// Path 2 (handleReinit) — snapshot just before init_developer.py
+const hadDeveloperFileBefore = fs.existsSync(developerFilePath);
+execSync(`${pythonCmd} ${initDeveloperScript} "${devName}"`, { ... });
+if (!hadDeveloperFileBefore) {
+  createJoinerOnboardingTask(cwd, devName);
+}
+```
+
+**Test coverage requirement**: integration tests must cover BOTH paths. The quick way to detect regressions is to run `init` without `force: true` and assert joiner-task creation — tests that all pass `{ force: true }` will miss Path 2 bugs entirely.
+
+---
+
 ## Common Mistakes
 
 ### Forgot to add entry to PLATFORM_FUNCTIONS
@@ -666,6 +729,16 @@ This keeps state minimal, avoids the "task.json drifts from filesystem reality" 
 
 **Prevention**: Don't run Python hooks directly from `src/templates/` during development. Use `/tmp` copies or the installed project copy instead.
 
+### Added an init-time trigger but forgot the `handleReinit` fast path
+
+**Symptom**: The trigger works when users pass `--force` / `--skip-existing` / run init on an empty dir, but the default `trellis init --user <name>` on an existing checkout silently does nothing. Integration tests pass.
+
+**Cause**: `init()` at `src/commands/init.ts` early-returns into `handleReinit` when `.trellis/` already exists and neither `--force` nor `--skip-existing` is set. Main dispatch at the end of `init()` is never reached. If the new trigger is only wired into main dispatch, the most common real-user path is uncovered.
+
+**Fix**: Wire the trigger into BOTH (a) the main-dispatch block near the end of `init()` AND (b) `handleReinit`'s `doAddDeveloper` / `doAddPlatforms` branch, whichever is relevant. Capture any pre-init filesystem state (e.g., `.developer` existence) in each path separately, before scripts that mutate it run.
+
+**Prevention**: Integration tests must cover the default path WITHOUT `force: true`. Any test using `force: true` bypasses `handleReinit` and is not testing real-user behavior. See "Bootstrap & Joiner Task Auto-Generation" above for the canonical two-point wiring pattern.
+
 ---
 
 ## Reference PRs
@@ -676,3 +749,4 @@ This keeps state minimal, avoids the "task.json drifts from filesystem reality" 
 | main | Antigravity | Workflows (derived from Codex) | No physical templates — runtime adaptation from Codex skills |
 | #71 | Qoder | Skills (like Codex/Kiro) | Skills with YAML frontmatter; Trae was dropped (IDE-only, no deterministic invocation trigger) |
 | feat/v0.5.0-beta | All 13 platforms | Unified template architecture | Common templates + shared hooks + `createTemplateReader()` factory |
+| `04-21-bootstrap-onboard-gap` | n/a | Three-branch init dispatch + joiner onboarding | `.developer` file as per-checkout signal; documents the `handleReinit` two-point wiring |
