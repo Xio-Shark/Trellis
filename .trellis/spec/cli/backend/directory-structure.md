@@ -222,6 +222,34 @@ Templates use `.txt` extension to:
 - Make clear these are template sources, not actual docs
 - Avoid confusion with actual markdown files
 
+### Don't: Leak dogfood spec into `templates/markdown/spec/`
+
+**Invariant**: `packages/cli/src/templates/markdown/spec/` contains **only `.md.txt` files**. A bare `.md` file there is a bug — it ships to `dist/` (into the npm tarball) but is never imported by `markdown/index.ts`, so it never lands on a user's disk and serves no purpose except dead weight + future maintainer confusion.
+
+**How the bug happens** (confirmed in git log — v0.1.x through v0.4): a spec-authoring workflow writes to the wrong directory. The two paths look almost identical:
+
+| Path | Purpose |
+|------|---------|
+| `.trellis/spec/<pkg>/<layer>/*.md` | This repo's dogfood spec (Trellis documenting its own code) |
+| `packages/cli/src/templates/markdown/spec/<layer>/*.md.txt` | User-facing placeholder templates (ship to new projects via `trellis init`) |
+
+If you open-and-edit the wrong one, nothing fails at build / test / lint time — `markdown/index.ts` silently ignores your new file because it only reads the `.md.txt` variants. The drift can persist for years (caught in 2026-04 after ~3 months).
+
+**Prevention checklist** (apply whenever you add or edit a spec-layer file):
+
+1. Write spec content to `.trellis/spec/<pkg>/<layer>/<file>.md` — this is the dogfood location.
+2. Template stubs for users live in `packages/cli/src/templates/markdown/spec/<layer>/<file>.md.txt` — write the user-facing placeholder, NOT the real content.
+3. If the new file is not imported by `packages/cli/src/templates/markdown/index.ts`, it shouldn't exist in that directory. `ls packages/cli/src/templates/markdown/spec/**/*.md` must return empty.
+
+**Audit command**:
+```bash
+# Every file here must end in .md.txt
+find packages/cli/src/templates/markdown/spec -type f -name "*.md" ! -name "*.md.txt"
+# (empty output = clean)
+```
+
+Consider adding this find to a regression test (non-empty output → fail) so the invariant is machine-enforced, not memory-enforced.
+
 ---
 
 ## Monorepo Detection (`project-detector.ts`)

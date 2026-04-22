@@ -39,8 +39,7 @@ All workflow scripts are written in **Python 3.10+** for cross-platform compatib
 ├── get_context.py        # Session context retrieval
 ├── init_developer.py     # Developer initialization
 ├── get_developer.py      # Get current developer
-├── add_session.py        # Session recording
-└── create_bootstrap.py   # Bootstrap task creation
+└── add_session.py        # Session recording
 ```
 
 ---
