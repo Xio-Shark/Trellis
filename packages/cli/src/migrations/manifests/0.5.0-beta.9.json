@@ -1,0 +1,28 @@
+{
+  "version": "0.5.0-beta.9",
+  "description": "Unify task.json schema across all writers and remove orphan phase.py. Bootstrap tasks (trellis init) and migration tasks (trellis update --migrate) now produce the same canonical 24-field shape as task_store.py cmd_create. Legacy current_phase / next_action fields dropped from migration task output.",
+  "breaking": false,
+  "recommendMigrate": false,
+  "changelog": "**Internal cleanup (no user-facing behavior change):**\n- chore(schema): `task.json` shape unified across all three writers. `packages/cli/src/utils/task-json.ts` introduces a shared `TaskJson` type + `emptyTaskJson(overrides)` factory mirroring the 24-field canonical shape produced by `.trellis/scripts/common/task_store.py cmd_create`. `init.ts getBootstrapTaskJson` and `update.ts` migration-task block now route through the factory. Follows the `quality-guidelines.md` spec lesson 'Schema Deprecation: Audit ALL Writers, Not Just the Creator' captured in 0.5.0-beta.0 — `cmd_create` was cleaned up at the time, but the two TS writers were missed.\n- chore(schema): migration tasks no longer write legacy `current_phase: 0` / `next_action: [...]` fields. These reference the removed Multi-Agent Pipeline and no active reader consumes them in 0.5.\n- chore(bootstrap): bootstrap task's project-type checklist moves from structured `subtasks: [{name, status}]` in task.json to markdown `- [ ]` items in prd.md. Task.json `subtasks` is now canonical `string[]` (child task dir names) across all tasks.\n- chore(cleanup): `.trellis/scripts/common/phase.py` removed. Orphan code (no importers in 0.5); was kept around from the Multi-Agent Pipeline era and not captured by 0.5.0-beta.0's 138-entry safe-file-delete (which only targeted `multi_agent/*`). Hash-verified delete — pristine copies auto-removed, locally modified copies preserved with a warning.\n- chore(cleanup): `.trellis/scripts/create_bootstrap.py` removed. Legacy 4th task.json writer with its own 13-field divergent shape; replaced by `init.ts getBootstrapTaskJson` in 0.4 but the Python file was never deleted. Never invoked by any command. Same hash-verified delete mechanism; three historical hashes included to cover 0.3+ users.\n- chore(cleanup): `TaskData` TypedDict (`common/types.py`) no longer declares `current_phase: int` / `next_action: list[dict]` — dead schema fields.\n- docs: spec directory-trees in `script-conventions.md` (template + local) drop `phase.py` / `create_bootstrap.py` / the full `multi_agent/` block (which was actually removed in 0.5.0-beta.0 but kept appearing in shipped spec docs).\n- chore(pkg): remove 5 orphan `.md` files from `packages/cli/src/templates/markdown/spec/` (`spec/backend/{index,directory-structure,script-conventions}.md` + `spec/guides/{code-reuse,cross-platform}-thinking-guide.md`). These were accidentally added in early 0.1.x releases alongside the proper `.md.txt` stub templates but never imported by `markdown/index.ts` — they shipped in dist/ as dead weight (~35 KB) but never landed on user disks, so no migration entry is needed. Fixes a ~2-year-old duplication bug.",
+  "migrations": [
+    {
+      "type": "safe-file-delete",
+      "from": ".trellis/scripts/common/phase.py",
+      "description": "Remove orphan phase.py — no importers; legacy from Multi-Agent Pipeline",
+      "allowed_hashes": [
+        "412b7096ef0e48b8a95a79060121a586e0d9d44f1b350d6ed818c6f84330bb01"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".trellis/scripts/create_bootstrap.py",
+      "description": "Remove dead create_bootstrap.py — replaced by TS init.ts getBootstrapTaskJson in 0.4; never invoked by any command",
+      "allowed_hashes": [
+        "33b40df671ba7828fd8d3ba8c019823a8b03e938797b1cae218c55d6c7ebe57a",
+        "ce1503c052dadf2470ddb1cade42f331c0fd70d34e895d8d07044ba27548e17e",
+        "aa5dd1f39a77b2f4bb827fd14ce7a83fb51870e77f556fe508afce3f8eac0b4e"
+      ]
+    }
+  ],
+  "notes": "Pure code-cleanup release. Existing task.json files in user repos are untouched — the Python readers (`task.py`, `get_context.py`) treat missing canonical fields as null, so legacy tasks keep working. Newly-created bootstrap / migration tasks from this version onward produce the canonical shape."
+}
