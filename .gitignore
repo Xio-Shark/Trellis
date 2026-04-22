@@ -182,3 +182,4 @@ smoke_test/
 .claude/scheduled_tasks.lock
 
 tmp/
+tmp1/
