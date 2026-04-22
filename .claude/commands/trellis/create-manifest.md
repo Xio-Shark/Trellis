@@ -73,7 +73,11 @@ For the docs-site MDX version of the changelog (Step 7), expand each one-liner i
 | `breaking` | Any breaking API/behavior change? Default `false` for patch |
 | `recommendMigrate` | Any file rename/delete migrations? Default `false` for patch. **When `breaking=true` + `recommendMigrate=true`, `trellis update` exits 1 without `--migrate` — this is the safety gate, set deliberately.** |
 | `migrations` | List of `rename`/`rename-dir`/`delete`/`safe-file-delete` actions. Usually `[]` for patch |
+| `migrationGuide` | **MANDATORY when `breaking=true` + `recommendMigrate=true`.** Narrative doc explaining to the user what changed and how to migrate. Gets templated into the generated `04-MM-DD-migrate-to-<version>` task PRD when user runs `trellis update --migrate`. Without this field, `getMigrationMetadata` has no 0.5-specific content to include — the user's migration task PRD silently falls back to older manifests' guides (or no task at all). **`create-manifest.js` enforces this via `--stdin` validation.** |
+| `aiInstructions` | Strongly recommended alongside `migrationGuide` on breaking releases. Tells AI how to help the user migrate: what to grep for, what to check, common pitfalls. Separate field so prose-for-humans and instructions-for-AI don't tangle. |
 | `notes` | Brief guidance for users (e.g., "run `trellis update --migrate` to sync"). Shown inline in terminal during update. |
+
+**Why `migrationGuide` is mandatory on breaking**: a breaking release without a guide ships a broken upgrade experience. Users who stayed on an older version (≤ N-2 releases old) get a migration task PRD filled with unrelated guides from intermediate hop versions, with nothing describing the actual current breaking change. They migrate blind. The validation in `packages/cli/scripts/create-manifest.js` fails fast rather than let this ship.
 
 ### Step 5a: Per-Migration Entry Fields
 
