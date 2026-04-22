@@ -100,5 +100,18 @@
   ".codex/agents/trellis-implement.toml": "d11be9c86204be67b053192d362294efd1d476b82f4d2e280941e54056717471",
   ".codex/agents/trellis-check.toml": "1f332eebd315821003fcb729647ec02a6490a9ab26e23931a998ef2fbe1c099a",
   ".codex/agents/trellis-research.toml": "1792ecfaaffade7cb4cd4e4376e9e87ae82b3bf42352054cb2fb0e74dfbee3a2",
-  ".trellis/config.yaml": "cb5216826e1091bfa0d4ebae257d6f43fa60ca2bafbf3d9a6489b2c1a51a99df"
+  ".trellis/config.yaml": "cb5216826e1091bfa0d4ebae257d6f43fa60ca2bafbf3d9a6489b2c1a51a99df",
+  ".opencode/plugins/inject-workflow-state.js": "136a4590767c594e5720bb6315795177f4374bc10d9a77e60a0c3779fea5353c",
+  ".opencode/commands/trellis/continue.md": "1871fa6cf466b87cc2339d0767576f2c98919cd3630a75da454136d98daf1558",
+  ".opencode/skills/trellis-brainstorm/SKILL.md": "0083928c2c6714039552c0df7a6fcaf9847dde0baa153a0badc264d78602b066",
+  ".opencode/agents/trellis-research.md": "18dc5bdd569df84ea78a362c573d8d4816f6334e9a19910ecbad47e330915f9f",
+  ".opencode/lib/trellis-context.js": "a752ed614d31ba15fd445aa61b1751d45bfd583b3d7a096d250e84222901e317",
+  ".opencode/package.json": "6867538b2f6025286a70c943d15db4191d2412daa8bf7431a846b00c863f26b8",
+  ".opencode/plugins/inject-subagent-context.js": "58bf0178ed46cf762c062e396e6902758dbb91da9f58e236355b435fc209506e",
+  ".opencode/plugins/session-start.js": "a5cbe7982757a7f30eff186089ce5c6835bf251c6c09a95202ad9be80c4a12ec",
+  ".opencode/commands/trellis/finish-work.md": "692970dd868a60e757a3a43fbcd4821683201f5971b9f5878a59be7e635aa5c6",
+  ".opencode/skills/trellis-before-dev/SKILL.md": "208ad3fd5131fa0da603d4bc354a29826967397f5aeef483fa0564113df13e9e",
+  ".opencode/skills/trellis-break-loop/SKILL.md": "35afb53fef42cd494e566f1ef170dbf442ec2be7e19931f28a14079b4dda753f",
+  ".opencode/skills/trellis-check/SKILL.md": "a3f17aef687aa3b475d12ee64c3293e5491bb7474336be2c0f9ec22042f13b6e",
+  ".opencode/skills/trellis-update-spec/SKILL.md": "d975db7af166578488958751ae2c56edb827a68bddb569aa27acc3453f64e610"
 }
