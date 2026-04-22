@@ -69,6 +69,30 @@ subprocess.run(["python3", "other_script.py"])
 subprocess.run([sys.executable, "other_script.py"])
 ```
 
+**Rule 4**: Don't assume the Python version your AI CLI uses matches your shell's `python3`. Your terminal may resolve `python3` → 3.11 (via homebrew/pyenv), but AI CLI hosts often spawn hook subprocesses with a minimal PATH that resolves `python3` → the system Python (3.9 on macOS). Any `.py` file run as an AI-CLI hook must be written for the lowest plausible Python version.
+
+Concrete failure: PEP 604 union syntax (`str | None`) requires Python 3.10+. If your hook file uses it, start with `from __future__ import annotations` so annotations become lazy strings and work on Python 3.7+:
+
+```python
+#!/usr/bin/env python3
+"""My hook."""
+from __future__ import annotations     # REQUIRED for PEP 604 annotations
+
+def handler(x: str | None) -> dict | None:   # OK — lazy annotation
+    ...
+```
+
+```python
+# BAD — crashes on Python < 3.10:
+#   TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'
+def handler(x: str | None) -> dict | None:
+    ...
+```
+
+Note: `from __future__ import annotations` only covers **annotations**. Runtime expressions like `isinstance(x, int | str)` still require Python 3.10+. Avoid them in hook scripts.
+
+Applies to anything the AI CLI executes as a hook: `match/case` statements (3.10+), `tomllib` (3.11+), `ExceptionGroup` / `except*` (3.11+) — all crash on older Python regardless of `__future__`.
+
 ### 2. Path Handling
 
 | Assumption | macOS/Linux | Windows |

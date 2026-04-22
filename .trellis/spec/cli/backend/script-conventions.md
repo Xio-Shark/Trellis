@@ -368,6 +368,74 @@ if sys.platform == "win32":
 | `io.TextIOWrapper(sys.stdout.buffer, ...)` | ❌ No | Creates wrapper, doesn't fix underlying encoding |
 | `PYTHONIOENCODING=utf-8` env var | ⚠️ Partial | Only works if set **before** Python starts |
 
+### CRITICAL: PEP 604 Annotations Require `from __future__ import annotations`
+
+Any distributed Python template file (`templates/**/*.py` — both hooks and scripts) that uses PEP 604 union syntax (`str | None`, `dict | None`, etc.) in annotations **must** start with:
+
+```python
+from __future__ import annotations
+```
+
+immediately after the module docstring.
+
+**Why it matters**: The `{{PYTHON_CMD}}` placeholder resolves to literal `python3` on macOS/Linux. `trellis init` soft-warns if Python < 3.10 but does not block, and hooks are invoked by the host AI CLI (Claude Code, Cursor, enterprise-forked CC distributions, etc.) in a subprocess whose **PATH may differ from the user's shell PATH**. Concrete failure mode observed in the field:
+
+- User's terminal `python3 --version` → 3.11.12 (homebrew / pyenv)
+- The AI CLI's hook subprocess inherits a minimal PATH (no `/opt/homebrew/bin`), so `python3` resolves to `/usr/bin/python3` → macOS system 3.9
+- `def f(x: str | None)` evaluates `str | None` at def-time on 3.9 → `TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'`
+- Hook crashes silently; user sees `SessionStart hook error` in debug log with no actionable hint
+
+`from __future__ import annotations` makes all annotations lazy strings (PEP 563), so PEP 604 syntax in annotations works on Python 3.7+. Runtime union usage (e.g. `isinstance(x, int | str)`) is **not** rescued by this import — avoid it in distributed templates.
+
+**Real-world incident**: `shared-hooks/session-start.py` and `shared-hooks/inject-subagent-context.py` lacked this import while `statusline.py` and the copilot/codex copies had it. The inconsistency went undetected until a user on an enterprise-forked Claude Code distribution hit the PEP 604 crash on SessionStart. Fix commit: `7e58432` (2026-04).
+
+#### DO
+
+```python
+#!/usr/bin/env python3
+"""Hook description."""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+def handler(x: str | None) -> dict | None:  # lazy annotation — safe on 3.9
+    ...
+```
+
+#### DON'T
+
+```python
+# BAD — annotations evaluated eagerly, crashes on Python < 3.10
+def handler(x: str | None) -> dict | None:
+    ...
+```
+
+```python
+# BAD — __future__ import does NOT rescue runtime union
+def check(x):
+    if isinstance(x, int | str):  # still crashes on 3.9
+        ...
+```
+
+#### Audit Check
+
+Run this before releasing any change that adds a new `.py` file to `templates/`:
+
+```bash
+cd packages/cli/src/templates
+for f in $(find . -name "*.py"); do
+    if grep -qE '^[^#]*: [A-Za-z_].*\|.*(None|[A-Z])|->.*\|' "$f" \
+       && ! grep -q "from __future__ import annotations" "$f"; then
+        echo "MISSING: $f"
+    fi
+done
+```
+
+Exit with 0 matches means all PEP 604 users have the future import.
+
+---
+
 ### CRITICAL: Always Use `python3` Explicitly
 
 Windows does not support shebang (`#!/usr/bin/env python3`). Always document invocation with explicit `python3`:

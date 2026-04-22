@@ -81,7 +81,9 @@ function getPythonCommand(): string {
 }
 ```
 
-**Rule 3**: When calling Python from Python, use `sys.executable`:
+**Rule 5**: Don't assume the Python version the AI CLI uses matches your shell's `python3`. The user's terminal may resolve `python3` → homebrew 3.11, but AI CLI hosts (including enterprise-forked Claude Code / Cursor distributions) spawn hook subprocesses with a minimal PATH that resolves `python3` → `/usr/bin/python3` → macOS system 3.9. Distributed templates must either target the lowest plausible version or use `from __future__ import annotations` for PEP 604 syntax. See `cli/backend/script-conventions.md` → **CRITICAL: PEP 604 Annotations Require `from __future__ import annotations`** for the hard rule and audit check.
+
+**Rule 6**: When calling Python from Python, use `sys.executable`:
 
 ```python
 import sys
