@@ -46,11 +46,11 @@ import {
 import { setupProxy, maskProxyUrl } from "../utils/proxy.js";
 
 /**
- * Detect available Python command (python3 or python) and verify version >= 3.10
+ * Detect available Python command (python3 or python) and verify version >= 3.9
  */
 function getPythonCommand(): string {
   const MIN_MAJOR = 3;
-  const MIN_MINOR = 10;
+  const MIN_MINOR = 9;
 
   function checkVersion(cmd: string): boolean {
     try {
@@ -75,9 +75,7 @@ function getPythonCommand(): string {
       .toString()
       .trim();
     console.warn(
-      chalk.yellow(
-        `⚠️  ${output} detected, but Trellis requires Python ≥ 3.10`,
-      ),
+      chalk.yellow(`⚠️  ${output} detected, but Trellis requires Python ≥ 3.9`),
     );
   } catch {
     try {
@@ -86,7 +84,7 @@ function getPythonCommand(): string {
         .trim();
       console.warn(
         chalk.yellow(
-          `⚠️  ${output} detected, but Trellis requires Python ≥ 3.10`,
+          `⚠️  ${output} detected, but Trellis requires Python ≥ 3.9`,
         ),
       );
     } catch {

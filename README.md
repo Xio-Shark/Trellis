@@ -50,7 +50,7 @@
 ## Prerequisites
 
 - **Node.js** ≥ 18
-- **Python** ≥ 3.10 (required for hooks and automation scripts)
+- **Python** ≥ 3.9 (required for hooks and automation scripts)
 
 ## Quick Start
 
