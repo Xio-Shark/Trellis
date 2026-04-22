@@ -990,7 +990,7 @@ describe("regression: current-task path normalization", () => {
       "Task: issue-106 (in_progress)",
     );
     expect(parsed.hookSpecificOutput.additionalContext).toContain(
-      "implement → check",
+      "trellis-implement → trellis-check",
     );
   });
 
@@ -1008,7 +1008,7 @@ describe("regression: current-task path normalization", () => {
       "CUSTOM BODY from workflow.md",
     );
     expect(parsed.hookSpecificOutput.additionalContext).not.toContain(
-      "implement → check",
+      "trellis-implement → trellis-check",
     );
   });
 
@@ -2164,5 +2164,38 @@ describe("regression: research agent persists findings to task dir", () => {
     expect(data.tools).toContain("write");
     expect(data.instructions).toContain("{TASK_DIR}/research/");
     expect(data.instructions).toMatch(/PERSIST|persist/);
+  });
+});
+
+describe("regression: templates/markdown/spec contains only .md.txt files (0.5.0-beta.9)", () => {
+  // Invariant: packages/cli/src/templates/markdown/spec/ is for user-facing
+  // placeholder templates only — markdown/index.ts reads .md.txt via
+  // readLocalTemplate, so bare .md files there are orphans (ship to dist as
+  // dead weight, never land on user disks). Documented in
+  // .trellis/spec/cli/backend/directory-structure.md "Don't: Leak dogfood
+  // spec into templates/markdown/spec/". Captured while cleaning up ~2-year-old
+  // leakage in task 04-21-task-schema-unify.
+  it("every file under templates/markdown/spec ends in .md.txt", () => {
+    function walk(dir: string): string[] {
+      const out: string[] = [];
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) out.push(...walk(full));
+        else if (entry.isFile()) out.push(full);
+      }
+      return out;
+    }
+    const __dirname3 = path.dirname(fileURLToPath(import.meta.url));
+    const repoRoot = path.resolve(__dirname3, "../../..");
+    const specRoot = path.join(
+      repoRoot,
+      "packages/cli/src/templates/markdown/spec",
+    );
+    const files = walk(specRoot);
+    const orphans = files.filter((f) => !f.endsWith(".md.txt"));
+    expect(
+      orphans,
+      `Orphan non-.md.txt files in templates/markdown/spec/: ${orphans.join(", ")}`,
+    ).toEqual([]);
   });
 });
