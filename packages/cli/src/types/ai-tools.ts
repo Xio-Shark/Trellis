@@ -78,6 +78,15 @@ export interface TemplateContext {
   agentCapable: boolean;
   /** Platform has hook system (SessionStart, PreToolUse) */
   hasHooks: boolean;
+  /**
+   * CLI flag value for this platform (e.g. "claude", "codex", "kiro").
+   * Substituted into template commands via {{CLI_FLAG}} so rendered skill /
+   * command files pass `--platform <flag>` to scripts like
+   * `task.py init-context`, removing the need to re-detect at runtime.
+   * Duplicates the top-level `AIToolConfig.cliFlag` for convenience — the
+   * invariant is maintained in `AI_TOOLS` config blocks.
+   */
+  cliFlag: CliFlag;
 }
 
 /**
@@ -133,6 +142,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
       userActionLabel: "Slash commands",
       agentCapable: true,
       hasHooks: true,
+      cliFlag: "claude",
     },
   },
   cursor: {
@@ -148,6 +158,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
       userActionLabel: "Slash commands",
       agentCapable: true,
       hasHooks: true,
+      cliFlag: "cursor",
     },
   },
   opencode: {
@@ -163,6 +174,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
       userActionLabel: "Slash commands",
       agentCapable: true,
       hasHooks: false,
+      cliFlag: "opencode",
     },
   },
   codex: {
@@ -179,6 +191,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
       userActionLabel: "Skills",
       agentCapable: true,
       hasHooks: false,
+      cliFlag: "codex",
     },
   },
   kilo: {
@@ -194,6 +207,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
       userActionLabel: "Workflows",
       agentCapable: false,
       hasHooks: false,
+      cliFlag: "kilo",
     },
   },
   kiro: {
@@ -210,6 +224,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
       userActionLabel: "Skills",
       agentCapable: true,
       hasHooks: true,
+      cliFlag: "kiro",
     },
   },
   gemini: {
@@ -225,6 +240,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
       userActionLabel: "Slash commands",
       agentCapable: true,
       hasHooks: true,
+      cliFlag: "gemini",
     },
   },
   antigravity: {
@@ -241,6 +257,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
       userActionLabel: "Workflows",
       agentCapable: false,
       hasHooks: false,
+      cliFlag: "antigravity",
     },
   },
   windsurf: {
@@ -257,6 +274,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
       userActionLabel: "Workflows",
       agentCapable: false,
       hasHooks: false,
+      cliFlag: "windsurf",
     },
   },
   qoder: {
@@ -272,6 +290,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
       userActionLabel: "Skills",
       agentCapable: true,
       hasHooks: true,
+      cliFlag: "qoder",
     },
   },
   codebuddy: {
@@ -287,6 +306,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
       userActionLabel: "Slash commands",
       agentCapable: true,
       hasHooks: true,
+      cliFlag: "codebuddy",
     },
   },
   copilot: {
@@ -308,6 +328,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
       userActionLabel: "Prompts",
       agentCapable: true,
       hasHooks: true,
+      cliFlag: "copilot",
     },
   },
   droid: {
@@ -323,6 +344,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
       userActionLabel: "Slash commands",
       agentCapable: true,
       hasHooks: true,
+      cliFlag: "droid",
     },
   },
 };

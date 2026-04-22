@@ -76,6 +76,16 @@ describe("registry internal consistency", () => {
     }
   });
 
+  // templateContext.cliFlag mirrors the outer AIToolConfig.cliFlag — the two
+  // must stay in sync so {{CLI_FLAG}} substitution in shipped templates
+  // agrees with the --claude/--cursor/--codex CLI flag users invoke.
+  it("templateContext.cliFlag matches AIToolConfig.cliFlag for every platform", () => {
+    for (const id of PLATFORM_IDS) {
+      const config = AI_TOOLS[id];
+      expect(config.templateContext.cliFlag).toBe(config.cliFlag);
+    }
+  });
+
 });
 
 // =============================================================================

@@ -25,6 +25,7 @@ function getPythonCommand(): string {
  * - {{CMD_REF:name}}         → platform-specific command reference
  * - {{EXECUTOR_AI}}          → AI executor description
  * - {{USER_ACTION_LABEL}}    → user action label
+ * - {{CLI_FLAG}}             → platform cli flag (e.g. "claude", "codex")
  * - {{#FLAG}}...{{/FLAG}}    → conditional include (when FLAG is true)
  * - {{^FLAG}}...{{/FLAG}}    → negated conditional (when FLAG is false)
  *
@@ -35,6 +36,7 @@ const RE_PYTHON_CMD = /\{\{PYTHON_CMD\}\}/g;
 const RE_CMD_REF = /\{\{CMD_REF:([\w][\w-]*)\}\}/g;
 const RE_EXECUTOR_AI = /\{\{EXECUTOR_AI\}\}/g;
 const RE_USER_ACTION_LABEL = /\{\{USER_ACTION_LABEL\}\}/g;
+const RE_CLI_FLAG = /\{\{CLI_FLAG\}\}/g;
 const RE_BLANK_LINES = /\n{3,}/g;
 
 const CONDITIONAL_FLAGS = ["AGENT_CAPABLE", "HAS_HOOKS"] as const;
@@ -69,6 +71,7 @@ export function resolvePlaceholders(
   );
   result = result.replace(RE_EXECUTOR_AI, context.executorAI);
   result = result.replace(RE_USER_ACTION_LABEL, context.userActionLabel);
+  result = result.replace(RE_CLI_FLAG, context.cliFlag);
 
   // Conditional blocks
   const flagValues: Record<(typeof CONDITIONAL_FLAGS)[number], boolean> = {

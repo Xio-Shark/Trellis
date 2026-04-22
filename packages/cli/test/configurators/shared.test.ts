@@ -12,6 +12,7 @@ const claudeCtx: TemplateContext = {
   userActionLabel: "Slash commands",
   agentCapable: true,
   hasHooks: true,
+  cliFlag: "claude",
 };
 
 const codexCtx: TemplateContext = {
@@ -20,6 +21,7 @@ const codexCtx: TemplateContext = {
   userActionLabel: "Skills",
   agentCapable: true,
   hasHooks: false,
+  cliFlag: "codex",
 };
 
 const cursorCtx: TemplateContext = {
@@ -28,6 +30,7 @@ const cursorCtx: TemplateContext = {
   userActionLabel: "Slash commands",
   agentCapable: false,
   hasHooks: false,
+  cliFlag: "cursor",
 };
 
 // ---------------------------------------------------------------------------
@@ -263,6 +266,38 @@ describe("resolvePlaceholders", () => {
   // -----------------------------------------------------------------------
   // Edge cases
   // -----------------------------------------------------------------------
+
+  // -----------------------------------------------------------------------
+  // CLI_FLAG substitution (migrate-flow-bugs Bug B fix: platform propagation)
+  // -----------------------------------------------------------------------
+
+  describe("{{CLI_FLAG}}", () => {
+    it("substitutes to the platform's cliFlag value", () => {
+      const input = "--platform {{CLI_FLAG}}";
+      expect(resolvePlaceholders(input, claudeCtx)).toBe("--platform claude");
+      expect(resolvePlaceholders(input, codexCtx)).toBe("--platform codex");
+      expect(resolvePlaceholders(input, cursorCtx)).toBe("--platform cursor");
+    });
+
+    it("substitutes multiple occurrences in one string", () => {
+      const input = "a={{CLI_FLAG}} b={{CLI_FLAG}}";
+      expect(resolvePlaceholders(input, codexCtx)).toBe("a=codex b=codex");
+    });
+
+    it("leaves {{CLI_FLAG}} literal when no context is provided", () => {
+      const input = "--platform {{CLI_FLAG}}";
+      expect(resolvePlaceholders(input)).toBe(input);
+    });
+
+    it("works alongside {{PYTHON_CMD}} in a realistic init-context invocation", () => {
+      const input =
+        '{{PYTHON_CMD}} ./.trellis/scripts/task.py init-context "$TASK_DIR" <type> --platform {{CLI_FLAG}}';
+      const py = process.platform === "win32" ? "python" : "python3";
+      expect(resolvePlaceholders(input, codexCtx)).toBe(
+        `${py} ./.trellis/scripts/task.py init-context "$TASK_DIR" <type> --platform codex`,
+      );
+    });
+  });
 
   describe("edge cases", () => {
     it("handles empty content", () => {

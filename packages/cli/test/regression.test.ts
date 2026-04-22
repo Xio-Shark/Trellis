@@ -1552,6 +1552,177 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
     expect(commonCliAdapter).toContain("def detect_platform");
   });
 
+  // Regression for 04-22-migrate-flow-bugs Bug A: codex/kiro branches of
+  // get_trellis_command_path were missing the `trellis-` prefix that
+  // 0.5.0-beta.0 introduced via 60+ rename manifest entries. Without the
+  // prefix, init-context writes broken check.jsonl / implement.jsonl paths
+  // that don't resolve to any real skill file.
+  it("[migrate-flow-bugs] get_trellis_command_path codex branch uses trellis- prefix", () => {
+    expect(commonCliAdapter).toMatch(
+      /def get_trellis_command_path[\s\S]*?elif self\.platform == "codex":[\s\S]*?return f"\.agents\/skills\/trellis-\{name\}\/SKILL\.md"/,
+    );
+    expect(commonCliAdapter).not.toMatch(
+      /def get_trellis_command_path[\s\S]*?elif self\.platform == "codex":[\s\S]*?return f"\.agents\/skills\/\{name\}\/SKILL\.md"/,
+    );
+  });
+
+  it("[migrate-flow-bugs] get_trellis_command_path kiro branch uses trellis- prefix", () => {
+    expect(commonCliAdapter).toMatch(
+      /def get_trellis_command_path[\s\S]*?elif self\.platform == "kiro":[\s\S]*?return f"\.kiro\/skills\/trellis-\{name\}\/SKILL\.md"/,
+    );
+    expect(commonCliAdapter).not.toMatch(
+      /def get_trellis_command_path[\s\S]*?elif self\.platform == "kiro":[\s\S]*?return f"\.kiro\/skills\/\{name\}\/SKILL\.md"/,
+    );
+  });
+
+  // Regression for 04-22-migrate-flow-bugs Bug B: .agents/skills/ is a shared
+  // layer (Codex writes, Amp/Cline consume via agentskills.io standard) — not
+  // a single-platform config dir. Previously included in
+  // _ALL_PLATFORM_CONFIG_DIRS, which caused Kiro / Antigravity / Windsurf
+  // detection to fail whenever .agents/ existed (codex had already excluded
+  // it, other platforms had not).
+  it("[migrate-flow-bugs] _ALL_PLATFORM_CONFIG_DIRS excludes .agents (shared layer, not platform-specific)", () => {
+    expect(commonCliAdapter).toMatch(/_ALL_PLATFORM_CONFIG_DIRS\s*=\s*\(/);
+    const tupleMatch = commonCliAdapter.match(
+      /_ALL_PLATFORM_CONFIG_DIRS\s*=\s*\(([\s\S]*?)\)/,
+    );
+    expect(tupleMatch).toBeTruthy();
+    const tupleBody = tupleMatch![1];
+    expect(tupleBody).not.toMatch(/"\.agents"/);
+    // Must still include actual platform dirs
+    expect(tupleBody).toContain('".claude"');
+    expect(tupleBody).toContain('".codex"');
+    expect(tupleBody).toContain('".kiro"');
+  });
+
+  it("[migrate-flow-bugs] detect_platform has codex shared-skills fallback guarded by no-other-platform-dir check", () => {
+    // Fallback fires when .agents/skills/trellis-* exists AND no other
+    // platform dir is present. Guard is essential — .agents/skills/ can
+    // legitimately coexist with .claude (claude user + shared layer for
+    // other agents) and must not trigger codex in that case.
+    expect(commonCliAdapter).toMatch(
+      /agents_skills\s*=\s*project_root\s*\/\s*"\.agents"\s*\/\s*"skills"/,
+    );
+    expect(commonCliAdapter).toMatch(
+      /if agents_skills\.is_dir\(\) and not _has_other_platform_dir\(\s*project_root,\s*set\(\)/,
+    );
+    expect(commonCliAdapter).toMatch(
+      /entry\.name\.startswith\("trellis-"\)/,
+    );
+  });
+
+  // task.py init-context now accepts --platform so skills/commands (rendered
+  // per-platform via {{CLI_FLAG}} substitution) can pass the invoking
+  // platform explicitly instead of relying on detect_platform auto-detect.
+  it("[migrate-flow-bugs] task.py init-context subparser accepts --platform", () => {
+    const taskScript = getAllScripts().get("task.py");
+    expect(taskScript).toBeDefined();
+    // --platform arg registered on the init-context subparser
+    expect(taskScript!).toMatch(
+      /p_init\.add_argument\(\s*"--platform"/,
+    );
+  });
+
+  it("[migrate-flow-bugs] cmd_init_context threads args.platform through to get_check_context", () => {
+    const taskContext = getAllScripts().get("common/task_context.py");
+    expect(taskContext).toBeDefined();
+    // Pulls platform from args
+    expect(taskContext!).toMatch(
+      /platform:\s*str\s*\|\s*None\s*=\s*getattr\(args,\s*"platform",\s*None\)/,
+    );
+    // Passes platform to get_check_context
+    expect(taskContext!).toMatch(
+      /get_check_context\(repo_root,\s*platform=platform\)/,
+    );
+  });
+
+  it("[migrate-flow-bugs] get_check_context uses explicit platform when provided, auto-detect otherwise", () => {
+    const taskContext = getAllScripts().get("common/task_context.py");
+    expect(taskContext).toBeDefined();
+    expect(taskContext!).toMatch(
+      /def get_check_context\(repo_root:\s*Path,\s*platform:\s*str\s*\|\s*None\s*=\s*None\)/,
+    );
+    // Explicit platform path
+    expect(taskContext!).toMatch(
+      /if platform:\s*\n\s*adapter\s*=\s*get_cli_adapter\(platform\)/,
+    );
+    // Fallback to auto-detect
+    expect(taskContext!).toMatch(
+      /else:\s*\n\s*adapter\s*=\s*get_cli_adapter_auto\(repo_root\)/,
+    );
+  });
+
+  // Regression for 04-22-migrate-flow-bugs Bug C: breaking releases must
+  // ship a migrationGuide. Otherwise `update --migrate` generates a task
+  // PRD filled with older versions' guides (or no task at all), leaving
+  // users to migrate blind. Historical miss: 0.5.0-beta.0 — 206 migrations,
+  // zero migrationGuide.
+  it("[migrate-flow-bugs] 0.5.0-beta.0 manifest has migrationGuide + aiInstructions (back-filled)", () => {
+    const manifest = JSON.parse(
+      fs.readFileSync(
+        path.join(
+          path.resolve(__dirname, ".."),
+          "src/migrations/manifests/0.5.0-beta.0.json",
+        ),
+        "utf-8",
+      ),
+    );
+    expect(manifest.breaking).toBe(true);
+    expect(manifest.recommendMigrate).toBe(true);
+    expect(typeof manifest.migrationGuide).toBe("string");
+    expect(manifest.migrationGuide.length).toBeGreaterThan(500);
+    expect(typeof manifest.aiInstructions).toBe("string");
+    expect(manifest.aiInstructions.length).toBeGreaterThan(200);
+    // Sanity: guide references the actual 0.5 breaking themes
+    expect(manifest.migrationGuide).toMatch(/trellis-/); // skill renames
+    expect(manifest.migrationGuide).toMatch(/record-session|finish-work/);
+  });
+
+  it("[migrate-flow-bugs] all breaking+recommendMigrate manifests include migrationGuide", () => {
+    // Enforce going forward: every historical manifest where both
+    // breaking=true AND recommendMigrate=true must have a non-empty
+    // migrationGuide. create-manifest.js also rejects new ones without it.
+    const manifestsDir = path.join(
+      path.resolve(__dirname, ".."),
+      "src/migrations/manifests",
+    );
+    const files = fs
+      .readdirSync(manifestsDir)
+      .filter((f) => f.endsWith(".json"));
+    const offenders: string[] = [];
+    for (const file of files) {
+      const m = JSON.parse(
+        fs.readFileSync(path.join(manifestsDir, file), "utf-8"),
+      );
+      if (m.breaking && m.recommendMigrate && !m.migrationGuide) {
+        offenders.push(file);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("[migrate-flow-bugs] platform-specific start templates invoke init-context with --platform {{CLI_FLAG}}", () => {
+    // Both codex skill start and copilot prompts start must pass the
+    // platform explicitly; {{CLI_FLAG}} gets substituted per-platform at
+    // configure time via resolvePlaceholders.
+    const pkgRoot = path.resolve(__dirname, "..");
+    const codexStart = fs.readFileSync(
+      path.join(pkgRoot, "src/templates/codex/skills/start/SKILL.md"),
+      "utf-8",
+    );
+    expect(codexStart).toContain(
+      'task.py init-context "$TASK_DIR" <type> --platform {{CLI_FLAG}}',
+    );
+
+    const copilotStart = fs.readFileSync(
+      path.join(pkgRoot, "src/templates/copilot/prompts/start.prompt.md"),
+      "utf-8",
+    );
+    expect(copilotStart).toContain(
+      'task.py init-context "$TASK_DIR" <type> --platform {{CLI_FLAG}}',
+    );
+  });
+
   it("[beta.9] cli_adapter.py has get_cli_adapter function with validation", () => {
     expect(commonCliAdapter).toContain("def get_cli_adapter");
     // Should validate platform parameter

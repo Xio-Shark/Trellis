@@ -276,7 +276,7 @@ Task(
 Initialize default context:
 
 ```bash
-python3 ./.trellis/scripts/task.py init-context "$TASK_DIR" <type>
+python3 ./.trellis/scripts/task.py init-context "$TASK_DIR" <type> --platform {{CLI_FLAG}}
 # type: backend | frontend | fullstack
 ```
 
