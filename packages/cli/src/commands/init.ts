@@ -22,6 +22,7 @@ import {
   writeFile,
   type WriteMode,
 } from "../utils/file-writer.js";
+import { emptyTaskJson, type TaskJson } from "../utils/task-json.js";
 import {
   detectProjectType,
   detectMonorepo,
@@ -101,10 +102,60 @@ function getPythonCommand(): string {
 
 const BOOTSTRAP_TASK_NAME = "00-bootstrap-guidelines";
 
+/**
+ * Compute the bootstrap checklist items (previously stored as structured
+ * `subtasks: [{name, status}]` in task.json). Per task 04-21-task-schema-unify
+ * (D1), these live as markdown `- [ ]` items in prd.md instead, so task.json
+ * stays canonical with `subtasks: string[]` (child task dir names, same as
+ * task_store.py).
+ */
+function getBootstrapChecklistItems(
+  projectType: ProjectType,
+  packages?: DetectedPackage[],
+): string[] {
+  if (packages && packages.length > 0) {
+    const items = packages.map((pkg) => `Fill guidelines for ${pkg.name}`);
+    items.push("Add code examples");
+    return items;
+  }
+  if (projectType === "frontend") {
+    return ["Fill frontend guidelines", "Add code examples"];
+  }
+  if (projectType === "backend") {
+    return ["Fill backend guidelines", "Add code examples"];
+  }
+  return [
+    "Fill backend guidelines",
+    "Fill frontend guidelines",
+    "Add code examples",
+  ];
+}
+
+function getBootstrapRelatedFiles(
+  projectType: ProjectType,
+  packages?: DetectedPackage[],
+): string[] {
+  if (packages && packages.length > 0) {
+    return packages.map((pkg) => `.trellis/spec/${sanitizePkgName(pkg.name)}/`);
+  }
+  if (projectType === "frontend") {
+    return [".trellis/spec/frontend/"];
+  }
+  if (projectType === "backend") {
+    return [".trellis/spec/backend/"];
+  }
+  return [".trellis/spec/backend/", ".trellis/spec/frontend/"];
+}
+
 function getBootstrapPrdContent(
   projectType: ProjectType,
   packages?: DetectedPackage[],
 ): string {
+  const checklistItems = getBootstrapChecklistItems(projectType, packages);
+  const checklistMarkdown = checklistItems
+    .map((item) => `- [ ] ${item}`)
+    .join("\n");
+
   const header = `# Bootstrap: Fill Project Development Guidelines
 
 ## Purpose
@@ -115,6 +166,12 @@ AI agents use \`.trellis/spec/\` to understand YOUR project's coding conventions
 **Starting from scratch = AI writes generic code that doesn't match your project style.**
 
 Filling these guidelines is a one-time setup that pays off for every future AI session.
+
+---
+
+## Status
+
+${checklistMarkdown}
 
 ---
 
@@ -255,71 +312,22 @@ After completing this task:
   return content;
 }
 
-interface TaskJson {
-  id: string;
-  name: string;
-  description: string;
-  status: string;
-  dev_type: string;
-  priority: string;
-  creator: string;
-  assignee: string;
-  createdAt: string;
-  completedAt: null;
-  commit: null;
-  subtasks: { name: string; status: string }[];
-  children: string[];
-  parent: string | null;
-  relatedFiles: string[];
-  notes: string;
-  meta: Record<string, unknown>;
-}
-
 function getBootstrapTaskJson(
   developer: string,
   projectType: ProjectType,
   packages?: DetectedPackage[],
 ): TaskJson {
   const today = new Date().toISOString().split("T")[0];
+  const relatedFiles = getBootstrapRelatedFiles(projectType, packages);
 
-  let subtasks: { name: string; status: string }[];
-  let relatedFiles: string[];
-
-  if (packages && packages.length > 0) {
-    // Monorepo: subtask per package
-    subtasks = packages.map((pkg) => ({
-      name: `Fill guidelines for ${pkg.name}`,
-      status: "pending",
-    }));
-    subtasks.push({ name: "Add code examples", status: "pending" });
-    relatedFiles = packages.map(
-      (pkg) => `.trellis/spec/${sanitizePkgName(pkg.name)}/`,
-    );
-  } else if (projectType === "frontend") {
-    subtasks = [
-      { name: "Fill frontend guidelines", status: "pending" },
-      { name: "Add code examples", status: "pending" },
-    ];
-    relatedFiles = [".trellis/spec/frontend/"];
-  } else if (projectType === "backend") {
-    subtasks = [
-      { name: "Fill backend guidelines", status: "pending" },
-      { name: "Add code examples", status: "pending" },
-    ];
-    relatedFiles = [".trellis/spec/backend/"];
-  } else {
-    // fullstack
-    subtasks = [
-      { name: "Fill backend guidelines", status: "pending" },
-      { name: "Fill frontend guidelines", status: "pending" },
-      { name: "Add code examples", status: "pending" },
-    ];
-    relatedFiles = [".trellis/spec/backend/", ".trellis/spec/frontend/"];
-  }
-
-  return {
+  // Canonical 24-field shape via emptyTaskJson factory.
+  // Checklist items (previously stored as structured `subtasks`) are now
+  // rendered as `- [ ]` items in prd.md; task.json.subtasks is always
+  // string[] (child task dir names) per the canonical schema.
+  return emptyTaskJson({
     id: BOOTSTRAP_TASK_NAME,
-    name: "Bootstrap Guidelines",
+    name: BOOTSTRAP_TASK_NAME,
+    title: "Bootstrap Guidelines",
     description: "Fill in project development guidelines for AI agents",
     status: "in_progress",
     dev_type: "docs",
@@ -327,15 +335,9 @@ function getBootstrapTaskJson(
     creator: developer,
     assignee: developer,
     createdAt: today,
-    completedAt: null,
-    commit: null,
-    subtasks,
-    children: [],
-    parent: null,
     relatedFiles,
     notes: `First-time setup task created by trellis init (${projectType} project)`,
-    meta: {},
-  };
+  });
 }
 
 /**

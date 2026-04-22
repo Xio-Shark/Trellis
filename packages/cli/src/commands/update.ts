@@ -29,6 +29,7 @@ import {
 } from "../utils/template-hash.js";
 import { compareVersions } from "../utils/compare-versions.js";
 import { setupProxy } from "../utils/proxy.js";
+import { emptyTaskJson } from "../utils/task-json.js";
 
 // Import templates for comparison
 import {
@@ -2003,37 +2004,21 @@ export async function update(options: UpdateOptions): Promise<void> {
           }
         }
 
-        // Build task.json
+        // Build task.json — canonical 24-field shape via shared factory.
         const taskTitle = `Migrate to v${cliVersion}`;
         const todayStr = today.toISOString().split("T")[0];
-        const taskJson = {
+        const taskJson = emptyTaskJson({
+          id: taskSlug,
+          name: taskSlug,
           title: taskTitle,
           description: `Breaking change migration from v${projectVersion} to v${cliVersion}`,
           status: "planning",
-          dev_type: null,
           scope: "migration",
           priority: "P1",
           creator: "trellis-update",
           assignee: currentDeveloper,
           createdAt: todayStr,
-          completedAt: null,
-          branch: null,
-          base_branch: null,
-          worktree_path: null,
-          current_phase: 0,
-          next_action: [
-            { phase: 1, action: "review-guide" },
-            { phase: 2, action: "update-files" },
-            { phase: 3, action: "run-migrate" },
-            { phase: 4, action: "test" },
-          ],
-          commit: null,
-          pr_url: null,
-          subtasks: [],
-          children: [],
-          parent: null,
-          meta: {},
-        };
+        });
 
         // Write task.json
         const taskJsonPath = path.join(taskDir, "task.json");

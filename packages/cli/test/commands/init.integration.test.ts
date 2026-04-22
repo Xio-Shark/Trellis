@@ -571,25 +571,30 @@ describe("init() integration", () => {
     const taskDir = path.join(tmpDir, PATHS.TASKS, "00-bootstrap-guidelines");
     expect(fs.existsSync(taskDir)).toBe(true);
 
-    // task.json has per-package subtasks
     const taskJson = JSON.parse(
       fs.readFileSync(path.join(taskDir, "task.json"), "utf-8"),
     );
-    const subtaskNames: string[] = taskJson.subtasks.map(
-      (s: { name: string }) => s.name,
-    );
-    expect(subtaskNames).toContain("Fill guidelines for core");
-    expect(subtaskNames).toContain("Fill guidelines for ui");
+
+    // task.json.subtasks is canonical string[] (child task dir names);
+    // per-package checklist items now live in prd.md as markdown checkboxes.
+    expect(Array.isArray(taskJson.subtasks)).toBe(true);
+    expect(taskJson.subtasks).toEqual([]);
+
+    // Canonical shape: legacy current_phase / next_action must NOT appear
+    expect(taskJson.current_phase).toBeUndefined();
+    expect(taskJson.next_action).toBeUndefined();
 
     // relatedFiles point to spec/<name>/
     expect(taskJson.relatedFiles).toContain(".trellis/spec/core/");
     expect(taskJson.relatedFiles).toContain(".trellis/spec/ui/");
 
-    // prd.md mentions packages
+    // prd.md mentions packages + renders per-package checklist items
     const prd = fs.readFileSync(path.join(taskDir, "prd.md"), "utf-8");
     expect(prd).toContain("core");
     expect(prd).toContain("ui");
     expect(prd).toContain("spec/");
+    expect(prd).toContain("- [ ] Fill guidelines for core");
+    expect(prd).toContain("- [ ] Fill guidelines for ui");
   });
 
   it("#16 --no-monorepo skips detection even with workspace config", async () => {
