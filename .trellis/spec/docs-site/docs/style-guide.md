@@ -196,6 +196,87 @@ Always include descriptive alt text.
 
 ---
 
+## Changelog / Release Notes Voice
+
+Release notes (`docs-site/changelog/v*.mdx` and `docs-site/zh/changelog/v*.mdx`) are read by operators deciding whether to upgrade and by AI agents answering version questions. They are **reference docs**, not product storytelling. Match the tone of `kubectl` / Rust release notes, not marketing copy.
+
+### Convention: Technical voice
+
+**What**: Each section opens with one sentence stating what changed, followed by concrete identifiers (file paths, function names, flags, migration entries). Prefer tables, code blocks, and bullets over paragraphs. No rhetorical questions, no emotional language, no filler adverbs.
+
+**Why**: A user scanning a changelog wants to answer "does this affect me, and what do I do?" in seconds. Narrative background ("then what? then nothing") pushes the actual change further down the page and tells readers how to feel rather than what changed. It also ages badly — in six months the only reader is an AI grepping for `phase.py` or `init.ts:1370`, not someone reliving the UX story.
+
+**Example (changelog entry)**:
+
+```markdown
+### Joiner onboarding task
+
+`trellis init` now dispatches on two filesystem flags:
+
+| `.trellis/` | `.trellis/.developer` | Generated task |
+|---|---|---|
+| missing | n/a | `00-bootstrap-guidelines` (creator, unchanged) |
+| present | missing | `00-join-<slug>` (new: joiner flow) |
+| present | present | none (same-dev re-init) |
+
+`.trellis/.developer` is the per-checkout signal because it's listed in
+`.trellis/.gitignore` and therefore absent on fresh clones.
+`.trellis/workspace/<name>/` cannot serve this role — it's committed to git.
+```
+
+**Related**: `Best Practices > DON'T > use vague language` above. Changelog narrative flourishes are the same anti-pattern at document level.
+
+### Don't: Narrative storytelling in changelogs
+
+**Problem**:
+
+```markdown
+### Joiner 引导任务——新开发者不再进来一脸懵
+
+这个版本之前，新开发者在一个已有 Trellis 项目上第一次跑 `trellis init` 几乎啥都不做：
+只往 `.trellis/.developer` 写了个身份文件，然后呢？然后就没然后了。打开 AI 工具面对
+的是一片空白，不知道 Trellis 是什么、团队约定在哪、自己该做什么。队友只能反复在
+群里解释工作流。
+
+beta.9 起，`trellis init` 按两个文件的存在状态分三种场景派发：
+```
+
+**Why it's bad**:
+
+- Rhetorical questions ("然后呢？然后就没然后了") and emotional framing ("一脸懵", "反复在群里解释") don't help an upgrade decision.
+- The actual change (dispatch on two flags → three branches) is buried three paragraphs in.
+- Language ages badly. In six months "一脸懵" reads as noise; the dispatch table still holds.
+- Title is an outcome statement ("不再进来一脸懵"), not a feature name. Hard to grep for.
+
+**Instead**:
+
+```markdown
+### Joiner onboarding task
+
+`trellis init` now dispatches on (`.trellis/`, `.trellis/.developer`) presence
+to generate three task types: creator bootstrap, joiner onboarding, or no task.
+```
+
+Lead with the change. Background (if any) goes into a second paragraph or a collapsed "Why" subsection — not in the opening sentence.
+
+### Section heading rules
+
+- **Use feature names, not outcomes**: `### Joiner onboarding task`, not `### New developers aren't thrown into a black box anymore`.
+- **Stable across translations**: same technical nouns in both `docs-site/changelog/` and `docs-site/zh/changelog/`.
+- **Greppable**: include exact identifiers users might search for (`task.json`, `trellis init`, `/trellis:finish-work`).
+
+### Backstory goes elsewhere
+
+Product narrative ("why we're doing this", user quotes, design rationale) belongs in:
+
+- **Task PRD** (`.trellis/tasks/<task>/prd.md`) during development
+- **Blog post** (`docs-site/blog/`) for marketing
+- **Spec decision record** (`spec/*/` design-decision sections) for lasting architectural choices
+
+The changelog just records what shipped and how users upgrade.
+
+---
+
 ## Source-of-Truth Discipline for Code-Level Docs
 
 When a page documents **code-level contracts** — JSON schemas, CLI subcommand tables, config field lists, file path references, default values — **open the source file first** and copy the list verbatim (field order, names, defaults) before writing a single line of prose. Don't document from memory, and don't propagate what existing docs already say without re-verifying.
