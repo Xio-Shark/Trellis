@@ -222,9 +222,12 @@ Brainstorm and research can interleave freely — pause to research a technical 
 Once research output is solid, initialize the agent context files:
 
 ```bash
-python3 ./.trellis/scripts/task.py init-context "$TASK_DIR" <type>
+python3 ./.trellis/scripts/task.py init-context "$TASK_DIR" <type> --platform <platform>
 # type: backend | frontend | fullstack
+# platform: claude | codex | cursor | kiro | gemini | opencode | qoder | codebuddy | copilot | droid
 ```
+
+`--platform` is auto-filled by per-platform skills/commands (via `{{CLI_FLAG}}` substitution). Specify it explicitly only for CLI-direct invocations; otherwise the script falls back to filesystem auto-detection, which can misfire on multi-platform setups.
 
 Skip when: `implement.jsonl` already exists.
 
