@@ -13,7 +13,6 @@ import {
   taskScript,
   getContextScript,
   addSessionScript,
-  createBootstrapScript,
   workflowMdTemplate,
   gitignoreTemplate,
   getAllScripts,
@@ -38,7 +37,6 @@ describe("trellis template constants", () => {
     taskScript,
     getContextScript,
     addSessionScript,
-    createBootstrapScript,
     workflowMdTemplate,
     gitignoreTemplate,
   };

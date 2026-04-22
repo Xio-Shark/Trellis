@@ -62,9 +62,6 @@ export const initDeveloperScript = readTemplate("scripts/init_developer.py");
 export const taskScript = readTemplate("scripts/task.py");
 export const getContextScript = readTemplate("scripts/get_context.py");
 export const addSessionScript = readTemplate("scripts/add_session.py");
-export const createBootstrapScript = readTemplate(
-  "scripts/create_bootstrap.py",
-);
 
 // Configuration files
 export const workflowMdTemplate = readTemplate("workflow.md");
@@ -106,7 +103,6 @@ export function getAllScripts(): Map<string, string> {
   scripts.set("task.py", taskScript);
   scripts.set("get_context.py", getContextScript);
   scripts.set("add_session.py", addSessionScript);
-  scripts.set("create_bootstrap.py", createBootstrapScript);
 
   return scripts;
 }
