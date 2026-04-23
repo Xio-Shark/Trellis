@@ -52,7 +52,7 @@
   ".cursor/commands/trellis-integrate-skill.md": "bb15144c308939abfd41cb008da71088910b6ec432c763ab4c0762dd6f0819e8",
   ".cursor/commands/trellis-onboard.md": "ebfbe707f428f036b7d716061dfc33187b940ef9acdf3f824d1c43d1e2035ecb",
   ".trellis/scripts/common/registry.py": "6c65db45a487ef839b0a4b5b20abe201547269c20c7257254293a89dc01b56dc",
-  ".trellis/scripts/task.py": "4ba3e6409023f32defc08be62f7c4029c0557c1866bca7cc25ba34688c1a0de9",
+  ".trellis/scripts/task.py": "402e3a097b455e0880e5c61de2b1326da3a85da5d231cf4c2598376a7b6e0687",
   ".claude/settings.json": "cf991465cd1f20689272cdfd269586d9155590cef77b1dd45fd16cc1d7019816",
   ".trellis/scripts/create_bootstrap.py": "33b40df671ba7828fd8d3ba8c019823a8b03e938797b1cae218c55d6c7ebe57a",
   ".agents/skills/record-session/SKILL.md": "2f3781d894b7a45b517d36845fa18e6fac98acad40e77438a3d85760f1d7d247",

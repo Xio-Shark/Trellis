@@ -37,6 +37,7 @@ from common.paths import (
     set_current_task,
     clear_current_task,
 )
+from common.io import read_json, write_json
 from common.task_utils import resolve_task_dir, run_task_hooks
 from common.tasks import iter_active_tasks, children_progress
 
@@ -86,10 +87,18 @@ def cmd_start(args: argparse.Namespace) -> int:
 
     if set_current_task(task_dir, repo_root):
         print(colored(f"✓ Current task set to: {task_dir}", Colors.GREEN))
+
+        task_json_path = full_path / FILE_TASK_JSON
+        if task_json_path.is_file():
+            data = read_json(task_json_path)
+            if data and data.get("status") == "planning":
+                data["status"] = "in_progress"
+                if write_json(task_json_path, data):
+                    print(colored("✓ Status: planning → in_progress", Colors.GREEN))
+
         print()
         print(colored("The hook will now inject context from this task's jsonl files.", Colors.BLUE))
 
-        task_json_path = full_path / FILE_TASK_JSON
         run_task_hooks("after_start", task_json_path, repo_root)
         return 0
     else:
