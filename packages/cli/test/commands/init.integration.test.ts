@@ -43,6 +43,13 @@ describe("init() integration", () => {
     vi.spyOn(console, "log").mockImplementation(noop);
     vi.spyOn(console, "error").mockImplementation(noop);
     vi.mocked(execSync).mockClear();
+    vi.mocked(execSync).mockImplementation(((cmd: string) => {
+      const expectedPythonCmd = process.platform === "win32" ? "python" : "python3";
+      if (cmd === `${expectedPythonCmd} --version`) {
+        return "Python 3.11.12";
+      }
+      return "";
+    }) as typeof execSync);
   });
 
   afterEach(() => {
@@ -398,7 +405,59 @@ describe("init() integration", () => {
       ([cmd]) => typeof cmd === "string" && cmd.includes("init_developer.py"),
     );
     expect(match).toBeDefined();
-    expect(String((match as [unknown])[0])).toContain('"testdev"');
+    const command = String((match as [unknown])[0]);
+    const expectedPythonCmd = process.platform === "win32" ? "python" : "python3";
+    expect(command).toContain(`${expectedPythonCmd} "`);
+    expect(command).toContain('"testdev"');
+  });
+
+  it("#7b throws when the selected Python command is below 3.9", async () => {
+    const expectedPythonCmd = process.platform === "win32" ? "python" : "python3";
+
+    vi.mocked(execSync).mockImplementation(((cmd: string) => {
+      if (cmd === `${expectedPythonCmd} --version`) {
+        return "Python 3.8.18";
+      }
+      return "";
+    }) as typeof execSync);
+
+    await expect(init({ yes: true, claude: true })).rejects.toThrow(
+      `Python 3.8.18 detected via "${expectedPythonCmd}", but Trellis init requires Python ≥ 3.9.`,
+    );
+    expect(fs.existsSync(path.join(tmpDir, DIR_NAMES.WORKFLOW))).toBe(false);
+  });
+
+  it("#7c throws when the selected Python command is missing", async () => {
+    const expectedPythonCmd = process.platform === "win32" ? "python" : "python3";
+
+    vi.mocked(execSync).mockImplementation(((cmd: string) => {
+      if (cmd === `${expectedPythonCmd} --version`) {
+        throw new Error("not found");
+      }
+      return "";
+    }) as typeof execSync);
+
+    await expect(init({ yes: true, claude: true })).rejects.toThrow(
+      `Python command "${expectedPythonCmd}" not found. Trellis init requires Python ≥ 3.9.`,
+    );
+    expect(fs.existsSync(path.join(tmpDir, DIR_NAMES.WORKFLOW))).toBe(false);
+  });
+
+  it("#7d renders the platform Python command into generated config and logs the adaptation", async () => {
+    const expectedPythonCmd = process.platform === "win32" ? "python" : "python3";
+
+    await init({ yes: true, claude: true });
+
+    const settings = fs.readFileSync(
+      path.join(tmpDir, ".claude", "settings.json"),
+      "utf-8",
+    );
+    expect(settings).toContain(`"${expectedPythonCmd} .claude/hooks/session-start.py"`);
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining(
+        `Trellis rendered Python commands as "${expectedPythonCmd}" in generated hooks, settings, and help text`,
+      ),
+    );
   });
 
   it("#8 writes correct version file", async () => {
@@ -581,11 +640,16 @@ describe("init() integration", () => {
 
     // prd.md mentions packages + renders per-package checklist items
     const prd = fs.readFileSync(path.join(taskDir, "prd.md"), "utf-8");
+    const expectedPythonCmd = process.platform === "win32" ? "python" : "python3";
     expect(prd).toContain("core");
     expect(prd).toContain("ui");
     expect(prd).toContain("spec/");
     expect(prd).toContain("- [ ] Fill guidelines for core");
     expect(prd).toContain("- [ ] Fill guidelines for ui");
+    expect(prd).toContain(`${expectedPythonCmd} ./.trellis/scripts/task.py finish`);
+    expect(prd).toContain(
+      `${expectedPythonCmd} ./.trellis/scripts/task.py archive 00-bootstrap-guidelines`,
+    );
   });
 
   it("#16 --no-monorepo skips detection even with workspace config", async () => {

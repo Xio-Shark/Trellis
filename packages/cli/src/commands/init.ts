@@ -13,6 +13,7 @@ import {
   getConfiguredPlatforms,
   getPlatformsWithPythonHooks,
 } from "../configurators/index.js";
+import { getPythonCommandForPlatform } from "../configurators/shared.js";
 import { AI_TOOLS, type CliFlag } from "../types/ai-tools.js";
 import { DIR_NAMES, FILE_NAMES, PATHS } from "../constants/paths.js";
 import { VERSION } from "../constants/version.js";
@@ -45,53 +46,72 @@ import {
 } from "../utils/template-fetcher.js";
 import { setupProxy, maskProxyUrl } from "../utils/proxy.js";
 
-/**
- * Detect available Python command (python3 or python) and verify version >= 3.9
- */
-function getPythonCommand(): string {
-  const MIN_MAJOR = 3;
-  const MIN_MINOR = 9;
+const MIN_PYTHON_MAJOR = 3;
+const MIN_PYTHON_MINOR = 9;
+const PYTHON_VERSION_RE = /Python (\d+)\.(\d+)/;
 
-  function checkVersion(cmd: string): boolean {
-    try {
-      const output = execSync(`${cmd} --version`, { stdio: "pipe" })
-        .toString()
-        .trim();
-      const match = output.match(/Python (\d+)\.(\d+)/);
-      if (!match) return false;
-      const [, major, minor] = match.map(Number);
-      return major > MIN_MAJOR || (major === MIN_MAJOR && minor >= MIN_MINOR);
-    } catch {
-      return false;
-    }
-  }
+export function isSupportedPythonVersion(versionOutput: string): boolean {
+  const match = versionOutput.match(PYTHON_VERSION_RE);
+  if (!match) return false;
 
-  if (checkVersion("python3")) return "python3";
-  if (checkVersion("python")) return "python";
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  return (
+    major > MIN_PYTHON_MAJOR ||
+    (major === MIN_PYTHON_MAJOR && minor >= MIN_PYTHON_MINOR)
+  );
+}
 
-  // Check if Python exists but is too old
+function detectPythonVersion(command: string): string | null {
   try {
-    const output = execSync("python3 --version", { stdio: "pipe" })
-      .toString()
-      .trim();
-    console.warn(
-      chalk.yellow(`⚠️  ${output} detected, but Trellis requires Python ≥ 3.9`),
-    );
+    return execSync(`${command} --version`, {
+      encoding: "utf-8",
+      stdio: "pipe",
+    }).trim();
   } catch {
-    try {
-      const output = execSync("python --version", { stdio: "pipe" })
-        .toString()
-        .trim();
-      console.warn(
-        chalk.yellow(
-          `⚠️  ${output} detected, but Trellis requires Python ≥ 3.9`,
-        ),
-      );
-    } catch {
-      // No Python at all
-    }
+    return null;
   }
-  return "python3";
+}
+
+export function requireSupportedPython(command: string): string {
+  const versionOutput = detectPythonVersion(command);
+  if (!versionOutput) {
+    throw new Error(
+      `Python command "${command}" not found. Trellis init requires Python ≥ 3.9.`,
+    );
+  }
+
+  if (!isSupportedPythonVersion(versionOutput)) {
+    throw new Error(
+      `${versionOutput} detected via "${command}", but Trellis init requires Python ≥ 3.9.`,
+    );
+  }
+
+  return versionOutput;
+}
+
+function getOsDisplayName(
+  platform: NodeJS.Platform = process.platform,
+): string {
+  switch (platform) {
+    case "win32":
+      return "Windows";
+    case "darwin":
+      return "macOS";
+    case "linux":
+      return "Linux";
+    default:
+      return platform;
+  }
+}
+
+function logPythonAdaptationNotice(command: "python" | "python3"): void {
+  const osName = getOsDisplayName();
+  console.log(
+    chalk.blue(
+      `📌 ${osName} detected: Trellis rendered Python commands as "${command}" in generated hooks, settings, and help text`,
+    ),
+  );
 }
 
 // =============================================================================
@@ -199,6 +219,7 @@ function getBootstrapRelatedFiles(
 
 function getBootstrapPrdContent(
   projectType: ProjectType,
+  pythonCmd: "python" | "python3",
   packages?: DetectedPackage[],
 ): string {
   const checklistItems = getBootstrapChecklistItems(projectType, packages);
@@ -333,8 +354,8 @@ When the developer confirms the checklist items above are done with real
 examples (not placeholders), guide them to run:
 
 \`\`\`bash
-python3 ./.trellis/scripts/task.py finish
-python3 ./.trellis/scripts/task.py archive 00-bootstrap-guidelines
+${pythonCmd} ./.trellis/scripts/task.py finish
+${pythonCmd} ./.trellis/scripts/task.py archive 00-bootstrap-guidelines
 \`\`\`
 
 After archive, every new developer who joins this project will get a
@@ -414,11 +435,12 @@ function getBootstrapTaskJson(
 function createBootstrapTask(
   cwd: string,
   developer: string,
+  pythonCmd: "python" | "python3",
   projectType: ProjectType,
   packages?: DetectedPackage[],
 ): boolean {
   const taskJson = getBootstrapTaskJson(developer, projectType, packages);
-  const prdContent = getBootstrapPrdContent(projectType, packages);
+  const prdContent = getBootstrapPrdContent(projectType, pythonCmd, packages);
   return writeTaskSkeleton(cwd, BOOTSTRAP_TASK_NAME, taskJson, prdContent);
 }
 
@@ -454,7 +476,10 @@ function getJoinerTaskJson(developer: string, taskName: string): TaskJson {
  * PRD content for joiner onboarding. Kept concise (~80 lines) — deeper
  * guidance lives in skills and docs.
  */
-function getJoinerPrdContent(developer: string): string {
+function getJoinerPrdContent(
+  developer: string,
+  pythonCmd: "python" | "python3",
+): string {
   const slug = slugifyDeveloperName(developer);
   return `# Joiner Onboarding Task
 
@@ -528,7 +553,7 @@ File layout (mention when they ask "where does what live"):
 
 - Check if \`.trellis/workspace/${developer}/\` already exists — if yes, it's
   their journal from another machine and worth mentioning.
-- Run \`python3 ./.trellis/scripts/task.py list --assignee ${developer}\` to
+- Run \`${pythonCmd} ./.trellis/scripts/task.py list --assignee ${developer}\` to
   show tasks assigned to them. (Quote the name if it contains spaces.)
 - Remind them that the "My Tasks" section appears in the SessionStart context
   on every new session.
@@ -549,8 +574,8 @@ When they feel oriented (or after you've covered the four topics with
 reasonable back-and-forth), guide them to run:
 
 \`\`\`bash
-python3 ./.trellis/scripts/task.py finish
-python3 ./.trellis/scripts/task.py archive 00-join-${slug}
+${pythonCmd} ./.trellis/scripts/task.py finish
+${pythonCmd} ./.trellis/scripts/task.py archive 00-join-${slug}
 \`\`\`
 
 ---
@@ -569,11 +594,15 @@ hood, summarize the team's spec, or jump to what you're already curious about
  * project. Task name is slugified to be filesystem-safe for arbitrary
  * developer names (spaces, Unicode, punctuation).
  */
-function createJoinerOnboardingTask(cwd: string, developer: string): boolean {
+function createJoinerOnboardingTask(
+  cwd: string,
+  developer: string,
+  pythonCmd: "python" | "python3",
+): boolean {
   const slug = slugifyDeveloperName(developer);
   const taskName = `00-join-${slug}`;
   const taskJson = getJoinerTaskJson(developer, taskName);
-  const prdContent = getJoinerPrdContent(developer);
+  const prdContent = getJoinerPrdContent(developer, pythonCmd);
   return writeTaskSkeleton(cwd, taskName, taskJson, prdContent);
 }
 
@@ -585,6 +614,7 @@ async function handleReinit(
   cwd: string,
   options: InitOptions,
   developerName: string | undefined,
+  pythonCmd: "python" | "python3",
 ): Promise<boolean> {
   const TOOLS = getInitToolChoices();
   const configuredPlatforms = getConfiguredPlatforms(cwd);
@@ -715,7 +745,6 @@ async function handleReinit(
     );
 
     try {
-      const pythonCmd = getPythonCommand();
       const scriptPath = path.join(cwd, PATHS.SCRIPTS, "init_developer.py");
       execSync(`${pythonCmd} "${scriptPath}" "${devName}"`, {
         cwd,
@@ -727,7 +756,9 @@ async function handleReinit(
         chalk.yellow("⚠ Could not initialize developer. Run manually:"),
       );
       console.log(
-        chalk.gray(`  python3 .trellis/scripts/init_developer.py ${devName}`),
+        chalk.gray(
+          `  ${pythonCmd} .trellis/scripts/init_developer.py ${devName}`,
+        ),
       );
     }
 
@@ -735,7 +766,7 @@ async function handleReinit(
     // Runs outside the init_developer try/catch so failures surface as warnings.
     if (!hadDeveloperFileBefore) {
       try {
-        if (!createJoinerOnboardingTask(cwd, devName)) {
+        if (!createJoinerOnboardingTask(cwd, devName, pythonCmd)) {
           console.warn(
             chalk.yellow("⚠ Failed to create joiner onboarding task"),
           );
@@ -894,12 +925,20 @@ export async function init(options: InitOptions): Promise<void> {
     console.log(chalk.blue("👤 Developer:"), chalk.gray(developerName));
   }
 
+  const pythonCmd = getPythonCommandForPlatform();
+  requireSupportedPython(pythonCmd);
+
   // ==========================================================================
   // Re-init fast path: skip full flow when .trellis/ already exists
   // ==========================================================================
 
   if (!isFirstInit && !options.force && !options.skipExisting) {
-    const reinitDone = await handleReinit(cwd, options, developerName);
+    const reinitDone = await handleReinit(
+      cwd,
+      options,
+      developerName,
+      pythonCmd,
+    );
     if (reinitDone) return;
     // reinitDone === false means user chose "full re-initialize" → fall through
   }
@@ -1557,17 +1596,12 @@ export async function init(options: InitOptions): Promise<void> {
     }
   }
 
-  // Show Windows platform detection notice
-  if (process.platform === "win32") {
-    const pythonPlatforms = getPlatformsWithPythonHooks();
-    const hasSelectedPythonPlatform = pythonPlatforms.some((id) =>
-      tools.includes(AI_TOOLS[id].cliFlag),
-    );
-    if (hasSelectedPythonPlatform) {
-      console.log(
-        chalk.yellow('📌 Windows detected: Using "python" for hooks'),
-      );
-    }
+  const pythonPlatforms = getPlatformsWithPythonHooks();
+  const hasSelectedPythonPlatform = pythonPlatforms.some((id) =>
+    tools.includes(AI_TOOLS[id].cliFlag),
+  );
+  if (hasSelectedPythonPlatform) {
+    logPythonAdaptationNotice(pythonCmd);
   }
 
   // Create root files (skip if exists)
@@ -1584,7 +1618,6 @@ export async function init(options: InitOptions): Promise<void> {
   // Initialize developer identity (silent - no output)
   if (developerName) {
     try {
-      const pythonCmd = getPythonCommand();
       const scriptPath = path.join(cwd, PATHS.SCRIPTS, "init_developer.py");
       execSync(`${pythonCmd} "${scriptPath}" "${developerName}"`, {
         cwd,
@@ -1605,10 +1638,16 @@ export async function init(options: InitOptions): Promise<void> {
     // so joiner failures surface as warnings instead of being silently
     // swallowed.
     if (isFirstInit) {
-      createBootstrapTask(cwd, developerName, projectType, monorepoPackages);
+      createBootstrapTask(
+        cwd,
+        developerName,
+        pythonCmd,
+        projectType,
+        monorepoPackages,
+      );
     } else if (!hadDeveloperFileAtStart) {
       try {
-        if (!createJoinerOnboardingTask(cwd, developerName)) {
+        if (!createJoinerOnboardingTask(cwd, developerName, pythonCmd)) {
           console.warn(
             chalk.yellow("⚠ Failed to create joiner onboarding task"),
           );

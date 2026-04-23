@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolvePlaceholders } from "../../src/configurators/shared.js";
+import {
+  getPythonCommandForPlatform,
+  resolvePlaceholders,
+} from "../../src/configurators/shared.js";
 import type { TemplateContext } from "../../src/types/ai-tools.js";
 
 // ---------------------------------------------------------------------------
@@ -36,6 +39,17 @@ const cursorCtx: TemplateContext = {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+describe("getPythonCommandForPlatform", () => {
+  it("returns python on Windows", () => {
+    expect(getPythonCommandForPlatform("win32")).toBe("python");
+  });
+
+  it("returns python3 on macOS and Linux", () => {
+    expect(getPythonCommandForPlatform("darwin")).toBe("python3");
+    expect(getPythonCommandForPlatform("linux")).toBe("python3");
+  });
+});
 
 describe("resolvePlaceholders", () => {
   // -----------------------------------------------------------------------

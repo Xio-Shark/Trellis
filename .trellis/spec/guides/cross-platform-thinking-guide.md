@@ -26,16 +26,19 @@
 | `python3` command | ✅ Always available | ⚠️ May need `python` |
 | `python` command | ⚠️ May be Python 2 | ✅ Usually Python 3 |
 
-**Rule 1**: Always use explicit `python3` in documentation, help text, and error messages.
+**Rule 1**: For user-facing docs, help text, and error messages, either:
+
+- state the platform rule explicitly (`python` on Windows, `python3` elsewhere), or
+- render the command through the same platform-aware helper / placeholder the code uses.
 
 ```python
 # BAD - Assumes shebang works
 print("Usage: ./script.py <args>")
 print("Run: script.py <args>")
 
-# GOOD - Explicit interpreter
-print("Usage: python3 script.py <args>")
-print("Run: python3 ./script.py <args>")
+# GOOD - Platform-aware wording
+print("Usage: python on Windows, python3 elsewhere")
+print("Run: {{PYTHON_CMD}} ./.trellis/scripts/task.py <args>")
 ```
 
 **Rule 2**: When generating config files at init time, use placeholder + platform detection:
@@ -63,20 +66,21 @@ const PYTHON_CMD = platform() === "win32" ? "python" : "python3"
 execSync(`${PYTHON_CMD} "${scriptPath}"`, { ... })
 ```
 
-**Rule 4**: If you need to verify Python is actually installed (not just choose command):
+**Rule 4**: If you need to verify Python is actually installed (not just choose
+the command), probe the same platform-selected alias you will later render or
+execute:
 
 ```typescript
-function getPythonCommand(): string {
+function getPythonCommand(platform = process.platform): string {
+  return platform === "win32" ? "python" : "python3";
+}
+
+function warnIfPythonTooOld(): void {
+  const cmd = getPythonCommand();
   try {
-    execSync("python3 --version", { stdio: "pipe" });
-    return "python3";
+    execSync(`${cmd} --version`, { stdio: "pipe" });
   } catch {
-    try {
-      execSync("python --version", { stdio: "pipe" });
-      return "python";
-    } catch {
-      return "python3"; // Default, will fail with clear error
-    }
+    // Missing Python is a separate error path; don't silently swap aliases.
   }
 }
 ```
@@ -251,7 +255,7 @@ When making platform-related changes, check **all these locations**:
 ```bash
 # Find all places that might need updating
 grep -r "python [a-z]" --include="*.py" --include="*.md"
-grep -r "\./" --include="*.py" --include="*.md" | grep -v python3
+grep -r "{{PYTHON_CMD}}\\|python3\\|python " --include="*.py" --include="*.md"
 ```
 
 ---
@@ -260,7 +264,8 @@ grep -r "\./" --include="*.py" --include="*.md" | grep -v python3
 
 Before committing cross-platform code:
 
-- [ ] All Python invocations use `python3` explicitly (docs) or `sys.executable` (code)
+- [ ] User-facing Python invocations are platform-aware (`python` on Windows, `python3` elsewhere) or use `{{PYTHON_CMD}}`
+- [ ] Python subprocesses from Python use `sys.executable`
 - [ ] All paths use `pathlib.Path`
 - [ ] No hardcoded path separators (`/` or `\`)
 - [ ] No platform-specific commands without fallbacks (e.g., `tail -f`)
@@ -375,6 +380,9 @@ python3 script.py  # Works!
 # User's Windows (Python from python.org)
 python3 script.py  # 'python3' is not recognized
 python script.py   # Works!
+
+# Trellis docs/config should say the rule, not guess one alias everywhere
+{{PYTHON_CMD}} script.py
 ```
 
 ### 5. "UTF-8 is the default everywhere"

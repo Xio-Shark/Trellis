@@ -378,7 +378,12 @@ from __future__ import annotations
 
 immediately after the module docstring.
 
-**Why it matters**: The `{{PYTHON_CMD}}` placeholder resolves to literal `python3` on macOS/Linux. `trellis init` soft-warns if Python < 3.10 but does not block, and hooks are invoked by the host AI CLI (Claude Code, Cursor, enterprise-forked CC distributions, etc.) in a subprocess whose **PATH may differ from the user's shell PATH**. Concrete failure mode observed in the field:
+**Why it matters**: The `{{PYTHON_CMD}}` placeholder resolves to `python` on
+Windows and `python3` on macOS/Linux. `trellis init` probes that same
+platform-selected command and soft-warns if it resolves to Python < 3.9, while
+hooks are invoked by the host AI CLI (Claude Code, Cursor, enterprise-forked CC
+distributions, etc.) in a subprocess whose **PATH may differ from the user's
+shell PATH**. Concrete failure mode observed in the field:
 
 - User's terminal `python3 --version` → 3.11.12 (homebrew / pyenv)
 - The AI CLI's hook subprocess inherits a minimal PATH (no `/opt/homebrew/bin`), so `python3` resolves to `/usr/bin/python3` → macOS system 3.9
@@ -436,25 +441,32 @@ Exit with 0 matches means all PEP 604 users have the future import.
 
 ---
 
-### CRITICAL: Always Use `python3` Explicitly
+### CRITICAL: Keep User-Facing Python Commands Platform-Aware
 
-Windows does not support shebang (`#!/usr/bin/env python3`). Always document invocation with explicit `python3`:
+Windows does not support shebang (`#!/usr/bin/env python3`). For any
+user-facing invocation string (docstrings, help text, error messages), either:
+
+- describe the rule explicitly: `python` on Windows, `python3` elsewhere
+- or render the command via the same placeholder / helper used at init time
+
+Do not hardcode `python3` into docs and then run `python` internally on
+Windows; that drift causes misleading bootstrap instructions.
 
 ```python
 # In docstrings
 """
 Usage:
-    python3 task.py create "My Task"
-    python3 task.py list --mine
+    python task.py create "My Task"      # Windows
+    python3 task.py create "My Task"     # macOS/Linux
 """
 
 # In error messages
-print("Usage: python3 task.py <command>")
-print("Run: python3 ./.trellis/scripts/init_developer.py <name>")
+print("Usage: python on Windows, python3 elsewhere")
+print("Run: {{PYTHON_CMD}} ./.trellis/scripts/init_developer.py <name>")
 
 # In help text
 print("Next steps:")
-print("  python3 task.py start <dir>")
+print("  {{PYTHON_CMD}} task.py start <dir>")
 ```
 
 ### Path Separators
@@ -982,7 +994,7 @@ def get_phase_info(task_json: Path) -> str:
 - Use type hints (Python 3.10+ syntax)
 - Return exit codes from `main()`
 - Print errors to stderr
-- Always use `python3` in documentation and messages
+- Keep user-facing Python commands platform-aware
 - Use `encoding="utf-8"` for all file operations
 
 ### DON'T
