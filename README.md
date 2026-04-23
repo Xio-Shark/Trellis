@@ -52,6 +52,9 @@
 - **Node.js** ≥ 18
 - **Python** ≥ 3.9 (required for hooks and automation scripts)
 
+`trellis init` uses `python` on Windows and `python3` on macOS/Linux. If that
+platform-specific command is not found or resolves to Python < 3.9, init exits with an error.
+
 ## Quick Start
 
 ```bash

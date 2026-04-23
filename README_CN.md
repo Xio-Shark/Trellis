@@ -55,7 +55,11 @@
 ## 前置要求
 
 - **Node.js** ≥ 18
-- **Python** ≥ 3.10（hooks 和自动化脚本需要）
+- **Python** ≥ 3.9（hooks 和自动化脚本需要）
+
+`trellis init` 在 Windows 上使用 `python`，在 macOS / Linux 上使用
+`python3`。如果当前平台对应的命令找不到或解析到 Python < 3.9，初始化会
+直接报错退出。
 
 ## 快速开始
 
