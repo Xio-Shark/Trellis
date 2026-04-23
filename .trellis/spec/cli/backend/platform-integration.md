@@ -219,7 +219,17 @@ When adding a new platform `{platform}`, update the following:
 | `get_commands_path()` | Command directory structure | `commands/trellis/` or `workflows/` |
 
 > Note: Python scripts run in user projects at runtime — they cannot import from the TS registry and maintain their own registry in `cli_adapter.py`.
->
+
+**Also update `task_store.py` when adding a sub-agent-capable platform**:
+
+| File | Constant | When to update |
+|------|----------|----------------|
+| `src/templates/trellis/scripts/common/task_store.py` | `_SUBAGENT_CONFIG_DIRS` (tuple) | Add `.{configDir}/` if the new platform can spawn sub-agents (Class-1 hook-inject OR Class-2 pull-based) |
+
+This tuple is consulted by `cmd_create` to decide whether to seed `implement.jsonl` / `check.jsonl` for the new task. Agent-less platforms (Kilo, Antigravity, Windsurf) MUST be excluded — they don't consume jsonl.
+
+Same root reason as `cli_adapter.py`: Python scripts run at user-project runtime and can't import from the TS `AI_TOOLS` registry, so they maintain their own parallel registry. When adding/removing sub-agent capability, update both in tandem.
+
 > **Codex-specific CLIAdapter notes:**
 > - `config_dir_name` returns `".codex"` (not `".agents"`)
 > - `get_agent_path` returns `.toml` for codex (not `.md`)
@@ -365,6 +375,110 @@ Hook-inject platforms keep using `writeSharedHooks(dir)` and their hook-config J
 
 Full reliability audit (per-platform evidence, GitHub issues, Cursor staff confirmations, Claude Code canary test) lives at:
 `.trellis/tasks/04-17-subagent-hook-reliability-audit/research/platform-hook-audit.md`
+
+---
+
+## Agent-Curated JSONL Contract (Phase 1.3)
+
+### Scope / Trigger
+
+`implement.jsonl` / `check.jsonl` list which spec + research files should be injected into the implement / check sub-agent's prompt. Before v0.5.0-beta.12, `task.py init-context` mechanically generated entries from `dev_type` + package config — which silently produced broken paths on monorepo layouts the script didn't anticipate. Now these files are **agent-curated during Phase 1.3**.
+
+### Lifecycle
+
+1. **Seed** — `task.py create` writes **one line** to each jsonl when a sub-agent-capable platform is detected (see `_SUBAGENT_CONFIG_DIRS` in Step 6). Agent-less platforms skip seeding.
+2. **Curate** — AI executes Phase 1.3 per `workflow.md`: replaces the seed line with real `{file, reason}` entries pointing at spec files or `research/*.md`. **Code paths are forbidden**; code gets read in Phase 2.
+3. **Consume** — hook / prelude reads the file and injects referenced content into the sub-agent prompt.
+
+### Signatures
+
+**Seed row schema** (one line, written by `_write_seed_jsonl` in `task_store.py`):
+
+```json
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line when done."}
+```
+
+**Curated row schema** (written by AI):
+
+```json
+{"file": "<repo-relative-path>", "reason": "<one-line rationale>"}
+```
+
+Optional `type: "directory"` for directory entries. Consumers ignore any other fields.
+
+### Contracts
+
+| Contract | Enforcer | Behavior |
+|---|---|---|
+| Seed detection | Every consumer | Row without a `file` key is treated as non-entry (silently skipped; no error) |
+| Empty-file tolerance | `read_jsonl_entries` in `shared-hooks/inject-subagent-context.py` | Missing file or seed-only file → empty list returned + single stderr warning (not an exception) |
+| READY detection | `session-start.py` / `session-start.js` per platform | A task is "ready to implement" ONLY if at least one curated (non-seed) row exists. File existence alone is NOT ready. |
+| Class-2 prelude fallback | `buildPullBasedPrelude` in `configurators/shared.ts` | If jsonl has no `file` entries, sub-agent reads prd.md and judges which specs apply from context |
+
+### Validation & Error Matrix
+
+| Condition | Behavior | Exit / Surface |
+|---|---|---|
+| `implement.jsonl` has only seed row | `cmd_validate` reports 0 errors; `cmd_list_context` prints "(no curated entries yet — only seed row)" | Exit 0 |
+| `implement.jsonl` entry points at non-existent file | `cmd_validate` prints "File not found: …" per row | Exit 1 |
+| Sub-agent platform detected, but `cmd_create` fails to write seed | Create succeeds, but sub-agent dispatch later sees a missing jsonl and hook warns | Exit 0 on create, stderr warn on consume |
+| Agent-less platform mistakenly added to `_SUBAGENT_CONFIG_DIRS` | Task gets useless seeded jsonl that no hook/prelude consumes | No error, just clutter — catch in review |
+
+### Wrong vs Correct
+
+#### Wrong — treat "file exists" as "ready"
+
+```python
+def has_context(task_dir: Path) -> bool:
+    return (task_dir / "implement.jsonl").is_file()   # ← fires READY even with only seed row
+```
+
+This was the drift found in 3 different session-start implementations (codex / copilot / opencode) after init-context was removed. Result: main agent thought Phase 1.3 was done before any curation happened.
+
+#### Correct — require at least one curated row
+
+```python
+def _has_curated_jsonl_entry(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict) and row.get("file"):
+            return True
+    return False
+```
+
+All session-start hooks/plugins that check readiness must use this contract. **Four implementations** share the same gate and must stay in sync:
+
+| Implementation | Consumed by |
+|---|---|
+| `shared-hooks/session-start.py` | Claude, Cursor, Kiro, CodeBuddy, Droid, Gemini, Qoder (via `writeSharedHooks`) |
+| `codex/hooks/session-start.py` | Codex (opts out of shared via `exclude`) |
+| `copilot/hooks/session-start.py` | Copilot (opts out of shared via `exclude`) |
+| `opencode/plugins/session-start.js` | OpenCode (JS plugin, different runtime) |
+
+When adding a new sub-agent-capable platform with its own session-start, implement the same check.
+
+**Audit lesson** (worth internalizing — this drift cost two review passes):
+
+1. First pass after `task.py init-context` removal: only the 3 per-platform Python/JS hooks got the fix; `shared-hooks/session-start.py` was missed entirely.
+2. Second pass caught the fourth implementation because **reviewer asked "对应的 session-start 改了吗?"** — not because audit process found it.
+
+Mechanical rule: when a contract touches **any** session-start, grep all four implementations in one pass. Relying on review to catch drift is fragile — per `quality-guidelines.md` "Audit ALL Writers".
+
+### Tests Required
+
+- **Create behavior**: `[init-context-removal] task.py create seeds jsonl when a sub-agent platform dir exists` (regression.test.ts)
+- **Consumer tolerance**: `[init-context-removal] inject-subagent-context.py skips seed rows (no \`file\` field)`
+- **Validate seed**: `[init-context-removal] task.py validate treats seed-only jsonl as 0 errors`
+- **List-context seed**: `[init-context-removal] task.py list-context prints 'no curated entries yet' for seed-only jsonl`
+- **READY gating**: Per-platform session-start test asserting "seed-only jsonl → NOT ready" (TODO gap, track per platform when expanding suite)
 
 ---
 
