@@ -273,17 +273,21 @@ Task(
 
 **Step 6: Configure Context** `[AI]`
 
-Initialize default context:
+`implement.jsonl` and `check.jsonl` were seeded on `task.py create` with a single self-describing `_example` line. Curate real entries now (see workflow.md Phase 1.3 for the full rule):
+
+- Put **spec files** (`.trellis/spec/<package>/<layer>/*.md`) and **research files** (`{TASK_DIR}/research/*.md`) only.
+- Do NOT put code files — those are read during implementation, not pre-registered here.
+- Split: `implement.jsonl` = specs the implement sub-agent needs; `check.jsonl` = specs the check sub-agent needs.
+
+Discover available specs:
 
 ```bash
-python3 ./.trellis/scripts/task.py init-context "$TASK_DIR" <type> --platform {{CLI_FLAG}}
-# type: backend | frontend | fullstack
+python3 ./.trellis/scripts/get_context.py --mode packages
 ```
 
-Add code-spec files found by Research Agent:
+Append entries (either edit the jsonl file directly, or):
 
 ```bash
-# For each relevant code-spec and code pattern:
 python3 ./.trellis/scripts/task.py add-context "$TASK_DIR" implement "<path>" "<reason>"
 python3 ./.trellis/scripts/task.py add-context "$TASK_DIR" check "<path>" "<reason>"
 ```
@@ -368,9 +372,8 @@ If yes, resume from the appropriate step (usually Step 7 or 8).
 | Script | Purpose |
 |--------|---------|
 | `python3 ./.trellis/scripts/get_context.py` | Get session context |
-| `python3 ./.trellis/scripts/task.py create` | Create task directory |
-| `python3 ./.trellis/scripts/task.py init-context` | Initialize jsonl files |
-| `python3 ./.trellis/scripts/task.py add-context` | Add code-spec/context file to jsonl |
+| `python3 ./.trellis/scripts/task.py create` | Create task directory (seeds jsonl on sub-agent platforms) |
+| `python3 ./.trellis/scripts/task.py add-context` | Append code-spec/research entry to jsonl |
 | `python3 ./.trellis/scripts/task.py start` | Set current task |
 | `python3 ./.trellis/scripts/task.py finish` | Clear current task |
 | `python3 ./.trellis/scripts/task.py archive` | Archive completed task |

@@ -23,11 +23,14 @@ Otherwise, load context yourself:
 
 1. Read `.trellis/.current-task` → get task directory (e.g., `.trellis/tasks/xxx`)
 2. Read `{task_dir}/implement.jsonl`
-3. For each entry in JSONL:
-   - If `path` is a file → Read it
-   - If `path` is a directory → Read all `.md` files in it
+3. For each entry in JSONL (JSON object per line):
+   - Skip rows without a `"file"` field (e.g. `{"_example": "..."}` seed rows)
+   - If `file` points at a file → Read it
+   - If `file` ends with `/` (directory) → Read all `.md` files in it
 4. Read `{task_dir}/prd.md` for requirements
 5. Read `{task_dir}/info.md` for technical design (if exists)
+
+**If `implement.jsonl` has no curated entries (only a seed row, or the file is missing)**: read `prd.md` to understand the task domain, then decide which specs apply based on `.trellis/spec/` layout. You can list available specs with `python3 ./.trellis/scripts/get_context.py --mode packages`. Do not block on the missing jsonl — proceed with prd-only context plus your own spec judgment.
 
 Then proceed with the workflow below using the loaded context.
 

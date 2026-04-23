@@ -81,8 +81,8 @@ export interface TemplateContext {
   /**
    * CLI flag value for this platform (e.g. "claude", "codex", "kiro").
    * Substituted into template commands via {{CLI_FLAG}} so rendered skill /
-   * command files pass `--platform <flag>` to scripts like
-   * `task.py init-context`, removing the need to re-detect at runtime.
+   * command files can pass `--platform <flag>` to scripts that need to know
+   * the invoking platform, removing the need to re-detect at runtime.
    * Duplicates the top-level `AIToolConfig.cliFlag` for convenience — the
    * invariant is maintained in `AI_TOOLS` config blocks.
    */
