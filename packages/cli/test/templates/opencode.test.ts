@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { contextCollector } from "../../src/templates/opencode/lib/trellis-context.js";
-import { hasInjectedTrellisContext } from "../../src/templates/opencode/plugins/session-start.js";
+import {
+  buildSessionContext,
+  hasInjectedTrellisContext,
+} from "../../src/templates/opencode/plugins/session-start.js";
 
 interface TestContextCollector {
   processed: Set<string>;
@@ -41,6 +44,26 @@ describe("opencode session context dedupe", () => {
 });
 
 describe("opencode session-start history detection", () => {
+  it("includes the one-shot first-reply notice in injected context", () => {
+    const context = buildSessionContext({
+      directory: "/tmp/trellis-opencode-test",
+      getCurrentTask: () => null,
+      readFile: () => "",
+      readProjectFile: () => "",
+      resolveTaskDir: () => null,
+      runScript: () => "",
+    });
+
+    expect(context).toContain("<first-reply-notice>");
+    expect(context).toContain(
+      "Trellis SessionStart 已注入：workflow、当前任务状态、开发者身份、git 状态、active tasks、spec 索引已加载。",
+    );
+    expect(context).toContain("This notice is one-shot");
+    expect(context.indexOf("<first-reply-notice>")).toBeLessThan(
+      context.indexOf("<guidelines>"),
+    );
+  });
+
   it("detects persisted Trellis context from metadata", () => {
     const messages = [
       {

@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Copilot Session Start Hook - Inject Trellis context into VS Code Copilot sessions.
+Copilot Session Start Hook - Emit Trellis session-start diagnostics.
 
-Output format follows Copilot hook protocol:
-  stdout JSON → { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: "..." } }
+GitHub Copilot's documented SessionStart behavior ignores hook output, so this
+script must not be treated as proof that model-visible context was injected.
+The JSON shape is kept for parity with other Trellis hooks and future host
+support, but current Copilot users should rely on UserPromptSubmit breadcrumbs
+and hook logs instead.
 """
 
 from __future__ import annotations
@@ -310,7 +313,10 @@ If a task is READY, execute its Next required action without asking whether to c
     context = output.getvalue()
     result = {
         "suppressOutput": True,
-        "systemMessage": f"Trellis context injected ({len(context)} chars)",
+        "systemMessage": (
+            f"Trellis SessionStart diagnostics emitted ({len(context)} chars); "
+            "Copilot currently ignores sessionStart hook output."
+        ),
         "hookSpecificOutput": {
             "hookEventName": "SessionStart",
             "additionalContext": context,

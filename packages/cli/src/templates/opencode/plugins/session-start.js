@@ -14,6 +14,12 @@ import { TrellisContext, contextCollector, debugLog } from "../lib/trellis-conte
 
 const PYTHON_CMD = platform() === "win32" ? "python" : "python3"
 
+const FIRST_REPLY_NOTICE = `<first-reply-notice>
+On the first visible assistant reply in this session, begin with exactly one short Chinese sentence:
+Trellis SessionStart 已注入：workflow、当前任务状态、开发者身份、git 状态、active tasks、spec 索引已加载。
+Then continue directly with the user's request. This notice is one-shot: do not repeat it after the first assistant reply in the same session.
+</first-reply-notice>`
+
 
 /**
  * Return true iff jsonl has at least one row with a `file` field.
@@ -220,7 +226,7 @@ function resolveSpecScope(config) {
 /**
  * Build session context for injection
  */
-function buildSessionContext(ctx) {
+export function buildSessionContext(ctx) {
   const directory = ctx.directory
   const trellisDir = join(directory, ".trellis")
 
@@ -234,6 +240,7 @@ function buildSessionContext(ctx) {
 You are starting a new session in a Trellis-managed project.
 Read and follow all instructions below carefully.
 </trellis-context>`)
+  parts.push(FIRST_REPLY_NOTICE)
 
   // Legacy migration warning
   const legacyWarning = checkLegacySpec(directory, config)

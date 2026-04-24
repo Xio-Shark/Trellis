@@ -818,6 +818,11 @@ describe("regression: current-task path normalization", () => {
   const codexSessionStart = getCodexHooks().find(
     (hook) => hook.name === "session-start.py",
   )?.content;
+  const copilotSessionStart = getCopilotHooks().find(
+    (hook) => hook.name === "session-start.py",
+  )?.content;
+  const firstReplyNoticeSentence =
+    "Trellis SessionStart 已注入：workflow、当前任务状态、开发者身份、git 状态、active tasks、spec 索引已加载。";
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-current-task-"));
@@ -940,6 +945,93 @@ describe("regression: current-task path normalization", () => {
     );
     expect(codexPayload.hookSpecificOutput.additionalContext).not.toContain(
       "STALE POINTER",
+    );
+  });
+
+  it("[session-start-proof] shared and Codex contexts include one-shot first-reply notice without changing payload shape", () => {
+    setupTaskRepo();
+
+    writeProjectFile(
+      path.join(".claude", "hooks", "session-start.py"),
+      expectTemplateContent(claudeSessionStart, "claude session-start"),
+    );
+    writeProjectFile(
+      path.join(".codex", "hooks", "session-start.py"),
+      expectTemplateContent(codexSessionStart, "codex session-start"),
+    );
+
+    const sharedPayload = JSON.parse(
+      runPython(path.join(".claude", "hooks", "session-start.py")),
+    ) as {
+      hookSpecificOutput: { hookEventName: string; additionalContext: string };
+    };
+    const codexPayload = JSON.parse(
+      runPython(
+        path.join(".codex", "hooks", "session-start.py"),
+        JSON.stringify({ cwd: tmpDir }),
+      ),
+    ) as {
+      hookSpecificOutput: { hookEventName: string; additionalContext: string };
+    };
+
+    for (const payload of [sharedPayload, codexPayload]) {
+      expect(Object.keys(payload)).not.toContain("firstReplyNotice");
+      expect(Object.keys(payload.hookSpecificOutput)).toEqual([
+        "hookEventName",
+        "additionalContext",
+      ]);
+      expect(payload.hookSpecificOutput.hookEventName).toBe("SessionStart");
+
+      const ctx = payload.hookSpecificOutput.additionalContext;
+      expect(ctx).toContain("<first-reply-notice>");
+      expect(ctx).toContain(firstReplyNoticeSentence);
+      expect(ctx).toContain("This notice is one-shot");
+      expect(ctx.indexOf("<first-reply-notice>")).toBeLessThan(
+        ctx.indexOf("<current-state>"),
+      );
+    }
+  });
+
+  it("[session-start-proof] Copilot template does not promise model-visible SessionStart injection", () => {
+    const content = expectTemplateContent(copilotSessionStart, "copilot session-start");
+
+    expect(content).toContain(
+      "documented SessionStart behavior ignores hook output",
+    );
+    expect(content).toContain("Copilot currently ignores sessionStart hook output");
+    expect(content).not.toContain("Trellis context injected");
+    expect(content).not.toContain(firstReplyNoticeSentence);
+  });
+
+  it("[session-start-proof] Copilot SessionStart payload is diagnostic-only", () => {
+    setupTaskRepo();
+
+    writeProjectFile(
+      path.join(".github", "copilot", "hooks", "session-start.py"),
+      expectTemplateContent(copilotSessionStart, "copilot session-start"),
+    );
+
+    const payload = JSON.parse(
+      runPython(
+        path.join(".github", "copilot", "hooks", "session-start.py"),
+        JSON.stringify({ cwd: tmpDir }),
+      ),
+    ) as {
+      systemMessage: string;
+      hookSpecificOutput: { hookEventName: string; additionalContext: string };
+    };
+
+    expect(payload.systemMessage).toContain("SessionStart diagnostics emitted");
+    expect(payload.systemMessage).toContain(
+      "Copilot currently ignores sessionStart hook output",
+    );
+    expect(payload.systemMessage).not.toContain("Trellis context injected");
+    expect(payload.hookSpecificOutput.hookEventName).toBe("SessionStart");
+    expect(payload.hookSpecificOutput.additionalContext).not.toContain(
+      "<first-reply-notice>",
+    );
+    expect(payload.hookSpecificOutput.additionalContext).not.toContain(
+      firstReplyNoticeSentence,
     );
   });
 

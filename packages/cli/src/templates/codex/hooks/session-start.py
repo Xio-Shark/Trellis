@@ -19,6 +19,12 @@ from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
+FIRST_REPLY_NOTICE = """<first-reply-notice>
+On the first visible assistant reply in this session, begin with exactly one short Chinese sentence:
+Trellis SessionStart 已注入：workflow、当前任务状态、开发者身份、git 状态、active tasks、spec 索引已加载。
+Then continue directly with the user's request. This notice is one-shot: do not repeat it after the first assistant reply in the same session.
+</first-reply-notice>"""
+
 
 def should_skip_injection() -> bool:
     return os.environ.get("CODEX_NON_INTERACTIVE") == "1"
@@ -234,6 +240,8 @@ Read and follow all instructions below carefully.
 </session-context>
 
 """)
+    output.write(FIRST_REPLY_NOTICE)
+    output.write("\n\n")
 
     output.write("<current-state>\n")
     context_script = trellis_dir / "scripts" / "get_context.py"

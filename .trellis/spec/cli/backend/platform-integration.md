@@ -555,6 +555,35 @@ if sys.platform == "win32":
 
 ## SessionStart Hook: additionalContext Size Constraint
 
+### First-Reply Notice
+
+Every Trellis-owned SessionStart implementation that injects model-visible
+context must include a short `<first-reply-notice>` block near the top of the
+injected context, before `<current-state>`. The instruction tells the AI to
+start the first visible assistant reply with exactly one concise Chinese
+sentence:
+
+```text
+Trellis SessionStart 已注入：workflow、当前任务状态、开发者身份、git 状态、active tasks、spec 索引已加载。
+```
+
+Then it must continue directly with the user's request and never repeat the
+notice after that first assistant reply in the same session.
+
+This is an instruction-only proof surface, not a host UI feature. It belongs
+only in implementations where Trellis can actually put context into the model
+conversation:
+
+| Implementation | Include notice? | Reason |
+|---|---:|---|
+| `shared-hooks/session-start.py` | ✅ | Claude/Cursor/Gemini/Qoder/CodeBuddy/Droid-style shared hook context |
+| `codex/hooks/session-start.py` | ✅ | Codex accepts SessionStart stdout / `additionalContext` when `features.codex_hooks = true` |
+| `opencode/plugins/session-start.js` | ✅ | Plugin prepends Trellis context into the first user message and persists it |
+| `copilot/hooks/session-start.py` | ❌ | Copilot docs say `sessionStart` output is ignored; do not claim model-visible injection |
+
+Keep hook payload shapes unchanged. Add this as text inside the existing
+context string, not as a new JSON key.
+
 ### Constraint
 
 Claude Code truncates `hookSpecificOutput.additionalContext` at **~20 KB**. When exceeded, only a ~2 KB preview is shown and the full payload is written to a fallback file (`tool-results/hook-*-additionalContext.txt`). AI agents do **not** proactively read the fallback file, so any content past the preview is effectively invisible.
@@ -566,12 +595,13 @@ Codex has even tighter limits — users report 40-80 KB payloads consuming most 
 | Block | Size | Notes |
 |---|---:|---|
 | `<session-context>` | 0.1 KB | Fixed |
+| `<first-reply-notice>` | 0.4 KB | One-shot visible proof instruction |
 | `<current-state>` | 2.3 KB | Grows with tasks/git state |
 | `<workflow>` | 9.5 KB | TOC + Phase Index + Phase 1/2/3 step bodies. Meta sections (Core Principles / Trellis System / Breadcrumbs) excluded — they are either short prose Readable on demand or consumed by other hooks |
 | `<guidelines>` | 4.6 KB | `guides/index.md` inlined + paths-only for other indexes |
 | `<task-status>` | 0.2 KB | Fixed |
 | `<ready>` | 0.3 KB | Fixed |
-| **Total** | **16.7 KB** | **Under 20 KB ✓** |
+| **Total** | **17.1 KB** | **Under 20 KB ✓** |
 
 Historical note: pre-workflow-rewrite (v0.4.0-beta.10) the payload included a 16 KB `<instructions>` block (start.md content). That block was removed — start.md is now only sent as the `/start` command body for agent-less platforms (Kilo/Antigravity/Windsurf); agent-capable platforms get workflow overview via `<workflow>` instead.
 
