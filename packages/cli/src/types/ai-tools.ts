@@ -20,7 +20,8 @@ export type AITool =
   | "qoder"
   | "codebuddy"
   | "copilot"
-  | "droid";
+  | "droid"
+  | "pi";
 
 /**
  * Template directory categories
@@ -39,7 +40,8 @@ export type TemplateDir =
   | "qoder"
   | "codebuddy"
   | "copilot"
-  | "droid";
+  | "droid"
+  | "pi";
 
 /**
  * CLI flag names for platform selection (e.g., --claude, --cursor, --kilo, --kiro, --gemini, --antigravity)
@@ -58,7 +60,8 @@ export type CliFlag =
   | "qoder"
   | "codebuddy"
   | "copilot"
-  | "droid";
+  | "droid"
+  | "pi";
 
 /**
  * Template context for placeholder resolution.
@@ -345,6 +348,22 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
       agentCapable: true,
       hasHooks: true,
       cliFlag: "droid",
+    },
+  },
+  pi: {
+    name: "Pi Agent",
+    templateDirs: ["common", "pi"],
+    configDir: ".pi",
+    cliFlag: "pi",
+    defaultChecked: false,
+    hasPythonHooks: false,
+    templateContext: {
+      cmdRefPrefix: "/trellis-",
+      executorAI: "Bash scripts or tool calls",
+      userActionLabel: "Slash commands",
+      agentCapable: true,
+      hasHooks: true,
+      cliFlag: "pi",
     },
   },
 };

@@ -53,6 +53,24 @@ export function getOpenCodeTemplatePath(): string {
 }
 
 /**
+ * Get the path to the Pi Agent templates directory (agents, extension, settings).
+ */
+export function getPiTemplatePath(): string {
+  const templatePath = path.join(__dirname, "pi");
+  if (fs.existsSync(templatePath)) {
+    return templatePath;
+  }
+  throw new Error(
+    "Could not find pi templates directory. Expected at templates/pi/",
+  );
+}
+
+/** @deprecated Use getPiTemplatePath() instead. */
+export function getPiSourcePath(): string {
+  return getPiTemplatePath();
+}
+
+/**
  * Read a file from the trellis template directory.
  */
 export function readTrellisFile(relativePath: string): string {

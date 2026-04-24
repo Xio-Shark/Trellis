@@ -31,6 +31,7 @@ import { configureQoder } from "./qoder.js";
 import { configureCodebuddy } from "./codebuddy.js";
 import { configureCopilot } from "./copilot.js";
 import { configureDroid } from "./droid.js";
+import { configurePi, collectPiTemplates } from "./pi.js";
 
 // Shared utilities
 import {
@@ -395,6 +396,10 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
       );
       return files;
     },
+  },
+  pi: {
+    configure: configurePi,
+    collectTemplates: () => collectPiTemplates(),
   },
 };
 

@@ -206,7 +206,7 @@ const EXCLUDE_FROM_HASH = [
   "workspace/", // Workspace files (user data)
   "tasks/", // Task files (user data)
   ".current-task", // Current task marker (file, not directory)
-  "spec/", // User-customized spec files
+  ".trellis/spec/", // User-customized spec files
   ".backup-", // Backup directories
 ];
 
@@ -214,8 +214,9 @@ const EXCLUDE_FROM_HASH = [
  * Check if a path should be excluded from hash tracking
  */
 function shouldExcludeFromHash(relativePath: string): boolean {
+  const normalizedPath = relativePath.replace(/\\/g, "/");
   for (const pattern of EXCLUDE_FROM_HASH) {
-    if (relativePath.includes(pattern)) {
+    if (normalizedPath.includes(pattern)) {
       return true;
     }
   }

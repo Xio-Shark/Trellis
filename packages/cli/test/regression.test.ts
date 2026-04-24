@@ -55,10 +55,12 @@ import {
   PLATFORM_IDS,
 } from "../src/configurators/index.js";
 import { setWriteMode } from "../src/utils/file-writer.js";
-import { guidesIndexContent, workspaceIndexContent } from "../src/templates/markdown/index.js";
+import {
+  guidesIndexContent,
+  workspaceIndexContent,
+} from "../src/templates/markdown/index.js";
 import * as markdownExports from "../src/templates/markdown/index.js";
 import { TrellisContext } from "../src/templates/opencode/lib/trellis-context.js";
-
 
 afterEach(() => {
   clearManifestCache();
@@ -93,7 +95,10 @@ describe("regression: Windows encoding (beta.10, beta.11, beta.16)", () => {
       ["codex", codexSessionStart],
       ["copilot", copilotSessionStart],
     ] as const) {
-      expect(content, `${label} session-start template should exist`).toBeTruthy();
+      expect(
+        content,
+        `${label} session-start template should exist`,
+      ).toBeTruthy();
       expect(content).toContain("from common import configure_encoding");
       expect(content).toContain("configure_encoding()");
       expect(content).toContain("configure_project_encoding(project_dir)");
@@ -141,7 +146,9 @@ describe("regression: Windows encoding (beta.10, beta.11, beta.16)", () => {
     // Bug: startswith("|---") breaks when formatters add spaces: "| ---- |"
     // Fix: use re.match with a character-class pattern to allow optional whitespace/spaces
     expect(addSessionScript).not.toContain('startswith("|---")');
-    expect(addSessionScript).toContain(String.raw`re.match(r"^\|[-| ]+\|\s*$", line)`);
+    expect(addSessionScript).toContain(
+      String.raw`re.match(r"^\|[-| ]+\|\s*$", line)`,
+    );
   });
 });
 
@@ -193,9 +200,13 @@ describe("regression: branch context in session records (issue-106)", () => {
   });
 
   it("[issue-106] workspace-index.md template documents Branch field only for session records", () => {
-    expect(workspaceIndexContent).toContain("Branch: Which branch the work was done on");
+    expect(workspaceIndexContent).toContain(
+      "Branch: Which branch the work was done on",
+    );
     expect(workspaceIndexContent).toContain("**Branch**: `{branch-name}`");
-    expect(workspaceIndexContent).not.toContain("**Base Branch**: `{base-branch-name}`");
+    expect(workspaceIndexContent).not.toContain(
+      "**Base Branch**: `{base-branch-name}`",
+    );
   });
 });
 
@@ -319,13 +330,12 @@ ${separator}
     }
   }
 
-  function runAddSession(
-    title: string,
-    options?: { branch?: string },
-  ): void {
+  function runAddSession(title: string, options?: { branch?: string }): void {
     const command = [
       "python3",
-      JSON.stringify(path.join(tmpDir, ".trellis", "scripts", "add_session.py")),
+      JSON.stringify(
+        path.join(tmpDir, ".trellis", "scripts", "add_session.py"),
+      ),
       "--title",
       JSON.stringify(title),
       "--summary",
@@ -658,7 +668,9 @@ describe("regression: update only configured platforms (beta.16)", () => {
     if (!result) throw new Error("unreachable");
     // Sanity: must include the three plugin files — the bug that prompted this
     // fix was a plugin-shape change that couldn't be delivered via `trellis update`.
-    expect(result.has(".opencode/plugins/inject-subagent-context.js")).toBe(true);
+    expect(result.has(".opencode/plugins/inject-subagent-context.js")).toBe(
+      true,
+    );
     expect(result.has(".opencode/plugins/session-start.js")).toBe(true);
     expect(result.has(".opencode/plugins/inject-workflow-state.js")).toBe(true);
     // Plus agents, lib, package.json, at least one command, at least one skill
@@ -681,6 +693,7 @@ describe("regression: update only configured platforms (beta.16)", () => {
       "qoder",
       "codebuddy",
       "copilot",
+      "pi",
     ] as const;
     for (const id of withTracking) {
       const result = collectPlatformTemplates(id);
@@ -784,7 +797,6 @@ describe("regression: hook JSON format (beta.7)", () => {
       }
     }
   });
-
 });
 
 describe("regression: SessionStart reinject on clear/compact (MIN-231)", () => {
@@ -912,7 +924,9 @@ describe("regression: current-task path normalization", () => {
 
     expect(output).toContain(".trellis/tasks/issue-106");
     expect(
-      fs.readFileSync(path.join(tmpDir, ".trellis", ".current-task"), "utf-8").trim(),
+      fs
+        .readFileSync(path.join(tmpDir, ".trellis", ".current-task"), "utf-8")
+        .trim(),
     ).toBe(".trellis/tasks/issue-106");
   });
 
@@ -928,7 +942,9 @@ describe("regression: current-task path normalization", () => {
       expectTemplateContent(codexSessionStart, "codex session-start"),
     );
 
-    const claudeOutput = runPython(path.join(".claude", "hooks", "session-start.py"));
+    const claudeOutput = runPython(
+      path.join(".claude", "hooks", "session-start.py"),
+    );
     const codexOutput = runPython(
       path.join(".codex", "hooks", "session-start.py"),
       JSON.stringify({ cwd: tmpDir }),
@@ -993,12 +1009,17 @@ describe("regression: current-task path normalization", () => {
   });
 
   it("[session-start-proof] Copilot template does not promise model-visible SessionStart injection", () => {
-    const content = expectTemplateContent(copilotSessionStart, "copilot session-start");
+    const content = expectTemplateContent(
+      copilotSessionStart,
+      "copilot session-start",
+    );
 
     expect(content).toContain(
       "documented SessionStart behavior ignores hook output",
     );
-    expect(content).toContain("Copilot currently ignores sessionStart hook output");
+    expect(content).toContain(
+      "Copilot currently ignores sessionStart hook output",
+    );
     expect(content).not.toContain("Trellis context injected");
     expect(content).not.toContain(firstReplyNoticeSentence);
   });
@@ -1043,12 +1064,18 @@ describe("regression: current-task path normalization", () => {
       expectTemplateContent(claudeSessionStart, "claude session-start"),
     );
 
-    const rawOutput = runPython(path.join(".claude", "hooks", "session-start.py"));
-    expect(rawOutput).toContain("Next required action: dispatch `trellis-implement`");
+    const rawOutput = runPython(
+      path.join(".claude", "hooks", "session-start.py"),
+    );
+    expect(rawOutput).toContain(
+      "Next required action: dispatch `trellis-implement`",
+    );
     expect(rawOutput).toContain("do NOT edit code in the main session");
     expect(rawOutput).toContain("dispatch `trellis-check`");
     expect(rawOutput).not.toContain("if you stay in the main session");
-    expect(rawOutput).not.toContain("load `trellis-before-dev` before writing code");
+    expect(rawOutput).not.toContain(
+      "load `trellis-before-dev` before writing code",
+    );
     expect(rawOutput).not.toContain("If there is an active task, ask whether");
     expect(rawOutput).toContain(
       "execute its Next required action without asking whether to continue",
@@ -1257,14 +1284,11 @@ describe("regression: current-task path normalization", () => {
         ),
         hookPath,
       );
-      const result = execSync(
-        `${pythonCmd} ${JSON.stringify(hookPath)}`,
-        {
-          cwd: nonTrellisDir,
-          input: JSON.stringify({ cwd: nonTrellisDir }),
-          encoding: "utf-8",
-        },
-      );
+      const result = execSync(`${pythonCmd} ${JSON.stringify(hookPath)}`, {
+        cwd: nonTrellisDir,
+        input: JSON.stringify({ cwd: nonTrellisDir }),
+        encoding: "utf-8",
+      });
       expect(result.trim()).toBe("");
     } finally {
       fs.rmSync(nonTrellisDir, { recursive: true, force: true });
@@ -1475,9 +1499,17 @@ print(len(entries))
   it("[workflow-v2] get_context.py --mode phase returns Phase Index + Phase 1/2/3 step bodies", () => {
     writeTrellisScripts();
     writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
-    writeProjectFile(path.join(".trellis", "workflow.md"), templateWorkflowMd());
+    writeProjectFile(
+      path.join(".trellis", "workflow.md"),
+      templateWorkflowMd(),
+    );
 
-    const contextScript = path.join(tmpDir, ".trellis", "scripts", "get_context.py");
+    const contextScript = path.join(
+      tmpDir,
+      ".trellis",
+      "scripts",
+      "get_context.py",
+    );
     const output = execSync(
       `${pythonCmd} ${JSON.stringify(contextScript)} --mode phase`,
       { cwd: tmpDir, encoding: "utf-8" },
@@ -1499,9 +1531,17 @@ print(len(entries))
   it("[workflow-v2] --mode phase --platform codex filters out generic before-dev routing", () => {
     writeTrellisScripts();
     writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
-    writeProjectFile(path.join(".trellis", "workflow.md"), templateWorkflowMd());
+    writeProjectFile(
+      path.join(".trellis", "workflow.md"),
+      templateWorkflowMd(),
+    );
 
-    const contextScript = path.join(tmpDir, ".trellis", "scripts", "get_context.py");
+    const contextScript = path.join(
+      tmpDir,
+      ".trellis",
+      "scripts",
+      "get_context.py",
+    );
     const output = execSync(
       `${pythonCmd} ${JSON.stringify(contextScript)} --mode phase --platform codex`,
       { cwd: tmpDir, encoding: "utf-8" },
@@ -1514,20 +1554,82 @@ print(len(entries))
     expect(output).not.toContain("before-dev takes under a minute");
   });
 
+  it("[pi] --mode phase --platform pi uses sub-agent routing", () => {
+    writeTrellisScripts();
+    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(
+      path.join(".trellis", "workflow.md"),
+      templateWorkflowMd(),
+    );
+
+    const contextScript = path.join(
+      tmpDir,
+      ".trellis",
+      "scripts",
+      "get_context.py",
+    );
+    const output = execSync(
+      `${pythonCmd} ${JSON.stringify(contextScript)} --mode phase --platform pi`,
+      { cwd: tmpDir, encoding: "utf-8" },
+    );
+
+    expect(output).toContain("trellis-implement");
+    expect(output).toContain("implement.jsonl");
+    expect(output).not.toContain(
+      "| About to write code / start implementing | trellis-before-dev |",
+    );
+    expect(output).not.toContain("before-dev takes under a minute");
+  });
+
   it("[workflow-v2] step 2.1 for codex describes self-loaded agent context, not hook injection", () => {
     writeTrellisScripts();
     writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
-    writeProjectFile(path.join(".trellis", "workflow.md"), templateWorkflowMd());
+    writeProjectFile(
+      path.join(".trellis", "workflow.md"),
+      templateWorkflowMd(),
+    );
 
-    const contextScript = path.join(tmpDir, ".trellis", "scripts", "get_context.py");
+    const contextScript = path.join(
+      tmpDir,
+      ".trellis",
+      "scripts",
+      "get_context.py",
+    );
     const output = execSync(
       `${pythonCmd} ${JSON.stringify(contextScript)} --mode phase --step 2.1 --platform codex`,
       { cwd: tmpDir, encoding: "utf-8" },
     );
 
     expect(output).toContain("The Codex sub-agent definition auto-handles");
-    expect(output).toContain("Reads `.trellis/.current-task`, `prd.md`, and `info.md`");
+    expect(output).toContain(
+      "Reads `.trellis/.current-task`, `prd.md`, and `info.md`",
+    );
     expect(output).not.toContain("The platform hook/plugin auto-handles");
+    expect(output).not.toContain("Load the `trellis-before-dev` skill");
+  });
+
+  it("[pi] step 2.1 describes extension-backed sub-agent context path", () => {
+    writeTrellisScripts();
+    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(
+      path.join(".trellis", "workflow.md"),
+      templateWorkflowMd(),
+    );
+
+    const contextScript = path.join(
+      tmpDir,
+      ".trellis",
+      "scripts",
+      "get_context.py",
+    );
+    const output = execSync(
+      `${pythonCmd} ${JSON.stringify(contextScript)} --mode phase --step 2.1 --platform pi`,
+      { cwd: tmpDir, encoding: "utf-8" },
+    );
+
+    expect(output).toContain("The platform hook/plugin auto-handles");
+    expect(output).toContain("Reads `implement.jsonl`");
+    expect(output).not.toContain("The Codex sub-agent definition auto-handles");
     expect(output).not.toContain("Load the `trellis-before-dev` skill");
   });
 
@@ -1536,9 +1638,17 @@ print(len(entries))
     // see `trellis-before-dev` because they write code in the main session.
     writeTrellisScripts();
     writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
-    writeProjectFile(path.join(".trellis", "workflow.md"), templateWorkflowMd());
+    writeProjectFile(
+      path.join(".trellis", "workflow.md"),
+      templateWorkflowMd(),
+    );
 
-    const contextScript = path.join(tmpDir, ".trellis", "scripts", "get_context.py");
+    const contextScript = path.join(
+      tmpDir,
+      ".trellis",
+      "scripts",
+      "get_context.py",
+    );
     const output = execSync(
       `${pythonCmd} ${JSON.stringify(contextScript)} --mode phase --platform kilo`,
       { cwd: tmpDir, encoding: "utf-8" },
@@ -1555,13 +1665,18 @@ print(len(entries))
   it("[workflow-v2] session-start.py <workflow> block contains Phase 1/2/3 step bodies", () => {
     writeTrellisScripts();
     writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
-    writeProjectFile(path.join(".trellis", "workflow.md"), templateWorkflowMd());
+    writeProjectFile(
+      path.join(".trellis", "workflow.md"),
+      templateWorkflowMd(),
+    );
     writeProjectFile(
       path.join(".claude", "hooks", "session-start.py"),
       expectTemplateContent(claudeSessionStart, "shared session-start"),
     );
 
-    const rawOutput = runPython(path.join(".claude", "hooks", "session-start.py"));
+    const rawOutput = runPython(
+      path.join(".claude", "hooks", "session-start.py"),
+    );
     const payload = JSON.parse(rawOutput) as {
       hookSpecificOutput: { additionalContext: string };
     };
@@ -1586,7 +1701,10 @@ print(len(entries))
   it("[workflow-v2] session-start.py <guidelines> block lists spec paths, not inlined content", () => {
     writeTrellisScripts();
     writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
-    writeProjectFile(path.join(".trellis", "workflow.md"), templateWorkflowMd());
+    writeProjectFile(
+      path.join(".trellis", "workflow.md"),
+      templateWorkflowMd(),
+    );
     // Guides — must be inlined
     writeProjectFile(
       path.join(".trellis", "spec", "guides", "index.md"),
@@ -1602,7 +1720,9 @@ print(len(entries))
       expectTemplateContent(claudeSessionStart, "shared session-start"),
     );
 
-    const rawOutput = runPython(path.join(".claude", "hooks", "session-start.py"));
+    const rawOutput = runPython(
+      path.join(".claude", "hooks", "session-start.py"),
+    );
     const payload = JSON.parse(rawOutput) as {
       hookSpecificOutput: { additionalContext: string };
     };
@@ -1617,7 +1737,9 @@ print(len(entries))
     expect(guidelinesBlock).toContain("GUIDES_INLINE_MARKER");
     // Other package index listed as path, content NOT inlined
     expect(guidelinesBlock).toContain(".trellis/spec/cli/backend/index.md");
-    expect(guidelinesBlock).not.toContain("BACKEND_INDEX_CONTENT_SHOULD_NOT_APPEAR");
+    expect(guidelinesBlock).not.toContain(
+      "BACKEND_INDEX_CONTENT_SHOULD_NOT_APPEAR",
+    );
     // Pointer to discovery command
     expect(guidelinesBlock).toContain("--mode packages");
   });
@@ -1636,7 +1758,10 @@ print(len(entries))
     writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
     writeProjectFile(path.join(".trellis", "workflow.md"), "# Minimal\n");
     // Active task WITHOUT current_phase field (post-migration state)
-    writeProjectFile(path.join(".trellis", ".current-task"), ".trellis/tasks/issue-106\n");
+    writeProjectFile(
+      path.join(".trellis", ".current-task"),
+      ".trellis/tasks/issue-106\n",
+    );
     writeProjectFile(
       path.join(".trellis", "tasks", "issue-106", "task.json"),
       JSON.stringify(
@@ -1650,7 +1775,10 @@ print(len(entries))
         2,
       ),
     );
-    writeProjectFile(path.join(".trellis", "tasks", "issue-106", "prd.md"), "# PRD\n");
+    writeProjectFile(
+      path.join(".trellis", "tasks", "issue-106", "prd.md"),
+      "# PRD\n",
+    );
     writeProjectFile(
       path.join(".trellis", "tasks", "issue-106", "implement.jsonl"),
       '{"file":"src/example.ts","reason":"spec"}\n',
@@ -1669,7 +1797,10 @@ print(len(entries))
       },
       cwd: tmpDir,
     });
-    runPython(path.join(".claude", "hooks", "inject-subagent-context.py"), input);
+    runPython(
+      path.join(".claude", "hooks", "inject-subagent-context.py"),
+      input,
+    );
 
     // Assert task.json is NOT modified with current_phase
     const taskJson = JSON.parse(
@@ -1720,7 +1851,6 @@ describe("regression: backslash in markdown templates (beta.12)", () => {
       expect(hook.content).not.toContain("\\->");
     }
   });
-
 });
 
 // =============================================================================
@@ -1783,6 +1913,15 @@ describe("regression: platform additions (beta.9, beta.13, beta.16)", () => {
     expect(AI_TOOLS).toHaveProperty("droid");
     expect(AI_TOOLS.droid.configDir).toBe(".factory");
     expect(AI_TOOLS.droid.cliFlag).toBe("droid");
+  });
+
+  it("[pi] Pi Agent platform is registered", () => {
+    expect(AI_TOOLS).toHaveProperty("pi");
+    expect(AI_TOOLS.pi.configDir).toBe(".pi");
+    expect(AI_TOOLS.pi.cliFlag).toBe("pi");
+    expect(AI_TOOLS.pi.hasPythonHooks).toBe(false);
+    expect(AI_TOOLS.pi.templateContext.agentCapable).toBe(true);
+    expect(AI_TOOLS.pi.templateContext.hasHooks).toBe(true);
   });
 
   it("[beta.9] all platforms have consistent required fields", () => {
@@ -1854,6 +1993,16 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
   it("[droid] cli_adapter.py supports droid platform", () => {
     expect(commonCliAdapter).toContain('"droid"');
     expect(commonCliAdapter).toContain(".factory");
+  });
+
+  it("[pi] cli_adapter.py supports pi platform", () => {
+    expect(commonCliAdapter).toContain('"pi"');
+    expect(commonCliAdapter).toContain(".pi");
+    expect(commonCliAdapter).toContain('cmd = ["pi", "-p", prompt]');
+    expect(commonCliAdapter).toContain('return ["pi", "-c", session_id]');
+    expect(commonCliAdapter).toContain(
+      'return f".pi/prompts/trellis-{name}.md"',
+    );
   });
 
   it("[droid] cli_adapter.py treats droid as commands-only (no CLI run/resume yet)", () => {
@@ -1954,9 +2103,7 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
     expect(commonCliAdapter).toMatch(
       /if agents_skills\.is_dir\(\) and not _has_other_platform_dir\(\s*project_root,\s*set\(\)/,
     );
-    expect(commonCliAdapter).toMatch(
-      /entry\.name\.startswith\("trellis-"\)/,
-    );
+    expect(commonCliAdapter).toMatch(/entry\.name\.startswith\("trellis-"\)/);
   });
 
   // v0.5.0-beta.12 removed `task.py init-context` — Phase 1.3 is now
@@ -2006,6 +2153,7 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
     expect(taskStore as string).toContain('".claude"');
     expect(taskStore as string).toContain('".codex"');
     expect(taskStore as string).toContain('".github/copilot"');
+    expect(taskStore as string).toContain('".pi"');
     // Seed row is self-describing and has no `file` field (so consumers skip
     // it naturally).
     expect(taskStore as string).toMatch(/_write_seed_jsonl/);
@@ -2101,6 +2249,7 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
     expect(commonCliAdapter).toContain(".codebuddy");
     expect(commonCliAdapter).toContain(".github/copilot");
     expect(commonCliAdapter).toContain(".factory");
+    expect(commonCliAdapter).toContain(".pi");
   });
 
   it("[copilot] cli_adapter.py treats copilot as IDE-only (no CLI run/resume)", () => {
@@ -2137,7 +2286,6 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
       /def cli_name[\s\S]*?elif self\.platform == "copilot":[\s\S]*?return "copilot"/,
     );
   });
-
 });
 
 // =============================================================================
@@ -2219,8 +2367,8 @@ describe("regression: migration manifest consistency", () => {
 
   it("[#57] shell archive migrations use rename type with correct from/to paths", () => {
     const migrations = getMigrationsForVersion("0.2.15", "0.3.0-beta.0");
-    const shellArchives = migrations.filter(
-      (m) => m.to?.includes("scripts-shell-archive"),
+    const shellArchives = migrations.filter((m) =>
+      m.to?.includes("scripts-shell-archive"),
     );
     // 19 shell scripts should be archived
     expect(shellArchives.length).toBe(19);
@@ -2237,8 +2385,8 @@ describe("regression: migration manifest consistency", () => {
 
   it("[#57] shell archive covers all three subdirectories", () => {
     const migrations = getMigrationsForVersion("0.2.15", "0.3.0-beta.0");
-    const shellArchives = migrations.filter(
-      (m) => m.to?.includes("scripts-shell-archive"),
+    const shellArchives = migrations.filter((m) =>
+      m.to?.includes("scripts-shell-archive"),
     );
     const topLevel = shellArchives.filter(
       (m) => !m.from.includes("/common/") && !m.from.includes("/multi-agent/"),
@@ -2276,19 +2424,71 @@ describe("regression: migration manifest consistency", () => {
 
     type PathFn = (name: string) => string;
     const PLATFORMS: { id: string; from: PathFn; to: PathFn }[] = [
-      { id: "claude",      from: (n) => `.claude/commands/trellis/${n}.md`,     to: (n) => `.claude/skills/trellis-${n}/SKILL.md` },
-      { id: "cursor",      from: (n) => `.cursor/commands/trellis-${n}.md`,     to: (n) => `.cursor/skills/trellis-${n}/SKILL.md` },
-      { id: "opencode",    from: (n) => `.opencode/commands/trellis/${n}.md`,   to: (n) => `.opencode/skills/trellis-${n}/SKILL.md` },
-      { id: "codebuddy",   from: (n) => `.codebuddy/commands/trellis/${n}.md`,  to: (n) => `.codebuddy/skills/trellis-${n}/SKILL.md` },
-      { id: "droid",       from: (n) => `.factory/commands/trellis/${n}.md`,    to: (n) => `.factory/skills/trellis-${n}/SKILL.md` },
-      { id: "gemini",      from: (n) => `.gemini/commands/trellis/${n}.toml`,   to: (n) => `.gemini/skills/trellis-${n}/SKILL.md` },
-      { id: "copilot",     from: (n) => `.github/prompts/${n}.prompt.md`,       to: (n) => `.github/skills/trellis-${n}/SKILL.md` },
-      { id: "kilo",        from: (n) => `.kilocode/workflows/${n}.md`,          to: (n) => `.kilocode/skills/trellis-${n}/SKILL.md` },
-      { id: "antigravity", from: (n) => `.agent/workflows/${n}.md`,             to: (n) => `.agent/skills/trellis-${n}/SKILL.md` },
-      { id: "windsurf",    from: (n) => `.windsurf/workflows/trellis-${n}.md`,  to: (n) => `.windsurf/skills/trellis-${n}/SKILL.md` },
-      { id: "kiro",        from: (n) => `.kiro/skills/${n}/SKILL.md`,           to: (n) => `.kiro/skills/trellis-${n}/SKILL.md` },
-      { id: "qoder",       from: (n) => `.qoder/skills/${n}/SKILL.md`,          to: (n) => `.qoder/skills/trellis-${n}/SKILL.md` },
-      { id: "shared",      from: (n) => `.agents/skills/${n}/SKILL.md`,         to: (n) => `.agents/skills/trellis-${n}/SKILL.md` },
+      {
+        id: "claude",
+        from: (n) => `.claude/commands/trellis/${n}.md`,
+        to: (n) => `.claude/skills/trellis-${n}/SKILL.md`,
+      },
+      {
+        id: "cursor",
+        from: (n) => `.cursor/commands/trellis-${n}.md`,
+        to: (n) => `.cursor/skills/trellis-${n}/SKILL.md`,
+      },
+      {
+        id: "opencode",
+        from: (n) => `.opencode/commands/trellis/${n}.md`,
+        to: (n) => `.opencode/skills/trellis-${n}/SKILL.md`,
+      },
+      {
+        id: "codebuddy",
+        from: (n) => `.codebuddy/commands/trellis/${n}.md`,
+        to: (n) => `.codebuddy/skills/trellis-${n}/SKILL.md`,
+      },
+      {
+        id: "droid",
+        from: (n) => `.factory/commands/trellis/${n}.md`,
+        to: (n) => `.factory/skills/trellis-${n}/SKILL.md`,
+      },
+      {
+        id: "gemini",
+        from: (n) => `.gemini/commands/trellis/${n}.toml`,
+        to: (n) => `.gemini/skills/trellis-${n}/SKILL.md`,
+      },
+      {
+        id: "copilot",
+        from: (n) => `.github/prompts/${n}.prompt.md`,
+        to: (n) => `.github/skills/trellis-${n}/SKILL.md`,
+      },
+      {
+        id: "kilo",
+        from: (n) => `.kilocode/workflows/${n}.md`,
+        to: (n) => `.kilocode/skills/trellis-${n}/SKILL.md`,
+      },
+      {
+        id: "antigravity",
+        from: (n) => `.agent/workflows/${n}.md`,
+        to: (n) => `.agent/skills/trellis-${n}/SKILL.md`,
+      },
+      {
+        id: "windsurf",
+        from: (n) => `.windsurf/workflows/trellis-${n}.md`,
+        to: (n) => `.windsurf/skills/trellis-${n}/SKILL.md`,
+      },
+      {
+        id: "kiro",
+        from: (n) => `.kiro/skills/${n}/SKILL.md`,
+        to: (n) => `.kiro/skills/trellis-${n}/SKILL.md`,
+      },
+      {
+        id: "qoder",
+        from: (n) => `.qoder/skills/${n}/SKILL.md`,
+        to: (n) => `.qoder/skills/trellis-${n}/SKILL.md`,
+      },
+      {
+        id: "shared",
+        from: (n) => `.agents/skills/${n}/SKILL.md`,
+        to: (n) => `.agents/skills/trellis-${n}/SKILL.md`,
+      },
     ];
 
     it("has at least 65 rename entries for command→skill (13 platforms × 5 commands)", () => {
@@ -2310,7 +2510,10 @@ describe("regression: migration manifest consistency", () => {
         for (const c of COMMANDS) {
           const expectedFrom = p.from(c);
           const expectedTo = p.to(c);
-          expect(index.has(expectedFrom), `missing rename for ${p.id}:${c} (${expectedFrom})`).toBe(true);
+          expect(
+            index.has(expectedFrom),
+            `missing rename for ${p.id}:${c} (${expectedFrom})`,
+          ).toBe(true);
           expect(index.get(expectedFrom)).toBe(expectedTo);
         }
       }
@@ -2344,8 +2547,8 @@ describe("regression: collectTemplates paths match init directory structure (0.3
     for (const id of platformsWithCommands) {
       const templates = collectPlatformTemplates(id);
       if (!templates) continue;
-      const commandKeys = [...templates.keys()].filter(
-        (k) => k.includes("/commands/"),
+      const commandKeys = [...templates.keys()].filter((k) =>
+        k.includes("/commands/"),
       );
       for (const key of commandKeys) {
         expect(
@@ -2363,7 +2566,8 @@ describe("regression: collectTemplates paths match init directory structure (0.3
     const keys = [...templates.keys()];
     for (const key of keys) {
       expect(
-        key.startsWith(".kilocode/workflows/") || key.startsWith(".kilocode/skills/"),
+        key.startsWith(".kilocode/workflows/") ||
+          key.startsWith(".kilocode/skills/"),
         `kilo path should use workflows/ or skills/: ${key}`,
       ).toBe(true);
     }
@@ -2376,7 +2580,8 @@ describe("regression: collectTemplates paths match init directory structure (0.3
     const keys = [...templates.keys()];
     for (const key of keys) {
       expect(
-        key.startsWith(".windsurf/workflows/") || key.startsWith(".windsurf/skills/"),
+        key.startsWith(".windsurf/workflows/") ||
+          key.startsWith(".windsurf/skills/"),
         `windsurf path should use workflows/ or skills/: ${key}`,
       ).toBe(true);
     }
@@ -2475,7 +2680,7 @@ describe("regression: parse_simple_yaml Python execution (0.3.8)", () => {
   }
 
   it("nested single quotes inside double quotes are preserved", () => {
-    const result = runPythonYaml('key: "echo \'hello\'"');
+    const result = runPythonYaml("key: \"echo 'hello'\"");
     expect(result).toEqual({ key: "echo 'hello'" });
   });
 
@@ -2486,7 +2691,7 @@ describe("regression: parse_simple_yaml Python execution (0.3.8)", () => {
 
   it("list items with nested quotes are preserved", () => {
     const result = runPythonYaml(
-      'hooks:\n  after_create:\n    - "echo \'Task created\'"',
+      "hooks:\n  after_create:\n    - \"echo 'Task created'\"",
     );
     expect(result).toEqual({
       hooks: { after_create: ["echo 'Task created'"] },
@@ -2494,7 +2699,7 @@ describe("regression: parse_simple_yaml Python execution (0.3.8)", () => {
   });
 
   it("simple quoted values work", () => {
-    const result = runPythonYaml('a: "hello"\nb: \'world\'');
+    const result = runPythonYaml("a: \"hello\"\nb: 'world'");
     expect(result).toEqual({ a: "hello", b: "world" });
   });
 
@@ -2545,13 +2750,19 @@ describe("regression: class-2 platforms use pull-based sub-agent context", () =>
     {
       id: "qoder" as const,
       hooksDir: ".qoder/hooks",
-      preludeAgents: [".qoder/agents/trellis-implement.md", ".qoder/agents/trellis-check.md"],
+      preludeAgents: [
+        ".qoder/agents/trellis-implement.md",
+        ".qoder/agents/trellis-check.md",
+      ],
       nonPreludeAgents: [".qoder/agents/trellis-research.md"],
     },
     {
       id: "gemini" as const,
       hooksDir: ".gemini/hooks",
-      preludeAgents: [".gemini/agents/trellis-implement.md", ".gemini/agents/trellis-check.md"],
+      preludeAgents: [
+        ".gemini/agents/trellis-implement.md",
+        ".gemini/agents/trellis-check.md",
+      ],
       nonPreludeAgents: [".gemini/agents/trellis-research.md"],
     },
     {
@@ -2631,6 +2842,47 @@ describe("regression: class-2 platforms use pull-based sub-agent context", () =>
   }
 });
 
+describe("regression: pi uses TypeScript extension assets instead of Python hooks", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-pi-"));
+    setWriteMode("force");
+    await configurePlatform("pi", tmpDir);
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("installs no Python hook files under .pi", () => {
+    const templates = collectPlatformTemplates("pi");
+    expect(templates).toBeInstanceOf(Map);
+    const keys = [...(templates ?? new Map()).keys()];
+    expect(keys.some((key) => key.endsWith(".py"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".pi", "hooks"))).toBe(false);
+  });
+
+  it("installs a subagent-capable extension and pull-based agent context", () => {
+    const extension = fs.readFileSync(
+      path.join(tmpDir, ".pi", "extensions", "trellis", "index.ts"),
+      "utf-8",
+    );
+    expect(extension).toContain('name: "subagent"');
+    expect(extension).toContain('pi.on?.("before_agent_start"');
+    expect(extension).toContain('pi.on?.("tool_call"');
+
+    for (const agent of ["trellis-implement.md", "trellis-check.md"]) {
+      const content = fs.readFileSync(
+        path.join(tmpDir, ".pi", "agents", agent),
+        "utf-8",
+      );
+      expect(content).toContain("Required: Load Trellis Context First");
+      expect(content).toContain(".trellis/.current-task");
+    }
+  });
+});
+
 // =============================================================================
 // Research agent must persist findings (0.5)
 // =============================================================================
@@ -2673,7 +2925,10 @@ describe("regression: research agent persists findings to task dir", () => {
 
   it("codex research.toml uses workspace-write sandbox and persist instruction", () => {
     const content = fs.readFileSync(
-      path.join(repoRoot, "packages/cli/src/templates/codex/agents/trellis-research.toml"),
+      path.join(
+        repoRoot,
+        "packages/cli/src/templates/codex/agents/trellis-research.toml",
+      ),
       "utf-8",
     );
     expect(content).toMatch(/sandbox_mode\s*=\s*"workspace-write"/);
@@ -2683,7 +2938,10 @@ describe("regression: research agent persists findings to task dir", () => {
 
   it("kiro research.json includes write tool and persist instruction", () => {
     const content = fs.readFileSync(
-      path.join(repoRoot, "packages/cli/src/templates/kiro/agents/trellis-research.json"),
+      path.join(
+        repoRoot,
+        "packages/cli/src/templates/kiro/agents/trellis-research.json",
+      ),
       "utf-8",
     );
     const data = JSON.parse(content) as {

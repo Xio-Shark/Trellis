@@ -44,7 +44,10 @@ describe("ALL_MANAGED_DIRS", () => {
   });
 
   it("contains .trellis plus all managed dirs", () => {
-    expect(ALL_MANAGED_DIRS).toEqual([".trellis", ...new Set(PLATFORM_MANAGED_DIRS)]);
+    expect(ALL_MANAGED_DIRS).toEqual([
+      ".trellis",
+      ...new Set(PLATFORM_MANAGED_DIRS),
+    ]);
   });
 
   it("has no duplicates", () => {
@@ -71,6 +74,8 @@ describe("isManagedPath", () => {
     expect(isManagedPath(".github/prompts/start.prompt.md")).toBe(true);
     expect(isManagedPath(".github/copilot/hooks/session-start.py")).toBe(true);
     expect(isManagedPath(".github/hooks/trellis.json")).toBe(true);
+    expect(isManagedPath(".pi/extensions/trellis/index.ts")).toBe(true);
+    expect(isManagedPath(".pi/prompts/trellis-continue.md")).toBe(true);
   });
 
   // Positive: exact match (startsWith(d + "/") = false, === d = true)
@@ -143,6 +148,7 @@ describe("isManagedPath", () => {
       true,
     );
     expect(isManagedPath(".github\\hooks\\trellis.json")).toBe(true);
+    expect(isManagedPath(".pi\\extensions\\trellis\\index.ts")).toBe(true);
   });
 
   // Mixed separators
@@ -316,7 +322,8 @@ describe("collectPlatformTemplates", () => {
           expect(
             managedPaths.some(
               (managedPath) =>
-                filePath === managedPath || filePath.startsWith(managedPath + "/"),
+                filePath === managedPath ||
+                filePath.startsWith(managedPath + "/"),
             ),
           ).toBe(true);
         }
@@ -342,5 +349,15 @@ describe("collectPlatformTemplates", () => {
     expect(result?.has(".github/prompts/continue.prompt.md")).toBe(true);
     expect(result?.has(".github/copilot/hooks.json")).toBe(true);
     expect(result?.has(".github/hooks/trellis.json")).toBe(true);
+  });
+
+  it("pi collectTemplates includes prompts, agents, extension, and settings", () => {
+    const result = collectPlatformTemplates("pi");
+    expect(result).toBeInstanceOf(Map);
+    expect(result?.has(".pi/prompts/trellis-start.md")).toBe(false);
+    expect(result?.has(".pi/prompts/trellis-finish-work.md")).toBe(true);
+    expect(result?.has(".pi/agents/trellis-implement.md")).toBe(true);
+    expect(result?.has(".pi/extensions/trellis/index.ts")).toBe(true);
+    expect(result?.has(".pi/settings.json")).toBe(true);
   });
 });

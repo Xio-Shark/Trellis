@@ -435,4 +435,25 @@ describe("initializeHashes", () => {
     expect(hashes).not.toHaveProperty(".trellis/spec/backend/index.md");
     expect(count).toBe(0);
   });
+
+  it("does not exclude generated update-spec skills from hashing", () => {
+    fs.mkdirSync(path.join(tmpDir, ".trellis"), { recursive: true });
+    const skillPath = path.join(
+      tmpDir,
+      ".pi",
+      "skills",
+      "trellis-update-spec",
+      "SKILL.md",
+    );
+    fs.mkdirSync(path.dirname(skillPath), { recursive: true });
+    fs.writeFileSync(skillPath, "# Update Spec");
+
+    const count = initializeHashes(tmpDir);
+    const hashes = loadHashes(tmpDir);
+
+    expect(hashes).toHaveProperty(
+      ".pi/skills/trellis-update-spec/SKILL.md",
+    );
+    expect(count).toBe(1);
+  });
 });

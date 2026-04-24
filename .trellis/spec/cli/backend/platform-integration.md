@@ -1,6 +1,6 @@
 # Platform Integration Guide
 
-How to add support for a new AI CLI platform (like Claude Code, Cursor, Gemini CLI, OpenCode, Codex, Kilo, Kiro, Qoder, CodeBuddy, Copilot, Droid, Windsurf, Antigravity).
+How to add support for a new AI CLI platform (like Claude Code, Cursor, Gemini CLI, OpenCode, Codex, Kilo, Kiro, Qoder, CodeBuddy, Copilot, Droid, Pi, Windsurf, Antigravity).
 
 ---
 
@@ -90,6 +90,18 @@ When adding a new platform `{platform}`, update the following:
 | `src/templates/{platform}/package.json` | Plugin dependencies |
 
 > Note: OpenCode uses JS plugins instead of Python hooks, has no `index.ts` template module, and has no `collectTemplates` — so `trellis update` does not track OpenCode template files. If a new platform uses JS plugins, follow this pattern.
+
+**TypeScript extension pattern** (Pi Agent):
+
+| Directory | Contents |
+|-----------|----------|
+| `src/templates/{platform}/` | Root directory |
+| `src/templates/{platform}/index.ts` | Uses `createTemplateReader(import.meta.url)` — exports agents, settings, extension source |
+| `src/templates/{platform}/agents/` | Agent definitions (`.md` files — implement, check, research) |
+| `src/templates/{platform}/extensions/trellis/index.ts.txt` | Project-local extension source written to `.pi/extensions/trellis/index.ts` |
+| `src/templates/{platform}/settings.json` | Platform settings that enable extension, skills, and prompts |
+
+> Note: Pi Agent uses project-local TypeScript extensions instead of Trellis Python hooks. Keep generated hooks under `.pi/extensions/`, write prompt templates under `.pi/prompts/trellis-*.md`, write Agent Skills under `.pi/skills/`, and do not copy `shared-hooks/*.py` into `.pi/`.
 
 **Skills pattern** (Codex, Kiro):
 
@@ -224,7 +236,7 @@ When adding a new platform `{platform}`, update the following:
 
 | File | Constant | When to update |
 |------|----------|----------------|
-| `src/templates/trellis/scripts/common/task_store.py` | `_SUBAGENT_CONFIG_DIRS` (tuple) | Add `.{configDir}/` if the new platform can spawn sub-agents (Class-1 hook-inject OR Class-2 pull-based) |
+| `src/templates/trellis/scripts/common/task_store.py` | `_SUBAGENT_CONFIG_DIRS` (tuple) | Add `.{configDir}/` if the new platform can spawn sub-agents (Class-1 hook-inject, Class-2 pull-based, or extension-backed) |
 
 This tuple is consulted by `cmd_create` to decide whether to seed `implement.jsonl` / `check.jsonl` for the new task. Agent-less platforms (Kilo, Antigravity, Windsurf) MUST be excluded — they don't consume jsonl.
 
@@ -280,6 +292,132 @@ If Trellis project itself should support the new platform:
 | `test/templates/extract.test.ts` | `get{Platform}TemplatePath()` returns existing dir. `get{Platform}SourcePath()` deprecated alias equals template path |
 | `test/regression.test.ts` | Platform registration: `AI_TOOLS.{platform}` exists with correct `configDir`. cli_adapter: `commonCliAdapter` contains `"{platform}"` and `".{configDir}"`. Update `withTracking` list if `collectTemplates` is defined |
 
+For extension-backed platforms like Pi Agent, add explicit regression coverage that no Python hook files are installed under the platform config directory and that the generated extension exposes the required sub-agent and hook-equivalent event surface.
+
+---
+
+## Scenario: Extension-Backed Platform Support
+
+### 1. Scope / Trigger
+
+Use this pattern when a platform provides project-local JS/TS extension events and custom tools rather than Trellis-compatible Python hooks. Pi Agent is the reference implementation.
+
+### 2. Signatures
+
+TypeScript registry:
+
+```typescript
+AI_TOOLS.pi = {
+  configDir: ".pi",
+  cliFlag: "pi",
+  hasPythonHooks: false,
+  templateContext: {
+    agentCapable: true,
+    hasHooks: true,
+  },
+}
+```
+
+Configurator output:
+
+```text
+.pi/settings.json
+.pi/prompts/trellis-<command>.md
+.pi/skills/<skill>/SKILL.md
+.pi/agents/trellis-<agent>.md
+.pi/extensions/trellis/index.ts
+```
+
+Runtime script registry:
+
+```python
+Platform = Literal[..., "pi"]
+_SUBAGENT_CONFIG_DIRS = (..., ".pi")
+```
+
+### 3. Contracts
+
+Extension-backed platforms MUST NOT receive `.trellis/templates/shared-hooks/*.py` under their config directory. Their hook-equivalent behavior belongs in generated extension source.
+
+For Pi Agent:
+
+| Trellis concept | Pi surface |
+|---|---|
+| Session start | `session_start` extension event |
+| User prompt submit | `input` extension event |
+| Per-turn context injection | `before_agent_start` or `context` extension event |
+| Pre-tool-use guard / mutation | `tool_call` extension event |
+| Sub-agent dispatch | custom `subagent` tool that spawns `pi --mode json -p --no-session` |
+
+If `agentCapable` is true, `task.py create` must seed `implement.jsonl` / `check.jsonl`, and generated sub-agent definitions or extension code must consume those files.
+
+### 4. Validation & Error Matrix
+
+| Condition | Behavior |
+|---|---|
+| `hasHooks: true` and `hasPythonHooks: false` | Init does not run Windows Python hook detection for the platform |
+| Platform can spawn Trellis sub-agents | Add config dir to `_SUBAGENT_CONFIG_DIRS` |
+| Platform cannot consume JSONL context | Keep it out of `_SUBAGENT_CONFIG_DIRS` even if it has commands/skills |
+| Generated extension source is tracked | `collectTemplates()` must include the same path written by `configure{Platform}` |
+| Extension path contains `spec/` in a skill name such as `trellis-update-spec` | Template hash exclusion must not drop it; only `.trellis/spec/` is user-owned spec data |
+| Platform uses extension hooks | Do not copy Python hook files into the platform config dir |
+
+### 5. Good / Base / Bad Cases
+
+Good:
+
+```text
+.pi/extensions/trellis/index.ts
+.pi/agents/trellis-implement.md
+.pi/skills/update-spec/SKILL.md
+```
+
+Base:
+
+```text
+.pi/prompts/trellis-continue.md
+.pi/settings.json
+```
+
+Bad:
+
+```text
+.pi/hooks/session-start.py
+.pi/hooks/inject-subagent-context.py
+```
+
+### 6. Tests Required
+
+Add or update tests that assert:
+
+- `AI_TOOLS.<platform>` has the expected `configDir`, `cliFlag`, `agentCapable`, `hasHooks`, and `hasPythonHooks`.
+- `configurePlatform("<platform>")` writes every generated file and writes no Python hook files for extension-backed platforms.
+- `collectPlatformTemplates("<platform>")` matches init output paths.
+- `init({ <flag>: true })` creates platform assets and tracks hashes for all generated templates.
+- `get_context.py --mode phase --platform <platform>` routes to sub-agent-capable workflow blocks when `agentCapable` is true.
+- Runtime script copies (`src/templates/trellis/scripts/**` and live `.trellis/scripts/**`) both recognize the platform.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+await writeSharedHooks(path.join(configRoot, "hooks"));
+```
+
+This writes Python hooks into a platform whose hook surface is a TypeScript extension API.
+
+#### Correct
+
+```typescript
+await writeFile(
+  path.join(configRoot, "extensions", "trellis", "index.ts"),
+  getExtensionTemplate(),
+);
+```
+
+Extension-backed platforms keep hook-equivalent behavior in platform-native extension files and test those files as templates.
+
 ---
 
 ## What You DON'T Need to Update
@@ -316,6 +454,7 @@ These are now **automatically derived** from the registry:
 | Copilot | `/trellis:xxx` | Markdown (`.prompt.md`) | `/trellis:finish-work` |
 | Droid | `/trellis:xxx` | Markdown (`.md`) | `/trellis:finish-work` |
 | Windsurf | `/trellis-xxx` | Markdown (`.md`) + `SKILL.md` | `/trellis-finish-work` |
+| Pi Agent | `/trellis-xxx` prompt templates + `/skill:<name>` skills | Markdown (`.md`) + `SKILL.md` + TypeScript extension | `/trellis-finish-work` |
 
 When creating platform templates, ensure references match the platform's interaction format and file format.
 
@@ -323,7 +462,7 @@ When creating platform templates, ensure references match the platform's interac
 
 Commands emitted by `resolveCommands(ctx)` / `resolveAllAsSkills(ctx)` in `src/configurators/shared.ts`:
 
-| Command | Agent-capable platforms (10) | Agent-less platforms (3) |
+| Command | Agent-capable platforms (11) | Agent-less platforms (3) |
 |---------|------------------------------|--------------------------|
 | `start` | ❌ not emitted (hook/plugin injects workflow overview on session start) | ✅ emitted — manual equivalent of session-start hook |
 | `continue` | ✅ emitted | ✅ emitted |
@@ -331,10 +470,10 @@ Commands emitted by `resolveCommands(ctx)` / `resolveAllAsSkills(ctx)` in `src/c
 
 **Rule**: filter is by `ctx.agentCapable`, not `hasHooks`. `agentCapable` is authoritative because it also correlates with "has a session-start mechanism" (Python hook or JS plugin).
 
-- Agent-capable: `claude-code, cursor, opencode, codex, kiro, gemini, qoder, codebuddy, copilot, droid`
+- Agent-capable: `claude-code, cursor, opencode, codex, kiro, gemini, qoder, codebuddy, copilot, droid, pi`
 - Agent-less: `kilo, antigravity, windsurf`
 
-## Subagent Context Injection: Hook-based vs Pull-based
+## Subagent Context Injection: Hook-based vs Pull-based vs Extension-backed
 
 Trellis sub-agents (implement / check / research) need task context (`prd.md` + spec files listed in `implement.jsonl` / `check.jsonl`) at startup. There are two delivery modes depending on the platform's hook capabilities:
 
@@ -362,6 +501,14 @@ Platform's hook either doesn't expose a sub-agent spawn event or can't modify th
 | Codex | `PreToolUse` only fires for Bash; `CollabAgentSpawn` hook unimplemented ([#15486](https://github.com/openai/codex/issues/15486)) |
 | Copilot | `preToolUse` doesn't enforce on subagents ([#2392](https://github.com/github/copilot-cli/issues/2392), [#2540](https://github.com/github/copilot-cli/issues/2540)) |
 
+### Mode C — Extension-backed (1 platform)
+
+Platform can expose hook-equivalent events and custom tools through a project-local extension. Trellis owns the sub-agent tool and/or context injection path.
+
+| Platform | Extension surface | Context delivery |
+|---|---|---|
+| Pi Agent | `.pi/extensions/trellis/index.ts` events + `subagent` tool | extension builds prompt from `.pi/agents/*.md`, `prd.md`, `info.md`, and JSONL-referenced files; agent definitions also receive pull-based prelude as a fallback |
+
 ### Implementation
 
 Pull-based prelude is injected by `injectPullBasedPreludeMarkdown()` / `injectPullBasedPreludeToml()` in `src/configurators/shared.ts`. Each pull-based platform's configurator:
@@ -370,6 +517,8 @@ Pull-based prelude is injected by `injectPullBasedPreludeMarkdown()` / `injectPu
 2. Calls `detectSubAgentType(name)` → `injectPullBasedPrelude*()` on every sub-agent definition before writing
 
 Hook-inject platforms keep using `writeSharedHooks(dir)` and their hook-config JSON references `inject-subagent-context.py` as before.
+
+Extension-backed platforms must not call `writeSharedHooks()` for their config directory. They generate platform-native extension files and tests must assert that no Python hook files are installed under the platform config root.
 
 ### Audit reference
 

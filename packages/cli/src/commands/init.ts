@@ -798,6 +798,7 @@ interface InitOptions {
   codebuddy?: boolean;
   copilot?: boolean;
   droid?: boolean;
+  pi?: boolean;
   yes?: boolean;
   user?: string;
   force?: boolean;
