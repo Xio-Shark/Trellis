@@ -33,6 +33,7 @@ import {
   getAllAgents as getClaudeAgents,
 } from "../src/templates/claude/index.js";
 import { getAllHooks as getCodexHooks } from "../src/templates/codex/index.js";
+import { getAllHooks as getCopilotHooks } from "../src/templates/copilot/index.js";
 import { getSharedHookScripts } from "../src/templates/shared-hooks/index.js";
 import {
   getCommandTemplates,
@@ -78,6 +79,26 @@ describe("regression: Windows encoding (beta.10, beta.11, beta.16)", () => {
 
   it("[beta.10] common/__init__.py has TextIOWrapper fallback", () => {
     expect(commonInit).toContain("TextIOWrapper");
+  });
+
+  it("[issue #190] Codex and Copilot session-start hooks force UTF-8 stdout on Windows", () => {
+    const codexSessionStart = getCodexHooks().find(
+      (hook) => hook.name === "session-start.py",
+    )?.content;
+    const copilotSessionStart = getCopilotHooks().find(
+      (hook) => hook.name === "session-start.py",
+    )?.content;
+
+    for (const [label, content] of [
+      ["codex", codexSessionStart],
+      ["copilot", copilotSessionStart],
+    ] as const) {
+      expect(content, `${label} session-start template should exist`).toBeTruthy();
+      expect(content).toContain("from common import configure_encoding");
+      expect(content).toContain("configure_encoding()");
+      expect(content).toContain("configure_project_encoding(project_dir)");
+      expect(content).toContain("ensure_ascii=False");
+    }
   });
 
   it('[beta.10] common/__init__.py has sys.platform == "win32" guard', () => {
@@ -922,7 +943,7 @@ describe("regression: current-task path normalization", () => {
     );
   });
 
-  it("[workflow-v2] shared session-start READY guidance points to Phase 2.1, not mandatory before-dev", () => {
+  it("[workflow-v2] shared session-start READY guidance requires implement/check sub-agents", () => {
     setupTaskRepo();
 
     writeProjectFile(
@@ -931,9 +952,14 @@ describe("regression: current-task path normalization", () => {
     );
 
     const rawOutput = runPython(path.join(".claude", "hooks", "session-start.py"));
-    expect(rawOutput).toContain("Follow Phase 2.1 for your platform");
-    expect(rawOutput).not.toContain(
-      "Next-Action: Load skill `trellis-before-dev`",
+    expect(rawOutput).toContain("Next required action: dispatch `trellis-implement`");
+    expect(rawOutput).toContain("do NOT edit code in the main session");
+    expect(rawOutput).toContain("dispatch `trellis-check`");
+    expect(rawOutput).not.toContain("if you stay in the main session");
+    expect(rawOutput).not.toContain("load `trellis-before-dev` before writing code");
+    expect(rawOutput).not.toContain("If there is an active task, ask whether");
+    expect(rawOutput).toContain(
+      "execute its Next required action without asking whether to continue",
     );
   });
 
@@ -1006,6 +1032,12 @@ describe("regression: current-task path normalization", () => {
     );
     expect(parsed.hookSpecificOutput.additionalContext).toContain(
       "trellis-implement → trellis-check",
+    );
+    expect(parsed.hookSpecificOutput.additionalContext).toContain(
+      "do NOT edit code in the main session",
+    );
+    expect(parsed.hookSpecificOutput.additionalContext).toContain(
+      "dispatch `trellis-check` before reporting completion",
     );
   });
 

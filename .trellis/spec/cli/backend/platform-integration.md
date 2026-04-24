@@ -500,7 +500,34 @@ Platform markers are filtered by matching `[...]` block membership against the g
 
 ## Windows Encoding Fix
 
-All hook scripts that output to stdout must include the Windows encoding fix:
+All hook scripts that output to stdout must include the Windows encoding fix.
+This includes platform-specific `session-start.py` copies that opt out of
+`shared-hooks/session-start.py` (`codex/hooks/session-start.py` and
+`copilot/hooks/session-start.py`), because they still print JSON payloads with
+`ensure_ascii=False`.
+
+When a hook can resolve the Trellis project directory before printing, prefer
+the shared helper from `.trellis/scripts/common/__init__.py`:
+
+```python
+def configure_project_encoding(project_dir: Path) -> None:
+    scripts_dir = project_dir / ".trellis" / "scripts"
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+
+    try:
+        from common import configure_encoding  # type: ignore[import-not-found]
+
+        configure_encoding()
+    except Exception:
+        pass
+```
+
+Call it after resolving `project_dir` and before `json.dumps(...,
+ensure_ascii=False)` is printed.
+
+For standalone hooks that cannot safely import `.trellis/scripts/common`, use
+the local fallback pattern:
 
 ```python
 # IMPORTANT: Force stdout to use UTF-8 on Windows
@@ -512,6 +539,17 @@ if sys.platform == "win32":
     elif hasattr(sys.stdout, "detach"):
         sys.stdout = _io.TextIOWrapper(sys.stdout.detach(), encoding="utf-8", errors="replace")  # type: ignore[union-attr]
 ```
+
+### Tests Required
+
+- Regression coverage must assert every platform-specific Python
+  `session-start.py` template contains:
+  - `from common import configure_encoding`
+  - `configure_encoding()` before printing JSON
+  - `ensure_ascii=False` at the JSON output boundary
+- When a platform copies rather than consumes `shared-hooks/session-start.py`,
+  treat Windows stdout encoding as part of the copied contract, not as an
+  optional implementation detail.
 
 ---
 
@@ -541,7 +579,11 @@ Historical note: pre-workflow-rewrite (v0.4.0-beta.10) the payload included a 16
 
 Before: every `.trellis/spec/*/index.md` was inlined in `<guidelines>` (10 KB+ on this repo). Main agent rarely uses index content (work is delegated to sub-agents, which get their own specific specs via `{task}/implement.jsonl` / `check.jsonl`).
 
-Now: paths only for most indexes; `guides/index.md` (cross-package thinking guides) stays inlined because it's small and applies broadly. When main agent edits code directly, it Reads the relevant index on demand.
+Now: paths only for most indexes; `guides/index.md` (cross-package thinking guides) stays inlined because it's small and applies broadly. Agent-capable platforms should delegate implementation/check work to sub-agents so `implement.jsonl` / `check.jsonl` context is loaded there; agent-less platforms that edit in the main session read the relevant index on demand.
+
+### READY Guidance Must Be a Single Action
+
+When a task has `prd.md` plus curated jsonl context, `SessionStart` should give one executable next action: dispatch `trellis-implement`, then dispatch `trellis-check` before completion. Do not include fallback language such as "continue with implement or check", "if you stay in the main session", or "ask whether to continue"; those phrases make the AI negotiate workflow instead of following the task state.
 
 ### Design Decision: Inject Instructions, Not Reference Content
 
@@ -569,7 +611,7 @@ On the Trellis dev repo (light use), `<guidelines>` is 10.8 KB vs 5.1 KB on vani
 
 ### Solution: `UserPromptSubmit` hook injecting per-turn breadcrumb
 
-A lightweight hook (`shared-hooks/inject-workflow-state.py`) fires on **every user prompt**, emitting a short `<workflow-state>` block reminding the AI of the active task + expected flow. Sub-200-byte payload, no perceptible latency.
+A lightweight hook (`shared-hooks/inject-workflow-state.py`) fires on **every user prompt**, emitting a short `<workflow-state>` block reminding the AI of the active task + expected flow. Keep the payload compact and directive; it is injected every turn.
 
 ### Single Source of Truth: `workflow.md` Tag Blocks
 
@@ -577,8 +619,9 @@ Breadcrumb text lives in `workflow.md` as `[workflow-state:STATUS]...[/workflow-
 
 ```markdown
 [workflow-state:in_progress]
-Flow: implement → check → update-spec → finish
-Check conversation history + git status to determine current step; do NOT skip check.
+Flow: trellis-implement → trellis-check → trellis-update-spec → finish
+Next required action: inspect conversation history + git status, then execute the next uncompleted step in that sequence.
+For agent-capable platforms, do NOT edit code in the main session; dispatch `trellis-implement` for implementation and dispatch `trellis-check` before reporting completion.
 [/workflow-state:in_progress]
 ```
 

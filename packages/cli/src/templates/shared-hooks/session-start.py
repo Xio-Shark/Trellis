@@ -209,10 +209,9 @@ def _get_task_status(trellis_dir: Path) -> str:
     # Case 5: PRD + curated jsonl (or agent-less platform with no jsonl) — enter Execute phase
     return (
         f"Status: READY\nTask: {task_title}\n"
-        "Next-Action: Follow Phase 2.1 for your platform. For agent-capable platforms, "
-        "spawn `trellis-implement` via the Task tool; if you stay in the main session, "
-        "load `trellis-before-dev` before writing code. "
-        "After implementation, spawn `trellis-check` sub-agent for quality verification.\n"
+        "Next required action: dispatch `trellis-implement` per Phase 2.1. "
+        "For agent-capable platforms, do NOT edit code in the main session. "
+        "After implementation, dispatch `trellis-check` per Phase 2.2 before reporting completion.\n"
         "Sub-agent roster: `trellis-implement` (writes code), `trellis-check` (verifies + self-fixes), "
         "`trellis-research` (persists findings to `research/*.md` — use when you'd otherwise do "
         "multiple WebFetch/WebSearch inline)."
@@ -492,8 +491,9 @@ Read and follow all instructions below carefully.
         "- If you're spawning an implement/check sub-agent, context is injected "
         "automatically via `{task}/implement.jsonl` / `check.jsonl`. You do NOT "
         "need to read these indexes yourself.\n"
-        "- If you're editing code directly in the main session, Read the relevant "
-        "index(es) on-demand and follow their Pre-Dev Checklist.\n\n"
+        "- For agent-capable platforms, do NOT edit code directly in the main "
+        "session; dispatch `trellis-implement` and `trellis-check` so JSONL "
+        "context is loaded by the sub-agents.\n\n"
     )
 
     # guides/ is cross-package thinking — always include inline (small, broadly useful)
@@ -550,8 +550,8 @@ Read and follow all instructions below carefully.
 
     output.write("""<ready>
 Context loaded. Workflow index, project state, and guidelines are already injected above — do NOT re-read them.
-Wait for the user's first message, then handle it following the workflow guide.
-If there is an active task, ask whether to continue it.
+When the user sends the first message, follow <task-status> and the workflow guide.
+If a task is READY, execute its Next required action without asking whether to continue.
 </ready>""")
 
     result = {
