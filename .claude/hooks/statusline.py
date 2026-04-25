@@ -83,13 +83,33 @@ def _find_trellis_dir() -> Path | None:
 
 
 def _get_current_task(trellis_dir: Path) -> dict | None:
-    """Load current task info. Returns dict with title/status/priority or None."""
-    task_ref = _normalize_task_ref(_read_text(trellis_dir / ".current-task"))
-    if not task_ref:
+    """Load current task info through Trellis' active task resolver."""
+    return _get_current_task_for_input(trellis_dir, {})
+
+
+def _get_current_task_for_input(trellis_dir: Path, cc_data: dict) -> dict | None:
+    """Load current task info for the Claude Code session JSON."""
+    scripts_dir = trellis_dir / "scripts"
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    try:
+        from common.active_task import resolve_active_task  # type: ignore[import-not-found]
+    except Exception:
         return None
 
-    # Resolve task directory
-    task_path = _resolve_task_dir(trellis_dir, task_ref)
+    active = resolve_active_task(trellis_dir.parent, cc_data, platform="claude")
+    if not active.task_path:
+        return None
+
+    task_path = _resolve_task_dir(trellis_dir, active.task_path)
+    if active.stale:
+        return {
+            "title": task_path.name,
+            "status": "stale",
+            "priority": "P?",
+            "source": active.source,
+        }
+
     task_data = _read_json(task_path / "task.json")
     if not task_data:
         return None
@@ -98,6 +118,7 @@ def _get_current_task(trellis_dir: Path) -> dict | None:
         "title": task_data.get("title") or task_data.get("name") or "unknown",
         "status": task_data.get("status", "unknown"),
         "priority": task_data.get("priority", "P2"),
+        "source": active.source,
     }
 
 
@@ -162,7 +183,7 @@ def main() -> None:
     SEP = " \033[90m·\033[0m "
 
     # --- Trellis data ---
-    task = _get_current_task(trellis_dir) if trellis_dir else None
+    task = _get_current_task_for_input(trellis_dir, cc_data) if trellis_dir else None
     dev = _get_developer(trellis_dir) if trellis_dir else ""
     task_count = _count_active_tasks(trellis_dir) if trellis_dir else 0
 
@@ -211,7 +232,10 @@ def main() -> None:
 
     # Output: task line (only if active) + info line
     if task:
-        print(f"\033[36m[{task['priority']}]\033[0m {task['title']} \033[33m({task['status']})\033[0m")
+        source = str(task.get("source") or "")
+        source_tag = "session" if source.startswith("session:") else source
+        source_suffix = f" \033[90m[{source_tag}]\033[0m" if source_tag else ""
+        print(f"\033[36m[{task['priority']}]\033[0m {task['title']} \033[33m({task['status']})\033[0m{source_suffix}")
     print(info_line)
 
 

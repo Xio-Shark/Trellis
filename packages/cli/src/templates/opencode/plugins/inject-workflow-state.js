@@ -17,7 +17,7 @@
  *
  * Silently skips when:
  *   - No .trellis/ directory
- *   - No active task (.trellis/.current-task missing or stale)
+ *   - No active task (session runtime context and global fallback are empty)
  *   - task.json malformed or missing status
  */
 
@@ -92,11 +92,14 @@ function loadBreadcrumbs(directory) {
 /**
  * Get (taskId, status) from active task, or null if no active task.
  */
-function getActiveTask(ctx) {
-  const taskRef = ctx.getCurrentTask()
+function getActiveTask(ctx, platformInput = null) {
+  const active = ctx.getActiveTask(platformInput)
+  const taskRef = active.taskPath
   if (!taskRef) return null
   const taskDir = ctx.resolveTaskDir(taskRef)
-  if (!taskDir || !existsSync(taskDir)) return null
+  if (active.stale || !taskDir || !existsSync(taskDir)) {
+    return { id: taskRef.split("/").pop(), status: "stale", source: active.source }
+  }
   const taskJsonPath = join(taskDir, "task.json")
   if (!existsSync(taskJsonPath)) return null
   try {
@@ -104,7 +107,7 @@ function getActiveTask(ctx) {
     const status = typeof data.status === "string" ? data.status : ""
     if (!status) return null
     const id = data.id || taskRef.split("/").pop()
-    return { id, status }
+    return { id, status, source: active.source }
   } catch {
     return null
   }
@@ -116,12 +119,15 @@ function getActiveTask(ctx) {
  * - Unknown status → generic "refer to workflow.md"
  * - no_task pseudo-status (id === null) → header omits task info
  */
-function buildBreadcrumb(id, status, templates) {
+function buildBreadcrumb(id, status, templates, source = null) {
   let body = templates[status]
   if (body === undefined) {
     body = "Refer to workflow.md for current step."
   }
-  const header = id === null ? `Status: ${status}` : `Task: ${id} (${status})`
+  let header = id === null ? `Status: ${status}` : `Task: ${id} (${status})`
+  if (source) {
+    header = `${header}\nSource: ${source}`
+  }
   return `<workflow-state>\n${header}\n${body}\n</workflow-state>`
 }
 
@@ -142,9 +148,9 @@ export default async ({ directory }) => {
             return
           }
           const templates = loadBreadcrumbs(directory)
-          const task = getActiveTask(ctx)
+          const task = getActiveTask(ctx, input)
           const breadcrumb = task
-            ? buildBreadcrumb(task.id, task.status, templates)
+            ? buildBreadcrumb(task.id, task.status, templates, task.source)
             : buildBreadcrumb(null, "no_task", templates)
 
           const parts = output?.parts || []
@@ -160,9 +166,9 @@ export default async ({ directory }) => {
           debugLog(
             "workflow-state",
             "Injected breadcrumb for task",
-            task.id,
+            task ? task.id : "none",
             "status",
-            task.status,
+            task ? task.status : "no_task",
           )
         } catch (error) {
           debugLog(

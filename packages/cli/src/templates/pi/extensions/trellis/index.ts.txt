@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 
@@ -76,6 +77,36 @@ function isJsonObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function sanitizeKey(raw: string): string {
+  return raw
+    .trim()
+    .replace(/[^A-Za-z0-9._-]+/g, "_")
+    .replace(/^[._-]+|[._-]+$/g, "")
+    .slice(0, 160);
+}
+
+function hashValue(raw: string): string {
+  return createHash("sha256").update(raw).digest("hex").slice(0, 24);
+}
+
+function lookupString(data: unknown, keys: string[]): string | null {
+  if (!isJsonObject(data)) return null;
+  for (const key of keys) {
+    const value = stringValue(data[key]);
+    if (value) return value;
+  }
+  for (const nestedKey of ["input", "properties", "event", "hook_input", "hookInput"]) {
+    const nested = data[nestedKey];
+    const value = lookupString(nested, keys);
+    if (value) return value;
+  }
+  return null;
+}
+
 function extractTextContent(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
@@ -116,10 +147,56 @@ function formatPiOutput(stdout: string, stderr: string): string {
   return extractFinalAssistantText(stdout) ?? (stdout || stderr);
 }
 
-function readCurrentTask(projectRoot: string): string | null {
-  const raw = readText(join(projectRoot, ".trellis", ".current-task")).trim();
-  if (!raw) return null;
-  return join(projectRoot, raw);
+function normalizeTaskRef(raw: string): string | null {
+  let normalized = raw.trim().replace(/\\/g, "/");
+  if (!normalized) return null;
+  while (normalized.startsWith("./")) normalized = normalized.slice(2);
+  if (normalized.startsWith("tasks/")) normalized = `.trellis/${normalized}`;
+  return normalized;
+}
+
+function taskRefToDir(projectRoot: string, taskRef: string): string {
+  if (taskRef.startsWith("/")) return taskRef;
+  if (taskRef.startsWith(".trellis/")) return join(projectRoot, taskRef);
+  return join(projectRoot, ".trellis", "tasks", taskRef);
+}
+
+function resolveContextKey(input: unknown): string | null {
+  const override = stringValue(process.env.TRELLIS_CONTEXT_ID);
+  if (override) return sanitizeKey(override) || hashValue(override);
+
+  const sessionId = lookupString(input, ["session_id", "sessionId", "sessionID"]);
+  if (sessionId) return `pi_${sanitizeKey(sessionId) || hashValue(sessionId)}`;
+
+  const transcriptPath = lookupString(input, [
+    "transcript_path",
+    "transcriptPath",
+    "transcript",
+  ]);
+  if (transcriptPath) return `pi_transcript_${hashValue(transcriptPath)}`;
+
+  return null;
+}
+
+function readCurrentTask(projectRoot: string, platformInput?: unknown): string | null {
+  const contextKey = resolveContextKey(platformInput);
+  if (contextKey) {
+    try {
+      const rawContext = readText(
+        join(projectRoot, ".trellis", ".runtime", "contexts", `${contextKey}.json`),
+      );
+      const context = JSON.parse(rawContext) as JsonObject;
+      const taskRef = normalizeTaskRef(stringValue(context.current_task) ?? "");
+      if (taskRef) return taskRefToDir(projectRoot, taskRef);
+    } catch {
+      // Missing or malformed session context falls back to the global pointer.
+    }
+  }
+
+  const taskRef = normalizeTaskRef(
+    readText(join(projectRoot, ".trellis", ".current-task")).trim(),
+  );
+  return taskRef ? taskRefToDir(projectRoot, taskRef) : null;
 }
 
 function readJsonlFiles(
@@ -150,8 +227,12 @@ function readJsonlFiles(
   return chunks.join("\n\n---\n\n");
 }
 
-function buildTrellisContext(projectRoot: string, agent: string): string {
-  const taskDir = readCurrentTask(projectRoot);
+function buildTrellisContext(
+  projectRoot: string,
+  agent: string,
+  platformInput?: unknown,
+): string {
+  const taskDir = readCurrentTask(projectRoot, platformInput);
   if (!taskDir) {
     return "No active Trellis task found. Read .trellis/ before proceeding.";
   }
@@ -213,7 +294,7 @@ function buildSubagentPrompt(projectRoot: string, input: SubagentInput): string 
   const agent = input.agent ?? "trellis-implement";
   const normalized = agent.startsWith("trellis-") ? agent : `trellis-${agent}`;
   const definition = readAgentDefinition(projectRoot, normalized);
-  const context = buildTrellisContext(projectRoot, normalized);
+  const context = buildTrellisContext(projectRoot, normalized, input);
   const prompt = input.prompt ?? "";
 
   return [
@@ -326,7 +407,7 @@ export default function trellisExtension(pi: {
   });
   pi.on?.("before_agent_start", (event) => {
     const current = (event as PiBeforeAgentStartEvent).systemPrompt ?? "";
-    const context = buildTrellisContext(projectRoot, "trellis-implement");
+    const context = buildTrellisContext(projectRoot, "trellis-implement", event);
     return {
       systemPrompt: [current, context].filter(Boolean).join("\n\n"),
     };

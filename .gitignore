@@ -146,6 +146,7 @@ vite.config.ts.timestamp-*
 
 # Trellis local state (should not be committed)
 .trellis/.current-task
+.trellis/.runtime/
 .trellis/.developer
 .trellis/hooks.local.json
 

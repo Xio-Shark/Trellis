@@ -33,7 +33,7 @@ export async function configureDroid(cwd: string): Promise<void> {
 
   await writeSkills(path.join(configRoot, "skills"), resolveSkills(ctx));
   await writeAgents(path.join(configRoot, "droids"), getAllDroids());
-  await writeSharedHooks(path.join(configRoot, "hooks"));
+  await writeSharedHooks(path.join(configRoot, "hooks"), "droid");
 
   const settings = getSettingsTemplate();
   await writeFile(

@@ -279,17 +279,15 @@ export async function writeAgents(
   }
 }
 
-/** Write shared hook scripts to a hooks directory */
+/** Write the shared hook scripts that `platform` actually registers. */
 export async function writeSharedHooks(
   hooksDir: string,
-  options: { exclude?: readonly string[] } = {},
+  platform: import("../templates/shared-hooks/index.js").SharedHookPlatform,
 ): Promise<void> {
-  const { getSharedHookScripts } =
+  const { getSharedHookScriptsForPlatform } =
     await import("../templates/shared-hooks/index.js");
-  const exclude = new Set(options.exclude ?? []);
   ensureDir(hooksDir);
-  for (const hook of getSharedHookScripts()) {
-    if (exclude.has(hook.name)) continue;
+  for (const hook of getSharedHookScriptsForPlatform(platform)) {
     await writeFile(path.join(hooksDir, hook.name), hook.content);
   }
 }
@@ -316,7 +314,7 @@ export function buildPullBasedPrelude(agentType: SubAgentType): string {
 
 This platform does NOT auto-inject task context via hook. Before doing anything else, you MUST load context yourself:
 
-1. Read \`.trellis/.current-task\` to find the current task path (e.g. \`.trellis/tasks/04-17-foo/\`).
+1. Run \`python3 ./.trellis/scripts/task.py current --source\` to find the active task path and source (e.g. \`Current task: .trellis/tasks/04-17-foo\`).
 2. Read the task's \`prd.md\` (requirements) and \`info.md\` if it exists (technical design).
 3. Read \`<task-path>/${jsonl}\` — JSONL list of dev spec files relevant to this agent.
 4. For each entry in the JSONL, Read its \`file\` path — these are the dev specs you must follow.
@@ -324,7 +322,7 @@ This platform does NOT auto-inject task context via hook. Before doing anything 
 
 If \`${jsonl}\` has no curated entries (only a seed row, or the file is missing), fall back to: read \`prd.md\`, list available specs with \`python3 ./.trellis/scripts/get_context.py --mode packages\`, and pick the specs that match the task domain yourself. Do NOT block on the missing jsonl — proceed with prd-only context plus your spec judgment.
 
-If \`.current-task\` is missing or the task has no \`prd.md\`, ask the user what to work on; do NOT proceed without context.
+If there is no active task or the task has no \`prd.md\`, ask the user what to work on; do NOT proceed without context.
 
 ---
 

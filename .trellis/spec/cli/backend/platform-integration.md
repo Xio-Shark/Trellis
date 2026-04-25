@@ -232,6 +232,53 @@ When adding a new platform `{platform}`, update the following:
 
 > Note: Python scripts run in user projects at runtime — they cannot import from the TS registry and maintain their own registry in `cli_adapter.py`.
 
+### Active Task Resolution
+
+Current-task state is session/window scoped when the platform exposes a stable
+session identity, with `.trellis/.current-task` retained only as a global
+fallback. New hook, statusline, plugin, extension, and sub-agent consumers must
+call the shared resolver path:
+
+| Runtime | Resolver surface |
+|---------|------------------|
+| Python hooks/statusline/scripts | `.trellis/scripts/common/active_task.py` |
+| Existing Python callers | `common.paths.get_current_task()` / `get_current_task_abs()` / `get_current_task_source()` |
+| OpenCode plugin | JS resolver in `lib/trellis-context.js`, mirroring `active_task.py` |
+| Pi extension | Extension-local resolver with session-id support when the API exposes one, global fallback otherwise |
+
+Do not add direct `.trellis/.current-task` reads in hooks, statusline scripts,
+sub-agent context injection, or platform plugins. Direct reads reintroduce
+multi-window task pollution.
+
+Context-key precedence for hook-capable platforms:
+
+1. `TRELLIS_CONTEXT_ID` environment override for subprocesses.
+2. `session_id`, `sessionId`, or `sessionID`.
+3. Cursor IDE `conversation_id` / `conversationId` / `conversationID`.
+4. `transcript_path` / `transcriptPath` / `transcript` when non-empty.
+5. Platform-native session environment variables only when the AI host exports
+   them to shell commands, such as `CODEX_SESSION_ID`, `CLAUDE_SESSION_ID`,
+   or `CURSOR_SESSION_ID`.
+
+Cursor IDE may send `transcript_path: null`; this must not prevent session
+scoping when `session_id` or `conversation_id` is present. OpenCode uses
+`sessionID` from plugin input or event properties. Copilot should use
+`session_id` / `sessionId` only if the actual payload provides it; otherwise it
+falls back globally.
+
+`task.py start <task>` has no hook stdin when it is run as a normal shell
+command. It can write session-local state only when a context key is available
+through `TRELLIS_CONTEXT_ID` or a platform-native environment variable exposed
+by the host. Hooks and plugins should pass `TRELLIS_CONTEXT_ID` to subprocesses
+they launch; they cannot mutate the parent AI runtime environment after
+startup. Without such an environment signal, `task.py start` must keep the
+legacy `.trellis/.current-task` fallback and print `Source: global`.
+
+Hook/statusline output that mentions an active task should include the source
+(`session`, `session:<key>`, or `global`) so cross-window mistakes are visible
+while debugging. Statuslines may shorten this to `[session]` / `[global]` to
+avoid noisy UI.
+
 **Also update `task_store.py` when adding a sub-agent-capable platform**:
 
 | File | Constant | When to update |

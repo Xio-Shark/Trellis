@@ -24,6 +24,7 @@ All workflow scripts target **Python 3.9+** for cross-platform compatibility (ma
 │   ├── git.py            # run_git() — git command wrapper
 │   ├── types.py          # TaskData (TypedDict), TaskInfo (dataclass), AgentRecord
 │   ├── tasks.py          # load_task(), iter_active_tasks() — typed task access
+│   ├── active_task.py    # Session-scoped active task resolver + global fallback
 │   ├── task_utils.py     # resolve_task_dir(), run_task_hooks()
 │   ├── task_store.py     # Task CRUD (create, archive, set-branch, etc.)
 │   ├── task_context.py   # JSONL context management (init-context, add-context)
@@ -218,6 +219,33 @@ def run_git(args: list[str], cwd: Path | None = None) -> tuple[int, str, str]
 - Uses `encoding="utf-8", errors="replace"` for subprocess output
 - Returns `(1, "", error_message)` on exception (never raises)
 - Backward-compatible alias in `git_context.py`: `_run_git_command = run_git`
+
+### `common/active_task.py` — Active Task Resolver
+
+All current-task consumers must use the active task resolver instead of reading
+`.trellis/.current-task` directly. The resolver is the single source of truth
+for session/window scoped task state:
+
+1. Derive a context key from platform input, `TRELLIS_CONTEXT_ID`, or a
+   platform-native session environment variable when the host exports one.
+2. Read `.trellis/.runtime/contexts/<context-key>.json`.
+3. If no session task is present, fall back to `.trellis/.current-task`.
+4. If a session task exists but the task directory is stale, return stale
+   session state and do not silently fall back to global.
+
+| Function | Purpose |
+|----------|---------|
+| `resolve_context_key(platform_input, platform)` | Accepts `session_id` / `sessionId` / `sessionID`, Cursor `conversation_id`, and transcript path fallbacks |
+| `resolve_active_task(repo_root, platform_input, platform)` | Returns an `ActiveTask` with `task_path`, `source_type`, `context_key`, and `stale` |
+| `set_active_task(..., global_scope=False)` | Writes session runtime state when a context key exists, otherwise writes global fallback |
+| `clear_active_task(..., global_scope=False)` | Clears the active scope while preserving resolver semantics |
+
+`TRELLIS_CONTEXT_ID` is a context-key override for subprocesses. It is not a
+second task pointer and must never store a task path. A plain AI-run shell
+command cannot infer the current conversation/window unless the host process
+exports session identity in its environment or the command is launched with
+`TRELLIS_CONTEXT_ID`; in that case `task.py start` intentionally uses the
+global fallback and prints `Source: global`.
 
 ### `common/types.py` — Typed Data Model
 

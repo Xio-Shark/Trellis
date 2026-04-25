@@ -47,6 +47,8 @@ describe("opencode session-start history detection", () => {
   it("includes the one-shot first-reply notice in injected context", () => {
     const context = buildSessionContext({
       directory: "/tmp/trellis-opencode-test",
+      getActiveTask: () => ({ taskPath: null, source: "none", stale: false }),
+      getContextKey: () => null,
       getCurrentTask: () => null,
       readFile: () => "",
       readProjectFile: () => "",

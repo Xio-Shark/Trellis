@@ -32,5 +32,5 @@ export async function configureKiro(cwd: string): Promise<void> {
   }));
   await writeAgents(path.join(kiroRoot, "agents"), agents, ".json");
 
-  await writeSharedHooks(path.join(kiroRoot, "hooks"));
+  await writeSharedHooks(path.join(kiroRoot, "hooks"), "kiro");
 }

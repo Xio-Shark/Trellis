@@ -67,12 +67,9 @@ export async function configureCodex(cwd: string): Promise<void> {
     await writeFile(path.join(hooksDir, hook.name), hook.content);
   }
 
-  // Shared hooks (inject-workflow-state.py etc.) — Codex hooks.json references
-  // these paths. inject-subagent-context.py is skipped because Codex sub-agents
-  // can't reliably receive hook-modified prompts (class-2 pull-based).
-  await writeSharedHooks(hooksDir, {
-    exclude: ["session-start.py", "inject-subagent-context.py"],
-  });
+  // Shared hooks (inject-workflow-state.py only). Codex bundles its own
+  // session-start.py above; sub-agent context is pull-based (class-2).
+  await writeSharedHooks(hooksDir, "codex");
 
   // Hooks config → .codex/hooks.json
   await writeFile(

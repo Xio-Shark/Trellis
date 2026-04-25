@@ -859,6 +859,39 @@ describe("regression: current-task path normalization", () => {
     fs.writeFileSync(absPath, content, "utf-8");
   }
 
+  const SESSION_ENV_KEYS = [
+    "TRELLIS_CONTEXT_ID",
+    "CLAUDE_SESSION_ID",
+    "CLAUDE_CODE_SESSION_ID",
+    "CODEX_SESSION_ID",
+    "CURSOR_SESSION_ID",
+    "CURSOR_CONVERSATION_ID",
+    "OPENCODE_SESSION_ID",
+    "OPENCODE_SESSIONID",
+    "GEMINI_SESSION_ID",
+    "FACTORY_SESSION_ID",
+    "DROID_SESSION_ID",
+    "QODER_SESSION_ID",
+    "CODEBUDDY_SESSION_ID",
+    "KIRO_SESSION_ID",
+    "COPILOT_SESSION_ID",
+    "COPILOT_SESSIONID",
+    "PI_SESSION_ID",
+  ] as const;
+
+  function sessionEnv(
+    overrides: NodeJS.ProcessEnv = {},
+  ): NodeJS.ProcessEnv {
+    const blocked = new Set<string>(SESSION_ENV_KEYS);
+    const env: NodeJS.ProcessEnv = {};
+    for (const [key, value] of Object.entries(process.env)) {
+      if (!blocked.has(key)) {
+        env[key] = value;
+      }
+    }
+    return { ...env, ...overrides };
+  }
+
   function setupTaskRepo(taskRef = ".trellis\\tasks\\issue-106"): void {
     writeTrellisScripts();
     writeProjectFile(
@@ -919,15 +952,122 @@ describe("regression: current-task path normalization", () => {
       {
         cwd: tmpDir,
         encoding: "utf-8",
+        env: sessionEnv(),
       },
     );
 
     expect(output).toContain(".trellis/tasks/issue-106");
+    expect(output).toContain("Source: global");
     expect(
       fs
         .readFileSync(path.join(tmpDir, ".trellis", ".current-task"), "utf-8")
         .trim(),
     ).toBe(".trellis/tasks/issue-106");
+  });
+
+  it("[session-current-task] task.py start writes session runtime state when TRELLIS_CONTEXT_ID is set", () => {
+    setupTaskRepo("");
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+
+    const output = execSync(
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} start ${JSON.stringify(".trellis/tasks/issue-106")}`,
+      {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        env: sessionEnv({ TRELLIS_CONTEXT_ID: "session-a" }),
+      },
+    );
+
+    expect(output).toContain("Source: session:session-a");
+    const contextPath = path.join(
+      tmpDir,
+      ".trellis",
+      ".runtime",
+      "contexts",
+      "session-a.json",
+    );
+    const context = JSON.parse(fs.readFileSync(contextPath, "utf-8")) as {
+      current_task: string;
+    };
+    expect(context.current_task).toBe(".trellis/tasks/issue-106");
+    expect(
+      fs
+        .readFileSync(path.join(tmpDir, ".trellis", ".current-task"), "utf-8")
+        .trim(),
+    ).toBe("");
+  });
+
+  it("[session-current-task] task.py start also uses platform-native session env when available", () => {
+    setupTaskRepo("");
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+
+    const output = execSync(
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} start ${JSON.stringify(".trellis/tasks/issue-106")}`,
+      {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        env: sessionEnv({ CODEX_SESSION_ID: "native-a" }),
+      },
+    );
+
+    expect(output).toContain("Source: session:codex_native-a");
+    const contextPath = path.join(
+      tmpDir,
+      ".trellis",
+      ".runtime",
+      "contexts",
+      "codex_native-a.json",
+    );
+    const context = JSON.parse(fs.readFileSync(contextPath, "utf-8")) as {
+      current_task: string;
+    };
+    expect(context.current_task).toBe(".trellis/tasks/issue-106");
+  });
+
+  it("[session-current-task] task.py finish clears global fallback when no session task is set", () => {
+    setupTaskRepo(".trellis/tasks/issue-106");
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+
+    const output = execSync(
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} finish`,
+      {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        env: sessionEnv({ TRELLIS_CONTEXT_ID: "session-fallback" }),
+      },
+    );
+
+    expect(output).toContain("Source: global");
+    expect(
+      fs.existsSync(path.join(tmpDir, ".trellis", ".current-task")),
+    ).toBe(false);
+  });
+
+  it("[session-current-task] stale session task does not fall back to global current task", () => {
+    setupTaskRepo(".trellis/tasks/issue-106");
+    writeProjectFile(
+      path.join(".trellis", ".runtime", "contexts", "session-b.json"),
+      JSON.stringify(
+        { current_task: ".trellis/tasks/missing-task", platform: "test" },
+        null,
+        2,
+      ),
+    );
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+
+    const output = execSync(
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} current --source`,
+      {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        env: sessionEnv({ TRELLIS_CONTEXT_ID: "session-b" }),
+      },
+    );
+
+    expect(output).toContain("Current task: .trellis/tasks/missing-task");
+    expect(output).toContain("Source: session:session-b");
+    expect(output).toContain("State: stale");
+    expect(output).not.toContain("issue-106");
   });
 
   it("[current-task] Python session-start hooks resolve legacy backslash refs without stale pointer", () => {
@@ -962,6 +1102,142 @@ describe("regression: current-task path normalization", () => {
     expect(codexPayload.hookSpecificOutput.additionalContext).not.toContain(
       "STALE POINTER",
     );
+  });
+
+  it("[session-current-task] Claude statusline uses session-scoped task when session_id is present", () => {
+    setupTaskRepo(".trellis/tasks/issue-106");
+    writeProjectFile(
+      path.join(".trellis", "tasks", "session-task", "task.json"),
+      JSON.stringify(
+        {
+          title: "Session scoped task",
+          status: "in_progress",
+          priority: "P1",
+        },
+        null,
+        2,
+      ),
+    );
+    writeProjectFile(
+      path.join(".trellis", ".runtime", "contexts", "claude_status-a.json"),
+      JSON.stringify(
+        {
+          current_task: ".trellis/tasks/session-task",
+          platform: "claude",
+        },
+        null,
+        2,
+      ),
+    );
+    const statuslineScript = getSharedHookScripts().find(
+      (hook) => hook.name === "statusline.py",
+    )?.content;
+    writeProjectFile(
+      path.join(".claude", "hooks", "statusline.py"),
+      expectTemplateContent(statuslineScript, "statusline"),
+    );
+
+    const output = runPython(
+      path.join(".claude", "hooks", "statusline.py"),
+      JSON.stringify({
+        session_id: "status-a",
+        model: { display_name: "Test" },
+        context_window: { used_percentage: 1, context_window_size: 1000 },
+        cost: { total_duration_ms: 0 },
+      }),
+    );
+
+    expect(output).toContain("Session scoped task");
+    expect(output).toContain("[session]");
+    expect(output).not.toContain("Issue 106 task");
+  });
+
+  it("[session-current-task] Cursor hook uses conversation_id when transcript_path is null", () => {
+    setupTaskRepo(".trellis/tasks/issue-106");
+    writeWorkflowStateHook();
+    writeProjectFile(
+      path.join(".trellis", "tasks", "cursor-task", "task.json"),
+      JSON.stringify(
+        {
+          id: "cursor-task",
+          title: "Cursor task",
+          status: "in_progress",
+        },
+        null,
+        2,
+      ),
+    );
+    writeProjectFile(
+      path.join(".trellis", ".runtime", "contexts", "cursor_cursor-a.json"),
+      JSON.stringify(
+        {
+          current_task: ".trellis/tasks/cursor-task",
+          platform: "cursor",
+        },
+        null,
+        2,
+      ),
+    );
+
+    const parsed = JSON.parse(
+      runInjectWorkflowStateWithInput({
+        cwd: tmpDir,
+        cursor_version: "3.1.17",
+        conversation_id: "cursor-a",
+        transcript_path: null,
+      }),
+    ) as {
+      hookSpecificOutput: { additionalContext: string };
+    };
+
+    expect(parsed.hookSpecificOutput.additionalContext).toContain(
+      "Task: cursor-task (in_progress)",
+    );
+    expect(parsed.hookSpecificOutput.additionalContext).toContain(
+      "Source: session:cursor_cursor-a",
+    );
+    expect(parsed.hookSpecificOutput.additionalContext).not.toContain(
+      "issue-106",
+    );
+  });
+
+  it("[session-current-task] OpenCode resolver uses plugin sessionID before global fallback", () => {
+    setupTaskRepo(".trellis/tasks/issue-106");
+    writeProjectFile(
+      path.join(".trellis", "tasks", "opencode-task", "task.json"),
+      JSON.stringify(
+        {
+          title: "OpenCode task",
+          status: "in_progress",
+        },
+        null,
+        2,
+      ),
+    );
+    writeProjectFile(
+      path.join(
+        ".trellis",
+        ".runtime",
+        "contexts",
+        "opencode_oc-a.json",
+      ),
+      JSON.stringify(
+        {
+          current_task: ".trellis/tasks/opencode-task",
+          platform: "opencode",
+        },
+        null,
+        2,
+      ),
+    );
+
+    const active = new TrellisContext(tmpDir).getActiveTask({
+      sessionID: "oc-a",
+    });
+
+    expect(active.taskPath).toBe(".trellis/tasks/opencode-task");
+    expect(active.source).toBe("session:opencode_oc-a");
+    expect(active.stale).toBe(false);
   });
 
   it("[session-start-proof] shared and Codex contexts include one-shot first-reply notice without changing payload shape", () => {
@@ -1130,9 +1406,13 @@ describe("regression: current-task path normalization", () => {
   }
 
   function runInjectWorkflowState(cwdOverride?: string): string {
+    return runInjectWorkflowStateWithInput({ cwd: cwdOverride ?? tmpDir });
+  }
+
+  function runInjectWorkflowStateWithInput(inputData: object): string {
     return runPython(
       path.join(".trellis", "hooks", "inject-workflow-state.py"),
-      JSON.stringify({ cwd: cwdOverride ?? tmpDir }),
+      JSON.stringify(inputData),
     );
   }
 
@@ -1602,7 +1882,7 @@ print(len(entries))
 
     expect(output).toContain("The Codex sub-agent definition auto-handles");
     expect(output).toContain(
-      "Reads `.trellis/.current-task`, `prd.md`, and `info.md`",
+      "Resolves the active task with `task.py current --source`",
     );
     expect(output).not.toContain("The platform hook/plugin auto-handles");
     expect(output).not.toContain("Load the `trellis-before-dev` skill");
@@ -2808,7 +3088,7 @@ describe("regression: class-2 platforms use pull-based sub-agent context", () =>
         for (const file of preludeAgents) {
           const content = fs.readFileSync(path.join(tmpDir, file), "utf-8");
           expect(content).toContain("Required: Load Trellis Context First");
-          expect(content).toContain(".trellis/.current-task");
+          expect(content).toContain("task.py current --source");
         }
       });
 
@@ -2878,7 +3158,7 @@ describe("regression: pi uses TypeScript extension assets instead of Python hook
         "utf-8",
       );
       expect(content).toContain("Required: Load Trellis Context First");
-      expect(content).toContain(".trellis/.current-task");
+      expect(content).toContain("task.py current --source");
     }
   });
 });

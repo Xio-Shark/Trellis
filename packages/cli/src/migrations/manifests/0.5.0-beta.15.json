@@ -1,0 +1,108 @@
+{
+  "version": "0.5.0-beta.15",
+  "description": "Cleanup-only release. `writeSharedHooks` and `collectSharedHooks` now read from a single capability table (`SHARED_HOOKS_BY_PLATFORM` in `packages/cli/src/templates/shared-hooks/index.ts`) that declares which shared hook each platform actually registers. Prior releases leaked `statusline.py` into 7 non-Claude platforms (cursor / codex / gemini / qoder / copilot / codebuddy / droid) and leaked `session-start.py` + `inject-workflow-state.py` into Kiro, even though none of those platforms' `hooks.json`/`settings.json`/agent-JSON actually referenced those files. This manifest ships 10 `safe-file-delete` entries, hash-verified against every historical shared-hooks content since the layer was introduced in 0.5.0-beta.0, to remove those orphans on upgrade. Locally-modified hook files are preserved with a warning. No user-visible behavior change on any platform — the deleted files were never invoked.",
+  "breaking": false,
+  "recommendMigrate": false,
+  "changelog": "**Bug Fixes:**\n- fix(cli): `writeSharedHooks` + `collectSharedHooks` stop distributing shared hooks that the target platform's config never references. Both paths now consult a per-platform capability table (`SHARED_HOOKS_BY_PLATFORM`) instead of hand-rolled exclude lists in each configurator. Closes a drift hazard where the runtime-install path and the `trellis update` diff path could diverge silently.\n- chore(cli): remove 10 orphaned shared-hook files left behind by the prior distribution logic:\n  - `statusline.py` on cursor / codex / gemini / qoder / copilot / codebuddy / droid / kiro (the `statusLine` event is Claude Code only; no other platform invokes this script)\n  - `session-start.py` + `inject-workflow-state.py` on kiro (Kiro exposes only `agentSpawn`; no SessionStart or UserPromptSubmit equivalent)\n  All removals are `safe-file-delete` entries covering every historical shared-hooks content hash since 0.5.0-beta.0 — locally-modified hook files are preserved.\n\n**Internal:**\n- `PULL_BASED_HOOK_EXCLUDE` constant deleted; its rule is now encoded in the capability table alongside the Claude-only / Kiro-only rules.\n- `writeSharedHooks(hooksDir, platform)` signature simplified: `exclude` option removed, second argument is a `SharedHookPlatform` id.\n- `collectSharedHooks(hooksPath, platform)` mirrors the same signature.\n- Copilot configurator drops its hand-written `getSharedHookScripts()` loop in favor of the shared helper.",
+  "migrations": [
+    {
+      "type": "safe-file-delete",
+      "from": ".cursor/hooks/statusline.py",
+      "description": "Removed: Cursor has no statusLine event; shared-hooks/statusline.py was never invoked.",
+      "allowed_hashes": [
+        "87c01ee786ca9e1f25b591f0ed67564cd430586d57516d5b6fc57c34b6e7a3ec",
+        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".codex/hooks/statusline.py",
+      "description": "Removed: Codex has no statusLine event; shared-hooks/statusline.py was never invoked.",
+      "allowed_hashes": [
+        "87c01ee786ca9e1f25b591f0ed67564cd430586d57516d5b6fc57c34b6e7a3ec",
+        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".gemini/hooks/statusline.py",
+      "description": "Removed: Gemini CLI has no statusLine event; shared-hooks/statusline.py was never invoked.",
+      "allowed_hashes": [
+        "87c01ee786ca9e1f25b591f0ed67564cd430586d57516d5b6fc57c34b6e7a3ec",
+        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".qoder/hooks/statusline.py",
+      "description": "Removed: Qoder has no statusLine event; shared-hooks/statusline.py was never invoked.",
+      "allowed_hashes": [
+        "87c01ee786ca9e1f25b591f0ed67564cd430586d57516d5b6fc57c34b6e7a3ec",
+        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".github/copilot/hooks/statusline.py",
+      "description": "Removed: GitHub Copilot has no statusLine event; shared-hooks/statusline.py was never invoked.",
+      "allowed_hashes": [
+        "87c01ee786ca9e1f25b591f0ed67564cd430586d57516d5b6fc57c34b6e7a3ec",
+        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".codebuddy/hooks/statusline.py",
+      "description": "Removed: CodeBuddy has no statusLine event; shared-hooks/statusline.py was never invoked.",
+      "allowed_hashes": [
+        "87c01ee786ca9e1f25b591f0ed67564cd430586d57516d5b6fc57c34b6e7a3ec",
+        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".factory/hooks/statusline.py",
+      "description": "Removed: Factory Droid has no statusLine event; shared-hooks/statusline.py was never invoked.",
+      "allowed_hashes": [
+        "87c01ee786ca9e1f25b591f0ed67564cd430586d57516d5b6fc57c34b6e7a3ec",
+        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".kiro/hooks/statusline.py",
+      "description": "Removed: Kiro has no statusLine event; shared-hooks/statusline.py was never invoked.",
+      "allowed_hashes": [
+        "87c01ee786ca9e1f25b591f0ed67564cd430586d57516d5b6fc57c34b6e7a3ec",
+        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".kiro/hooks/session-start.py",
+      "description": "Removed: Kiro supports only `agentSpawn`; there is no SessionStart event to trigger this script.",
+      "allowed_hashes": [
+        "26b52ad72259316aa5adc8068d0df2a002273d5eda659ac3c71f3f5ecd9ebd08",
+        "ddd59c6fc5e6fa8c8535d6ac375ecaad60f15b87abc6dfc279007e610c636dd8",
+        "597409062bed8f9977750fa6262bb997facce7d8377d3482d4bcb2054e19c491",
+        "6cf36cffba3cf4a3caff99606d9fc9dde07fa4f74b7227aeb08d3de00ced7ca2",
+        "373f2f41c5506982cef1049f0203ca9e442c8074f54880aa021f037c0b9300b0",
+        "bc2026f6b1c195432e1126e1388d11fccec2df7a72010d0daa9fb6af76f683dd",
+        "cf355e44ace5e9b7c7d9a416462d4057a6cff9d5905b8db1839e6e4c892cfd13",
+        "a1b0db7c264da8e7abeb378a16ba8132b99b9918c9546627137d69427108f4b6",
+        "a0256292a2ade20728d71d2ea9a7ce866f6955efe034934eaecbf820244e9ad8"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".kiro/hooks/inject-workflow-state.py",
+      "description": "Removed: Kiro supports only `agentSpawn`; there is no UserPromptSubmit event to trigger this script.",
+      "allowed_hashes": [
+        "281939a51a62467a5dd73947fdec7143d0e936b4b64b5224ce0484186eb5b018",
+        "4231e4e0d52c9b05d66a215c870db30a876201a51350e5191953418ca4ec4637",
+        "50bd086d40654b9fe8cb902d2f321ce06e39b6d4020a6e9aa49154cc371bdb16"
+      ]
+    }
+  ],
+  "notes": "Pure cleanup release. No src/ runtime behavior change on any platform — the deleted files were orphans. After `trellis update`, each supported platform's `<platformDir>/hooks/` contains only the shared hooks that platform's own `hooks.json` / `settings.json` / agent-JSON actually references. Users who modified a shared hook locally will see the file preserved with a warning in `trellis update` output."
+}

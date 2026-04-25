@@ -24,6 +24,76 @@ export interface HookScript {
   content: string;
 }
 
+export type SharedHookName =
+  | "session-start.py"
+  | "inject-workflow-state.py"
+  | "inject-subagent-context.py"
+  | "statusline.py";
+
+export type SharedHookPlatform =
+  | "claude"
+  | "cursor"
+  | "codex"
+  | "gemini"
+  | "qoder"
+  | "copilot"
+  | "codebuddy"
+  | "droid"
+  | "kiro";
+
+/**
+ * Which shared hooks each platform actually invokes. Single source of truth
+ * for shared-hook distribution — both `writeSharedHooks` (runtime install)
+ * and `collectSharedHooks` (`trellis update` diff) read from this table.
+ *
+ * Routing rules encoded here:
+ * - `statusline.py` — Claude Code `statusLine` event only; no other
+ *   platform has an equivalent.
+ * - `session-start.py` — shipped by every platform with a SessionStart
+ *   hook event *except* codex + copilot, which bundle a platform-specific
+ *   session-start.py under their own template dirs.
+ * - `inject-workflow-state.py` — every platform with a UserPromptSubmit
+ *   (or equivalent) event. Kiro + codex self-included; platforms without
+ *   per-turn main-session hooks are excluded.
+ * - `inject-subagent-context.py` — class-1 (push-based) platforms only.
+ *   Class-2 (pull-based) platforms (codex, copilot, gemini, qoder) can't
+ *   have hooks mutate sub-agent prompts — their sub-agents load context
+ *   via a prelude instead.
+ * - Kiro supports only `agentSpawn` (no SessionStart / UserPromptSubmit
+ *   / StatusLine), so it takes just `inject-subagent-context.py`.
+ */
+export const SHARED_HOOKS_BY_PLATFORM: Record<
+  SharedHookPlatform,
+  readonly SharedHookName[]
+> = {
+  claude: [
+    "session-start.py",
+    "inject-workflow-state.py",
+    "inject-subagent-context.py",
+    "statusline.py",
+  ],
+  cursor: [
+    "session-start.py",
+    "inject-workflow-state.py",
+    "inject-subagent-context.py",
+  ],
+  codex: ["inject-workflow-state.py"],
+  gemini: ["session-start.py", "inject-workflow-state.py"],
+  qoder: ["session-start.py", "inject-workflow-state.py"],
+  copilot: ["inject-workflow-state.py"],
+  codebuddy: [
+    "session-start.py",
+    "inject-workflow-state.py",
+    "inject-subagent-context.py",
+  ],
+  droid: [
+    "session-start.py",
+    "inject-workflow-state.py",
+    "inject-subagent-context.py",
+  ],
+  kiro: ["inject-subagent-context.py"],
+};
+
 /**
  * Get all shared hook scripts. Content is platform-independent and can be
  * written directly without placeholder resolution.
@@ -39,4 +109,16 @@ export function getSharedHookScripts(): HookScript[] {
   }
 
   return scripts;
+}
+
+/**
+ * Get the shared hook scripts that a given platform actually registers.
+ * Drives both `writeSharedHooks` and `collectSharedHooks` so distribution
+ * never drifts from the per-platform capability declared above.
+ */
+export function getSharedHookScriptsForPlatform(
+  platform: SharedHookPlatform,
+): HookScript[] {
+  const allowed = new Set<string>(SHARED_HOOKS_BY_PLATFORM[platform]);
+  return getSharedHookScripts().filter((h) => allowed.has(h.name));
 }

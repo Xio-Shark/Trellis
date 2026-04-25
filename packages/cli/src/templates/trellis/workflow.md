@@ -44,8 +44,9 @@ Every task has its own directory under `.trellis/tasks/{MM-DD-name}/` holding `p
 ```bash
 # Task lifecycle
 python3 ./.trellis/scripts/task.py create "<title>" [--slug <name>] [--parent <dir>]
-python3 ./.trellis/scripts/task.py start <name>          # set as current (writes .current-task, triggers after_start hooks)
-python3 ./.trellis/scripts/task.py finish                # clear current task (triggers after_finish hooks)
+python3 ./.trellis/scripts/task.py start <name>          # set active task (session-scoped when available)
+python3 ./.trellis/scripts/task.py current --source      # show active task and source
+python3 ./.trellis/scripts/task.py finish                # clear active task (triggers after_finish hooks)
 python3 ./.trellis/scripts/task.py archive <name>        # move to archive/{year-month}/
 python3 ./.trellis/scripts/task.py list [--mine] [--status <s>]
 python3 ./.trellis/scripts/task.py list-archive
@@ -72,7 +73,7 @@ python3 ./.trellis/scripts/task.py create-pr [name] [--dry-run]
 
 > Run `python3 ./.trellis/scripts/task.py --help` to see the authoritative, up-to-date list.
 
-**Current-task mechanism**: `task.py start` writes the task path into `.trellis/.current-task`. Hook-capable platforms auto-inject this at session start, so the AI knows what you're working on without being told.
+**Current-task mechanism**: `task.py start` writes the task path through the active-task resolver. Hook-capable platforms use session/window-scoped runtime state under `.trellis/.runtime/contexts/` when a context key is available via hook input, `TRELLIS_CONTEXT_ID`, or a platform-native session environment variable; shells without such a signal fall back to `.trellis/.current-task`.
 
 ### Workspace System
 
@@ -206,7 +207,7 @@ python3 ./.trellis/scripts/task.py create "<task title>" --slug <name>
 python3 ./.trellis/scripts/task.py start <task-dir>
 ```
 
-Skip when: `.trellis/.current-task` already points to a task.
+Skip when `python3 ./.trellis/scripts/task.py current --source` already points to a task.
 
 #### 1.1 Requirement exploration `[required · repeatable]`
 
@@ -344,7 +345,7 @@ Spawn the implement sub-agent:
 - **Task description**: Implement the requirements per prd.md, consulting materials under `{TASK_DIR}/research/`; finish by running project lint and type-check
 
 The Codex sub-agent definition auto-handles the context load requirement:
-- Reads `.trellis/.current-task`, `prd.md`, and `info.md` if present
+- Resolves the active task with `task.py current --source`, then reads `prd.md` and `info.md` if present
 - Reads `implement.jsonl` and requires the agent to load each referenced spec file before coding
 
 [/Codex]

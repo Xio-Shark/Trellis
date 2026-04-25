@@ -37,6 +37,7 @@ export const commonDeveloper = readTemplate("scripts/common/developer.py");
 export const commonGitContext = readTemplate("scripts/common/git_context.py");
 export const commonTaskQueue = readTemplate("scripts/common/task_queue.py");
 export const commonTaskUtils = readTemplate("scripts/common/task_utils.py");
+export const commonActiveTask = readTemplate("scripts/common/active_task.py");
 export const commonCliAdapter = readTemplate("scripts/common/cli_adapter.py");
 export const commonConfig = readTemplate("scripts/common/config.py");
 export const commonIo = readTemplate("scripts/common/io.py");
@@ -84,6 +85,7 @@ export function getAllScripts(): Map<string, string> {
   scripts.set("common/git_context.py", commonGitContext);
   scripts.set("common/task_queue.py", commonTaskQueue);
   scripts.set("common/task_utils.py", commonTaskUtils);
+  scripts.set("common/active_task.py", commonActiveTask);
   scripts.set("common/cli_adapter.py", commonCliAdapter);
   scripts.set("common/config.py", commonConfig);
   scripts.set("common/io.py", commonIo);

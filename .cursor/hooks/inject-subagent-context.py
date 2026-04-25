@@ -12,7 +12,7 @@ Core Design Philosophy:
 
 Trigger: PreToolUse (before Task tool call)
 
-Context Source: .trellis/.current-task points to task directory
+Context Source: Trellis active task resolver points to task directory
 - implement.jsonl - Implement agent dedicated context
 - check.jsonl     - Check agent dedicated context
 - prd.md          - Requirements document
@@ -46,7 +46,6 @@ if sys.platform.startswith("win"):
 
 DIR_WORKFLOW = ".trellis"
 DIR_SPEC = "spec"
-FILE_CURRENT_TASK = ".current-task"
 FILE_TASK_JSON = "task.json"
 
 # =============================================================================
@@ -78,31 +77,56 @@ def find_repo_root(start_path: str) -> str | None:
     return None
 
 
-def get_current_task(repo_root: str) -> str | None:
-    """
-    Read current task directory path from .trellis/.current-task
+def _detect_platform(input_data: dict) -> str | None:
+    if isinstance(input_data.get("cursor_version"), str):
+        return "cursor"
+    env_map = {
+        "CLAUDE_PROJECT_DIR": "claude",
+        "CURSOR_PROJECT_DIR": "cursor",
+        "CODEBUDDY_PROJECT_DIR": "codebuddy",
+        "FACTORY_PROJECT_DIR": "droid",
+        "GEMINI_PROJECT_DIR": "gemini",
+        "QODER_PROJECT_DIR": "qoder",
+        "KIRO_PROJECT_DIR": "kiro",
+        "COPILOT_PROJECT_DIR": "copilot",
+    }
+    for env_name, platform in env_map.items():
+        if os.environ.get(env_name):
+            return platform
+    script_parts = set(Path(sys.argv[0]).parts)
+    if ".claude" in script_parts:
+        return "claude"
+    if ".cursor" in script_parts:
+        return "cursor"
+    if ".gemini" in script_parts:
+        return "gemini"
+    if ".qoder" in script_parts:
+        return "qoder"
+    if ".codebuddy" in script_parts:
+        return "codebuddy"
+    if ".factory" in script_parts:
+        return "droid"
+    if ".kiro" in script_parts:
+        return "kiro"
+    return None
 
-    Returns:
-        Task directory relative path (relative to repo_root)
-        None if not set
-    """
-    current_task_file = os.path.join(repo_root, DIR_WORKFLOW, FILE_CURRENT_TASK)
-    if not os.path.exists(current_task_file):
-        return None
 
+def get_current_task(repo_root: str, input_data: dict) -> str | None:
+    """Resolve current task directory through the unified active task resolver."""
+    scripts_dir = Path(repo_root) / DIR_WORKFLOW / "scripts"
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
     try:
-        with open(current_task_file, "r", encoding="utf-8") as f:
-            content = f.read().strip()
-            if not content:
-                return None
-            normalized = content.replace("\\", "/")
-            while normalized.startswith("./"):
-                normalized = normalized[2:]
-            if normalized.startswith("tasks/"):
-                normalized = f".trellis/{normalized}"
-            return normalized
+        from common.active_task import resolve_active_task  # type: ignore[import-not-found]
     except Exception:
         return None
+
+    active = resolve_active_task(
+        Path(repo_root),
+        input_data,
+        platform=_detect_platform(input_data),
+    )
+    return active.task_path
 
 
 def read_file_content(base_path: str, file_path: str) -> str | None:
@@ -576,7 +600,7 @@ def main():
         sys.exit(0)
 
     # Get current task directory (research doesn't require it)
-    task_dir = get_current_task(repo_root)
+    task_dir = get_current_task(repo_root, input_data)
 
     # implement/check need task directory
     if subagent_type in AGENTS_REQUIRE_TASK:

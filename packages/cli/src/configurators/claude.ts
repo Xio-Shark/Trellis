@@ -75,7 +75,7 @@ export async function configureClaude(cwd: string): Promise<void> {
   await copyDirFiltered(sourcePath, destPath, ["commands", "hooks"]);
 
   // Shared hook scripts (same source as 7 other platforms)
-  await writeSharedHooks(path.join(destPath, "hooks"));
+  await writeSharedHooks(path.join(destPath, "hooks"), "claude");
 
   // start + finish-work as slash commands
   const commandsDir = path.join(destPath, "commands", "trellis");

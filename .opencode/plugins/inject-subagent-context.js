@@ -287,8 +287,8 @@ export default async ({ directory }) => {
             return
           }
 
-          // Read current task
-          const taskDir = ctx.getCurrentTask()
+          // Resolve active task through session runtime context + global fallback.
+          const taskDir = ctx.getCurrentTask(input)
 
           // Agents requiring task directory
           if (AGENTS_REQUIRE_TASK.includes(subagentType)) {

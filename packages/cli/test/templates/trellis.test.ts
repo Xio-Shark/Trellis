@@ -7,6 +7,7 @@ import {
   commonGitContext,
   commonTaskQueue,
   commonTaskUtils,
+  commonActiveTask,
   commonCliAdapter,
   getDeveloperScript,
   initDeveloperScript,
@@ -31,6 +32,7 @@ describe("trellis template constants", () => {
     commonGitContext,
     commonTaskQueue,
     commonTaskUtils,
+    commonActiveTask,
     commonCliAdapter,
     getDeveloperScript,
     initDeveloperScript,
@@ -52,6 +54,7 @@ describe("trellis template constants", () => {
     const pyScripts = [
       commonInit,
       commonPaths,
+      commonActiveTask,
       getDeveloperScript,
       taskScript,
     ];
@@ -94,6 +97,7 @@ describe("getAllScripts", () => {
     expect(scripts.has("__init__.py")).toBe(true);
     expect(scripts.has("common/__init__.py")).toBe(true);
     expect(scripts.has("common/paths.py")).toBe(true);
+    expect(scripts.has("common/active_task.py")).toBe(true);
     expect(scripts.has("task.py")).toBe(true);
     expect(scripts.has("get_developer.py")).toBe(true);
   });

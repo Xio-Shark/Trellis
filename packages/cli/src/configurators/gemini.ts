@@ -42,9 +42,7 @@ export async function configureGemini(cwd: string): Promise<void> {
     path.join(configRoot, "agents"),
     applyPullBasedPreludeMarkdown(getAllAgents()),
   );
-  await writeSharedHooks(path.join(configRoot, "hooks"), {
-    exclude: ["inject-subagent-context.py"],
-  });
+  await writeSharedHooks(path.join(configRoot, "hooks"), "gemini");
 
   await writeFile(
     path.join(configRoot, "settings.json"),
