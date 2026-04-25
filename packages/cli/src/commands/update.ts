@@ -1774,19 +1774,22 @@ export async function update(options: UpdateOptions): Promise<void> {
     return;
   }
 
-  // Confirm
-  const { proceed } = await inquirer.prompt<{ proceed: boolean }>([
-    {
-      type: "confirm",
-      name: "proceed",
-      message: "Proceed?",
-      default: true,
-    },
-  ]);
+  // Batch-resolution flags are explicit consent for non-interactive runs.
+  // Prompting here breaks CI and `node ... update --force --migrate` smoke tests.
+  if (!options.force && !options.skipAll && !options.createNew) {
+    const { proceed } = await inquirer.prompt<{ proceed: boolean }>([
+      {
+        type: "confirm",
+        name: "proceed",
+        message: "Proceed?",
+        default: true,
+      },
+    ]);
 
-  if (!proceed) {
-    console.log(chalk.yellow("Update cancelled."));
-    return;
+    if (!proceed) {
+      console.log(chalk.yellow("Update cancelled."));
+      return;
+    }
   }
 
   // Create complete backup of all managed platform/workflow directories

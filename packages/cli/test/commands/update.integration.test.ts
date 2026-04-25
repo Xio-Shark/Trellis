@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import inquirer from "inquirer";
 
 // === External dependency mocks (hoisted by vitest) ===
 
@@ -190,6 +191,18 @@ describe("update() integration", () => {
     await update({ force: true });
 
     expect(fs.readFileSync(targetFull, "utf-8")).toBe(templateContent);
+  });
+
+  it("#5b force mode does not prompt for final confirmation", async () => {
+    await setupProject();
+
+    const targetFull = path.join(tmpDir, MANAGED_FILE);
+    fs.writeFileSync(targetFull, "user customized content");
+    vi.mocked(inquirer.prompt).mockClear();
+
+    await update({ force: true });
+
+    expect(inquirer.prompt).not.toHaveBeenCalled();
   });
 
   it("#6 skipAll preserves user-modified files", async () => {
