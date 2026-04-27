@@ -38,7 +38,8 @@ def _has_curated_jsonl_entry(jsonl_path: Path) -> bool:
 
     A freshly seeded jsonl only contains a ``{"_example": ...}`` row (no
     ``file`` key) — that is NOT "ready". Readiness requires at least one
-    curated entry. Matches the contract used by ``inject-subagent-context.py``.
+    curated entry. Matches the contract used by hook-inject and pull-based
+    sub-agent context loaders.
     """
     try:
         for line in jsonl_path.read_text(encoding="utf-8").splitlines():
@@ -215,7 +216,11 @@ def _get_task_status(trellis_dir: Path, input_data: dict) -> str:
             "Research reminder: for research-heavy tasks (comparing tools, reading external docs, "
             "cross-platform surveys), spawn `trellis-research` sub-agents via the Task tool — "
             "they persist findings to `{TASK_DIR}/research/*.md` and keep main context clean. "
-            "Do NOT do 10+ inline WebFetch/WebSearch in the main conversation."
+            "Do NOT do 10+ inline WebFetch/WebSearch in the main conversation.\n"
+            "User override (per-turn escape hatch): if the user's first message explicitly opts "
+            "out of the workflow (\"跳过 trellis\" / \"别走流程\" / \"小修一下\" / \"直接改\" / "
+            "\"skip trellis\" / \"no task\" / \"just do it\"), honor it for this turn — "
+            "acknowledge briefly and proceed without creating a task. Per-turn only."
         )
 
     # Case 2: Stale pointer — task dir was deleted
@@ -283,11 +288,15 @@ def _get_task_status(trellis_dir: Path, input_data: dict) -> str:
         f"Status: READY\nTask: {task_title}\n"
         f"Source: {active.source}\n"
         "Next required action: dispatch `trellis-implement` per Phase 2.1. "
-        "For agent-capable platforms, do NOT edit code in the main session. "
+        "For agent-capable platforms, the default is to NOT edit code in the main session. "
         "After implementation, dispatch `trellis-check` per Phase 2.2 before reporting completion.\n"
         "Sub-agent roster: `trellis-implement` (writes code), `trellis-check` (verifies + self-fixes), "
         "`trellis-research` (persists findings to `research/*.md` — use when you'd otherwise do "
-        "multiple WebFetch/WebSearch inline)."
+        "multiple WebFetch/WebSearch inline).\n"
+        "User override (per-turn escape hatch): if the user's CURRENT message explicitly tells the "
+        "main session to handle it directly (\"你直接改\" / \"别派 sub-agent\" / \"main session 写就行\" / "
+        "\"do it inline\" / \"不用 sub-agent\"), honor it for this turn and edit code directly. "
+        "Per-turn only; do NOT invent an override the user did not say."
     )
 
 
@@ -579,11 +588,13 @@ Read and follow all instructions below carefully.
         "**Pre-Development Checklist** listing the specific guideline files to "
         "read before coding.\n\n"
         "- If you're spawning an implement/check sub-agent, context is injected "
-        "automatically via `{task}/implement.jsonl` / `check.jsonl`. You do NOT "
-        "need to read these indexes yourself.\n"
-        "- For agent-capable platforms, do NOT edit code directly in the main "
-        "session; dispatch `trellis-implement` and `trellis-check` so JSONL "
-        "context is loaded by the sub-agents.\n\n"
+        "or loaded by the sub-agent via `{task}/implement.jsonl` / `check.jsonl`. "
+        "You do NOT need to read these indexes yourself.\n"
+        "- For agent-capable platforms, the default is to dispatch "
+        "`trellis-implement` and `trellis-check` (so JSONL context is loaded by "
+        "the sub-agents) rather than editing code in the main session. "
+        "Honor a per-turn user override only if the user's current message "
+        "explicitly opts out (see <task-status> below for override phrases).\n\n"
     )
 
     # guides/ is cross-package thinking — always include inline (small, broadly useful)

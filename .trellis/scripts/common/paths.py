@@ -207,22 +207,8 @@ def count_lines(file_path: Path) -> int:
 # Current Task Management
 # =============================================================================
 
-def _get_current_task_file(repo_root: Path | None = None) -> Path:
-    """Get .current-task file path.
-
-    Args:
-        repo_root: Repository root path. Defaults to auto-detected.
-
-    Returns:
-        Path to .current-task file.
-    """
-    if repo_root is None:
-        repo_root = get_repo_root()
-    return repo_root / DIR_WORKFLOW / FILE_CURRENT_TASK
-
-
 def normalize_task_ref(task_ref: str) -> str:
-    """Normalize a task ref for stable storage in .current-task.
+    """Normalize a task ref for stable runtime storage.
 
     Stored refs should prefer repo-relative POSIX paths like
     `.trellis/tasks/03-27-my-task`, even on Windows. Absolute paths are preserved
@@ -247,7 +233,7 @@ def normalize_task_ref(task_ref: str) -> str:
 
 
 def resolve_task_ref(task_ref: str, repo_root: Path | None = None) -> Path | None:
-    """Resolve a task ref from .current-task to an absolute task directory path."""
+    """Resolve a task ref to an absolute task directory path."""
     if repo_root is None:
         repo_root = get_repo_root()
 
@@ -327,9 +313,8 @@ def set_current_task(
     repo_root: Path | None = None,
     platform_input: dict | None = None,
     platform: str | None = None,
-    global_scope: bool = False,
 ) -> bool:
-    """Set current task.
+    """Set current task in session scope.
 
     Args:
         task_path: Task directory path (relative to repo_root).
@@ -348,7 +333,6 @@ def set_current_task(
         repo_root,
         platform_input=platform_input,
         platform=platform,
-        global_scope=global_scope,
     ) is not None
 
 
@@ -356,9 +340,8 @@ def clear_current_task(
     repo_root: Path | None = None,
     platform_input: dict | None = None,
     platform: str | None = None,
-    global_scope: bool = False,
 ) -> bool:
-    """Clear current task.
+    """Clear current task in session scope.
 
     Args:
         repo_root: Repository root path. Defaults to auto-detected.
@@ -375,7 +358,6 @@ def clear_current_task(
         repo_root,
         platform_input=platform_input,
         platform=platform,
-        global_scope=global_scope,
     )
     return True
 
