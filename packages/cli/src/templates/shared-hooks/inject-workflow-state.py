@@ -139,25 +139,32 @@ _TAG_RE = re.compile(
 # Hardcoded defaults for built-in Trellis statuses. Used when workflow.md is
 # missing, malformed, or lacks the tag for this status.
 #
-# `no_task` is a pseudo-status emitted when .current-task is missing — it keeps
+# `no_task` is a pseudo-status emitted when no session active task exists — it keeps
 # the Next-Action reminder flowing per-turn even without an active task.
 _FALLBACK_BREADCRUMBS = {
     "no_task": (
         "No active task.\n"
-        "Trigger words in the user message that REQUIRE creating a task "
-        "(non-negotiable, do NOT self-exempt): 重构 / 抽成 / 独立 / 分发 / "
-        "拆出来 / 搞一个 / 做成 / 接入 / 集成 / refactor / rewrite / extract / "
-        "productize / publish / build X / design Y.\n"
-        "Task is NOT required ONLY if ALL three hold: (a) zero file writes "
-        "this turn, (b) answer fits in one reply with no multi-round plan, "
-        "(c) no research beyond reading 1-2 repo files.\n"
-        "When in doubt: create task. Over-tasking is cheap; under-tasking "
-        "leaks plans and research into main context.\n"
+        "Trigger words in the user message that suggest creating a task: "
+        "重构 / 抽成 / 独立 / 分发 / 拆出来 / 搞一个 / 做成 / 接入 / 集成 / "
+        "refactor / rewrite / extract / productize / publish / build X / design Y.\n"
+        "Task is NOT required if ALL three hold: (a) zero file writes this turn, "
+        "(b) answer fits in one reply with no multi-round plan, (c) no research "
+        "beyond reading 1-2 repo files.\n"
+        "When in doubt and no override below applies: prefer creating a task — "
+        "over-tasking is cheap; under-tasking leaks plans and research into "
+        "main context.\n"
         "Flow: load `trellis-brainstorm` skill → it creates the task via "
         "`python3 ./.trellis/scripts/task.py create` and drives requirements Q&A. "
         "For research-heavy work (tool comparison, docs, cross-platform survey), "
         "spawn `trellis-research` sub-agents via Task tool — NEVER do 3+ inline "
-        "WebFetch/WebSearch/`gh api` calls in the main conversation."
+        "WebFetch/WebSearch/`gh api` calls in the main conversation.\n"
+        "User override (per-turn escape hatch): if the user's CURRENT message "
+        "contains an explicit opt-out phrase (\"跳过 trellis\" / \"别走流程\" / "
+        "\"小修一下\" / \"直接改\" / \"先别建任务\" / \"skip trellis\" / "
+        "\"no task\" / \"just do it\" / \"don't create a task\"), honor it for "
+        "this turn — briefly acknowledge (\"好，本轮跳过 trellis 流程\") and "
+        "proceed without creating a task. Per-turn only; does not carry forward; "
+        "do NOT invent an override the user did not say."
     ),
     "planning": (
         "Complete prd.md via trellis-brainstorm skill; then run task.py start.\n"
@@ -169,9 +176,19 @@ _FALLBACK_BREADCRUMBS = {
         "Flow: trellis-implement → trellis-check → trellis-update-spec → finish\n"
         "Next required action: inspect conversation history + git status, then "
         "execute the next uncompleted step in that sequence.\n"
-        "For agent-capable platforms, do NOT edit code in the main session; "
-        "dispatch `trellis-implement` for implementation and dispatch "
-        "`trellis-check` before reporting completion."
+        "For agent-capable platforms, the default is to dispatch "
+        "`trellis-implement` for implementation and `trellis-check` before "
+        "reporting completion — do not edit code in the main session by default.\n"
+        "Use the exact Trellis agent type names when spawning sub-agents: "
+        "`trellis-implement`, `trellis-check`, or `trellis-research`. "
+        "Generic/default/generalPurpose sub-agents do not receive "
+        "`implement.jsonl` / `check.jsonl` injection.\n"
+        "User override (per-turn escape hatch): if the user's CURRENT message "
+        "explicitly tells the main session to handle it directly (\"你直接改\" / "
+        "\"别派 sub-agent\" / \"main session 写就行\" / \"do it inline\" / "
+        "\"不用 sub-agent\"), honor it for this turn and edit code directly. "
+        "Per-turn only; does not carry forward; do NOT invent an override the "
+        "user did not say."
     ),
     "completed": (
         "User commits changes; then run task.py archive."

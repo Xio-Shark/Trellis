@@ -86,6 +86,9 @@ export class TrellisContext {
       return sanitizeKey(override) || hashValue(override)
     }
 
+    const runID = stringValue(process.env.OPENCODE_RUN_ID)
+    if (runID) return buildContextKey("opencode", "session", runID)
+
     const input = platformInput && typeof platformInput === "object" ? platformInput : null
     if (!input) return null
 
@@ -103,7 +106,7 @@ export class TrellisContext {
 
   readContext(contextKey) {
     try {
-      const contextPath = join(this.directory, ".trellis", ".runtime", "contexts", `${contextKey}.json`)
+      const contextPath = join(this.directory, ".trellis", ".runtime", "sessions", `${contextKey}.json`)
       if (!existsSync(contextPath)) return null
       return JSON.parse(readFileSync(contextPath, "utf-8"))
     } catch {
@@ -111,40 +114,22 @@ export class TrellisContext {
     }
   }
 
-  getGlobalCurrentTask() {
-    try {
-      const currentTaskPath = join(this.directory, ".trellis", ".current-task")
-      if (!existsSync(currentTaskPath)) return null
-      return this.normalizeTaskRef(readFileSync(currentTaskPath, "utf-8").trim()) || null
-    } catch {
-      return null
-    }
-  }
-
   /**
-   * Get active task from session runtime context with global fallback.
+   * Get active task from session runtime context.
    */
   getActiveTask(platformInput = null) {
     const contextKey = this.getContextKey(platformInput)
-    if (contextKey) {
-      const context = this.readContext(contextKey)
-      const taskRef = this.normalizeTaskRef(context?.current_task || "")
-      if (taskRef) {
-        const taskDir = this.resolveTaskDir(taskRef)
-        return {
-          taskPath: taskRef,
-          source: `session:${contextKey}`,
-          stale: !taskDir || !existsSync(taskDir),
-        }
-      }
+    if (!contextKey) {
+      return { taskPath: null, source: "none", stale: false }
     }
 
-    const globalTask = this.getGlobalCurrentTask()
-    if (globalTask) {
-      const taskDir = this.resolveTaskDir(globalTask)
+    const context = this.readContext(contextKey)
+    const taskRef = this.normalizeTaskRef(context?.current_task || "")
+    if (taskRef) {
+      const taskDir = this.resolveTaskDir(taskRef)
       return {
-        taskPath: globalTask,
-        source: "global",
+        taskPath: taskRef,
+        source: `session:${contextKey}`,
         stale: !taskDir || !existsSync(taskDir),
       }
     }

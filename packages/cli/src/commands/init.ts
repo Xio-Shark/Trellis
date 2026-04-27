@@ -140,7 +140,7 @@ export function slugifyDeveloperName(name: string): string {
 }
 
 /**
- * Write a task skeleton (task.json + prd.md + .current-task pointer).
+ * Write a task skeleton (task.json + prd.md).
  *
  * Idempotent: if the task dir already exists, returns true without touching
  * anything. Shared by both creator bootstrap and joiner onboarding flows.
@@ -162,11 +162,6 @@ function writeTaskSkeleton(
       "utf-8",
     );
     fs.writeFileSync(path.join(taskDir, FILE_NAMES.PRD), prdContent, "utf-8");
-    fs.writeFileSync(
-      path.join(cwd, PATHS.CURRENT_TASK_FILE),
-      `${PATHS.TASKS}/${taskName}`,
-      "utf-8",
-    );
     return true;
   } catch {
     return false;
@@ -233,9 +228,9 @@ function getBootstrapPrdContent(
 **You (the AI) are running this task. The developer does not read this file.**
 
 The developer just ran \`trellis init\` on this project for the first time.
-\`.trellis/\` now exists with empty spec scaffolding, and this task has been
-set as their current task. They'll open their AI tool, run \`/trellis:continue\`,
-and you'll land here.
+\`.trellis/\` now exists with empty spec scaffolding, and this bootstrap task
+exists under \`.trellis/tasks/\`. When they want to work on it, they should start
+this task from a session that provides Trellis session identity.
 
 **Your job**: help them populate \`.trellis/spec/\` with the team's real
 coding conventions. Every future AI session — this project's
@@ -487,9 +482,9 @@ function getJoinerPrdContent(
 **You (the AI) are running this task. The developer does not read this file.**
 
 \`${developer}\` just ran \`trellis init\` on a fresh clone, saw "Developer
-initialized", and will now start asking you questions in chat. This task is
-already set as their current task (\`.trellis/.current-task\` points here), so
-when they run \`/trellis:continue\` you'll land back on this PRD.
+initialized", and will now start asking you questions in chat. This joiner task
+exists under \`.trellis/tasks/\`; when they want to work on it, they should
+start it from a session that provides Trellis session identity.
 
 Your job is to orient them to Trellis. Don't dump all of this at them — open
 with a short greeting, ask where they want to start, and fill in the rest as
@@ -510,8 +505,7 @@ code every session.
 - **Task lifecycle**: planning → in_progress → done → archive, under
   \`.trellis/tasks/\`.
 - **Core slash commands**:
-  - \`/trellis:continue\` — resume the current task (their primary entry,
-    since current-task is already set to this onboarding task)
+  - \`/trellis:continue\` — resume the current session's active task
   - \`/trellis:finish-work\` — wrap up a finished task
   - \`/trellis:start\` — session boot from scratch (not needed here; the
     SessionStart hook does its job automatically)
@@ -519,7 +513,7 @@ code every session.
 ### 2. Runtime mechanics (explain when they ask "how does it know what to do")
 
 - **SessionStart hook** runs \`get_context.py\` and injects identity, git
-  status, current-task pointer, active tasks, and workflow phase into the AI
+  status, session active task, active tasks, and workflow phase into the AI
   conversation at every session start.
 - **\`<workflow-state>\` tag** is auto-injected with every user message,
   carrying the current task + phase hint.
@@ -534,7 +528,7 @@ code every session.
   — reviews changes against specs, auto-fixes issues, runs lint/typecheck.
 
 File layout (mention when they ask "where does what live"):
-- \`.trellis/.current-task\` — session pointer, gitignored, per-checkout
+- \`.trellis/.runtime/sessions/<session>.json\` — session active-task state, gitignored
 - \`.trellis/tasks/<task>/{implement,check}.jsonl\` — per-task context manifests
 - \`.trellis/spec/\` — project-wide conventions (source of truth)
 - \`.trellis/workspace/${developer}/journal-*.md\` — their session log,

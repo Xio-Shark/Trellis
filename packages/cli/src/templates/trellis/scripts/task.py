@@ -8,9 +8,9 @@ Usage:
     python3 task.py add-context <dir> <file> <path> [reason] # Add jsonl entry
     python3 task.py validate <dir>              # Validate jsonl files
     python3 task.py list-context <dir>          # List jsonl entries
-    python3 task.py start <dir> [--global]      # Set active task
+    python3 task.py start <dir>                 # Set active task
     python3 task.py current [--source]          # Show active task
-    python3 task.py finish [--global]           # Clear active task
+    python3 task.py finish                      # Clear active task
     python3 task.py set-branch <dir> <branch>   # Set git branch
     python3 task.py set-base-branch <dir> <branch>  # Set PR target branch
     python3 task.py set-scope <dir> <scope>     # Set scope for PR title
@@ -36,7 +36,12 @@ from common.paths import (
     get_tasks_dir,
     get_current_task,
 )
-from common.active_task import clear_active_task, resolve_active_task, set_active_task
+from common.active_task import (
+    clear_active_task,
+    resolve_active_task,
+    resolve_context_key,
+    set_active_task,
+)
 from common.io import read_json, write_json
 from common.task_utils import resolve_task_dir, run_task_hooks
 from common.tasks import iter_active_tasks, children_progress
@@ -85,15 +90,18 @@ def cmd_start(args: argparse.Namespace) -> int:
     except ValueError:
         task_dir = str(full_path)
 
-    active = set_active_task(
-        task_dir,
-        repo_root,
-        global_scope=getattr(args, "global_scope", False),
-    )
+    if not resolve_context_key():
+        print(colored("Error: Cannot set active task without a session identity.", Colors.RED))
+        print(
+            "Hint: run inside an AI IDE/session that exposes session identity, "
+            "or set TRELLIS_CONTEXT_ID before running task.py start."
+        )
+        return 1
+
+    active = set_active_task(task_dir, repo_root)
     if active:
         print(colored(f"✓ Current task set to: {task_dir}", Colors.GREEN))
         print(f"Source: {active.source}")
-        print(f"Fallback: {DIR_WORKFLOW}/.current-task")
 
         task_json_path = full_path / FILE_TASK_JSON
         if task_json_path.is_file():
@@ -116,7 +124,7 @@ def cmd_start(args: argparse.Namespace) -> int:
 def cmd_finish(args: argparse.Namespace) -> int:
     """Clear active task."""
     repo_root = get_repo_root()
-    active = clear_active_task(repo_root, global_scope=getattr(args, "global_scope", False))
+    active = clear_active_task(repo_root)
     current = active.task_path
 
     if not current:
@@ -283,9 +291,9 @@ Usage:
   python3 task.py add-context <dir> <jsonl> <path> [reason]  Add entry to jsonl
   python3 task.py validate <dir>                     Validate jsonl files
   python3 task.py list-context <dir>                 List jsonl entries
-  python3 task.py start <dir> [--global]             Set active task
+  python3 task.py start <dir>                        Set active task
   python3 task.py current [--source]                 Show active task
-  python3 task.py finish [--global]                  Clear active task
+  python3 task.py finish                             Clear active task
   python3 task.py set-branch <dir> <branch>          Set git branch
   python3 task.py set-base-branch <dir> <branch>     Set PR target branch
   python3 task.py set-scope <dir> <scope>            Set scope for PR title
@@ -390,8 +398,6 @@ def main() -> int:
     # start
     p_start = subparsers.add_parser("start", help="Set active task")
     p_start.add_argument("dir", help="Task directory")
-    p_start.add_argument("--global", dest="global_scope", action="store_true",
-                         help="Write .trellis/.current-task explicitly")
 
     # current
     p_current = subparsers.add_parser("current", help="Show active task")
@@ -399,9 +405,7 @@ def main() -> int:
                            help="Show active task source")
 
     # finish
-    p_finish = subparsers.add_parser("finish", help="Clear active task")
-    p_finish.add_argument("--global", dest="global_scope", action="store_true",
-                          help="Clear .trellis/.current-task explicitly")
+    subparsers.add_parser("finish", help="Clear active task")
 
     # set-branch
     p_branch = subparsers.add_parser("set-branch", help="Set git branch")

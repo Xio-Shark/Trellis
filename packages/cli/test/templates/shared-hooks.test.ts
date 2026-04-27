@@ -8,6 +8,7 @@ import {
 
 const ALL_HOOK_FILES = [
   "session-start.py",
+  "inject-shell-session-context.py",
   "inject-workflow-state.py",
   "inject-subagent-context.py",
   "statusline.py",
@@ -76,6 +77,20 @@ describe("shared-hooks capability table", () => {
     expect(SHARED_HOOKS_BY_PLATFORM.copilot).not.toContain("session-start.py");
   });
 
+  it("inject-shell-session-context.py goes to Cursor only", () => {
+    for (const [platform, hooks] of Object.entries(
+      SHARED_HOOKS_BY_PLATFORM,
+    )) {
+      const has = hooks.includes("inject-shell-session-context.py");
+      if (platform === "cursor") expect(has).toBe(true);
+      else
+        expect(
+          has,
+          `${platform} declares inject-shell-session-context.py but does not use Cursor beforeShellExecution`,
+        ).toBe(false);
+    }
+  });
+
   it("kiro registers only inject-subagent-context.py (agentSpawn is its only hook event)", () => {
     expect([...SHARED_HOOKS_BY_PLATFORM.kiro]).toEqual([
       "inject-subagent-context.py",
@@ -100,5 +115,15 @@ describe("shared-hooks capability table", () => {
     const actual = new Set(getSharedHookScripts().map((h) => h.name));
     const expected = new Set(ALL_HOOK_FILES);
     expect(actual).toEqual(expected);
+  });
+
+  it("shared hooks do not read legacy .current-task state", () => {
+    for (const hook of getSharedHookScripts()) {
+      expect(
+        hook.content,
+        `${hook.name} must use the session-scoped active task resolver`,
+      ).not.toContain(".current-task");
+      expect(hook.content).not.toContain("global fallback");
+    }
   });
 });

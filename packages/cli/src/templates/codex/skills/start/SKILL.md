@@ -269,7 +269,7 @@ python3 ./.trellis/scripts/task.py add-context "$TASK_DIR" check "<path>" "<reas
 python3 ./.trellis/scripts/task.py start "$TASK_DIR"
 ```
 
-This sets the active task through Trellis' resolver so hooks can inject context from the session scope, or from the global fallback when no session key is available.
+This sets the active task through Trellis' session resolver so hooks can inject context for this AI session. If the command fails because no session identity is available, rerun it from an IDE/session that exposes session identity or set `TRELLIS_CONTEXT_ID`.
 
 ---
 

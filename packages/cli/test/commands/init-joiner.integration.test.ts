@@ -134,12 +134,10 @@ describe("init() joiner onboarding", () => {
       `${expectedPythonCmd} ./.trellis/scripts/task.py archive 00-join-bob`,
     );
 
-    // .current-task points at the joiner
-    const currentTask = fs.readFileSync(
-      path.join(tmpDir, PATHS.CURRENT_TASK_FILE),
-      "utf-8",
+    // init creates the joiner task but does not set repo-global current-task state.
+    expect(fs.existsSync(path.join(tmpDir, PATHS.CURRENT_TASK_FILE))).toBe(
+      false,
     );
-    expect(currentTask).toBe(`${PATHS.TASKS}/00-join-bob`);
 
     // Bootstrap task NOT created
     expect(
@@ -289,11 +287,9 @@ describe("init() joiner onboarding", () => {
     expect(taskJson.creator).toBe("frank");
     expect(taskJson.status).toBe("in_progress");
 
-    const currentTask = fs.readFileSync(
-      path.join(tmpDir, PATHS.CURRENT_TASK_FILE),
-      "utf-8",
+    expect(fs.existsSync(path.join(tmpDir, PATHS.CURRENT_TASK_FILE))).toBe(
+      false,
     );
-    expect(currentTask).toBe(`${PATHS.TASKS}/00-join-frank`);
   });
 
   it("#8 handleReinit path: existing .trellis/ + .developer → no task created", async () => {

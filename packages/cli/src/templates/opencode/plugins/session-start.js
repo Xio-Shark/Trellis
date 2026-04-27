@@ -106,8 +106,12 @@ function getTaskStatus(ctx, platformInput = null) {
     `Status: READY\nTask: ${taskTitle}\n` +
     `Source: ${active.source}\n` +
     "Next required action: dispatch `trellis-implement` per Phase 2.1. " +
-    "For agent-capable platforms, do NOT edit code in the main session. " +
-    "After implementation, dispatch `trellis-check` per Phase 2.2 before reporting completion."
+    "For agent-capable platforms, the default is to NOT edit code in the main session. " +
+    "After implementation, dispatch `trellis-check` per Phase 2.2 before reporting completion.\n" +
+    "User override (per-turn escape hatch): if the user's CURRENT message explicitly tells the " +
+    "main session to handle it directly (\"你直接改\" / \"别派 sub-agent\" / \"main session 写就行\" / " +
+    "\"do it inline\" / \"不用 sub-agent\"), honor it for this turn and edit code directly. " +
+    "Per-turn only; do NOT invent an override the user did not say."
   )
 }
 

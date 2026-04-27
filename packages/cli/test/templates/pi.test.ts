@@ -41,12 +41,44 @@ describe("pi templates", () => {
     expect(extension).toContain(
       '["--mode", "json", "-p", "--no-session", toPiPromptArgument(prompt)]',
     );
+    expect(extension).toContain("sessionManager?:");
+    expect(extension).toContain("getSessionId?: () => string");
     expect(extension).toContain('pi.on?.("session_start"');
     expect(extension).toContain('pi.on?.("input"');
     expect(extension).toContain('pi.on?.("before_agent_start"');
     expect(extension).toContain('pi.on?.("context"');
     expect(extension).toContain('pi.on?.("tool_call"');
     expect(extension).not.toContain("inject-subagent-context.py");
+  });
+
+  it("extension resolves active task from session runtime only", () => {
+    const extension = getExtensionTemplate();
+
+    expect(extension).toContain('".runtime", "sessions"');
+    expect(extension).toContain("function resolveContextKey");
+    expect(extension).toContain("ctx?.sessionManager?.getSessionId");
+    expect(extension).toContain("process.env.PI_SESSIONID");
+    expect(extension).not.toContain(".current-task");
+    expect(extension).not.toContain("global fallback");
+  });
+
+  it("extension injects Trellis context into Pi bash tool calls", () => {
+    const extension = getExtensionTemplate();
+
+    expect(extension).toContain("function injectTrellisContextIntoBash");
+    expect(extension).toContain('toolCall.toolName !== "bash"');
+    expect(extension).toContain("toolCall.input.command = `export TRELLIS_CONTEXT_ID=");
+    expect(extension).toContain("function commandStartsWithTrellisContext");
+    expect(extension).toContain("function shellQuote");
+    expect(extension).toContain("injectTrellisContextIntoBash(event, contextKey)");
+  });
+
+  it("extension forwards Trellis context into spawned Pi subagents", () => {
+    const extension = getExtensionTemplate();
+
+    expect(extension).toContain("runSubagent(projectRoot, input, contextKey)");
+    expect(extension).toContain("buildSubagentPrompt(projectRoot, input, contextKey)");
+    expect(extension).toContain("{ ...process.env, TRELLIS_CONTEXT_ID: contextKey }");
   });
 
   it("extension makes subagent prompts safe for Pi CLI parsing", () => {
@@ -77,7 +109,8 @@ describe("pi templates", () => {
     expect(extension).toContain('details: {\n          agent: input.agent');
     expect(extension).toContain("ctx?.ui?.notify?.(");
     expect(extension).toContain("systemPrompt:");
-    expect(extension).toContain('pi.on?.("input", () => ({ action: "continue" }))');
+    expect(extension).toContain('pi.on?.("input", (event, ctx) => {');
+    expect(extension).toContain('return { action: "continue" };');
     expect(extension).not.toContain("message: buildTrellisContext");
     expect(extension).not.toContain('message:\n      "Trellis project context');
     expect(extension).not.toContain("persistent: true");

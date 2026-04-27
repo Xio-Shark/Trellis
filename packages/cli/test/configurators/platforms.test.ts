@@ -19,6 +19,7 @@ import {
   getAllHooks as getAllCopilotHooks,
   getHooksConfig as getCopilotHooksConfig,
 } from "../../src/templates/copilot/index.js";
+import { getHooksConfig as getCursorHooksConfig } from "../../src/templates/cursor/index.js";
 import {
   getAllAgents as getPiAgents,
   getExtensionTemplate as getPiExtensionTemplate,
@@ -706,6 +707,9 @@ describe("configurePlatform", () => {
     expect(extension).toContain('registerTool?.({\n    name: "subagent"');
     expect(extension).toContain('pi.on?.("session_start"');
     expect(extension).toContain('pi.on?.("tool_call"');
+    expect(extension).toContain("function injectTrellisContextIntoBash");
+    expect(extension).toContain("ctx?.sessionManager?.getSessionId");
+    expect(extension).toContain("TRELLIS_CONTEXT_ID: contextKey");
     expect(extension).toContain("function stripMarkdownFrontmatter");
     expect(extension).toContain("function toPiPromptArgument");
     expect(extension).toContain("function extractFinalAssistantText");
@@ -808,6 +812,14 @@ describe("configurePlatform", () => {
     expect(rawTemplate).toContain(
       "{{PYTHON_CMD}} .codex/hooks/session-start.py",
     );
+  });
+
+  it("cursor hooks.json matches both documented and native subagent tool names", () => {
+    const hooksConfig = JSON.parse(getCursorHooksConfig()) as {
+      hooks: { preToolUse: { matcher: string }[] };
+    };
+
+    expect(hooksConfig.hooks.preToolUse[0].matcher).toBe("Task|Subagent");
   });
 
   it("collectPlatformTemplates('copilot') includes tracked + discovery hooks config", () => {

@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Session-scoped active task resolution.
 
-The user-facing concept is a single "active task". Internally, hook-capable
-AI platforms can scope that pointer to a session/window by writing runtime
-context under `.trellis/.runtime/contexts/`; platforms without a stable
-session key continue to use `.trellis/.current-task` as a global fallback.
+The user-facing concept is a single "active task". Trellis stores that pointer
+per AI session/window under `.trellis/.runtime/sessions/`; without a stable
+session key there is no active task.
 """
 
 from __future__ import annotations
@@ -13,6 +12,8 @@ import hashlib
 import json
 import os
 import re
+import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,26 +22,41 @@ from typing import Any
 DIR_WORKFLOW = ".trellis"
 DIR_TASKS = "tasks"
 DIR_RUNTIME = ".runtime"
-DIR_CONTEXTS = "contexts"
-FILE_CURRENT_TASK = ".current-task"
+DIR_SESSIONS = "sessions"
+DIR_CURSOR_SHELL = "cursor-shell"
+CURSOR_SHELL_TICKET_TTL_SECONDS = 30
+TASK_SESSION_COMMANDS = {"start", "current", "finish"}
 
 _SESSION_KEYS = ("session_id", "sessionId", "sessionID")
 _CONVERSATION_KEYS = ("conversation_id", "conversationId", "conversationID")
 _TRANSCRIPT_KEYS = ("transcript_path", "transcriptPath", "transcript")
 _NESTED_KEYS = ("input", "properties", "event", "hook_input", "hookInput")
+_KNOWN_PLATFORMS = {
+    "claude",
+    "codex",
+    "cursor",
+    "opencode",
+    "gemini",
+    "droid",
+    "qoder",
+    "codebuddy",
+    "kiro",
+    "copilot",
+    "pi",
+}
 
 _ENV_SESSION_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("claude", ("CLAUDE_SESSION_ID", "CLAUDE_CODE_SESSION_ID")),
-    ("codex", ("CODEX_SESSION_ID",)),
+    ("codex", ("CODEX_SESSION_ID", "CODEX_THREAD_ID")),
     ("cursor", ("CURSOR_SESSION_ID",)),
-    ("opencode", ("OPENCODE_SESSION_ID", "OPENCODE_SESSIONID")),
+    ("opencode", ("OPENCODE_SESSION_ID", "OPENCODE_SESSIONID", "OPENCODE_RUN_ID")),
     ("gemini", ("GEMINI_SESSION_ID",)),
     ("droid", ("FACTORY_SESSION_ID", "DROID_SESSION_ID")),
     ("qoder", ("QODER_SESSION_ID",)),
     ("codebuddy", ("CODEBUDDY_SESSION_ID",)),
     ("kiro", ("KIRO_SESSION_ID",)),
     ("copilot", ("COPILOT_SESSION_ID", "COPILOT_SESSIONID")),
-    ("pi", ("PI_SESSION_ID",)),
+    ("pi", ("PI_SESSION_ID", "PI_SESSIONID")),
 )
 _ENV_CONVERSATION_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("cursor", ("CURSOR_CONVERSATION_ID", "CURSOR_CONVERSATIONID")),
@@ -115,12 +131,8 @@ def resolve_task_ref(task_ref: str, repo_root: Path) -> Path | None:
     return repo_root / DIR_WORKFLOW / DIR_TASKS / path_obj
 
 
-def _runtime_contexts_dir(repo_root: Path) -> Path:
-    return repo_root / DIR_WORKFLOW / DIR_RUNTIME / DIR_CONTEXTS
-
-
-def _global_current_task_file(repo_root: Path) -> Path:
-    return repo_root / DIR_WORKFLOW / FILE_CURRENT_TASK
+def _runtime_sessions_dir(repo_root: Path) -> Path:
+    return repo_root / DIR_WORKFLOW / DIR_RUNTIME / DIR_SESSIONS
 
 
 def _sanitize_key(raw: str) -> str:
@@ -205,7 +217,7 @@ def _lookup_env_context_key(platform_name: str | None) -> str | None:
     Hooks pass `TRELLIS_CONTEXT_ID` to subprocesses they launch, but an AI-run
     shell command can only see session identity if the host platform exports it
     in the command environment. These names are best-effort adapters; if none
-    are present, callers must use the global fallback.
+    are present, there is no session-scoped active task.
     """
     env_platform_name = _env_platform_name(platform_name)
 
@@ -227,6 +239,139 @@ def _lookup_env_context_key(platform_name: str | None) -> str | None:
             if value:
                 return _context_key(name, "transcript", value)
 
+    return None
+
+
+def _find_repo_root_from_cwd() -> Path | None:
+    current = Path.cwd().resolve()
+    while True:
+        if (current / DIR_WORKFLOW).is_dir():
+            return current
+        if current == current.parent:
+            return None
+        current = current.parent
+
+
+def _cursor_shell_ticket_dir(repo_root: Path) -> Path:
+    return repo_root / DIR_WORKFLOW / DIR_RUNTIME / DIR_CURSOR_SHELL
+
+
+def _remove_file(path: Path) -> bool:
+    try:
+        path.unlink()
+        return True
+    except OSError:
+        return False
+
+
+def _task_refs_match(left: str | None, right: str | None, repo_root: Path) -> bool:
+    if not left or not right:
+        return False
+    left_path = resolve_task_ref(left, repo_root)
+    right_path = resolve_task_ref(right, repo_root)
+    if left_path is not None and right_path is not None:
+        return left_path == right_path
+    return normalize_task_ref(left) == normalize_task_ref(right)
+
+
+def _pending_ticket_matches_args(ticket: dict[str, Any], repo_root: Path) -> bool:
+    if Path(sys.argv[0]).name != "task.py":
+        return False
+    args = tuple(sys.argv[1:])
+    if not args:
+        return False
+
+    command_name = args[0]
+    if command_name not in TASK_SESSION_COMMANDS:
+        return False
+
+    subcommands = ticket.get("subcommands")
+    if not isinstance(subcommands, list):
+        return False
+
+    for subcommand in subcommands:
+        if not isinstance(subcommand, dict):
+            continue
+        if _string_value(subcommand.get("name")) != command_name:
+            continue
+        if command_name != "start":
+            return True
+        task_ref = args[1] if len(args) > 1 else None
+        if _task_refs_match(_string_value(subcommand.get("task_ref")), task_ref, repo_root):
+            return True
+
+    return False
+
+
+def _ticket_is_fresh(ticket: dict[str, Any], ticket_path: Path, now: float) -> bool:
+    expires_at = ticket.get("expires_at_epoch")
+    if isinstance(expires_at, (int, float)) and expires_at < now:
+        _remove_file(ticket_path)
+        return False
+
+    created_at = ticket.get("created_at_epoch")
+    if isinstance(created_at, (int, float)):
+        if now - created_at <= CURSOR_SHELL_TICKET_TTL_SECONDS:
+            return True
+        _remove_file(ticket_path)
+        return False
+    return True
+
+
+def _ticket_cwd_matches_repo(ticket: dict[str, Any], repo_root: Path) -> bool:
+    cwd = _string_value(ticket.get("cwd"))
+    if not cwd:
+        return True
+    try:
+        Path(cwd).resolve().relative_to(repo_root)
+    except ValueError:
+        return False
+    return True
+
+
+def _matching_cursor_ticket_context_key(
+    ticket_path: Path,
+    repo_root: Path,
+    now: float,
+) -> str | None:
+    ticket = _read_json(ticket_path)
+    if ticket is None or ticket.get("platform") != "cursor":
+        return None
+    if not _ticket_is_fresh(ticket, ticket_path, now):
+        return None
+    if not _ticket_cwd_matches_repo(ticket, repo_root):
+        return None
+    if not _pending_ticket_matches_args(ticket, repo_root):
+        return None
+    return _string_value(ticket.get("context_key"))
+
+
+def _lookup_cursor_shell_ticket_context_key() -> str | None:
+    """Resolve Cursor conversation identity from a short-lived shell ticket.
+
+    Cursor exposes `conversation_id` to `beforeShellExecution`, but does not
+    export it into the shell command environment. The Cursor hook writes a
+    short-lived ticket just before `task.py` runs. We accept a ticket only when
+    the current `task.py` subcommand matches and exactly one fresh context key
+    matches, which avoids cross-window pointer contamination.
+    """
+    repo_root = _find_repo_root_from_cwd()
+    if repo_root is None:
+        return None
+
+    ticket_dir = _cursor_shell_ticket_dir(repo_root)
+    if not ticket_dir.is_dir():
+        return None
+
+    now = time.time()
+    candidates: set[str] = set()
+    for ticket_path in ticket_dir.glob("*.json"):
+        context_key = _matching_cursor_ticket_context_key(ticket_path, repo_root, now)
+        if context_key:
+            candidates.add(context_key)
+
+    if len(candidates) == 1:
+        return next(iter(candidates))
     return None
 
 
@@ -259,7 +404,13 @@ def resolve_context_key(
         if transcript_path:
             return _context_key(platform_name or "session", "transcript", transcript_path)
 
-    return _lookup_env_context_key(platform_name)
+    env_context_key = _lookup_env_context_key(platform_name)
+    if env_context_key:
+        return env_context_key
+
+    if platform_name in (None, "session", "cursor"):
+        return _lookup_cursor_shell_ticket_context_key()
+    return None
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
@@ -280,15 +431,6 @@ def _write_json(path: Path, data: dict[str, Any]) -> bool:
         return True
     except OSError:
         return False
-
-
-def _read_task_ref(path: Path) -> str | None:
-    try:
-        raw = path.read_text(encoding="utf-8").strip()
-    except (FileNotFoundError, OSError):
-        return None
-    normalized = normalize_task_ref(raw)
-    return normalized or None
 
 
 def _canonical_task_ref(task_path: str, repo_root: Path) -> str | None:
@@ -318,7 +460,7 @@ def _active_from_ref(
 
 
 def _context_path(repo_root: Path, context_key: str) -> Path:
-    return _runtime_contexts_dir(repo_root) / f"{context_key}.json"
+    return _runtime_sessions_dir(repo_root) / f"{context_key}.json"
 
 
 def resolve_active_task(
@@ -326,37 +468,22 @@ def resolve_active_task(
     platform_input: dict[str, Any] | None = None,
     platform: str | None = None,
 ) -> ActiveTask:
-    """Resolve active task with session scope and global fallback.
+    """Resolve the active task from session runtime state only.
 
-    A stale session task is returned as stale and does not fall back to global;
-    otherwise a missing/empty session context falls through to `.current-task`.
+    A stale session task is returned as stale. Missing context identity or a
+    missing/empty session context means there is no active task.
     """
     context_key = resolve_context_key(platform_input, platform)
-    if context_key:
-        context = _read_json(_context_path(repo_root, context_key)) or {}
-        task_ref = _string_value(context.get("current_task"))
-        active = _active_from_ref(task_ref, repo_root, "session", context_key)
-        if active:
-            return active
+    if not context_key:
+        return ActiveTask(None, "none")
 
-    global_active = _active_from_ref(
-        _read_task_ref(_global_current_task_file(repo_root)),
-        repo_root,
-        "global",
-    )
-    if global_active:
-        return global_active
+    context = _read_json(_context_path(repo_root, context_key)) or {}
+    task_ref = _string_value(context.get("current_task"))
+    active = _active_from_ref(task_ref, repo_root, "session", context_key)
+    if active:
+        return active
 
-    return ActiveTask(None, "none")
-
-
-def _resolve_global_active_task(repo_root: Path) -> ActiveTask:
-    global_active = _active_from_ref(
-        _read_task_ref(_global_current_task_file(repo_root)),
-        repo_root,
-        "global",
-    )
-    return global_active or ActiveTask(None, "none")
+    return ActiveTask(None, "none", context_key)
 
 
 def _utc_now() -> str:
@@ -366,9 +493,14 @@ def _utc_now() -> str:
 def _context_metadata(
     platform_input: dict[str, Any] | None,
     platform: str | None,
+    context_key: str | None = None,
 ) -> dict[str, Any]:
     data = _as_dict(platform_input) or {}
     platform_name = _detect_platform(data, platform)
+    if platform_name == "session" and context_key:
+        prefix = context_key.split("_", 1)[0]
+        if prefix in _KNOWN_PLATFORMS:
+            platform_name = prefix
     metadata: dict[str, Any] = {
         "platform": platform_name,
         "last_seen_at": _utc_now(),
@@ -385,61 +517,70 @@ def set_active_task(
     repo_root: Path,
     platform_input: dict[str, Any] | None = None,
     platform: str | None = None,
-    global_scope: bool = False,
 ) -> ActiveTask | None:
-    """Set the active task in session scope when possible, else global."""
+    """Set the active task in session scope.
+
+    Returns None when no context key is available; callers should surface a
+    user-facing error that explains how to provide session identity.
+    """
     canonical = _canonical_task_ref(task_path, repo_root)
     if canonical is None:
         return None
 
-    context_key = None if global_scope else resolve_context_key(platform_input, platform)
-    if context_key:
-        context_path = _context_path(repo_root, context_key)
-        context = _read_json(context_path) or {}
-        context.update(_context_metadata(platform_input, platform))
-        context["current_task"] = canonical
-        context.setdefault("current_run", None)
-        if not _write_json(context_path, context):
-            return None
-        return ActiveTask(canonical, "session", context_key)
-
-    try:
-        current_file = _global_current_task_file(repo_root)
-        current_file.write_text(canonical, encoding="utf-8")
-    except OSError:
+    context_key = resolve_context_key(platform_input, platform)
+    if not context_key:
         return None
-    return ActiveTask(canonical, "global")
+
+    context_path = _context_path(repo_root, context_key)
+    context = _read_json(context_path) or {}
+    context.update(_context_metadata(platform_input, platform, context_key))
+    context["current_task"] = canonical
+    context.setdefault("current_run", None)
+    if not _write_json(context_path, context):
+        return None
+    return ActiveTask(canonical, "session", context_key)
 
 
 def clear_active_task(
     repo_root: Path,
     platform_input: dict[str, Any] | None = None,
     platform: str | None = None,
-    global_scope: bool = False,
 ) -> ActiveTask:
-    """Clear active task in the active scope."""
-    if global_scope:
-        previous = _resolve_global_active_task(repo_root)
-    else:
-        previous = resolve_active_task(repo_root, platform_input, platform)
+    """Clear the active task by deleting the current session context file."""
+    context_key = resolve_context_key(platform_input, platform)
+    if not context_key:
+        return ActiveTask(None, "none")
 
-    context_key = None if global_scope else previous.context_key
-    if context_key and previous.source_type == "session":
-        context_path = _context_path(repo_root, context_key)
-        context = _read_json(context_path) or {}
-        context.update(_context_metadata(platform_input, platform))
-        context["current_task"] = None
-        context.setdefault("current_run", None)
-        _write_json(context_path, context)
-        return previous
-
-    try:
-        current_file = _global_current_task_file(repo_root)
-        if current_file.is_file():
-            current_file.unlink()
-    except OSError:
-        pass
+    previous = resolve_active_task(repo_root, platform_input, platform)
+    context_path = _context_path(repo_root, context_key)
+    if context_path.is_file():
+        _remove_file(context_path)
     return previous
+
+
+def clear_task_from_sessions(task_path: str, repo_root: Path) -> int:
+    """Delete all session runtime files that point at a task."""
+    target = _canonical_task_ref(task_path, repo_root) or normalize_task_ref(task_path)
+    if not target:
+        return 0
+
+    cleared = 0
+    sessions_dir = _runtime_sessions_dir(repo_root)
+    if not sessions_dir.is_dir():
+        return cleared
+
+    for session_path in sessions_dir.glob("*.json"):
+        context = _read_json(session_path) or {}
+        current = _string_value(context.get("current_task"))
+        if not current:
+            continue
+        current_ref = _canonical_task_ref(current, repo_root) or normalize_task_ref(current)
+        if current_ref != target:
+            continue
+        if session_path.is_file() and _remove_file(session_path):
+            cleared += 1
+
+    return cleared
 
 
 def get_current_task_source(

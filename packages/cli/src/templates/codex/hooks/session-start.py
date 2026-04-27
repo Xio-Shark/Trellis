@@ -188,8 +188,12 @@ def _get_task_status(trellis_dir: Path, hook_input: dict) -> str:
         f"Status: READY\nTask: {task_title}\n"
         f"Source: {active.source}\n"
         "Next required action: dispatch `trellis-implement` per Phase 2.1. "
-        "For agent-capable platforms, do NOT edit code in the main session. "
-        "After implementation, dispatch `trellis-check` per Phase 2.2 before reporting completion."
+        "For agent-capable platforms, the default is to NOT edit code in the main session. "
+        "After implementation, dispatch `trellis-check` per Phase 2.2 before reporting completion.\n"
+        "User override (per-turn escape hatch): if the user's CURRENT message explicitly tells the "
+        "main session to handle it directly (\"你直接改\" / \"别派 sub-agent\" / \"main session 写就行\" / "
+        "\"do it inline\" / \"不用 sub-agent\"), honor it for this turn and edit code directly. "
+        "Per-turn only; do NOT invent an override the user did not say."
     )
 
 
@@ -284,9 +288,11 @@ Read and follow all instructions below carefully.
         "- If you're spawning an implement/check sub-agent, context is injected "
         "automatically via `{task}/implement.jsonl` / `check.jsonl`. You do NOT "
         "need to read these indexes yourself.\n"
-        "- For agent-capable platforms, do NOT edit code directly in the main "
-        "session; dispatch `trellis-implement` and `trellis-check` so JSONL "
-        "context is loaded by the sub-agents.\n\n"
+        "- For agent-capable platforms, the default is to dispatch "
+        "`trellis-implement` and `trellis-check` (so JSONL context is loaded by "
+        "the sub-agents) rather than editing code in the main session. "
+        "Honor a per-turn user override only if the user's current message "
+        "explicitly opts out (see <task-status> below for override phrases).\n\n"
     )
 
     # guides/ inlined (cross-package thinking, broadly useful)
