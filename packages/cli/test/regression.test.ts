@@ -1140,6 +1140,83 @@ describe("regression: current-task path normalization", () => {
     expect(fs.existsSync(contextOther)).toBe(true);
   });
 
+  it("[task-input-contract] task.py archive accepts task name, relative path, and absolute path", () => {
+    setupTaskRepo();
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+
+    // Create three additional task directories for the three input forms.
+    const taskNames = ["issue-201", "issue-202", "issue-203"];
+    for (const name of taskNames) {
+      writeProjectFile(
+        path.join(".trellis", "tasks", name, "task.json"),
+        JSON.stringify(
+          {
+            title: `Task ${name}`,
+            status: "in_progress",
+            package: null,
+          },
+          null,
+          2,
+        ),
+      );
+    }
+
+    // Form 1: bare slug
+    execSync(
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} archive ${taskNames[0]} --no-commit`,
+      {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        env: sessionEnv(),
+      },
+    );
+
+    // Form 2: relative path
+    execSync(
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} archive ${JSON.stringify(`.trellis/tasks/${taskNames[1]}`)} --no-commit`,
+      {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        env: sessionEnv(),
+      },
+    );
+
+    // Form 3: absolute path
+    const absPath = path.join(tmpDir, ".trellis", "tasks", taskNames[2]);
+    execSync(
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} archive ${JSON.stringify(absPath)} --no-commit`,
+      {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        env: sessionEnv(),
+      },
+    );
+
+    // All three task dirs should be removed from active tasks/.
+    for (const name of taskNames) {
+      expect(
+        fs.existsSync(path.join(tmpDir, ".trellis", "tasks", name)),
+        `task ${name} should no longer exist in active tasks/`,
+      ).toBe(false);
+    }
+
+    // All three should appear under archive/<YYYY-MM>/.
+    const archiveRoot = path.join(tmpDir, ".trellis", "tasks", "archive");
+    expect(fs.existsSync(archiveRoot)).toBe(true);
+    const archivedNames = new Set<string>();
+    for (const monthDir of fs.readdirSync(archiveRoot)) {
+      const monthPath = path.join(archiveRoot, monthDir);
+      if (fs.statSync(monthPath).isDirectory()) {
+        for (const taskDir of fs.readdirSync(monthPath)) {
+          archivedNames.add(taskDir);
+        }
+      }
+    }
+    for (const name of taskNames) {
+      expect(archivedNames.has(name), `task ${name} should be archived`).toBe(true);
+    }
+  });
+
   it("[session-current-task] task.py start also uses platform-native session env when available", () => {
     setupTaskRepo();
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");

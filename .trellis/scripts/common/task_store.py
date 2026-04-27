@@ -298,8 +298,8 @@ def cmd_archive(args: argparse.Namespace) -> int:
 
     tasks_dir = get_tasks_dir(repo_root)
 
-    # Find task directory
-    task_dir = find_task_by_name(task_name, tasks_dir)
+    # Resolve task directory (supports task name, relative path, or absolute path)
+    task_dir = resolve_task_dir(task_name, repo_root)
 
     if not task_dir or not task_dir.is_dir():
         print(colored(f"Error: Task not found: {task_name}", Colors.RED), file=sys.stderr)

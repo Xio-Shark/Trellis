@@ -14,7 +14,7 @@ Usage:
     python3 task.py set-branch <dir> <branch>   # Set git branch
     python3 task.py set-base-branch <dir> <branch>  # Set PR target branch
     python3 task.py set-scope <dir> <scope>     # Set scope for PR title
-    python3 task.py archive <task-name>         # Archive completed task
+    python3 task.py archive <task-dir>          # Archive completed task
     python3 task.py list                        # List active tasks
     python3 task.py list-archive [month]        # List archived tasks
     python3 task.py add-subtask <parent-dir> <child-dir>     # Link child to parent
@@ -297,7 +297,7 @@ Usage:
   python3 task.py set-branch <dir> <branch>          Set git branch
   python3 task.py set-base-branch <dir> <branch>     Set PR target branch
   python3 task.py set-scope <dir> <scope>            Set scope for PR title
-  python3 task.py archive <task-name>                Archive completed task
+  python3 task.py archive <task-dir>                 Archive completed task
   python3 task.py add-subtask <parent> <child>       Link child task to parent
   python3 task.py remove-subtask <parent> <child>    Unlink child from parent
   python3 task.py list [--mine] [--status <status>]  List tasks
@@ -424,7 +424,7 @@ def main() -> int:
 
     # archive
     p_archive = subparsers.add_parser("archive", help="Archive task")
-    p_archive.add_argument("name", help="Task name")
+    p_archive.add_argument("name", help="Task directory or name")
     p_archive.add_argument("--no-commit", action="store_true", help="Skip auto git commit after archive")
 
     # list
