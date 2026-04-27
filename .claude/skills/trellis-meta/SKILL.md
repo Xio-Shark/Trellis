@@ -71,7 +71,7 @@ When customizing Trellis, consider platform compatibility:
 │                    PORTABLE (All Platforms)                  │
 │  - .trellis/workspace/    - .trellis/tasks/                 │
 │  - .trellis/spec/         - .claude/commands/               │
-│  - File-based configs     - JSONL context files             │
+│  - File-based configs     - JSONL session files             │
 └─────────────────────────────────────────────────────────────┘
                               │
 ┌─────────────────────────────▼───────────────────────────────┐
@@ -233,7 +233,7 @@ Trellis transforms AI assistants into structured development partners through **
 ┌─────────────────────────────────▼───────────────────────────────────┐
 │                       PERSISTENCE LAYER                              │
 │  .trellis/workspace/  (journals, session history)                   │
-│  .trellis/tasks/      (task tracking, context files)                │
+│  .trellis/tasks/      (task tracking, session files)                │
 │  .trellis/spec/       (coding guidelines)                           │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -347,7 +347,7 @@ plan.py → start.py → Dispatch → implement → check → create-pr
 
 1. Create new category in `.trellis/spec/my-category/`
 2. Add `index.md` and guideline files
-3. Reference in JSONL context files
+3. Reference in JSONL session files
 4. Update `trellis-local` skill
 
 ### Changing Task Workflow
@@ -377,7 +377,7 @@ references/
 | `overview.md` | Core systems introduction |
 | `files.md` | All `.trellis/` files with purposes |
 | `workspace.md` | Workspace system, journals, developer identity |
-| `tasks.md` | Task system, directories, JSONL context files |
+| `tasks.md` | Task system, directories, JSONL session files |
 | `specs.md` | Spec system, guidelines organization |
 | `scripts.md` | Platform-independent scripts |
 
@@ -421,7 +421,7 @@ references/
 
 | Script | Purpose |
 |--------|---------|
-| `get_context.py` | Get session context |
+| `get_context.py` | Get session runtime |
 | `task.py` | Task management |
 | `add_session.py` | Record session |
 | `multi_agent/start.py` | Start parallel agent |
@@ -431,7 +431,7 @@ references/
 | Path | Purpose |
 |------|---------|
 | `.trellis/.developer` | Developer identity |
-| `.trellis/.current-task` | Active task pointer |
+| `.trellis/.runtime/sessions/` | Session-scoped active task state |
 | `.trellis/workflow.md` | Main workflow docs |
 | `.claude/settings.json` | Hook configuration |
 

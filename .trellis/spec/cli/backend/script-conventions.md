@@ -24,7 +24,7 @@ All workflow scripts target **Python 3.9+** for cross-platform compatibility (ma
 │   ├── git.py            # run_git() — git command wrapper
 │   ├── types.py          # TaskData (TypedDict), TaskInfo (dataclass), AgentRecord
 │   ├── tasks.py          # load_task(), iter_active_tasks() — typed task access
-│   ├── active_task.py    # Session-scoped active task resolver + global fallback
+│   ├── active_task.py    # Session-scoped active task resolver
 │   ├── task_utils.py     # resolve_task_dir(), run_task_hooks()
 │   ├── task_store.py     # Task CRUD (create, archive, set-branch, etc.)
 │   ├── task_context.py   # JSONL context management (init-context, add-context)
@@ -226,26 +226,149 @@ All current-task consumers must use the active task resolver instead of reading
 `.trellis/.current-task` directly. The resolver is the single source of truth
 for session/window scoped task state:
 
-1. Derive a context key from platform input, `TRELLIS_CONTEXT_ID`, or a
-   platform-native session environment variable when the host exports one.
-2. Read `.trellis/.runtime/contexts/<context-key>.json`.
-3. If no session task is present, fall back to `.trellis/.current-task`.
+1. Derive a context key from platform input, `TRELLIS_CONTEXT_ID`, a
+   platform-native session environment variable when the host exports one, or
+   a Cursor shell ticket for a matching AI-run `task.py` command.
+2. Read `.trellis/.runtime/sessions/<session-key>.json`.
+3. If no context key or no session task is present, return no active task.
 4. If a session task exists but the task directory is stale, return stale
-   session state and do not silently fall back to global.
+   session state.
 
 | Function | Purpose |
 |----------|---------|
 | `resolve_context_key(platform_input, platform)` | Accepts `session_id` / `sessionId` / `sessionID`, Cursor `conversation_id`, and transcript path fallbacks |
 | `resolve_active_task(repo_root, platform_input, platform)` | Returns an `ActiveTask` with `task_path`, `source_type`, `context_key`, and `stale` |
-| `set_active_task(..., global_scope=False)` | Writes session runtime state when a context key exists, otherwise writes global fallback |
-| `clear_active_task(..., global_scope=False)` | Clears the active scope while preserving resolver semantics |
+| `set_active_task(...)` | Writes session runtime state when a context key exists; returns `None` without a context key |
+| `clear_active_task(...)` | Deletes the current session file; returns no active task without a context key |
 
 `TRELLIS_CONTEXT_ID` is a context-key override for subprocesses. It is not a
 second task pointer and must never store a task path. A plain AI-run shell
 command cannot infer the current conversation/window unless the host process
 exports session identity in its environment or the command is launched with
-`TRELLIS_CONTEXT_ID`; in that case `task.py start` intentionally uses the
-global fallback and prints `Source: global`.
+`TRELLIS_CONTEXT_ID`; without that identity, `task.py start` fails and explains
+how to provide a session runtime. For Claude Code, SessionStart receives
+`CLAUDE_ENV_FILE`; Trellis must append `export TRELLIS_CONTEXT_ID=<context-key>`
+there so later Bash tools inherit the same session identity. For OpenCode,
+`tool.execute.before` must prefix Bash commands with
+`export TRELLIS_CONTEXT_ID=<context-key>;` from plugin session identity when the
+command does not already set it, because some TUI sessions do not expose
+`OPENCODE_RUN_ID` to Bash. Use `export` instead of a single-command environment
+assignment so compound commands like `task.py start && task.py current` keep the
+same context for every command in the Bash invocation.
+For Cursor, `session-start.py` is not a reliable shell environment bridge.
+Instead, `inject-shell-session-context.py` must run on `beforeShellExecution`
+and write a short-lived `.trellis/.runtime/cursor-shell/*.json` ticket for
+matching `task.py start/current/finish` commands. The active task resolver may
+consume the ticket only when no env identity exists, the current `task.py`
+subcommand matches the ticket, the ticket is fresh, and exactly one context key
+matches. This keeps Cursor task state per conversation without accepting a
+global pointer.
+For Pi Agent, the generated TypeScript extension must read the real session id
+from `ctx.sessionManager.getSessionId()` and mutate Bash tool calls in
+`tool_call` by prefixing `export TRELLIS_CONTEXT_ID=<context-key>;`. The Python
+resolver then sees the explicit `TRELLIS_CONTEXT_ID` override; Pi does not need
+a `.current-task` fallback or a Python hook directory.
+
+#### Scenario: Active Task Runtime Lifecycle
+
+##### 1. Scope / Trigger
+
+- Trigger: any change to `task.py create/start/current/finish`, hook
+  current-task injection, statusline current-task display, or platform session
+  identity handling.
+- Reason: current-task state is a cross-platform runtime contract. A direct
+  `.current-task` read or an eager `.runtime` write can reintroduce multi-window
+  task pollution.
+
+##### 2. Signatures
+
+- `python3 .trellis/scripts/task.py create "<title>" [--slug <slug>]`
+- `python3 .trellis/scripts/task.py start <task-dir>`
+- `python3 .trellis/scripts/task.py current [--source]`
+- `python3 .trellis/scripts/task.py finish`
+- `resolve_active_task(repo_root, platform_input=None, platform=None) -> ActiveTask`
+- `set_active_task(task_path, repo_root, platform_input=None, platform=None) -> ActiveTask | None`
+- `clear_active_task(repo_root, platform_input=None, platform=None) -> ActiveTask`
+
+##### 3. Contracts
+
+- `task.py create` creates only task-owned files under
+  `.trellis/tasks/<date-slug>/`. It must not create `.trellis/.runtime/` and
+  must not write `.trellis/.current-task`.
+- `task.py start` writes session-local state only when a context key is
+  available. Otherwise it exits non-zero and must not write
+  `.trellis/.current-task`.
+- Session state is stored at
+  `.trellis/.runtime/sessions/<session-key>.json`. The runtime directory is
+  created lazily by the JSON write path.
+- Context filenames are derived from the resolved context key:
+  - `TRELLIS_CONTEXT_ID=session-demo` -> `session-demo.json`
+  - `CODEX_SESSION_ID=native-a` -> `codex_native-a.json`
+  - `CODEX_THREAD_ID=thread-a` -> `codex_thread-a.json`
+  - `OPENCODE_RUN_ID=run-a` -> `opencode_run-a.json`
+  - OpenCode plugin `sessionID=oc-a` -> `opencode_oc-a.json`
+  - `CURSOR_SESSION_ID=cursor-a` -> `cursor_cursor-a.json`
+  - transcript fallback -> `<platform>_transcript_<sha256-prefix>.json`
+- `TRELLIS_CONTEXT_ID` is already a complete context key. Do not prepend a
+  platform name to it.
+- `task.py finish` deletes only the current session file. Without a
+  context key it returns "no current task" and must not delete
+  `.trellis/.current-task`.
+- `task.py archive <task>` deletes every runtime session file whose
+  `current_task` points at the archived task before moving the task directory.
+
+##### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|-----------|-------------------|
+| `create` succeeds | Task files exist; no `.runtime`; no `.current-task` |
+| `start` without context key | Fails; no `.runtime`; no `.current-task`; hints IDE/session identity or `TRELLIS_CONTEXT_ID` |
+| `start` with `TRELLIS_CONTEXT_ID` | Writes `.runtime/sessions/<key>.json`; does not require `.current-task` |
+| `current --source` with same context key | Prints `Source: session:<key>` |
+| `current --source` without context | Prints `(none)` and `Source: none` |
+| stale session task + stale `.current-task` exists | Returns stale session state; no `.current-task` fallback |
+| `finish` with context key and active task | Deletes `.runtime/sessions/<key>.json` |
+| `finish` without context key | Returns no current task; does not delete `.current-task` |
+| `archive` for a task referenced by runtime sessions | Deletes those session files even when `finish` was skipped |
+
+##### 5. Good/Base/Bad Cases
+
+- Good: Cursor provides `conversation_id`; resolver writes
+  `cursor_<conversation-id>.json` and hooks/statusline display `[session]`.
+- Base: A normal shell command has no session env; `task.py start` fails with
+  a session identity hint and does not create `.current-task`.
+- Bad: `task.py create` pre-creates `.runtime`, or any resolver reads/writes
+  `.trellis/.current-task` as an active-task fallback.
+
+##### 6. Tests Required
+
+- Regression tests for `create` producing no runtime/current-task state.
+- Regression tests for `start` without a context key failing without creating
+  `.current-task`.
+- Regression tests for `TRELLIS_CONTEXT_ID` and platform-native env keys.
+- Hook/statusline tests proving the resolver source is surfaced.
+- Stale session tests proving no `.current-task` fallback occurs when the session task
+  path is stale.
+
+##### 7. Wrong vs Correct
+
+###### Wrong
+
+```python
+# Wrong: silently creates or deletes repo-global task state when no session
+# identity exists.
+if not resolve_context_key():
+    write_file(".trellis/.current-task", task_path)
+```
+
+###### Correct
+
+```python
+context_key = resolve_context_key(platform_input, platform)
+if not context_key:
+    return ActiveTask(None, "none")
+clear_session_context(context_key)
+```
 
 ### `common/types.py` — Typed Data Model
 
@@ -655,7 +778,7 @@ def _auto_commit(scope: str, message: str, repo_root: Path) -> None:
 When a script needs different output for different use cases, use `--mode` (not separate scripts or additional flags).
 
 **Example**: `get_context.py` serves two modes:
-- `--mode default` — full session context (DEVELOPER, GIT STATUS, RECENT COMMITS, CURRENT TASK, ACTIVE TASKS, MY TASKS, JOURNAL, PATHS)
+- `--mode default` — full session runtime (DEVELOPER, GIT STATUS, RECENT COMMITS, CURRENT TASK, ACTIVE TASKS, MY TASKS, JOURNAL, PATHS)
 - `--mode record` — focused output for record-session (MY ACTIVE TASKS first with emphasis, GIT STATUS, RECENT COMMITS, CURRENT TASK)
 
 ```python
@@ -801,7 +924,7 @@ def get_task_package(task_dir: Path) -> str | None:
     return get_default_package(repo_root)
 ```
 
-Why wrong: silently diverges from `task.json.package`. A task created under `packages/cli` but later read from `docs-site/` would flip package, breaking spec scope, session context, and Linear sync idempotency.
+Why wrong: silently diverges from `task.json.package`. A task created under `packages/cli` but later read from `docs-site/` would flip package, breaking spec scope, session runtime, and Linear sync idempotency.
 
 #### Correct — read the frozen field, fall back through `resolve_package`
 

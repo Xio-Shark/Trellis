@@ -47,6 +47,8 @@ src/
 │   ├── shared-hooks/    # Platform-independent Python hook scripts
 │   │   ├── index.ts     # getSharedHookScripts()
 │   │   ├── session-start.py
+│   │   ├── inject-shell-session-context.py
+│   │   ├── inject-workflow-state.py
 │   │   ├── inject-subagent-context.py
 │   │   └── statusline.py
 │   ├── claude/          # Claude Code templates (agents, hooks, settings)

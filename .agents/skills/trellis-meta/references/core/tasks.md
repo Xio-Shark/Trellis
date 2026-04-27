@@ -152,17 +152,19 @@ List files to inject as context for each phase.
 
 ---
 
-## Current Task Pointer
+## Session-Scoped Active Task
 
-### `.trellis/.current-task`
+### `.trellis/.runtime/sessions/<session-key>.json`
 
-Points to active task directory.
+Stores the active task for one AI session/window.
 
+```json
+{
+  "current_task": ".trellis/tasks/01-31-add-login"
+}
 ```
-.trellis/tasks/01-31-add-login
-```
 
-### Set Current Task
+### Set Active Task
 
 ```bash
 python3 .trellis/scripts/task.py start <task-dir>
@@ -260,7 +262,7 @@ python3 .trellis/scripts/task.py create-pr [dir] [--dry-run]
 
 ## get_context.py
 
-Display session context including task information.
+Display session runtime including task information.
 
 ```bash
 python3 .trellis/scripts/get_context.py                      # Default text (full context)
@@ -300,7 +302,7 @@ Modify `next_action` in task.json:
 
 ## Best Practices
 
-1. **One task at a time** - Use `.current-task` to track focus
+1. **Session-local focus** - Use `task.py start` in each AI session/window
 2. **Clear PRDs** - Write specific, testable requirements
 3. **Relevant context** - Only include needed files in JSONL
 4. **Archive completed** - Keep task directory clean

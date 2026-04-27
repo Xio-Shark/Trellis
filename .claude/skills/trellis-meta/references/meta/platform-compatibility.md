@@ -59,7 +59,7 @@ These features work on all platforms because they're file-based.
 | Slash commands | `.claude/commands/` | Command prompts (read manually on Cursor) |
 | JSONL context | `*.jsonl` in task dirs | Context file lists |
 | Developer identity | `.trellis/.developer` | Who is working |
-| Current task | `.trellis/.current-task` | Active task pointer |
+| Current task | `.trellis/.runtime/sessions/` | Session-scoped active task state |
 
 **Cursor workaround**: Manually read these files at session start.
 
@@ -150,10 +150,10 @@ For teams using Cursor, here's how to get partial Trellis benefits:
 1. Session Start
    - Read .trellis/workflow.md
    - Read relevant specs from .trellis/spec/
-   - Check .trellis/.current-task
+   - Run `task.py current --source`
 
 2. Before Implementation
-   - Read implement.jsonl for context files
+   - Read implement.jsonl for session files
    - Manually read each file listed
    - Follow spec guidelines
 

@@ -83,7 +83,7 @@ Inject initial context when a Claude Code session starts.
 **Injects:**
 - Developer identity from `.trellis/.developer`
 - Git status and recent commits
-- Current task (if `.trellis/.current-task` exists)
+- Current task (if the session-scoped resolver finds one)
 - `workflow.md` content
 - All `spec/*/index.md` files
 - Start instructions
@@ -110,7 +110,7 @@ Inject relevant specs when a subagent is invoked.
 
 **Flow:**
 1. Read `subagent_type` from tool input
-2. Find current task from `.trellis/.current-task`
+2. Find active task through the session-scoped resolver
 3. Load `{subagent_type}.jsonl` from task directory
 4. Read each file listed in JSONL
 5. Build augmented prompt with context
@@ -236,5 +236,5 @@ TOOL_INPUT='{"subagent_type":"implement","prompt":"test"}' \
 |-------|-------|----------|
 | Hook not running | Wrong matcher | Check settings.json matcher |
 | Timeout | Script too slow | Increase timeout or optimize |
-| No context injected | Missing .current-task | Run `task.py start` |
-| JSONL not found | Wrong task directory | Check .current-task path |
+| No context injected | Missing session active task | Run `task.py start` with session identity |
+| JSONL not found | Wrong task directory | Check `task.py current --source` |

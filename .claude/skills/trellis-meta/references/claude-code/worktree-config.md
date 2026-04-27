@@ -118,7 +118,7 @@ verify:
 ```
 
 **Workflow**:
-1. Set `.trellis/.current-task`
+1. Set the session-scoped active task
 2. Call `Task(subagent_type="implement")`
 3. Call `Task(subagent_type="check")`
 4. When Check Agent completes, Ralph Loop runs `verify` commands

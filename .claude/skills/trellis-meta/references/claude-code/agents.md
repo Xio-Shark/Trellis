@@ -65,7 +65,7 @@ model: opus
 
 **Workflow**:
 ```
-1. Read .trellis/.current-task → find task directory
+1. Run task.py current --source → find session active task directory
 2. Read task.json → get next_action array
 3. For each phase:
    - implement → Task(subagent_type="implement")
@@ -94,7 +94,7 @@ model: opus
 - Call Research Agent to analyze codebase
 - Create `prd.md` with requirements
 - Configure `task.json` (branch, scope, phases)
-- Initialize JSONL context files
+- Initialize JSONL session files
 
 **Rejection Criteria**:
 - Vague requirements ("make it better")
@@ -263,9 +263,9 @@ Task(subagent_type="implement") called
             ▼
 inject-subagent-context.py runs
             │
-            ├── Read .trellis/.current-task
+            ├── Resolve session active task
             │
-            ├── Find task directory
+            ├── Find task directory from .runtime/sessions/<session-key>.json
             │
             ├── Load implement.jsonl
             │   {"file": ".trellis/spec/cli/backend/index.md", "reason": "..."}
@@ -325,7 +325,7 @@ Orchestrator (you or dispatch)
 3. For Development Task:
    a. Research Agent → analyze codebase
    b. Create task directory + JSONL files
-   c. task.py start → set .current-task
+   c. task.py start → set session active task
    d. Implement Agent → write code
    e. Check Agent → review & fix
    f. Human tests and commits

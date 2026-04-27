@@ -19,7 +19,7 @@ These scripts work on all platforms - they only read/write files and don't requi
 │
 ├── init_developer.py       # Initialize developer
 ├── get_developer.py        # Get developer name
-├── get_context.py          # Get session context
+├── get_context.py          # Get session runtime
 ├── task.py                 # Task management CLI
 └── add_session.py          # Record session
 ```
@@ -63,7 +63,7 @@ python3 .trellis/scripts/get_developer.py
 
 ### `get_context.py`
 
-Get session context for AI consumption.
+Get session runtime for AI consumption.
 
 ```bash
 python3 .trellis/scripts/get_context.py
@@ -128,15 +128,17 @@ Active Tasks:
 python3 .trellis/scripts/task.py start <task-dir>
 ```
 
-Sets `.trellis/.current-task` to the task directory.
+Sets the active task in `.trellis/.runtime/sessions/<session-key>.json`.
+Without a session identity or `TRELLIS_CONTEXT_ID`, this command fails and
+does not create `.trellis/.current-task`.
 
-#### Stop Task
+#### Finish Task
 
 ```bash
-python3 .trellis/scripts/task.py stop
+python3 .trellis/scripts/task.py finish
 ```
 
-Clears `.trellis/.current-task`.
+Clears the active task for the current session runtime only.
 
 #### Initialize Context
 
@@ -204,7 +206,7 @@ Task lookup functions.
 
 ```python
 from common.task_utils import (
-    get_current_task,  # Get current task directory
+    get_current_task,  # Get active task directory
     load_task_json,    # Load task.json
     save_task_json,    # Save task.json
 )

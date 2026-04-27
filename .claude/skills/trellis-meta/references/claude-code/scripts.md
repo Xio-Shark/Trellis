@@ -70,7 +70,7 @@ python3 .trellis/scripts/multi_agent/start.py <task-dir>
 3. Copy files from `worktree.yaml` copy list
 4. Copy task directory to worktree
 5. Run `post_create` commands
-6. Set `.trellis/.current-task`
+6. Set the session-scoped active task
 7. Start Claude Dispatch Agent:
    ```bash
    claude -p --agent dispatch \

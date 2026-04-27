@@ -411,6 +411,81 @@ if (hasExplicitTools) {
 
 **Why**: Users specify explicit flags intentionally. The `-y` flag means "skip interactive prompts", not "ignore my other flags".
 
+### Scenario: Non-Interactive Batch Flags Must Not Prompt
+
+#### 1. Scope / Trigger
+
+- Trigger: any command that accepts batch-resolution flags such as `--force`,
+  `--skip-all`, `--create-new`, or a command-specific `--yes`.
+- Reason: these flags are explicit consent for non-interactive execution. A
+  later confirmation prompt can crash CI or smoke tests when stdin is closed.
+
+#### 2. Signatures
+
+- `trellis update --force`
+- `trellis update --skip-all`
+- `trellis update --create-new`
+- `trellis update --force --migrate`
+- `update({ force?: boolean, skipAll?: boolean, createNew?: boolean, migrate?: boolean })`
+
+#### 3. Contracts
+
+- `--force`, `--skip-all`, and `--create-new` resolve file conflicts without
+  per-file prompts.
+- The same flags also bypass the final `Proceed?` confirmation prompt.
+- `--migrate` alone may still prompt for modified migration entries and final
+  confirmation.
+- `--dry-run` must return before any mutation or confirmation prompt.
+- A no-op update with batch flags must still complete without touching
+  `inquirer.prompt`.
+
+#### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|-----------|-------------------|
+| `update --force --migrate` in non-TTY shell | exits 0 or a domain error; never crashes with readline/inquirer lifecycle errors |
+| `update --force` with modified template | overwrites, updates hash, no prompt |
+| `update --skip-all` with modified template | preserves file, no prompt |
+| `update --create-new` with modified template | writes `.new`, no prompt |
+| `update --migrate` without batch flag | may prompt interactively |
+| `update --dry-run` | no prompt, no backup, no writes |
+
+#### 5. Good/Base/Bad Cases
+
+- Good: `node dist/cli/index.js update --force --migrate` can run as a smoke
+  test with closed stdin and either update files or report already up to date.
+- Base: `trellis update --migrate` in a terminal asks the user how to handle
+  modified migrated files.
+- Bad: `--force` resolves file conflicts but still asks `Proceed?`, then
+  crashes in CI with `ERR_USE_AFTER_CLOSE`.
+
+#### 6. Tests Required
+
+- Integration test that clears the `inquirer.prompt` mock after setup and
+  asserts `update({ force: true })` does not call it.
+- Existing force/skip/create-new tests must continue to assert file outcomes.
+- Real CLI smoke test after build:
+  `node packages/cli/dist/cli/index.js update --force --migrate`.
+
+#### 7. Wrong vs Correct
+
+##### Wrong
+
+```typescript
+if (!options.dryRun) {
+  await inquirer.prompt([{ name: "proceed", message: "Proceed?" }]);
+}
+```
+
+##### Correct
+
+```typescript
+const batchMode = options.force || options.skipAll || options.createNew;
+if (!options.dryRun && !batchMode) {
+  await inquirer.prompt([{ name: "proceed", message: "Proceed?" }]);
+}
+```
+
 ### Data-Driven Configuration
 
 When handling multiple similar options, use arrays with metadata instead of repeated if-else:

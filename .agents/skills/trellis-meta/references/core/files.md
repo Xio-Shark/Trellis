@@ -9,7 +9,8 @@ Complete reference of all files in the `.trellis/` directory.
 ```
 .trellis/
 ├── .developer              # Developer identity (gitignored)
-├── .current-task           # Active task pointer (gitignored)
+├── .runtime/               # Session-scoped runtime state (gitignored)
+├── .current-task           # Legacy ignored pointer; not an active-task source
 ├── .ralph-state.json       # Ralph Loop state (gitignored)
 ├── .template-hashes.json   # Template version tracking
 ├── .version                # Installed Trellis version
@@ -43,23 +44,35 @@ taosu
 
 ---
 
-### `.current-task`
+### `.runtime/sessions/<session-key>.json`
 
-**Purpose**: Point to the active task directory.
+**Purpose**: Store active task state for one AI session/window.
 
 **Created by**: `task.py start <task-dir>`
 
-**Format**: Plain text, relative path to task directory.
+**Format**: JSON runtime context.
 
-```
-.trellis/tasks/01-31-add-login-taosu
+```json
+{
+  "current_task": ".trellis/tasks/01-31-add-login-taosu",
+  "current_run": null,
+  "platform": "claude",
+  "last_seen_at": "2026-04-27T00:00:00Z"
+}
 ```
 
-**Gitignored**: Yes - each developer works on different tasks.
+**Gitignored**: Yes - each session/window has its own active task.
 
 **Used by**:
-- Hooks read this to find task context
-- Scripts use this for current task operations
+- Hooks resolve this through `common.active_task`
+- Scripts use this for active task operations
+
+### `.current-task`
+
+**Purpose**: Legacy ignored pointer from older Trellis versions.
+
+**Active-task behavior**: Not read or written as a fallback. Current Trellis
+uses `.runtime/sessions/<session-key>.json` only.
 
 ---
 
@@ -143,8 +156,11 @@ taosu
 # Developer identity (local only)
 .developer
 
-# Current task pointer
+# Legacy current task pointer
 .current-task
+
+# Session runtime state
+.runtime/
 
 # Ralph Loop state
 .ralph-state.json
@@ -263,7 +279,7 @@ Developer workspaces with journals and indexes.
 
 ### `tasks/`
 
-Task directories with PRDs and context files.
+Task directories with PRDs and session files.
 
 → See `core/tasks.md`
 
@@ -326,7 +342,8 @@ These files are managed by `trellis update`:
 ```
 .trellis/
 ├── .developer           # init_developer.py
-├── .current-task        # task.py start
+├── .runtime/sessions/   # task.py start
+├── .current-task        # legacy ignored file, not active-task source
 ├── .ralph-state.json    # ralph-loop.py
 ├── workspace/{dev}/     # init_developer.py
 │   ├── index.md
