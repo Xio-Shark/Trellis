@@ -54,6 +54,34 @@ interface TemplateIndex {
 }
 
 export type TemplateStrategy = "skip" | "overwrite" | "append";
+export type RegistryBackend = "http" | "git";
+export type RegistrySourceKind = "prefixed" | "https" | "ssh";
+export type RegistryErrorKind =
+  | "auth"
+  | "git-unavailable"
+  | "invalid-json"
+  | "network"
+  | "not-found"
+  | "path-not-found"
+  | "ref-not-found"
+  | "unknown";
+
+export class RegistryBackendError extends Error {
+  readonly kind: RegistryErrorKind;
+
+  constructor(kind: RegistryErrorKind, message: string) {
+    super(message);
+    this.name = "RegistryBackendError";
+    this.kind = kind;
+  }
+}
+
+export interface RegistryProbeResult {
+  templates: SpecTemplate[];
+  isNotFound: boolean;
+  backend: RegistryBackend;
+  error?: RegistryBackendError;
+}
 
 export interface RegistrySource {
   /** Original provider prefix (e.g., "gh", "gitlab", "bitbucket") */
@@ -70,6 +98,12 @@ export interface RegistrySource {
   gigetSource: string;
   /** Custom host for self-hosted instances (e.g., "git.company.com"). Undefined for public providers. */
   host?: string;
+  /** Git remote URL used by git-backed registry access. */
+  gitUrl: string;
+  /** Whether registry access should prefer Git over anonymous raw HTTP. */
+  preferGit: boolean;
+  /** Input family used to derive credential behavior and clone URL shape. */
+  sourceKind: RegistrySourceKind;
 }
 
 // =============================================================================
@@ -128,6 +162,42 @@ const PUBLIC_DOMAIN_TO_PREFIX: Record<string, string> = {
   "bitbucket.org": "bitbucket",
 };
 
+interface RegistryGitUrlInput {
+  provider: string;
+  repo: string;
+  sourceKind: RegistrySourceKind;
+  host?: string;
+  sshHost?: string;
+  sshPort?: string;
+  sshStyle?: "scp" | "ssh-url";
+}
+
+function buildRegistryGitUrl(input: RegistryGitUrlInput): string {
+  if (input.sourceKind === "ssh" && input.sshHost) {
+    if (input.sshStyle === "ssh-url") {
+      const port = input.sshPort ? `:${input.sshPort}` : "";
+      return `ssh://git@${input.sshHost}${port}/${input.repo}.git`;
+    }
+    return `git@${input.sshHost}:${input.repo}.git`;
+  }
+
+  if (input.host) {
+    return `https://${input.host}/${input.repo}.git`;
+  }
+
+  switch (input.provider) {
+    case "gh":
+    case "github":
+      return `https://github.com/${input.repo}.git`;
+    case "gitlab":
+      return `https://gitlab.com/${input.repo}.git`;
+    case "bitbucket":
+      return `https://bitbucket.org/${input.repo}.git`;
+    default:
+      return input.repo;
+  }
+}
+
 /**
  * Parse a giget-style registry source into its components.
  *
@@ -152,14 +222,23 @@ export function parseRegistrySource(source: string): RegistrySource {
   // --- Self-hosted URL detection (SSH + unknown HTTPS) ---
   let host: string | undefined;
   let normalizedInput: string | undefined;
+  let sourceKind: RegistrySourceKind = "prefixed";
+  let sshHost: string | undefined;
+  let sshPort: string | undefined;
+  let sshStyle: "scp" | "ssh-url" | undefined;
 
   // SSH URL: git@host:org/repo[.git] or ssh://git@host[:port]/org/repo[.git]
-  const sshMatch =
-    source.match(/^git@([^:]+):(.+?)(?:\.git)?\/?$/) ??
-    source.match(/^ssh:\/\/git@([^/:]+)(?::\d+)?\/(.+?)(?:\.git)?\/?$/);
-  if (sshMatch) {
-    const sshDomain = sshMatch[1];
-    const sshPath = sshMatch[2];
+  const scpSshMatch = source.match(/^git@([^:]+):(.+?)(?:\.git)?\/?$/);
+  const protocolSshMatch = source.match(
+    /^ssh:\/\/git@([^/:]+)(?::(\d+))?\/(.+?)(?:\.git)?\/?$/,
+  );
+  if (scpSshMatch || protocolSshMatch) {
+    sourceKind = "ssh";
+    sshStyle = scpSshMatch ? "scp" : "ssh-url";
+    const sshDomain = scpSshMatch?.[1] ?? protocolSshMatch?.[1] ?? "";
+    const sshPath = scpSshMatch?.[2] ?? protocolSshMatch?.[3] ?? "";
+    sshPort = protocolSshMatch?.[2];
+    sshHost = sshDomain;
     const publicPrefix = PUBLIC_DOMAIN_TO_PREFIX[sshDomain];
     if (publicPrefix) {
       // Public provider SSH (e.g., git@github.com:org/repo) — use native prefix, no host
@@ -172,9 +251,10 @@ export function parseRegistrySource(source: string): RegistrySource {
   }
 
   // HTTPS URL to unknown domain (not github.com/gitlab.com/bitbucket.org)
-  if (!host) {
+  if (!normalizedInput) {
     const httpsMatch = source.match(/^https?:\/\/([^/]+)\/(.+?)(?:\.git)?\/?$/);
     if (httpsMatch) {
+      sourceKind = "https";
       const domain = httpsMatch[1];
       if (!KNOWN_PUBLIC_DOMAINS.includes(domain)) {
         host = domain;
@@ -252,8 +332,29 @@ export function parseRegistrySource(source: string): RegistrySource {
 
   // Build giget source (use normalized format)
   const gigetSource = normalized;
+  const gitUrl = buildRegistryGitUrl({
+    provider,
+    host,
+    repo,
+    sourceKind,
+    sshHost,
+    sshPort,
+    sshStyle,
+  });
+  const preferGit = sourceKind === "ssh" || host !== undefined;
 
-  return { provider, repo, subdir, ref, rawBaseUrl, gigetSource, host };
+  return {
+    provider,
+    repo,
+    subdir,
+    ref,
+    rawBaseUrl,
+    gigetSource,
+    host,
+    gitUrl,
+    preferGit,
+    sourceKind,
+  };
 }
 
 // =============================================================================
@@ -330,6 +431,130 @@ export async function fetchTemplateIndex(
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function parseTemplateIndex(raw: string, sourceLabel: string): TemplateIndex {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new RegistryBackendError(
+      "invalid-json",
+      `${sourceLabel} is not valid JSON: ${detail}`,
+    );
+  }
+
+  if (!isRecord(parsed) || !Array.isArray(parsed.templates)) {
+    throw new RegistryBackendError(
+      "invalid-json",
+      `${sourceLabel} must contain a templates array.`,
+    );
+  }
+
+  const templates: SpecTemplate[] = [];
+  for (const item of parsed.templates) {
+    if (!isRecord(item)) {
+      throw new RegistryBackendError(
+        "invalid-json",
+        `${sourceLabel} contains an invalid template entry.`,
+      );
+    }
+    const { id, type, name, description, path: templatePath, tags } = item;
+    if (
+      typeof id !== "string" ||
+      typeof type !== "string" ||
+      typeof name !== "string" ||
+      typeof templatePath !== "string"
+    ) {
+      throw new RegistryBackendError(
+        "invalid-json",
+        `${sourceLabel} template entries must include string id, type, name, and path fields.`,
+      );
+    }
+    templates.push({
+      id,
+      type,
+      name,
+      path: templatePath,
+      ...(typeof description === "string" ? { description } : {}),
+      ...(Array.isArray(tags) && tags.every((tag) => typeof tag === "string")
+        ? { tags }
+        : {}),
+    });
+  }
+
+  const version = typeof parsed.version === "number" ? parsed.version : 1;
+  return { version, templates };
+}
+
+function emptyProbeResult(
+  backend: RegistryBackend,
+  isNotFound: boolean,
+  error?: RegistryBackendError,
+): RegistryProbeResult {
+  return { templates: [], isNotFound, backend, ...(error ? { error } : {}) };
+}
+
+function shouldFallbackToGit(
+  registry: RegistrySource | undefined,
+  result: RegistryProbeResult,
+): boolean {
+  if (registry?.provider !== "gitlab") return false;
+  if (result.backend !== "http" || result.isNotFound) return false;
+  return result.error?.kind === "auth" || result.error?.kind === "invalid-json";
+}
+
+async function probeRegistryIndexHttp(
+  indexUrl: string,
+): Promise<RegistryProbeResult> {
+  try {
+    const res = await fetch(indexUrl, {
+      signal: AbortSignal.timeout(TIMEOUTS.INDEX_FETCH_MS),
+    });
+    if (res.status === 404) {
+      return emptyProbeResult("http", true);
+    }
+    if (res.status === 401 || res.status === 403) {
+      return emptyProbeResult(
+        "http",
+        false,
+        new RegistryBackendError(
+          "auth",
+          `Registry index requires authentication (HTTP ${res.status}). Use a registry source accessible by your local Git credentials.`,
+        ),
+      );
+    }
+    if (!res.ok) {
+      return emptyProbeResult(
+        "http",
+        false,
+        new RegistryBackendError(
+          "network",
+          `Could not reach registry index (HTTP ${res.status}). Check your network connection and try again.`,
+        ),
+      );
+    }
+
+    const index = parseTemplateIndex(await res.text(), "Registry index.json");
+    return { templates: index.templates, isNotFound: false, backend: "http" };
+  } catch (error) {
+    if (error instanceof RegistryBackendError) {
+      return emptyProbeResult("http", false, error);
+    }
+    return emptyProbeResult(
+      "http",
+      false,
+      new RegistryBackendError(
+        "network",
+        `Could not reach registry index: ${error instanceof Error ? error.message : String(error)}`,
+      ),
+    );
+  }
+}
+
 /**
  * Probe a registry's index.json, distinguishing "not found" from transient errors.
  * Used by the registry flow to decide marketplace vs direct-download mode.
@@ -338,25 +563,279 @@ export async function fetchTemplateIndex(
  * - Other HTTP error / network timeout → { templates: [], isNotFound: false }
  * - 200 + valid JSON → { templates: [...], isNotFound: false }
  */
-export async function probeRegistryIndex(indexUrl: string): Promise<{
-  templates: SpecTemplate[];
-  isNotFound: boolean;
-}> {
+export async function probeRegistryIndex(
+  indexUrl: string,
+  registry?: RegistrySource,
+): Promise<RegistryProbeResult> {
+  if (registry?.preferGit) {
+    return probeRegistryIndexGit(registry);
+  }
+
+  const httpResult = await probeRegistryIndexHttp(indexUrl);
+  if (registry && shouldFallbackToGit(registry, httpResult)) {
+    return probeRegistryIndexGit(registry);
+  }
+  return httpResult;
+}
+
+interface GitCommandOutput {
+  stdout: string;
+  stderr: string;
+}
+
+interface CommandError extends Error {
+  stdout?: string;
+  stderr?: string;
+  code?: number | string | null;
+  signal?: NodeJS.Signals | null;
+}
+
+interface GitCheckout {
+  dir: string;
+  cleanup: () => Promise<void>;
+}
+
+async function runGit(args: string[]): Promise<GitCommandOutput> {
+  const { execFile } = await import("node:child_process");
+  return new Promise<GitCommandOutput>((resolve, reject) => {
+    execFile(
+      "git",
+      args,
+      {
+        encoding: "utf-8",
+        maxBuffer: 10 * 1024 * 1024,
+        timeout: TIMEOUTS.DOWNLOAD_MS,
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          const commandError = error as CommandError;
+          commandError.stdout = stdout;
+          commandError.stderr = stderr;
+          reject(commandError);
+          return;
+        }
+        resolve({ stdout, stderr });
+      },
+    );
+  });
+}
+
+function getCommandErrorText(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const commandError = error as CommandError;
+  return [commandError.message, commandError.stderr, commandError.stdout]
+    .filter(
+      (part): part is string => typeof part === "string" && part.length > 0,
+    )
+    .join("\n");
+}
+
+function classifyGitError(
+  error: unknown,
+  stage: "clone" | "fetch" | "checkout",
+  registry: RegistrySource,
+): RegistryBackendError {
+  const text = getCommandErrorText(error);
+  const lower = text.toLowerCase();
+
+  if (
+    lower.includes("enoent") ||
+    lower.includes("not found: git") ||
+    lower.includes("spawn git")
+  ) {
+    return new RegistryBackendError(
+      "git-unavailable",
+      'Git is required to access this registry, but the "git" command was not found.',
+    );
+  }
+
+  if (
+    lower.includes("authentication failed") ||
+    lower.includes("permission denied") ||
+    lower.includes("access denied") ||
+    lower.includes("could not read from remote repository") ||
+    lower.includes("terminal prompts disabled")
+  ) {
+    return new RegistryBackendError(
+      "auth",
+      `Authentication failed or registry is not accessible via Git. Check your local Git credentials for ${registry.gitUrl}.`,
+    );
+  }
+
+  if (
+    stage !== "clone" &&
+    (lower.includes("couldn't find remote ref") ||
+      lower.includes("could not find remote ref") ||
+      lower.includes("invalid reference") ||
+      lower.includes("reference is not a tree") ||
+      lower.includes("pathspec"))
+  ) {
+    return new RegistryBackendError(
+      "ref-not-found",
+      `Registry ref "${registry.ref}" was not found in ${registry.gitUrl}.`,
+    );
+  }
+
+  if (
+    lower.includes("could not resolve host") ||
+    lower.includes("failed to connect") ||
+    lower.includes("network is unreachable") ||
+    lower.includes("operation timed out") ||
+    lower.includes("timed out") ||
+    lower.includes("connection refused")
+  ) {
+    return new RegistryBackendError(
+      "network",
+      `Could not reach registry ${registry.gitUrl}. Check your network connection and Git remote access.`,
+    );
+  }
+
+  if (
+    stage === "clone" &&
+    (lower.includes("repository not found") ||
+      lower.includes("does not appear to be a git repository") ||
+      lower.includes("could not read from remote repository"))
+  ) {
+    return new RegistryBackendError(
+      "not-found",
+      `Registry repository was not found or is not accessible: ${registry.gitUrl}.`,
+    );
+  }
+
+  return new RegistryBackendError(
+    "unknown",
+    `Git registry operation failed: ${text}`,
+  );
+}
+
+async function cloneRegistryRef(
+  registry: RegistrySource,
+): Promise<GitCheckout> {
+  const dir = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), "trellis-registry-"),
+  );
   try {
-    const res = await fetch(indexUrl, {
-      signal: AbortSignal.timeout(TIMEOUTS.INDEX_FETCH_MS),
-    });
-    if (res.status === 404) {
-      return { templates: [], isNotFound: true };
+    try {
+      await runGit([
+        "clone",
+        "--filter=blob:none",
+        "--no-checkout",
+        registry.gitUrl,
+        dir,
+      ]);
+    } catch (error) {
+      throw classifyGitError(error, "clone", registry);
     }
-    if (!res.ok) {
-      return { templates: [], isNotFound: false };
+
+    try {
+      await runGit([
+        "-C",
+        dir,
+        "fetch",
+        "--depth",
+        "1",
+        "origin",
+        registry.ref,
+      ]);
+      await runGit(["-C", dir, "checkout", "--detach", "FETCH_HEAD"]);
+    } catch (error) {
+      throw classifyGitError(error, "fetch", registry);
     }
-    const index: TemplateIndex = (await res.json()) as TemplateIndex;
-    return { templates: index.templates, isNotFound: false };
+
+    return {
+      dir,
+      cleanup: async () => {
+        await fs.promises.rm(dir, { recursive: true, force: true });
+      },
+    };
+  } catch (error) {
+    await fs.promises.rm(dir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+function resolveInsideRegistryRoot(
+  root: string,
+  relativePath: string,
+  label: string,
+): string {
+  const resolvedRoot = path.resolve(root);
+  const resolved = path.resolve(
+    resolvedRoot,
+    relativePath.length > 0 ? relativePath : ".",
+  );
+  const relative = path.relative(resolvedRoot, resolved);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new RegistryBackendError(
+      "path-not-found",
+      `${label} path "${relativePath}" must stay inside the registry repository.`,
+    );
+  }
+  return resolved;
+}
+
+async function isDirectory(dir: string): Promise<boolean> {
+  try {
+    return (await fs.promises.stat(dir)).isDirectory();
   } catch {
-    // Network error or timeout
-    return { templates: [], isNotFound: false };
+    return false;
+  }
+}
+
+async function isFile(filePath: string): Promise<boolean> {
+  try {
+    return (await fs.promises.stat(filePath)).isFile();
+  } catch {
+    return false;
+  }
+}
+
+async function getGitRegistryRoot(
+  checkoutDir: string,
+  registry: RegistrySource,
+): Promise<string> {
+  const registryRoot = resolveInsideRegistryRoot(
+    checkoutDir,
+    registry.subdir,
+    "Registry",
+  );
+  if (!(await isDirectory(registryRoot))) {
+    throw new RegistryBackendError(
+      "path-not-found",
+      `Registry path "${registry.subdir.length > 0 ? registry.subdir : "."}" was not found in ${registry.gitUrl}#${registry.ref}.`,
+    );
+  }
+  return registryRoot;
+}
+
+async function probeRegistryIndexGit(
+  registry: RegistrySource,
+): Promise<RegistryProbeResult> {
+  try {
+    const checkout = await cloneRegistryRef(registry);
+    try {
+      const registryRoot = await getGitRegistryRoot(checkout.dir, registry);
+      const indexPath = path.join(registryRoot, "index.json");
+      if (!(await isFile(indexPath))) {
+        return emptyProbeResult("git", true);
+      }
+      const index = parseTemplateIndex(
+        await fs.promises.readFile(indexPath, "utf-8"),
+        "Registry index.json",
+      );
+      return { templates: index.templates, isNotFound: false, backend: "git" };
+    } finally {
+      await checkout.cleanup();
+    }
+  } catch (error) {
+    const registryError =
+      error instanceof RegistryBackendError
+        ? error
+        : new RegistryBackendError(
+            "unknown",
+            `Git registry probe failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+    return emptyProbeResult("git", false, registryError);
   }
 }
 
@@ -505,6 +984,94 @@ async function copyMissing(src: string, dest: string): Promise<void> {
 }
 
 /**
+ * Copy all files from src to dest, overwriting existing files.
+ */
+async function copyAll(src: string, dest: string): Promise<void> {
+  await fs.promises.mkdir(dest, { recursive: true });
+
+  const entries = await fs.promises.readdir(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      await copyAll(srcPath, destPath);
+    } else {
+      await fs.promises.copyFile(srcPath, destPath);
+    }
+  }
+}
+
+async function copyDirectoryWithStrategy(
+  srcDir: string,
+  destDir: string,
+  strategy: TemplateStrategy,
+): Promise<boolean> {
+  const exists = fs.existsSync(destDir);
+
+  if (strategy === "skip" && exists) {
+    return false;
+  }
+
+  if (strategy === "overwrite" && exists) {
+    await fs.promises.rm(destDir, { recursive: true, force: true });
+  }
+
+  if (strategy === "append" && exists) {
+    await copyMissing(srcDir, destDir);
+    return true;
+  }
+
+  await copyAll(srcDir, destDir);
+  return true;
+}
+
+async function downloadGitRegistryPath(
+  registry: RegistrySource,
+  relativePath: string,
+  destDir: string,
+  strategy: TemplateStrategy,
+): Promise<boolean> {
+  const checkout = await cloneRegistryRef(registry);
+  try {
+    const sourceRoot = resolveInsideRegistryRoot(
+      checkout.dir,
+      relativePath,
+      "Template",
+    );
+    if (!(await isDirectory(sourceRoot))) {
+      throw new RegistryBackendError(
+        "path-not-found",
+        `Template path "${relativePath.length > 0 ? relativePath : "."}" was not found in ${registry.gitUrl}#${registry.ref}.`,
+      );
+    }
+    return await copyDirectoryWithStrategy(sourceRoot, destDir, strategy);
+  } finally {
+    await checkout.cleanup();
+  }
+}
+
+async function downloadGitRegistryDirect(
+  registry: RegistrySource,
+  destDir: string,
+  strategy: TemplateStrategy,
+): Promise<boolean> {
+  const checkout = await cloneRegistryRef(registry);
+  try {
+    const sourceRoot = await getGitRegistryRoot(checkout.dir, registry);
+    return await copyDirectoryWithStrategy(sourceRoot, destDir, strategy);
+  } finally {
+    await checkout.cleanup();
+  }
+}
+
+function resolveRegistryBackend(
+  registry: RegistrySource,
+  backendOverride?: RegistryBackend,
+): RegistryBackend {
+  return backendOverride ?? (registry.preferGit ? "git" : "http");
+}
+
+/**
  * Download a template by ID
  *
  * @param cwd - Current working directory
@@ -522,14 +1089,23 @@ export async function downloadTemplateById(
   template?: SpecTemplate,
   registry?: RegistrySource,
   destDirOverride?: string,
+  registryBackend?: RegistryBackend,
 ): Promise<{ success: boolean; message: string; skipped?: boolean }> {
   // Use pre-fetched template or find from index
   let resolved = template;
+  let backend = registryBackend;
   if (!resolved) {
     const indexUrl = registry ? `${registry.rawBaseUrl}/index.json` : undefined;
     if (registry && indexUrl) {
       // Use probe to distinguish "template not in index" from "registry unreachable"
-      const probeResult = await probeRegistryIndex(indexUrl);
+      const probeResult = await probeRegistryIndex(indexUrl, registry);
+      backend = probeResult.backend;
+      if (probeResult.error) {
+        return {
+          success: false,
+          message: probeResult.error.message,
+        };
+      }
       if (probeResult.templates.length === 0 && !probeResult.isNotFound) {
         return {
           success: false,
@@ -579,12 +1155,21 @@ export async function downloadTemplateById(
   // Download template
   try {
     if (registry) {
-      // Custom registry: build full giget source with ref at the end
-      // giget format: provider:user/repo/path#ref
-      const fullSource = `${registry.provider}:${registry.repo}/${resolved.path}#${registry.ref}`;
-      await withGigetHost(registry.host, () =>
-        downloadWithStrategy(fullSource, destDir, strategy, null),
-      );
+      if (resolveRegistryBackend(registry, backend) === "git") {
+        await downloadGitRegistryPath(
+          registry,
+          resolved.path,
+          destDir,
+          strategy,
+        );
+      } else {
+        // Custom registry: build full giget source with ref at the end
+        // giget format: provider:user/repo/path#ref
+        const fullSource = `${registry.provider}:${registry.repo}/${resolved.path}#${registry.ref}`;
+        await withGigetHost(registry.host, () =>
+          downloadWithStrategy(fullSource, destDir, strategy, null),
+        );
+      }
     } else {
       await downloadWithStrategy(resolved.path, destDir, strategy);
     }
@@ -595,6 +1180,13 @@ export async function downloadTemplateById(
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
+
+    if (error instanceof RegistryBackendError) {
+      return {
+        success: false,
+        message: error.message,
+      };
+    }
 
     // Classify errors for user-friendly messages
     if (errorMessage.includes("timed out")) {
@@ -630,6 +1222,7 @@ export async function downloadRegistryDirect(
   registry: RegistrySource,
   strategy: TemplateStrategy,
   destDirOverride?: string,
+  registryBackend?: RegistryBackend,
 ): Promise<{ success: boolean; message: string; skipped?: boolean }> {
   const destDir = destDirOverride ?? getInstallPath(cwd, "spec");
 
@@ -642,14 +1235,18 @@ export async function downloadRegistryDirect(
   }
 
   try {
-    await withGigetHost(registry.host, () =>
-      downloadWithStrategy(
-        registry.gigetSource,
-        destDir,
-        strategy,
-        null, // null = templatePath is already a full giget source
-      ),
-    );
+    if (resolveRegistryBackend(registry, registryBackend) === "git") {
+      await downloadGitRegistryDirect(registry, destDir, strategy);
+    } else {
+      await withGigetHost(registry.host, () =>
+        downloadWithStrategy(
+          registry.gigetSource,
+          destDir,
+          strategy,
+          null, // null = templatePath is already a full giget source
+        ),
+      );
+    }
     return {
       success: true,
       message: `Downloaded spec from ${registry.gigetSource} to ${destDir}`,
@@ -657,6 +1254,13 @@ export async function downloadRegistryDirect(
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
+
+    if (error instanceof RegistryBackendError) {
+      return {
+        success: false,
+        message: error.message,
+      };
+    }
 
     if (errorMessage.includes("timed out")) {
       return {

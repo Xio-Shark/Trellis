@@ -527,6 +527,79 @@ fetchedTemplates = []; // Clear stale data from previous source
 
 **Why**: Shared mutable state across branches is a silent bug factory. The later guard (`registry && fetchedTemplates.length === 0`) depends on `fetchedTemplates` reflecting the *current* source, not a previous one.
 
+### Scenario: Registry Probe and Download Must Share Backend
+
+#### 1. Scope / Trigger
+
+When a CLI registry flow probes one backend to decide marketplace vs direct-download mode, and then downloads content later, the chosen backend is part of the control-flow contract. This applies to `trellis init --registry`, especially private/self-hosted Git registries.
+
+#### 2. Signatures
+
+```typescript
+type RegistryBackend = "http" | "git";
+
+interface RegistryProbeResult {
+  templates: SpecTemplate[];
+  isNotFound: boolean;
+  backend: RegistryBackend;
+  error?: RegistryBackendError;
+}
+```
+
+#### 3. Contracts
+
+- `backend` records which implementation produced the probe result.
+- `isNotFound: true` means the registry path exists but has no `index.json`; it may enter direct-download mode.
+- `error` means the probe failed and must not enter direct-download mode.
+- Download functions that receive a registry must either use the probe's `backend` or re-probe before downloading.
+
+#### 4. Validation & Error Matrix
+
+| Condition | Result |
+|---|---|
+| `index.json` exists and parses | `templates.length > 0`, `isNotFound: false`, `backend` set |
+| No `index.json` at a valid registry path | `templates: []`, `isNotFound: true`, `backend` set |
+| Auth failure / invalid login-page JSON / network failure | `isNotFound: false`, `error` set, abort or loop back |
+| Template path outside repo root | `path-not-found` error |
+| Git ref missing | `ref-not-found` error |
+
+#### 5. Good/Base/Bad Cases
+
+- Good: private GitLab probe uses local Git credentials and download copies from the same Git checkout strategy.
+- Base: public registry probe uses HTTP and download uses the existing HTTP/giget path.
+- Bad: probe succeeds through Git, but download rebuilds a raw/giget URL and fails authentication.
+
+#### 6. Tests Required
+
+- Probe test for public registry remains `backend: "http"`.
+- Probe test for self-hosted/SSH registry returns `backend: "git"`.
+- Download test passes a prefetched template plus `registryBackend: "git"` and verifies filesystem output.
+- Failure tests assert auth/ref/path/invalid-json errors do not set `isNotFound: true`.
+
+#### 7. Wrong vs Correct
+
+```typescript
+// Wrong: backend choice is lost after probe
+const probe = await probeRegistryIndex(indexUrl, registry);
+const template = probe.templates.find((t) => t.id === selected);
+await downloadTemplateById(cwd, selected, strategy, template, registry);
+
+// Correct: download uses the same backend that proved access during probe
+const probe = await probeRegistryIndex(indexUrl, registry);
+const template = probe.templates.find((t) => t.id === selected);
+await downloadTemplateById(
+  cwd,
+  selected,
+  strategy,
+  template,
+  registry,
+  undefined,
+  probe.backend,
+);
+```
+
+**Why**: Authentication and reachability are backend-specific. A successful Git probe only proves Git access; it does not prove raw HTTP or giget access.
+
 ---
 
 ## String Sanitization Patterns

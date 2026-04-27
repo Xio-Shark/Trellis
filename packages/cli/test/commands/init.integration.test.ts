@@ -56,6 +56,7 @@ describe("init() integration", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -792,6 +793,24 @@ describe("init() integration", () => {
     expect(guideCall).toBeDefined();
 
     // Should NOT create .trellis/ (early return)
+    expect(fs.existsSync(path.join(tmpDir, DIR_NAMES.WORKFLOW))).toBe(false);
+  });
+
+  it("#20 -y --registry aborts on probe failure instead of direct download fallback", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+
+    await init({
+      yes: true,
+      registry: "bitbucket:myorg/registry/spec",
+    });
+
+    const logOutput = vi
+      .mocked(console.log)
+      .mock.calls.flat()
+      .filter((part): part is string => typeof part === "string")
+      .join("\n");
+
+    expect(logOutput).toContain("Error: Could not reach registry index");
     expect(fs.existsSync(path.join(tmpDir, DIR_NAMES.WORKFLOW))).toBe(false);
   });
 

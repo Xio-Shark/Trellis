@@ -43,6 +43,7 @@ import {
   type SpecTemplate,
   type TemplateStrategy,
   type RegistrySource,
+  type RegistryBackend,
 } from "../utils/template-fetcher.js";
 import { setupProxy, maskProxyUrl } from "../utils/proxy.js";
 
@@ -1213,6 +1214,7 @@ export async function init(options: InitOptions): Promise<void> {
 
   // Pre-fetched templates list (used to pass selected SpecTemplate to downloadTemplateById)
   let fetchedTemplates: SpecTemplate[] = [];
+  let registryBackend: RegistryBackend | undefined;
 
   // Determine the index URL based on registry
   const indexUrl = registry
@@ -1241,10 +1243,13 @@ export async function init(options: InitOptions): Promise<void> {
     process.stdout.write(chalk.gray(`   Loading... 0s/${timeoutSec}s`));
     let templates: SpecTemplate[];
     let registryProbeNotFound = false;
+    let registryProbeError: Error | undefined;
     if (registry) {
-      const probeResult = await probeRegistryIndex(indexUrl);
+      const probeResult = await probeRegistryIndex(indexUrl, registry);
       templates = probeResult.templates;
       registryProbeNotFound = probeResult.isNotFound;
+      registryProbeError = probeResult.error;
+      registryBackend = probeResult.backend;
     } else {
       templates = await fetchTemplateIndex(indexUrl);
     }
@@ -1264,7 +1269,7 @@ export async function init(options: InitOptions): Promise<void> {
       // Custom registry: transient error (not a 404) — abort, don't misclassify
       console.log(
         chalk.red(
-          "   Could not reach registry (network issue). Check your connection and try again.",
+          `   ${registryProbeError?.message ?? "Could not reach registry. Check your connection and try again."}`,
         ),
       );
       return;
@@ -1331,8 +1336,12 @@ export async function init(options: InitOptions): Promise<void> {
                 `   Checking for templates at ${registry.gigetSource}...`,
               ),
             );
-            const customProbe = await probeRegistryIndex(customIndexUrl);
+            const customProbe = await probeRegistryIndex(
+              customIndexUrl,
+              registry,
+            );
             const customTemplates = customProbe.templates;
+            registryBackend = customProbe.backend;
             if (customTemplates.length > 0) {
               // Marketplace mode: show picker with custom templates
               fetchedTemplates = customTemplates;
@@ -1394,7 +1403,7 @@ export async function init(options: InitOptions): Promise<void> {
               // Transient error (not 404) — loop back, don't misclassify
               console.log(
                 chalk.yellow(
-                  "   Could not reach registry (network issue). Try again or enter a different source.",
+                  `   ${customProbe.error?.message ?? "Could not reach registry. Try again or enter a different source."}`,
                 ),
               );
               registry = undefined; // Reset so we don't fall through to direct download
@@ -1451,7 +1460,9 @@ export async function init(options: InitOptions): Promise<void> {
   if (options.yes && registry && !selectedTemplate && !monorepoPackages) {
     const probeResult = await probeRegistryIndex(
       `${registry.rawBaseUrl}/index.json`,
+      registry,
     );
+    registryBackend = probeResult.backend;
     if (probeResult.templates.length > 0) {
       // Marketplace mode requires interactive selection — can't auto-select
       console.log(
@@ -1466,7 +1477,7 @@ export async function init(options: InitOptions): Promise<void> {
       // Transient error (not 404) — abort, don't misclassify as direct-download
       console.log(
         chalk.red(
-          "Error: Could not reach registry (network issue). Check your connection and try again.",
+          `Error: ${probeResult.error?.message ?? "Could not reach registry. Check your connection and try again."}`,
         ),
       );
       return;
@@ -1494,6 +1505,8 @@ export async function init(options: InitOptions): Promise<void> {
       templateStrategy,
       prefetched,
       registry,
+      undefined,
+      registryBackend,
     );
 
     if (result.success) {
@@ -1545,6 +1558,8 @@ export async function init(options: InitOptions): Promise<void> {
       cwd,
       registry,
       templateStrategy,
+      undefined,
+      registryBackend,
     );
 
     if (result.success) {
