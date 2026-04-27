@@ -28,6 +28,7 @@ import {
   computeHash,
 } from "../utils/template-hash.js";
 import { compareVersions } from "../utils/compare-versions.js";
+import { toPosix } from "../utils/posix.js";
 import { setupProxy } from "../utils/proxy.js";
 import { emptyTaskJson } from "../utils/task-json.js";
 
@@ -819,7 +820,9 @@ function isDirectorySafeToReplace(
   if (files.length === 0) return true; // Empty directory is safe
 
   for (const fullPath of files) {
-    const relativePath = path.relative(cwd, fullPath);
+    // POSIX-normalize: hashes/templates keys are persisted as POSIX, but
+    // `path.relative` returns OS-native separators (backslash on Windows).
+    const relativePath = toPosix(path.relative(cwd, fullPath));
     const storedHash = hashes[relativePath];
     const templateContent = templates.get(relativePath);
 

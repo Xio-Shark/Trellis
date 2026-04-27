@@ -3,6 +3,7 @@ import path from "node:path";
 import { AI_TOOLS } from "../types/ai-tools.js";
 import { getOpenCodeTemplatePath } from "../templates/extract.js";
 import { ensureDir, writeFile } from "../utils/file-writer.js";
+import { toPosix } from "../utils/posix.js";
 import { resolveCommands, resolveSkills } from "./shared.js";
 
 /**
@@ -55,7 +56,9 @@ function walkOpenCodeTemplateDir(): Map<string, string> {
         walk(relEntry);
       } else {
         const content = readFileSync(absEntry, "utf-8");
-        files.set(path.join(".opencode", relEntry), content);
+        // Map keys are logical paths used as cross-platform hash keys / lookup
+        // keys downstream. Always POSIX, regardless of host OS.
+        files.set(toPosix(path.join(".opencode", relEntry)), content);
       }
     }
   }

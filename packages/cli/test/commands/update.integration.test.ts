@@ -44,6 +44,26 @@ function removeHashEntry(obj: Record<string, unknown>, key: string): Record<stri
   return Object.fromEntries(Object.entries(obj).filter(([k]) => k !== key));
 }
 
+/**
+ * Read the v2 hashes file and return the inner `hashes` map.
+ * Tests manipulate this map then write it back via `writeHashesV2`.
+ */
+function readHashesV2(hashFile: string): Record<string, string> {
+  const raw = JSON.parse(fs.readFileSync(hashFile, "utf-8")) as {
+    __version?: number;
+    hashes?: Record<string, string>;
+  };
+  return raw.hashes ?? {};
+}
+
+/** Write a v2-shaped hashes file. */
+function writeHashesV2(hashFile: string, hashes: Record<string, string>): void {
+  fs.writeFileSync(
+    hashFile,
+    JSON.stringify({ __version: 2, hashes }, null, 2),
+  );
+}
+
 describe("update() integration", () => {
   let tmpDir: string;
 
@@ -128,8 +148,8 @@ describe("update() integration", () => {
     // Delete hash + file to simulate a truly new template file
     const target = path.join(tmpDir, MANAGED_FILE);
     const hashFile = path.join(tmpDir, DIR_NAMES.WORKFLOW, ".template-hashes.json");
-    const hashes = removeHashEntry(JSON.parse(fs.readFileSync(hashFile, "utf-8")), MANAGED_FILE);
-    fs.writeFileSync(hashFile, JSON.stringify(hashes, null, 2));
+    const hashes = removeHashEntry(readHashesV2(hashFile), MANAGED_FILE) as Record<string, string>;
+    writeHashesV2(hashFile, hashes);
     fs.unlinkSync(target);
 
     await update({ dryRun: true });
@@ -169,9 +189,9 @@ describe("update() integration", () => {
     fs.writeFileSync(targetFull, oldContent);
 
     const hashFile = path.join(tmpDir, DIR_NAMES.WORKFLOW, ".template-hashes.json");
-    const hashes = JSON.parse(fs.readFileSync(hashFile, "utf-8"));
+    const hashes = readHashesV2(hashFile);
     hashes[targetRelative] = computeHash(oldContent);
-    fs.writeFileSync(hashFile, JSON.stringify(hashes, null, 2));
+    writeHashesV2(hashFile, hashes);
 
     await update({ force: true });
 
@@ -255,9 +275,9 @@ describe("update() integration", () => {
     const oldContent = "# Old version of script\n";
     fs.writeFileSync(targetFull, oldContent);
     const hashFile = path.join(tmpDir, DIR_NAMES.WORKFLOW, ".template-hashes.json");
-    const hashes = JSON.parse(fs.readFileSync(hashFile, "utf-8"));
+    const hashes = readHashesV2(hashFile);
     hashes[MANAGED_FILE] = computeHash(oldContent);
-    fs.writeFileSync(hashFile, JSON.stringify(hashes, null, 2));
+    writeHashesV2(hashFile, hashes);
 
     await update({ force: true });
 
@@ -288,8 +308,8 @@ describe("update() integration", () => {
     // Remove hash entry + file to simulate a truly new template file
     const target = path.join(tmpDir, MANAGED_FILE);
     const hashFile = path.join(tmpDir, DIR_NAMES.WORKFLOW, ".template-hashes.json");
-    const hashes = removeHashEntry(JSON.parse(fs.readFileSync(hashFile, "utf-8")), MANAGED_FILE);
-    fs.writeFileSync(hashFile, JSON.stringify(hashes, null, 2));
+    const hashes = removeHashEntry(readHashesV2(hashFile), MANAGED_FILE) as Record<string, string>;
+    writeHashesV2(hashFile, hashes);
     fs.unlinkSync(target);
 
     await update({ allowDowngrade: true, force: true });
@@ -347,11 +367,11 @@ describe("update() integration", () => {
 
     // The hash file should exist
     const hashFile = path.join(tmpDir, DIR_NAMES.WORKFLOW, ".template-hashes.json");
-    const hashes = removeHashEntry(JSON.parse(fs.readFileSync(hashFile, "utf-8")), MANAGED_FILE);
+    const hashes = removeHashEntry(readHashesV2(hashFile), MANAGED_FILE) as Record<string, string>;
 
     // Remove a hash entry AND the file (simulates a truly new template)
     const targetPath = path.join(tmpDir, MANAGED_FILE);
-    fs.writeFileSync(hashFile, JSON.stringify(hashes, null, 2));
+    writeHashesV2(hashFile, hashes);
     fs.unlinkSync(targetPath);
 
     // Run update

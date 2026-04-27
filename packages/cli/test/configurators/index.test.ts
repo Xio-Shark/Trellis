@@ -340,6 +340,21 @@ describe("collectPlatformTemplates", () => {
     }
   });
 
+  // POSIX-key invariant: collector keys feed the cross-platform hash
+  // dictionary in `.template-hashes.json`, which must be identical
+  // regardless of host OS. Backslash separators (Windows `path.join`)
+  // would silently corrupt the hash store and make every file appear
+  // "modified" after a cross-OS round-trip.
+  it("returned Map keys never contain backslash (POSIX-only)", () => {
+    for (const id of PLATFORM_IDS) {
+      const result = collectPlatformTemplates(id);
+      if (!result) continue;
+      for (const [filePath] of result) {
+        expect(filePath).not.toMatch(/\\/);
+      }
+    }
+  });
+
   it("copilot collectTemplates includes both tracked and discovery config files", () => {
     const result = collectPlatformTemplates("copilot");
     expect(result).toBeInstanceOf(Map);

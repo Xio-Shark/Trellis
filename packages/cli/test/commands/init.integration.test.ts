@@ -320,10 +320,11 @@ describe("init() integration", () => {
       DIR_NAMES.WORKFLOW,
       ".template-hashes.json",
     );
-    const hashes = JSON.parse(fs.readFileSync(hashFile, "utf-8")) as Record<
-      string,
-      string
-    >;
+    const hashesFile = JSON.parse(fs.readFileSync(hashFile, "utf-8")) as {
+      __version?: number;
+      hashes?: Record<string, string>;
+    };
+    const hashes = hashesFile.hashes ?? {};
     const trackedPaths = Object.keys(hashes).map((p) => p.replace(/\\/g, "/"));
     expect(trackedPaths).not.toContain(".github/prompts/start.prompt.md");
     expect(trackedPaths).toContain(".github/prompts/finish-work.prompt.md");
@@ -425,10 +426,11 @@ describe("init() integration", () => {
       DIR_NAMES.WORKFLOW,
       ".template-hashes.json",
     );
-    const hashes = JSON.parse(fs.readFileSync(hashFile, "utf-8")) as Record<
-      string,
-      string
-    >;
+    const hashesFile = JSON.parse(fs.readFileSync(hashFile, "utf-8")) as {
+      __version?: number;
+      hashes?: Record<string, string>;
+    };
+    const hashes = hashesFile.hashes ?? {};
     const trackedPaths = Object.keys(hashes).map((p) => p.replace(/\\/g, "/"));
     const piTemplates = collectPlatformTemplates("pi");
     expect(piTemplates).toBeInstanceOf(Map);
