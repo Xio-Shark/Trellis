@@ -11,7 +11,6 @@ const ALL_HOOK_FILES = [
   "inject-shell-session-context.py",
   "inject-workflow-state.py",
   "inject-subagent-context.py",
-  "statusline.py",
 ] as const;
 
 describe("shared-hooks capability table", () => {
@@ -42,17 +41,16 @@ describe("shared-hooks capability table", () => {
     }
   });
 
-  it("statusline.py goes to Claude only (statusLine is a Claude Code event)", () => {
+  it("statusline.py is not distributed by default", () => {
+    const realFiles = new Set(getSharedHookScripts().map((h) => h.name));
+    expect(realFiles.has("statusline.py")).toBe(false);
     for (const [platform, hooks] of Object.entries(
       SHARED_HOOKS_BY_PLATFORM,
     )) {
-      const has = hooks.includes("statusline.py");
-      if (platform === "claude") expect(has).toBe(true);
-      else
-        expect(
-          has,
-          `${platform} declares statusline.py but has no statusLine event`,
-        ).toBe(false);
+      expect(
+        (hooks as readonly string[]).includes("statusline.py"),
+        `${platform} must not install the generated statusline.py hook by default`,
+      ).toBe(false);
     }
   });
 

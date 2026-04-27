@@ -12,7 +12,7 @@ Platform support uses a **centralized registry pattern** (similar to Turborepo's
 - **Function registry**: `src/configurators/index.ts` — `PLATFORM_FUNCTIONS` with configure/collectTemplates per platform
 - **Shared configurator utilities**: `src/configurators/shared.ts` — `resolvePlaceholders()`, `writeSkills()`, `writeAgents()`, `writeSharedHooks()`, `resolveAllAsSkills()`, `resolveCommands()`, `resolveSkills()`, `wrapWithSkillFrontmatter()`
 - **Shared template utilities**: `src/templates/template-utils.ts` — `createTemplateReader()` factory that eliminates boilerplate across platform template modules
-- **Shared hooks**: `src/templates/shared-hooks/` — platform-independent Python hook scripts (session-start, inject-workflow-state, inject-subagent-context, inject-shell-session-context, statusline) written as-is to platform hook directories according to the capability table
+- **Shared hooks**: `src/templates/shared-hooks/` — platform-independent Python hook scripts (session-start, inject-workflow-state, inject-subagent-context, inject-shell-session-context) written as-is to platform hook directories according to the capability table. Claude Code `statusLine` is not installed by default.
 - **Common templates**: `src/templates/common/` — single source of truth for commands (start, finish-work) and skills (before-dev, brainstorm, check, break-loop, update-spec) with `{{placeholder}}` resolution per platform
 - **Shared utilities**: `src/utils/compare-versions.ts` — `compareVersions()` with full prerelease support (used by cli, update, migrations)
 - **Derived helpers**: `ALL_MANAGED_DIRS`, `getConfiguredPlatforms()`, etc. — consumed by update, init, hash tracking
@@ -234,19 +234,19 @@ When adding a new platform `{platform}`, update the following:
 
 ### Active Task Resolution
 
-Current-task state is session/window scoped. New hook, statusline, plugin,
-extension, and sub-agent consumers must call the shared resolver path:
+Current-task state is session/window scoped. New hook, plugin, extension, and
+sub-agent consumers must call the shared resolver path:
 
 | Runtime | Resolver surface |
 |---------|------------------|
-| Python hooks/statusline/scripts | `.trellis/scripts/common/active_task.py` |
+| Python hooks/scripts | `.trellis/scripts/common/active_task.py` |
 | Existing Python callers | `common.paths.get_current_task()` / `get_current_task_abs()` / `get_current_task_source()` |
 | OpenCode plugin | JS resolver in `lib/trellis-context.js`, mirroring `active_task.py` |
 | Pi extension | Extension-local resolver using `ctx.sessionManager.getSessionId()` and Bash `tool_call` env injection |
 
-Do not add direct `.trellis/.current-task` reads in hooks, statusline scripts,
-sub-agent context injection, or platform plugins. Direct reads reintroduce
-multi-window task pollution.
+Do not add direct `.trellis/.current-task` reads in hooks, sub-agent context
+injection, or platform plugins. Direct reads reintroduce multi-window task
+pollution.
 
 Context-key precedence for hook-capable platforms:
 
@@ -300,9 +300,9 @@ Pi is extension-backed rather than Python-hook-backed: `tool_call` must mutate
 `event.input.command` before Bash execution, and the custom `subagent` tool must
 spawn child `pi` processes with `TRELLIS_CONTEXT_ID` in `env`.
 
-Hook/statusline output that mentions an active task should include the source
+Hook or plugin output that mentions an active task should include the source
 (`session` or `session:<key>`) so cross-window mistakes are visible while
-debugging. Statuslines may shorten this to `[session]` to avoid noisy UI.
+debugging.
 
 **Also update `task_store.py` when adding a sub-agent-capable platform**:
 

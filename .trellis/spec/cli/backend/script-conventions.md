@@ -274,7 +274,7 @@ a `.current-task` fallback or a Python hook directory.
 ##### 1. Scope / Trigger
 
 - Trigger: any change to `task.py create/start/current/finish`, hook
-  current-task injection, statusline current-task display, or platform session
+  current-task injection, plugin active-task display, or platform session
   identity handling.
 - Reason: current-task state is a cross-platform runtime contract. A direct
   `.current-task` read or an eager `.runtime` write can reintroduce multi-window
@@ -334,7 +334,8 @@ a `.current-task` fallback or a Python hook directory.
 ##### 5. Good/Base/Bad Cases
 
 - Good: Cursor provides `conversation_id`; resolver writes
-  `cursor_<conversation-id>.json` and hooks/statusline display `[session]`.
+  `cursor_<conversation-id>.json` and hook/plugin output includes the
+  session source.
 - Base: A normal shell command has no session env; `task.py start` fails with
   a session identity hint and does not create `.current-task`.
 - Bad: `task.py create` pre-creates `.runtime`, or any resolver reads/writes
@@ -346,7 +347,7 @@ a `.current-task` fallback or a Python hook directory.
 - Regression tests for `start` without a context key failing without creating
   `.current-task`.
 - Regression tests for `TRELLIS_CONTEXT_ID` and platform-native env keys.
-- Hook/statusline tests proving the resolver source is surfaced.
+- Hook/plugin tests proving the resolver source is surfaced.
 - Stale session tests proving no `.current-task` fallback occurs when the session task
   path is stale.
 

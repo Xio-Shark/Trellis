@@ -787,6 +787,7 @@ describe("regression: hook JSON format (beta.7)", () => {
   it("[beta.7] Claude settings.json has correct hook structure", () => {
     const settings = JSON.parse(claudeSettingsTemplate);
     expect(settings).toHaveProperty("hooks");
+    expect(settings).not.toHaveProperty("statusLine");
     expect(settings.hooks).toHaveProperty("SessionStart");
     expect(Array.isArray(settings.hooks.SessionStart)).toBe(true);
 
@@ -1329,79 +1330,6 @@ describe("regression: current-task path normalization", () => {
     expect(codexPayload.hookSpecificOutput.additionalContext).not.toContain(
       "STALE POINTER",
     );
-  });
-
-  it("[session-current-task] Claude statusline uses session-scoped task when session_id is present", () => {
-    setupTaskRepo();
-    writeLegacyCurrentTask(".trellis/tasks/issue-106");
-    writeProjectFile(
-      path.join(".trellis", "tasks", "session-task", "task.json"),
-      JSON.stringify(
-        {
-          title: "Session scoped task",
-          status: "in_progress",
-          priority: "P1",
-        },
-        null,
-        2,
-      ),
-    );
-    writeProjectFile(
-      path.join(".trellis", ".runtime", "sessions", "claude_status-a.json"),
-      JSON.stringify(
-        {
-          current_task: ".trellis/tasks/session-task",
-          platform: "claude",
-        },
-        null,
-        2,
-      ),
-    );
-    const statuslineScript = getSharedHookScripts().find(
-      (hook) => hook.name === "statusline.py",
-    )?.content;
-    writeProjectFile(
-      path.join(".claude", "hooks", "statusline.py"),
-      expectTemplateContent(statuslineScript, "statusline"),
-    );
-
-    const output = runPython(
-      path.join(".claude", "hooks", "statusline.py"),
-      JSON.stringify({
-        session_id: "status-a",
-        model: { display_name: "Test" },
-        context_window: { used_percentage: 1, context_window_size: 1000 },
-        cost: { total_duration_ms: 0 },
-      }),
-    );
-
-    expect(output).toContain("Session scoped task");
-    expect(output).toContain("[session]");
-    expect(output).not.toContain("Issue 106 task");
-  });
-
-  it("[session-current-task] Claude statusline ignores legacy .current-task without session context", () => {
-    setupTaskRepo();
-    writeLegacyCurrentTask(".trellis/tasks/issue-106");
-    const statuslineScript = getSharedHookScripts().find(
-      (hook) => hook.name === "statusline.py",
-    )?.content;
-    writeProjectFile(
-      path.join(".claude", "hooks", "statusline.py"),
-      expectTemplateContent(statuslineScript, "statusline"),
-    );
-
-    const output = runPython(
-      path.join(".claude", "hooks", "statusline.py"),
-      JSON.stringify({
-        model: { display_name: "Test" },
-        context_window: { used_percentage: 1, context_window_size: 1000 },
-        cost: { total_duration_ms: 0 },
-      }),
-    );
-
-    expect(output).not.toContain("Issue 106 task");
-    expect(output).not.toContain("[global]");
   });
 
   it("[session-current-task] Claude SessionStart persists TRELLIS_CONTEXT_ID for Bash commands", () => {

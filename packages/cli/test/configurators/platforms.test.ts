@@ -608,7 +608,11 @@ describe("configurePlatform", () => {
     expect(fs.existsSync(settingsPath)).toBe(true);
     // Should be valid JSON
     const content = fs.readFileSync(settingsPath, "utf-8");
-    expect(() => JSON.parse(content)).not.toThrow();
+    const settings = JSON.parse(content);
+    expect(settings).not.toHaveProperty("statusLine");
+    expect(
+      fs.existsSync(path.join(tmpDir, ".claude", "hooks", "statusline.py")),
+    ).toBe(false);
   });
 
   it("cursor configuration includes commands directory", async () => {

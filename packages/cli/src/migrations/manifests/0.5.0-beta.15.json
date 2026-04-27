@@ -1,17 +1,28 @@
 {
   "version": "0.5.0-beta.15",
-  "description": "Task runtime and platform compatibility update. `task.py start/current/finish` now use `.trellis/.runtime/sessions/<context-key>.json`; `.trellis/.current-task` is no longer the active-task fallback. `workflow.md` and hook breadcrumbs now allow trivial turns and explicit current-turn overrides to skip Trellis task creation or sub-agent dispatch. Claude Code, Codex, Cursor, OpenCode, and Pi handle shell session identity for `task.py`: Codex uses native `CODEX_SESSION_ID` / `CODEX_THREAD_ID`, while the other hosts propagate `TRELLIS_CONTEXT_ID` through host-specific bridges. Cursor matches `Task|Subagent` and parses native custom-agent payloads. Pi resolves context keys from session manager, environment, transcript path, or process fallback. Template registry downloads support private Git-backed registries through local Git credentials. The manifest also includes 10 hash-verified `safe-file-delete` entries for orphan shared hooks.",
+  "description": "Task runtime and platform compatibility update. `task.py start/current/finish` now use `.trellis/.runtime/sessions/<context-key>.json`; `.trellis/.current-task` is no longer the active-task fallback. `workflow.md` and hook breadcrumbs now allow trivial turns and explicit current-turn overrides to skip Trellis task creation or sub-agent dispatch. Claude Code, Codex, Cursor, OpenCode, and Pi handle shell session identity for `task.py`: Codex uses native `CODEX_SESSION_ID` / `CODEX_THREAD_ID`, while the other hosts propagate `TRELLIS_CONTEXT_ID` through host-specific bridges. Cursor matches `Task|Subagent` and parses native custom-agent payloads. Pi resolves context keys from session manager, environment, transcript path, or process fallback. Template registry downloads support private Git-backed registries through local Git credentials. Claude Code statusLine is no longer installed by default. The manifest also includes 11 hash-verified `safe-file-delete` entries for orphan or disabled shared hooks.",
   "breaking": true,
   "recommendMigrate": false,
-  "changelog": "**Behavior Changes:**\n- feat(task): `task.py start/current/finish` read and write `.trellis/.runtime/sessions/<context-key>.json`. `.trellis/.current-task` is no longer used as the active-task fallback. `task.py start` exits with a clear error when no session identity is available. `task.py finish` deletes the resolved session file. `task.py archive` deletes session files that still point at the archived task before moving it.\n- feat(init): bootstrap and joiner onboarding tasks no longer write `.trellis/.current-task`; generated PRDs tell the AI to start the task from a session that provides Trellis session identity.\n- feat(workflow): `workflow.md` and hook fallback breadcrumbs now treat no-task trigger words as task-creation signals instead of mandatory creation. Task creation is not required for trivial turns when all three hold: zero file writes, one-reply answer, and no research beyond reading 1-2 repo files. Explicit current-turn phrases such as `skip trellis`, `no task`, `just do it`, `跳过 trellis`, `别走流程`, and `先别建任务` skip task creation for that turn.\n- feat(workflow): `in_progress` breadcrumbs keep `trellis-implement` / `trellis-check` as the default, but explicit current-turn requests such as `do it inline`, `main session 写就行`, and `不用 sub-agent` allow main-session implementation.\n\n**Platform Integration:**\n- feat(hooks): Claude Code writes `TRELLIS_CONTEXT_ID` through `CLAUDE_ENV_FILE`; Codex command environments are supported through `CODEX_SESSION_ID` / Codex Desktop `CODEX_THREAD_ID`; Cursor adds `beforeShellExecution` tickets under `.trellis/.runtime/cursor-shell/`; OpenCode prefixes Bash commands with `TRELLIS_CONTEXT_ID`; Pi injects the same value into Bash and nested `pi --mode json` runs.\n- docs(platforms): GitHub Copilot uses a platform-specific SessionStart hook; Gemini/Qoder/CodeBuddy/Droid/Kiro use shared hook input or platform env; Kilo/Antigravity/Windsurf have no hook integration; `.agents/skills` consumers rely on host-provided prelude/env. All groups share `.trellis/.runtime/sessions/`, while beta.15 adds shell-command handling for Claude Code, Codex, Cursor, OpenCode, and Pi.\n- feat(cursor): Cursor `hooks.json` matches `Task|Subagent`. `inject-subagent-context.py` parses native custom-agent payloads including `{ custom: { name } }` and `{ type: { case: \"custom\", value: { name } } }`.\n- feat(pi): Pi Agent resolves context keys from `TRELLIS_CONTEXT_ID`, `sessionManager.getSessionId()`, `PI_SESSION_ID` / `PI_SESSIONID`, transcript path, or process fallback, then reads active tasks from `.trellis/.runtime/sessions/`.\n- feat(workflow): `workflow-state` breadcrumbs use exact agent names (`trellis-implement`, `trellis-check`, `trellis-research`) and document explicit per-turn override phrases.\n\n**Bug Fixes:**\n- fix(registry): Template registry downloads support private Git-backed registries through local Git credentials. Self-hosted GitLab / GitHub Enterprise and SSH registry sources use Git to read `index.json` and copy template directories, and classify auth, missing-ref, missing-path, invalid-json, and network failures separately instead of falling through to direct-download mode.\n- fix(opencode): OpenCode recognizes `OPENCODE_RUN_ID` and strips the `trellis-` prefix before matching sub-agent names, preserving `implement.jsonl` / `check.jsonl` injection for renamed agents.\n- fix(cli): `writeSharedHooks` and `collectSharedHooks` use `SHARED_HOOKS_BY_PLATFORM`. The manifest removes 10 orphan shared-hook files through hash-verified `safe-file-delete` entries; locally modified files are preserved.\n\n**Docs:**\n- docs(beta): docs-site beta pages and `v0.5.0-beta.15` changelog document session-scoped task state, workflow policy relaxation, per-platform session identity behavior, Pi Agent, Cursor hook behavior, native Git worktrees, private Git-backed template registries, and the current `continue` / `finish-work` command flow.",
+  "changelog": "**Behavior Changes:**\n- feat(task): `task.py start/current/finish` read and write `.trellis/.runtime/sessions/<context-key>.json`. `.trellis/.current-task` is no longer used as the active-task fallback. `task.py start` exits with a clear error when no session identity is available. `task.py finish` deletes the resolved session file. `task.py archive` deletes session files that still point at the archived task before moving it.\n- feat(init): bootstrap and joiner onboarding tasks no longer write `.trellis/.current-task`; generated PRDs tell the AI to start the task from a session that provides Trellis session identity.\n- feat(workflow): `workflow.md` and hook fallback breadcrumbs now treat no-task trigger words as task-creation signals instead of mandatory creation. Task creation is not required for trivial turns when all three hold: zero file writes, one-reply answer, and no research beyond reading 1-2 repo files. Explicit current-turn phrases such as `skip trellis`, `no task`, `just do it`, `跳过 trellis`, `别走流程`, and `先别建任务` skip task creation for that turn.\n- feat(workflow): `in_progress` breadcrumbs keep `trellis-implement` / `trellis-check` as the default, but explicit current-turn requests such as `do it inline`, `main session 写就行`, and `不用 sub-agent` allow main-session implementation.\n\n**Platform Integration:**\n- feat(hooks): Claude Code writes `TRELLIS_CONTEXT_ID` through `CLAUDE_ENV_FILE`; Codex command environments are supported through `CODEX_SESSION_ID` / Codex Desktop `CODEX_THREAD_ID`; Cursor adds `beforeShellExecution` tickets under `.trellis/.runtime/cursor-shell/`; OpenCode prefixes Bash commands with `TRELLIS_CONTEXT_ID`; Pi injects the same value into Bash and nested `pi --mode json` runs.\n- docs(platforms): GitHub Copilot uses a platform-specific SessionStart hook; Gemini/Qoder/CodeBuddy/Droid/Kiro use shared hook input or platform env; Kilo/Antigravity/Windsurf have no hook integration; `.agents/skills` consumers rely on host-provided prelude/env. All groups share `.trellis/.runtime/sessions/`, while beta.15 adds shell-command handling for Claude Code, Codex, Cursor, OpenCode, and Pi.\n- feat(cursor): Cursor `hooks.json` matches `Task|Subagent`. `inject-subagent-context.py` parses native custom-agent payloads including `{ custom: { name } }` and `{ type: { case: \"custom\", value: { name } } }`.\n- feat(pi): Pi Agent resolves context keys from `TRELLIS_CONTEXT_ID`, `sessionManager.getSessionId()`, `PI_SESSION_ID` / `PI_SESSIONID`, transcript path, or process fallback, then reads active tasks from `.trellis/.runtime/sessions/`.\n- feat(workflow): `workflow-state` breadcrumbs use exact agent names (`trellis-implement`, `trellis-check`, `trellis-research`) and document explicit per-turn override phrases.\n\n**Bug Fixes:**\n- fix(registry): Template registry downloads support private Git-backed registries through local Git credentials. Self-hosted GitLab / GitHub Enterprise and SSH registry sources use Git to read `index.json` and copy template directories, and classify auth, missing-ref, missing-path, invalid-json, and network failures separately instead of falling through to direct-download mode.\n- fix(opencode): OpenCode recognizes `OPENCODE_RUN_ID` and strips the `trellis-` prefix before matching sub-agent names, preserving `implement.jsonl` / `check.jsonl` injection for renamed agents.\n- fix(claude): Claude Code statusLine is no longer installed by default. New installs do not write `.claude/hooks/statusline.py` or configure `statusLine` in `.claude/settings.json`; beta.15 removes pristine generated copies through a hash-verified `safe-file-delete` entry while preserving locally modified files.\n- fix(cli): `writeSharedHooks` and `collectSharedHooks` use `SHARED_HOOKS_BY_PLATFORM`. The manifest removes 11 orphan or disabled shared-hook files through hash-verified `safe-file-delete` entries; locally modified files are preserved.\n\n**Docs:**\n- docs(beta): docs-site beta pages and `v0.5.0-beta.15` changelog document session-scoped task state, workflow policy relaxation, per-platform session identity behavior, Pi Agent, Cursor hook behavior, native Git worktrees, private Git-backed template registries, Claude Code statusLine defaults, and the current `continue` / `finish-work` command flow.",
   "migrations": [
+    {
+      "type": "safe-file-delete",
+      "from": ".claude/hooks/statusline.py",
+      "description": "Removed: Claude Code statusLine is no longer installed by default; users can keep a locally customized statusline file.",
+      "allowed_hashes": [
+        "87c01ee786ca9e1f25b591f0ed67564cd430586d57516d5b6fc57c34b6e7a3ec",
+        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435",
+        "b9b0a39a486643f2b78ecb3c757459182a6326ea070ba34a49887e23adc40bbb"
+      ]
+    },
     {
       "type": "safe-file-delete",
       "from": ".cursor/hooks/statusline.py",
       "description": "Removed: Cursor has no statusLine event; shared-hooks/statusline.py was never invoked.",
       "allowed_hashes": [
         "87c01ee786ca9e1f25b591f0ed67564cd430586d57516d5b6fc57c34b6e7a3ec",
-        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435"
+        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435",
+        "b9b0a39a486643f2b78ecb3c757459182a6326ea070ba34a49887e23adc40bbb"
       ]
     },
     {
@@ -20,7 +31,8 @@
       "description": "Removed: Codex has no statusLine event; shared-hooks/statusline.py was never invoked.",
       "allowed_hashes": [
         "87c01ee786ca9e1f25b591f0ed67564cd430586d57516d5b6fc57c34b6e7a3ec",
-        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435"
+        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435",
+        "b9b0a39a486643f2b78ecb3c757459182a6326ea070ba34a49887e23adc40bbb"
       ]
     },
     {
@@ -29,7 +41,8 @@
       "description": "Removed: Gemini CLI has no statusLine event; shared-hooks/statusline.py was never invoked.",
       "allowed_hashes": [
         "87c01ee786ca9e1f25b591f0ed67564cd430586d57516d5b6fc57c34b6e7a3ec",
-        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435"
+        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435",
+        "b9b0a39a486643f2b78ecb3c757459182a6326ea070ba34a49887e23adc40bbb"
       ]
     },
     {
@@ -38,7 +51,8 @@
       "description": "Removed: Qoder has no statusLine event; shared-hooks/statusline.py was never invoked.",
       "allowed_hashes": [
         "87c01ee786ca9e1f25b591f0ed67564cd430586d57516d5b6fc57c34b6e7a3ec",
-        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435"
+        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435",
+        "b9b0a39a486643f2b78ecb3c757459182a6326ea070ba34a49887e23adc40bbb"
       ]
     },
     {
@@ -47,7 +61,8 @@
       "description": "Removed: GitHub Copilot has no statusLine event; shared-hooks/statusline.py was never invoked.",
       "allowed_hashes": [
         "87c01ee786ca9e1f25b591f0ed67564cd430586d57516d5b6fc57c34b6e7a3ec",
-        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435"
+        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435",
+        "b9b0a39a486643f2b78ecb3c757459182a6326ea070ba34a49887e23adc40bbb"
       ]
     },
     {
@@ -56,7 +71,8 @@
       "description": "Removed: CodeBuddy has no statusLine event; shared-hooks/statusline.py was never invoked.",
       "allowed_hashes": [
         "87c01ee786ca9e1f25b591f0ed67564cd430586d57516d5b6fc57c34b6e7a3ec",
-        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435"
+        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435",
+        "b9b0a39a486643f2b78ecb3c757459182a6326ea070ba34a49887e23adc40bbb"
       ]
     },
     {
@@ -65,7 +81,8 @@
       "description": "Removed: Factory Droid has no statusLine event; shared-hooks/statusline.py was never invoked.",
       "allowed_hashes": [
         "87c01ee786ca9e1f25b591f0ed67564cd430586d57516d5b6fc57c34b6e7a3ec",
-        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435"
+        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435",
+        "b9b0a39a486643f2b78ecb3c757459182a6326ea070ba34a49887e23adc40bbb"
       ]
     },
     {
@@ -74,7 +91,8 @@
       "description": "Removed: Kiro has no statusLine event; shared-hooks/statusline.py was never invoked.",
       "allowed_hashes": [
         "87c01ee786ca9e1f25b591f0ed67564cd430586d57516d5b6fc57c34b6e7a3ec",
-        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435"
+        "c92c0020a0c60308437b66f024a244303e708519c97089cf654ceddc144f7435",
+        "b9b0a39a486643f2b78ecb3c757459182a6326ea070ba34a49887e23adc40bbb"
       ]
     },
     {
@@ -104,5 +122,5 @@
       ]
     }
   ],
-  "notes": "Behavior change: `.trellis/.current-task` is preserved but ignored by active-task resolution. Existing task directories and jsonl files remain valid. `task.py start` now requires session identity from the host or `TRELLIS_CONTEXT_ID`. Run `trellis update` to refresh hooks and templates. The 10 shared-hook cleanup migrations are hash-verified; locally modified hook files are preserved with a warning."
+  "notes": "Behavior change: `.trellis/.current-task` is preserved but ignored by active-task resolution. Existing task directories and jsonl files remain valid. `task.py start` now requires session identity from the host or `TRELLIS_CONTEXT_ID`. Run `trellis update` to refresh hooks and templates. The 11 shared-hook cleanup migrations are hash-verified; locally modified hook files are preserved with a warning. Claude Code statusLine is not installed by default after update."
 }

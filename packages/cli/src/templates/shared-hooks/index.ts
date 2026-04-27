@@ -28,8 +28,7 @@ export type SharedHookName =
   | "session-start.py"
   | "inject-shell-session-context.py"
   | "inject-workflow-state.py"
-  | "inject-subagent-context.py"
-  | "statusline.py";
+  | "inject-subagent-context.py";
 
 export type SharedHookPlatform =
   | "claude"
@@ -48,8 +47,6 @@ export type SharedHookPlatform =
  * and `collectSharedHooks` (`trellis update` diff) read from this table.
  *
  * Routing rules encoded here:
- * - `statusline.py` — Claude Code `statusLine` event only; no other
- *   platform has an equivalent.
  * - `session-start.py` — shipped by every platform with a SessionStart
  *   hook event *except* codex + copilot, which bundle a platform-specific
  *   session-start.py under their own template dirs.
@@ -61,7 +58,10 @@ export type SharedHookPlatform =
  *   have hooks mutate sub-agent prompts — their sub-agents load context
  *   via a prelude instead.
  * - Kiro supports only `agentSpawn` (no SessionStart / UserPromptSubmit
- *   / StatusLine), so it takes just `inject-subagent-context.py`.
+ *   event), so it takes just `inject-subagent-context.py`.
+ * - Claude Code `statusLine` is intentionally not installed by default.
+ *   Users can add their own statusLine command in `.claude/settings.json`
+ *   without Trellis owning a generated hook file.
  */
 export const SHARED_HOOKS_BY_PLATFORM: Record<
   SharedHookPlatform,
@@ -71,7 +71,6 @@ export const SHARED_HOOKS_BY_PLATFORM: Record<
     "session-start.py",
     "inject-workflow-state.py",
     "inject-subagent-context.py",
-    "statusline.py",
   ],
   cursor: [
     "session-start.py",
