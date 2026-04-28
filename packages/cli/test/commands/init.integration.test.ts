@@ -91,6 +91,20 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, "AGENTS.md"))).toBe(true);
   });
 
+  it("#1b does not print the promotional pain-point block", async () => {
+    await init({ yes: true });
+
+    const logOutput = vi
+      .mocked(console.log)
+      .mock.calls.flat()
+      .filter((part): part is string => typeof part === "string")
+      .join("\n");
+
+    expect(logOutput).not.toContain("Sound familiar?");
+    expect(logOutput).not.toContain("You'll never say these again!!");
+    expect(logOutput).not.toContain("Wrote CLAUDE.md, AI ignored it");
+  });
+
   it("#2 single platform creates only that platform directory", async () => {
     await init({ yes: true, claude: true });
 

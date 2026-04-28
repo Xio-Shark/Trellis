@@ -1671,9 +1671,6 @@ export async function init(options: InitOptions): Promise<void> {
       }
     }
   }
-
-  // Print "What We Solve" section
-  printWhatWeSolve();
 }
 
 /**
@@ -1701,45 +1698,4 @@ async function createRootFiles(cwd: string): Promise<void> {
   if (agentsWritten) {
     console.log(chalk.blue("📄 Created AGENTS.md"));
   }
-}
-
-/**
- * Print "What We Solve" section showing Trellis value proposition
- * Styled like a meme/rant to resonate with developer pain points
- */
-function printWhatWeSolve(): void {
-  console.log(
-    chalk.gray("\nSound familiar? ") +
-      chalk.bold("You'll never say these again!!\n"),
-  );
-
-  // Pain point 1: Bug loop → Thinking Guides + Check Loop
-  console.log(chalk.gray("✗ ") + '"Fix A → break B → fix B → break A..."');
-  console.log(
-    chalk.green("  ✓ ") +
-      chalk.white("Thinking Guides + Check Loop: Think first, verify after"),
-  );
-  // Pain point 2: Instructions ignored/forgotten → Sub-agents + per-agent spec injection
-  console.log(
-    chalk.gray("✗ ") +
-      '"Wrote CLAUDE.md, AI ignored it. Reminded AI, it forgot 5 turns later."',
-  );
-  console.log(
-    chalk.green("  ✓ ") +
-      chalk.white("Spec Injection: Rules enforced per task, not per chat"),
-  );
-  // Pain point 3: Missing connections → Cross-Layer Guide
-  console.log(chalk.gray("✗ ") + '"Code works but nothing connects..."');
-  console.log(
-    chalk.green("  ✓ ") +
-      chalk.white("Cross-Layer Guide: Map data flow before coding"),
-  );
-  // Pain point 4: Code explosion → Plan Agent
-  console.log(chalk.gray("✗ ") + '"Asked for a button, got 9000 lines"');
-  console.log(
-    chalk.green("  ✓ ") +
-      chalk.white("Plan Agent: Rejects and splits oversized tasks"),
-  );
-
-  console.log("");
 }
