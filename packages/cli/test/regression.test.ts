@@ -721,6 +721,7 @@ describe("regression: update only configured platforms (beta.16)", () => {
       "qoder",
       "codebuddy",
       "copilot",
+      "droid",
       "pi",
     ] as const;
     for (const id of withTracking) {

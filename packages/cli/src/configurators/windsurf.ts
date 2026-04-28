@@ -1,7 +1,12 @@
 import path from "node:path";
 import { AI_TOOLS } from "../types/ai-tools.js";
 import { ensureDir, writeFile } from "../utils/file-writer.js";
-import { resolveCommands, resolveSkills } from "./shared.js";
+import {
+  resolveBundledSkills,
+  resolveCommands,
+  resolveSkills,
+  writeSkills,
+} from "./shared.js";
 
 /**
  * Configure Windsurf:
@@ -20,11 +25,9 @@ export async function configureWindsurf(cwd: string): Promise<void> {
     );
   }
 
-  const skillsDir = path.join(cwd, ".windsurf", "skills");
-  ensureDir(skillsDir);
-  for (const skill of resolveSkills(ctx)) {
-    const skillDir = path.join(skillsDir, skill.name);
-    ensureDir(skillDir);
-    await writeFile(path.join(skillDir, "SKILL.md"), skill.content);
-  }
+  await writeSkills(
+    path.join(cwd, ".windsurf", "skills"),
+    resolveSkills(ctx),
+    resolveBundledSkills(ctx),
+  );
 }

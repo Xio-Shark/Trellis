@@ -5,6 +5,7 @@ import {
   resolvePlaceholders,
   resolveCommands,
   resolveSkills,
+  resolveBundledSkills,
   writeSkills,
   writeAgents,
   writeSharedHooks,
@@ -31,7 +32,11 @@ export async function configureDroid(cwd: string): Promise<void> {
     await writeFile(path.join(commandsDir, `${cmd.name}.md`), cmd.content);
   }
 
-  await writeSkills(path.join(configRoot, "skills"), resolveSkills(ctx));
+  await writeSkills(
+    path.join(configRoot, "skills"),
+    resolveSkills(ctx),
+    resolveBundledSkills(ctx),
+  );
   await writeAgents(path.join(configRoot, "droids"), getAllDroids());
   await writeSharedHooks(path.join(configRoot, "hooks"), "droid");
 

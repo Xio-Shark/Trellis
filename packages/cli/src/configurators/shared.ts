@@ -174,6 +174,7 @@ import path from "node:path";
 import { ensureDir, writeFile } from "../utils/file-writer.js";
 import {
   type CommonTemplate,
+  getBundledSkillTemplates,
   getCommandTemplates,
   getSkillTemplates,
 } from "../templates/common/index.js";
@@ -181,6 +182,13 @@ import {
 /** A resolved template ready to be written to disk. */
 export interface ResolvedTemplate {
   name: string;
+  content: string;
+}
+
+/** A resolved file inside a multi-file skill directory. */
+export interface ResolvedSkillFile {
+  /** POSIX path relative to the skills root, e.g. "trellis-meta/SKILL.md" */
+  relativePath: string;
   content: string;
 }
 
@@ -250,20 +258,60 @@ export function resolveSkills(ctx: TemplateContext): ResolvedTemplate[] {
   }));
 }
 
+/**
+ * Resolve multi-file built-in skills.
+ *
+ * Unlike workflow skills, bundled skills already contain their own SKILL.md
+ * frontmatter and may include references/assets. They are still rendered
+ * through placeholder resolution so init and update get byte-identical output.
+ */
+export function resolveBundledSkills(
+  ctx: TemplateContext,
+): ResolvedSkillFile[] {
+  return getBundledSkillTemplates().flatMap((skill) =>
+    skill.files.map((file) => ({
+      relativePath: `${skill.name}/${file.relativePath}`,
+      content: resolvePlaceholders(file.content, ctx),
+    })),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Shared configurator write helpers
 // ---------------------------------------------------------------------------
 
-/** Write skill directories from resolved templates */
+/** Collect skill files under a target root for update hash tracking. */
+export function collectSkillTemplates(
+  skillsRoot: string,
+  skills: readonly { name: string; content: string }[],
+  bundledSkills: readonly ResolvedSkillFile[] = [],
+): Map<string, string> {
+  const files = new Map<string, string>();
+  for (const skill of skills) {
+    files.set(`${skillsRoot}/${skill.name}/SKILL.md`, skill.content);
+  }
+  for (const skillFile of bundledSkills) {
+    files.set(`${skillsRoot}/${skillFile.relativePath}`, skillFile.content);
+  }
+  return files;
+}
+
+/** Write skill directories from resolved templates and bundled skill files. */
 export async function writeSkills(
   skillsRoot: string,
   skills: { name: string; content: string }[],
+  bundledSkills: readonly ResolvedSkillFile[] = [],
 ): Promise<void> {
   ensureDir(skillsRoot);
   for (const skill of skills) {
     const skillDir = path.join(skillsRoot, skill.name);
     ensureDir(skillDir);
     await writeFile(path.join(skillDir, "SKILL.md"), skill.content);
+  }
+  for (const skillFile of bundledSkills) {
+    const targetPath = path.join(skillsRoot, skillFile.relativePath);
+    ensureDir(path.dirname(targetPath));
+    await writeFile(targetPath, skillFile.content);
   }
 }
 

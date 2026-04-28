@@ -6,7 +6,9 @@ import {
   resolvePlaceholders,
   resolveCommands,
   resolveSkills,
+  resolveBundledSkills,
   applyPullBasedPreludeMarkdown,
+  writeSkills,
   writeSharedHooks,
 } from "./shared.js";
 
@@ -32,14 +34,11 @@ export async function configureCopilot(cwd: string): Promise<void> {
     );
   }
 
-  // Skills
-  const skillsDir = path.join(cwd, ".github", "skills");
-  ensureDir(skillsDir);
-  for (const skill of resolveSkills(ctx)) {
-    const skillDir = path.join(skillsDir, skill.name);
-    ensureDir(skillDir);
-    await writeFile(path.join(skillDir, "SKILL.md"), skill.content);
-  }
+  await writeSkills(
+    path.join(cwd, ".github", "skills"),
+    resolveSkills(ctx),
+    resolveBundledSkills(ctx),
+  );
 
   const agentsDir = path.join(cwd, ".github", "agents");
   ensureDir(agentsDir);

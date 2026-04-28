@@ -11,7 +11,9 @@ import { ensureDir, writeFile } from "../utils/file-writer.js";
 import {
   resolvePlaceholders,
   resolveAllAsSkills,
+  resolveBundledSkills,
   applyPullBasedPreludeToml,
+  writeSkills,
   writeSharedHooks,
 } from "./shared.js";
 
@@ -24,13 +26,11 @@ import {
 export async function configureCodex(cwd: string): Promise<void> {
   // Shared skills from common source → .agents/skills/
   const sharedSkillsRoot = path.join(cwd, ".agents", "skills");
-  ensureDir(sharedSkillsRoot);
-
-  for (const skill of resolveAllAsSkills(AI_TOOLS.codex.templateContext)) {
-    const skillDir = path.join(sharedSkillsRoot, skill.name);
-    ensureDir(skillDir);
-    await writeFile(path.join(skillDir, "SKILL.md"), skill.content);
-  }
+  await writeSkills(
+    sharedSkillsRoot,
+    resolveAllAsSkills(AI_TOOLS.codex.templateContext),
+    resolveBundledSkills(AI_TOOLS.codex.templateContext),
+  );
 
   const codexRoot = path.join(cwd, ".codex");
 

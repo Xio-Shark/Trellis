@@ -1,7 +1,12 @@
 import path from "node:path";
 import { AI_TOOLS } from "../types/ai-tools.js";
 import { ensureDir, writeFile } from "../utils/file-writer.js";
-import { resolveCommands, resolveSkills } from "./shared.js";
+import {
+  resolveBundledSkills,
+  resolveCommands,
+  resolveSkills,
+  writeSkills,
+} from "./shared.js";
 
 /**
  * Configure Antigravity:
@@ -17,11 +22,9 @@ export async function configureAntigravity(cwd: string): Promise<void> {
     await writeFile(path.join(workflowsDir, `${cmd.name}.md`), cmd.content);
   }
 
-  const skillsDir = path.join(cwd, ".agent", "skills");
-  ensureDir(skillsDir);
-  for (const skill of resolveSkills(ctx)) {
-    const skillDir = path.join(skillsDir, skill.name);
-    ensureDir(skillDir);
-    await writeFile(path.join(skillDir, "SKILL.md"), skill.content);
-  }
+  await writeSkills(
+    path.join(cwd, ".agent", "skills"),
+    resolveSkills(ctx),
+    resolveBundledSkills(ctx),
+  );
 }

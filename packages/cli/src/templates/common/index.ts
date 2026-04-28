@@ -6,12 +6,13 @@
  *
  * Directory structure:
  *   common/
- *   ├── commands/    # Templates that stay as slash commands (start, finish-work)
- *   └── skills/      # Templates that become auto-triggered skills
+ *   ├── commands/        # Templates that stay as slash commands
+ *   ├── skills/          # Single-file templates that become auto-triggered skills
+ *   └── bundled-skills/  # Multi-file built-in skills with references/assets
  */
 
-import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -38,9 +39,24 @@ export interface CommonTemplate {
   content: string;
 }
 
+export interface CommonBundledSkillFile {
+  /** POSIX path relative to the skill directory, e.g. "references/core.md" */
+  relativePath: string;
+  /** Raw content with {{placeholders}} — must be resolved before writing */
+  content: string;
+}
+
+export interface CommonBundledSkill {
+  /** Skill directory name, e.g. "trellis-meta" */
+  name: string;
+  /** Files that must be written under the skill directory */
+  files: CommonBundledSkillFile[];
+}
+
 // Cached results — files don't change during a CLI run
 let cachedCommands: CommonTemplate[] | undefined;
 let cachedSkills: CommonTemplate[] | undefined;
+let cachedBundledSkills: CommonBundledSkill[] | undefined;
 
 /**
  * Get all command templates (stay as slash commands on all platforms).
@@ -64,4 +80,55 @@ export function getSkillTemplates(): CommonTemplate[] {
     content: readTemplate(`skills/${file}`),
   }));
   return cachedSkills;
+}
+
+function listDirectories(dir: string): string[] {
+  try {
+    return readdirSync(join(__dirname, dir))
+      .filter((entry) => statSync(join(__dirname, dir, entry)).isDirectory())
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+function toPosixRelativePath(root: string, filePath: string): string {
+  return relative(root, filePath).split(sep).join("/");
+}
+
+function listBundledSkillFiles(skillDir: string): CommonBundledSkillFile[] {
+  const root = join(__dirname, "bundled-skills", skillDir);
+  const files: CommonBundledSkillFile[] = [];
+
+  function walk(dir: string): void {
+    for (const entry of readdirSync(dir)) {
+      const fullPath = join(dir, entry);
+      const stat = statSync(fullPath);
+      if (stat.isDirectory()) {
+        walk(fullPath);
+      } else {
+        files.push({
+          relativePath: toPosixRelativePath(root, fullPath),
+          content: readFileSync(fullPath, "utf-8"),
+        });
+      }
+    }
+  }
+
+  walk(root);
+  return files.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+}
+
+/**
+ * Get all multi-file built-in skills.
+ *
+ * These are copied as complete skill directories so references and assets stay
+ * lazy-loadable instead of being flattened into one oversized SKILL.md.
+ */
+export function getBundledSkillTemplates(): CommonBundledSkill[] {
+  cachedBundledSkills ??= listDirectories("bundled-skills").map((name) => ({
+    name,
+    files: listBundledSkillFiles(name),
+  }));
+  return cachedBundledSkills;
 }

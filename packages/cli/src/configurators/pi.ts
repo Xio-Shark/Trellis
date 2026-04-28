@@ -3,7 +3,9 @@ import { AI_TOOLS } from "../types/ai-tools.js";
 import { ensureDir, writeFile } from "../utils/file-writer.js";
 import {
   applyPullBasedPreludeMarkdown,
+  collectSkillTemplates,
   resolveCommands,
+  resolveBundledSkills,
   resolvePlaceholders,
   resolveSkills,
   writeAgents,
@@ -24,8 +26,15 @@ export function collectPiTemplates(): Map<string, string> {
     files.set(`.pi/prompts/trellis-${command.name}.md`, command.content);
   }
 
-  for (const skill of resolveSkills(ctx)) {
-    files.set(`.pi/skills/${skill.name}/SKILL.md`, skill.content);
+  // Pi can discover `.agents/skills`, but Trellis common skills still render
+  // platform-specific command refs. Keep a Pi-owned skill root until shared
+  // Agent Skill text is platform-neutral.
+  for (const [filePath, content] of collectSkillTemplates(
+    ".pi/skills",
+    resolveSkills(ctx),
+    resolveBundledSkills(ctx),
+  )) {
+    files.set(filePath, content);
   }
 
   for (const agent of applyPullBasedPreludeMarkdown(getAllAgents())) {
@@ -56,7 +65,13 @@ export async function configurePi(cwd: string): Promise<void> {
     );
   }
 
-  await writeSkills(path.join(configRoot, "skills"), resolveSkills(ctx));
+  // See collectPiTemplates(): this intentionally stays under `.pi/skills`
+  // until the shared `.agents/skills` rendering is safe for Pi.
+  await writeSkills(
+    path.join(configRoot, "skills"),
+    resolveSkills(ctx),
+    resolveBundledSkills(ctx),
+  );
   await writeAgents(
     path.join(configRoot, "agents"),
     applyPullBasedPreludeMarkdown(getAllAgents()),

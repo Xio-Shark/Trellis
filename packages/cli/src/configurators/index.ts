@@ -37,9 +37,11 @@ import { configurePi, collectPiTemplates } from "./pi.js";
 import {
   resolvePlaceholders,
   resolveAllAsSkills,
+  resolveBundledSkills,
   resolveCommands,
   resolveSkills,
   wrapWithCommandFrontmatter,
+  collectSkillTemplates,
   applyPullBasedPreludeMarkdown,
   applyPullBasedPreludeToml,
 } from "./shared.js";
@@ -128,8 +130,12 @@ function collectBothTemplates(
     const filePath = cmdPath(cmd.name);
     files.set(filePath, wrapCmd ? wrapCmd(filePath, cmd.content) : cmd.content);
   }
-  for (const skill of resolveSkills(ctx)) {
-    files.set(`${skillRoot}/${skill.name}/SKILL.md`, skill.content);
+  for (const [filePath, content] of collectSkillTemplates(
+    skillRoot,
+    resolveSkills(ctx),
+    resolveBundledSkills(ctx),
+  )) {
+    files.set(filePath, content);
   }
   return files;
 }
@@ -187,8 +193,13 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
     configure: configureCodex,
     collectTemplates: () => {
       const files = new Map<string, string>();
-      for (const s of resolveAllAsSkills(AI_TOOLS.codex.templateContext)) {
-        files.set(`.agents/skills/${s.name}/SKILL.md`, s.content);
+      const ctx = AI_TOOLS.codex.templateContext;
+      for (const [filePath, content] of collectSkillTemplates(
+        ".agents/skills",
+        resolveAllAsSkills(ctx),
+        resolveBundledSkills(ctx),
+      )) {
+        files.set(filePath, content);
       }
       for (const skill of getCodexPlatformSkills()) {
         files.set(`.codex/skills/${skill.name}/SKILL.md`, skill.content);
@@ -225,8 +236,13 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
     configure: configureKiro,
     collectTemplates: () => {
       const files = new Map<string, string>();
-      for (const s of resolveAllAsSkills(AI_TOOLS.kiro.templateContext)) {
-        files.set(`.kiro/skills/${s.name}/SKILL.md`, s.content);
+      const ctx = AI_TOOLS.kiro.templateContext;
+      for (const [filePath, content] of collectSkillTemplates(
+        ".kiro/skills",
+        resolveAllAsSkills(ctx),
+        resolveBundledSkills(ctx),
+      )) {
+        files.set(filePath, content);
       }
       for (const agent of getKiroAgents()) {
         files.set(
@@ -249,8 +265,12 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
         const toml = `description = "Trellis: ${cmd.name}"\n\nprompt = """\n${cmd.content}\n"""\n`;
         files.set(`.gemini/commands/trellis/${cmd.name}.toml`, toml);
       }
-      for (const skill of resolveSkills(ctx)) {
-        files.set(`.gemini/skills/${skill.name}/SKILL.md`, skill.content);
+      for (const [filePath, content] of collectSkillTemplates(
+        ".gemini/skills",
+        resolveSkills(ctx),
+        resolveBundledSkills(ctx),
+      )) {
+        files.set(filePath, content);
       }
       for (const agent of applyPullBasedPreludeMarkdown(getGeminiAgents())) {
         files.set(`.gemini/agents/${agent.name}.md`, agent.content);
@@ -342,8 +362,12 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
       for (const cmd of resolveCommands(ctx)) {
         files.set(`.github/prompts/${cmd.name}.prompt.md`, cmd.content);
       }
-      for (const skill of resolveSkills(ctx)) {
-        files.set(`.github/skills/${skill.name}/SKILL.md`, skill.content);
+      for (const [filePath, content] of collectSkillTemplates(
+        ".github/skills",
+        resolveSkills(ctx),
+        resolveBundledSkills(ctx),
+      )) {
+        files.set(filePath, content);
       }
       // Copilot's own session-start hook
       for (const hook of getCopilotHooks()) {

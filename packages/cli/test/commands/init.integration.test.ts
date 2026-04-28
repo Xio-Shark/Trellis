@@ -89,6 +89,26 @@ describe("init() integration", () => {
 
     // Root files
     expect(fs.existsSync(path.join(tmpDir, "AGENTS.md"))).toBe(true);
+
+    // Built-in multi-file skill is installed for default platforms.
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".claude", "skills", "trellis-meta", "SKILL.md"),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(
+          tmpDir,
+          ".cursor",
+          "skills",
+          "trellis-meta",
+          "references",
+          "local-architecture",
+          "overview.md",
+        ),
+      ),
+    ).toBe(true);
   });
 
   it("#1b does not print the promotional pain-point block", async () => {
@@ -124,6 +144,11 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".github", "copilot"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".factory"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".pi"))).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".claude", "skills", "trellis-meta", "SKILL.md"),
+      ),
+    ).toBe(true);
   });
 
   it("#3 multi platform creates all selected platform directories", async () => {
@@ -172,6 +197,29 @@ describe("init() integration", () => {
         path.join(tmpDir, ".agents", "skills", "trellis-continue", "SKILL.md"),
       ),
     ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".agents", "skills", "trellis-meta", "SKILL.md"),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(
+          tmpDir,
+          ".agents",
+          "skills",
+          "trellis-meta",
+          "references",
+          "local-architecture",
+          "overview.md",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".codex", "skills", "trellis-meta", "SKILL.md"),
+      ),
+    ).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".codex", "config.toml"))).toBe(
       true,
     );
@@ -188,6 +236,22 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".gemini"))).toBe(false);
+
+    const hashFile = path.join(
+      tmpDir,
+      DIR_NAMES.WORKFLOW,
+      ".template-hashes.json",
+    );
+    const hashesFile = JSON.parse(fs.readFileSync(hashFile, "utf-8")) as {
+      __version?: number;
+      hashes?: Record<string, string>;
+    };
+    const hashes = hashesFile.hashes ?? {};
+    const trackedPaths = Object.keys(hashes).map((p) => p.replace(/\\/g, "/"));
+    expect(trackedPaths).toContain(".agents/skills/trellis-meta/SKILL.md");
+    expect(trackedPaths).toContain(
+      ".agents/skills/trellis-meta/references/local-architecture/overview.md",
+    );
   });
 
   it("#3c kiro platform creates .kiro/skills", async () => {

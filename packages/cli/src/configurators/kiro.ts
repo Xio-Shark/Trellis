@@ -3,6 +3,7 @@ import { AI_TOOLS } from "../types/ai-tools.js";
 import {
   resolvePlaceholders,
   resolveAllAsSkills,
+  resolveBundledSkills,
   writeSkills,
   writeAgents,
   writeSharedHooks,
@@ -23,6 +24,7 @@ export async function configureKiro(cwd: string): Promise<void> {
   await writeSkills(
     path.join(kiroRoot, "skills"),
     resolveAllAsSkills(config.templateContext),
+    resolveBundledSkills(config.templateContext),
   );
 
   // Agents (JSON format, with {{PYTHON_CMD}} resolved)

@@ -4,7 +4,12 @@ import { AI_TOOLS } from "../types/ai-tools.js";
 import { getOpenCodeTemplatePath } from "../templates/extract.js";
 import { ensureDir, writeFile } from "../utils/file-writer.js";
 import { toPosix } from "../utils/posix.js";
-import { resolveCommands, resolveSkills } from "./shared.js";
+import {
+  collectSkillTemplates,
+  resolveBundledSkills,
+  resolveCommands,
+  resolveSkills,
+} from "./shared.js";
 
 /**
  * Files under packages/cli/src/templates/opencode/ that are NOT user-facing
@@ -80,8 +85,12 @@ export function collectOpenCodeTemplates(): Map<string, string> {
   for (const cmd of resolveCommands(ctx)) {
     files.set(`.opencode/commands/trellis/${cmd.name}.md`, cmd.content);
   }
-  for (const skill of resolveSkills(ctx)) {
-    files.set(`.opencode/skills/${skill.name}/SKILL.md`, skill.content);
+  for (const [filePath, content] of collectSkillTemplates(
+    ".opencode/skills",
+    resolveSkills(ctx),
+    resolveBundledSkills(ctx),
+  )) {
+    files.set(filePath, content);
   }
   return files;
 }
