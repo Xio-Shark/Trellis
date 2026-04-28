@@ -184,3 +184,4 @@ smoke_test/
 
 tmp/
 tmp1/
+.playwright-mcp

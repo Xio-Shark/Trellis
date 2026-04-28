@@ -29,6 +29,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 # IMPORTANT: Force stdout to use UTF-8 on Windows
 # This fixes UnicodeEncodeError when outputting non-ASCII characters
@@ -541,13 +542,90 @@ Provide structured search results including:
 - External references (if any)"""
 
 
+def _string_value(value: Any) -> str:
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped
+    return ""
+
+
+def _extract_subagent_name(value: Any) -> str:
+    """Extract a sub-agent name from common platform encodings.
+
+    Cursor's native Task args encode custom sub-agents as a protobuf oneof,
+    which can appear in hook JSON as either ``{"custom": {"name": "..."}}``
+    or ``{"type": {"case": "custom", "value": {"name": "..."}}}``.
+    """
+    direct = _string_value(value)
+    if direct:
+        return direct
+
+    if not isinstance(value, dict):
+        return ""
+
+    for key in ("name", "subagent_type_name", "subagentTypeName"):
+        direct = _string_value(value.get(key))
+        if direct:
+            return direct
+
+    custom = value.get("custom")
+    if isinstance(custom, dict):
+        custom_name = _string_value(custom.get("name"))
+        if custom_name:
+            return custom_name
+
+    oneof = value.get("type")
+    if isinstance(oneof, dict):
+        case_name = _string_value(oneof.get("case"))
+        if case_name == "custom":
+            nested_value = oneof.get("value")
+            if isinstance(nested_value, dict):
+                custom_name = _string_value(nested_value.get("name"))
+                if custom_name:
+                    return custom_name
+        if case_name:
+            return case_name
+
+    case_name = _string_value(value.get("case"))
+    if case_name == "custom":
+        nested_value = value.get("value")
+        if isinstance(nested_value, dict):
+            custom_name = _string_value(nested_value.get("name"))
+            if custom_name:
+                return custom_name
+    if case_name:
+        return case_name
+
+    for agent_name in AGENTS_ALL:
+        if agent_name in value:
+            return agent_name
+
+    return ""
+
+
+def _extract_subagent_type(tool_input: dict) -> str:
+    for key in (
+        "subagent_type",
+        "subagentType",
+        "subagent_type_name",
+        "subagentTypeName",
+        "agent_type",
+        "agentType",
+        "name",
+    ):
+        agent_name = _extract_subagent_name(tool_input.get(key))
+        if agent_name:
+            return agent_name
+    return ""
+
+
 def _parse_hook_input(input_data: dict) -> tuple[str, str, dict]:
     """Parse hook input across different platform formats.
 
     Returns (subagent_type, original_prompt, tool_input).
     Handles:
     - Claude Code / Qoder / CodeBuddy / Droid: tool_name=Task|Agent, tool_input.subagent_type
-    - Cursor: tool_name=Task, tool_input.subagent_type
+    - Cursor: tool_name=Task|Subagent, tool_input.subagent_type
     - Copilot CLI: toolName=task (camelCase key, lowercase value)
     - Gemini CLI: tool_name IS the agent name (BeforeTool matcher already filtered)
     - Kiro: agentSpawn hook, agent_name field at top level
@@ -556,9 +634,9 @@ def _parse_hook_input(input_data: dict) -> tuple[str, str, dict]:
 
     # Standard format: Task/Agent tool with subagent_type
     tool_name = input_data.get("tool_name", "") or input_data.get("toolName", "")
-    if tool_name.lower() in ("task", "agent"):
+    if tool_name.lower() in ("task", "agent", "subagent"):
         return (
-            tool_input.get("subagent_type", ""),
+            _extract_subagent_type(tool_input),
             tool_input.get("prompt", ""),
             tool_input,
         )

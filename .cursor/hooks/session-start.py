@@ -11,6 +11,7 @@ warnings.filterwarnings("ignore")
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 from io import StringIO
@@ -122,6 +123,26 @@ def _resolve_context_key(trellis_dir: Path, input_data: dict) -> str | None:
     from common.active_task import resolve_context_key  # type: ignore[import-not-found]
 
     return resolve_context_key(input_data, platform=_detect_platform(input_data))
+
+
+def _persist_context_key_for_bash(context_key: str | None) -> None:
+    """Expose Trellis session identity to later Claude Code Bash commands.
+
+    Claude Code SessionStart hooks can append exports to CLAUDE_ENV_FILE; those
+    variables are then available to Bash tools in the same conversation. Without
+    this bridge, `task.py start` has hook stdin during SessionStart but no
+    session identity when the AI later runs it as a normal shell command.
+    """
+    if not context_key:
+        return
+    env_file = os.environ.get("CLAUDE_ENV_FILE")
+    if not env_file:
+        return
+    try:
+        with open(env_file, "a", encoding="utf-8") as handle:
+            handle.write(f"export TRELLIS_CONTEXT_ID={shlex.quote(context_key)}\n")
+    except OSError:
+        pass
 
 
 def _resolve_active_task(trellis_dir: Path, input_data: dict):
@@ -549,6 +570,7 @@ def main():
 
     trellis_dir = project_dir / ".trellis"
     context_key = _resolve_context_key(trellis_dir, hook_input)
+    _persist_context_key_for_bash(context_key)
 
     # Load config for scope filtering and legacy detection
     is_mono, packages, scope_config, task_pkg, default_pkg = _load_trellis_config(

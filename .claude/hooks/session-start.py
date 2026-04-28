@@ -39,7 +39,8 @@ def _has_curated_jsonl_entry(jsonl_path: Path) -> bool:
 
     A freshly seeded jsonl only contains a ``{"_example": ...}`` row (no
     ``file`` key) — that is NOT "ready". Readiness requires at least one
-    curated entry. Matches the contract used by ``inject-subagent-context.py``.
+    curated entry. Matches the contract used by hook-inject and pull-based
+    sub-agent context loaders.
     """
     try:
         for line in jsonl_path.read_text(encoding="utf-8").splitlines():
@@ -609,8 +610,8 @@ Read and follow all instructions below carefully.
         "**Pre-Development Checklist** listing the specific guideline files to "
         "read before coding.\n\n"
         "- If you're spawning an implement/check sub-agent, context is injected "
-        "automatically via `{task}/implement.jsonl` / `check.jsonl`. You do NOT "
-        "need to read these indexes yourself.\n"
+        "or loaded by the sub-agent via `{task}/implement.jsonl` / `check.jsonl`. "
+        "You do NOT need to read these indexes yourself.\n"
         "- For agent-capable platforms, the default is to dispatch "
         "`trellis-implement` and `trellis-check` (so JSONL context is loaded by "
         "the sub-agents) rather than editing code in the main session. "
