@@ -207,6 +207,9 @@ python3 ./.trellis/scripts/task.py create "<task title>" --slug <name>
 python3 ./.trellis/scripts/task.py start <task-dir>
 ```
 
+`--slug` is the human-readable name only. Do not include the `MM-DD-` date
+prefix; `task.py create` adds that prefix automatically.
+
 Skip when `python3 ./.trellis/scripts/task.py current --source` already points to a task.
 
 #### 1.1 Requirement exploration `[required · repeatable]`
