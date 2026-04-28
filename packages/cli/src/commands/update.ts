@@ -76,6 +76,8 @@ interface ChangeAnalysis {
 
 type ConflictAction = "overwrite" | "skip" | "create-new";
 
+const CLAUDE_SETTINGS_PATH = ".claude/settings.json";
+
 // Paths that should never be touched (true user data)
 // spec/ is user-customized content created during init; update should never modify it
 const PROTECTED_PATHS = [
@@ -353,6 +355,44 @@ function needsCodexUpgrade(cwd: string): boolean {
   return Object.keys(hashes).some((key) => key.startsWith(".agents/skills/"));
 }
 
+function preserveExistingClaudeStatusLine(
+  cwd: string,
+  templates: Map<string, string>,
+): void {
+  const newSettingsContent = templates.get(CLAUDE_SETTINGS_PATH);
+  if (!newSettingsContent) return;
+
+  const settingsPath = path.join(cwd, CLAUDE_SETTINGS_PATH);
+  if (!fs.existsSync(settingsPath)) return;
+
+  try {
+    const existingSettings = JSON.parse(
+      fs.readFileSync(settingsPath, "utf-8"),
+    ) as Record<string, unknown>;
+
+    if (!Object.prototype.hasOwnProperty.call(existingSettings, "statusLine")) {
+      return;
+    }
+
+    const newSettings = JSON.parse(newSettingsContent) as Record<
+      string,
+      unknown
+    >;
+
+    if (Object.prototype.hasOwnProperty.call(newSettings, "statusLine")) {
+      return;
+    }
+
+    newSettings.statusLine = existingSettings.statusLine;
+    templates.set(
+      CLAUDE_SETTINGS_PATH,
+      `${JSON.stringify(newSettings, null, 2)}\n`,
+    );
+  } catch {
+    // Invalid local JSON is handled by the normal conflict path.
+  }
+}
+
 function collectTemplateFiles(
   cwd: string,
   extraPlatforms?: Set<AITool>,
@@ -401,6 +441,8 @@ function collectTemplateFiles(
       }
     }
   }
+
+  preserveExistingClaudeStatusLine(cwd, files);
 
   // Apply update.skip from config.yaml (unless bypassed for breaking release)
   if (!bypassUpdateSkip) {

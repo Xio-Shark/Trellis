@@ -650,6 +650,16 @@ describe("regression: migration data integrity (beta.14)", () => {
     }
   });
 
+  it("[beta.15] Claude Code statusline is not safe-deleted on update", () => {
+    const claudeStatusLineDeletes = getAllMigrations().filter(
+      (m) =>
+        m.type === "safe-file-delete" &&
+        m.from === ".claude/hooks/statusline.py",
+    );
+
+    expect(claudeStatusLineDeletes).toEqual([]);
+  });
+
   it("[beta.14] rename/rename-dir migrations have 'to' field", () => {
     const allMigrations = getAllMigrations();
     const renames = allMigrations.filter(

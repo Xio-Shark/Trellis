@@ -1,0 +1,9 @@
+{
+  "version": "0.5.0-beta.16",
+  "description": "Compatibility patch for Claude Code statusLine upgrades. New projects still do not install a generated statusLine by default, but existing projects keep their `.claude/hooks/statusline.py` file and any `.claude/settings.json` `statusLine` entry during `trellis update`. No migration actions are required.",
+  "breaking": false,
+  "recommendMigrate": false,
+  "changelog": "**Bug Fixes:**\n- fix(claude): Preserve existing Claude Code statusLine installs during update. `trellis update` no longer safe-deletes `.claude/hooks/statusline.py`, and if `.claude/settings.json` already has a top-level `statusLine` entry, the updated settings template carries that entry forward.\n- fix(docs): Clarify that Claude Code statusLine is disabled only for new installs. Existing projects keep their local statusLine behavior unless the user removes it manually.\n\n**Behavior:**\n- New Trellis installs still do not create `.claude/hooks/statusline.py` and do not add `statusLine` to `.claude/settings.json`.\n- Non-Claude orphan `statusline.py` files remain hash-verified safe-delete cleanup targets because those platforms have no `statusLine` event.",
+  "migrations": [],
+  "notes": "Run `trellis update` to receive the compatibility fix. Existing Claude Code statusLine files and settings are preserved. No manual migration is required."
+}

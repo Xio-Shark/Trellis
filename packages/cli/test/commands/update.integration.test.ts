@@ -526,6 +526,34 @@ describe("update() integration", () => {
     expect(fs.existsSync(deprecatedFile)).toBe(false);
   });
 
+  it("#22 preserves existing Claude statusLine config and hook file on update", async () => {
+    await init({ yes: true, force: true, claude: true });
+
+    const settingsPath = path.join(tmpDir, ".claude", "settings.json");
+    const statusLinePath = path.join(tmpDir, ".claude", "hooks", "statusline.py");
+    const statusLineConfig = {
+      type: "command",
+      command: "python3 .claude/hooks/statusline.py",
+    };
+
+    const settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8")) as Record<
+      string,
+      unknown
+    >;
+    settings.statusLine = statusLineConfig;
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
+    fs.writeFileSync(statusLinePath, "# existing local statusline\n");
+
+    await update({ force: true });
+
+    expect(fs.existsSync(statusLinePath)).toBe(true);
+    const updatedSettings = JSON.parse(
+      fs.readFileSync(settingsPath, "utf-8"),
+    ) as Record<string, unknown>;
+    expect(updatedSettings.statusLine).toEqual(statusLineConfig);
+    expect(updatedSettings.hooks).toBeDefined();
+  });
+
   // --- Breaking-change migration gate (v0.5.0-beta.0+) ---
   // Gate: if upgrading from a version that spans a breaking manifest with
   // recommendMigrate=true, `update` must be invoked with --migrate (or --dry-run
