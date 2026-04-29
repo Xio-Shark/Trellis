@@ -322,23 +322,11 @@ def cmd_archive(args: argparse.Namespace) -> int:
             data["completedAt"] = today
             write_json(task_json_path, data)
 
-            # Handle subtask relationships on archive
-            task_parent = data.get("parent")
+            # Handle subtask relationships on archive.
+            # Keep this task in its parent's children list so progress
+            # counters (children_progress) stay consistent — children
+            # missing from the active set are treated as completed.
             task_children = data.get("children", [])
-
-            # If this is a child, remove from parent's children list
-            if task_parent:
-                parent_dir = find_task_by_name(task_parent, tasks_dir)
-                if parent_dir:
-                    parent_json = parent_dir / FILE_TASK_JSON
-                    if parent_json.is_file():
-                        parent_data = read_json(parent_json)
-                        if parent_data:
-                            parent_children = parent_data.get("children", [])
-                            if dir_name in parent_children:
-                                parent_children.remove(dir_name)
-                                parent_data["children"] = parent_children
-                                write_json(parent_json, parent_data)
 
             # If this is a parent, clear parent field in all children
             if task_children:
