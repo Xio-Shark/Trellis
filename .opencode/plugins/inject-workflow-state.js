@@ -81,7 +81,12 @@ const FALLBACK_BREADCRUMBS = {
     "Per-turn only; does not carry forward; do NOT invent an override the " +
     "user did not say.",
   completed:
-    "User commits changes; then run task.py archive.",
+    "Code committed via Phase 3.4; run `/trellis:finish-work` to wrap up " +
+    "(archive task + record session).\n" +
+    "If you reach this state with uncommitted code, return to Phase 3.4 " +
+    "first — `/finish-work` refuses to run on a dirty working tree.\n" +
+    "`task.py archive` deletes runtime session files that point at the " +
+    "archived task.",
 }
 
 /**
