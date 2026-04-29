@@ -1,38 +1,40 @@
 import path from "node:path";
+import { AI_TOOLS } from "../types/ai-tools.js";
 import {
   getAllAgents,
   getAllCodexSkills,
   getAllHooks,
-  getAllSkills,
   getConfigTemplate,
   getHooksConfig,
 } from "../templates/codex/index.js";
 import { ensureDir, writeFile } from "../utils/file-writer.js";
-import { resolvePlaceholders } from "./shared.js";
+import {
+  resolvePlaceholders,
+  resolveAllAsSkills,
+  resolveBundledSkills,
+  applyPullBasedPreludeToml,
+  writeSkills,
+  writeSharedHooks,
+} from "./shared.js";
 
 /**
  * Configure Codex by writing:
- * - .agents/skills/<skill-name>/SKILL.md   (shared, cross-platform)
- * - .codex/skills/<skill-name>/SKILL.md    (Codex-specific)
- * - .codex/agents/<agent-name>.toml
- * - .codex/hooks/session-start.py
- * - .codex/hooks.json
- * - .codex/config.toml
+ * - .agents/skills/ — shared skills from common source
+ * - .codex/skills/ — Codex-specific skills (platform-specific templates)
+ * - .codex/agents/, hooks/, hooks.json, config.toml — platform-specific
  */
 export async function configureCodex(cwd: string): Promise<void> {
-  // Shared skills → .agents/skills/
+  // Shared skills from common source → .agents/skills/
   const sharedSkillsRoot = path.join(cwd, ".agents", "skills");
-  ensureDir(sharedSkillsRoot);
-
-  for (const skill of getAllSkills()) {
-    const skillDir = path.join(sharedSkillsRoot, skill.name);
-    ensureDir(skillDir);
-    await writeFile(path.join(skillDir, "SKILL.md"), skill.content);
-  }
+  await writeSkills(
+    sharedSkillsRoot,
+    resolveAllAsSkills(AI_TOOLS.codex.templateContext),
+    resolveBundledSkills(AI_TOOLS.codex.templateContext),
+  );
 
   const codexRoot = path.join(cwd, ".codex");
 
-  // Codex-specific skills → .codex/skills/
+  // Codex-specific skills (platform-specific) → .codex/skills/
   const codexSkillsRoot = path.join(codexRoot, "skills");
   ensureDir(codexSkillsRoot);
 
@@ -46,7 +48,10 @@ export async function configureCodex(cwd: string): Promise<void> {
   const codexAgentsRoot = path.join(codexRoot, "agents");
   ensureDir(codexAgentsRoot);
 
-  for (const agent of getAllAgents()) {
+  // Codex is a class-2 (pull-based) platform: PreToolUse only fires for Bash
+  // and CollabAgentSpawn hook is not implemented (#15486). Sub-agents must
+  // load Trellis context themselves via the prelude injected here.
+  for (const agent of applyPullBasedPreludeToml(getAllAgents())) {
     await writeFile(
       path.join(codexAgentsRoot, `${agent.name}.toml`),
       agent.content,
@@ -57,15 +62,32 @@ export async function configureCodex(cwd: string): Promise<void> {
   const hooksDir = path.join(codexRoot, "hooks");
   ensureDir(hooksDir);
 
+  // Codex-specific hooks (e.g., session-start.py tailored for Codex)
   for (const hook of getAllHooks()) {
     await writeFile(path.join(hooksDir, hook.name), hook.content);
   }
+
+  // Shared hooks (inject-workflow-state.py only). Codex bundles its own
+  // session-start.py above; sub-agent context is pull-based (class-2).
+  await writeSharedHooks(hooksDir, "codex");
 
   // Hooks config → .codex/hooks.json
   await writeFile(
     path.join(codexRoot, "hooks.json"),
     resolvePlaceholders(getHooksConfig()),
   );
+
+  // NOTE: Codex hooks require `features.codex_hooks = true` in the user's
+  // ~/.codex/config.toml. Without this flag the hooks.json is ignored and
+  // inject-workflow-state.py will never fire. This prerequisite is documented
+  // in spec/cli/backend/platform-integration.md.
+  if (!process.env.VITEST && !process.env.TRELLIS_QUIET) {
+    process.stderr.write(
+      "⚠️  Codex hooks require `features.codex_hooks = true` in your " +
+        "~/.codex/config.toml. Without it the Trellis workflow breadcrumb " +
+        "won't fire. See Trellis docs for details.\n",
+    );
+  }
 
   // Config → .codex/config.toml
   const config = getConfigTemplate();

@@ -76,6 +76,111 @@ describe("registry internal consistency", () => {
     }
   });
 
+  // templateContext.cliFlag mirrors the outer AIToolConfig.cliFlag — the two
+  // must stay in sync so {{CLI_FLAG}} substitution in shipped templates
+  // agrees with the --claude/--cursor/--codex CLI flag users invoke.
+  it("templateContext.cliFlag matches AIToolConfig.cliFlag for every platform", () => {
+    for (const id of PLATFORM_IDS) {
+      const config = AI_TOOLS[id];
+      expect(config.templateContext.cliFlag).toBe(config.cliFlag);
+    }
+  });
+
+});
+
+// =============================================================================
+// UserPromptSubmit breadcrumb wiring (workflow-enforcement-v2)
+// =============================================================================
+
+describe("UserPromptSubmit hook wiring", () => {
+  /** Map from template config path to (parser, event name) */
+  const PLATFORM_HOOK_CONFIGS = [
+    {
+      platform: "claude",
+      path: "claude/settings.json",
+      event: "UserPromptSubmit",
+    },
+    {
+      platform: "cursor",
+      path: "cursor/hooks.json",
+      event: "beforeSubmitPrompt",
+    },
+    {
+      platform: "qoder",
+      path: "qoder/settings.json",
+      event: "UserPromptSubmit",
+    },
+    {
+      platform: "codebuddy",
+      path: "codebuddy/settings.json",
+      event: "UserPromptSubmit",
+    },
+    {
+      platform: "droid",
+      path: "droid/settings.json",
+      event: "UserPromptSubmit",
+    },
+    {
+      platform: "gemini",
+      path: "gemini/settings.json",
+      event: "UserPromptSubmit",
+    },
+    {
+      platform: "copilot",
+      path: "copilot/hooks.json",
+      event: "userPromptSubmitted",
+    },
+    {
+      platform: "codex",
+      path: "codex/hooks.json",
+      event: "UserPromptSubmit",
+    },
+  ] as const;
+
+  for (const { platform, path, event } of PLATFORM_HOOK_CONFIGS) {
+    it(`${platform} hook config contains ${event} referencing inject-workflow-state.py`, async () => {
+      const fs = await import("node:fs");
+      const { dirname, join } = await import("node:path");
+      const { fileURLToPath } = await import("node:url");
+      const __filename = fileURLToPath(import.meta.url);
+      const templatesRoot = join(
+        dirname(__filename),
+        "..",
+        "src",
+        "templates",
+      );
+      const raw = fs.readFileSync(join(templatesRoot, path), "utf-8");
+      const parsed = JSON.parse(raw) as {
+        hooks?: Record<string, unknown>;
+      };
+      expect(parsed.hooks).toBeDefined();
+      expect(Object.keys(parsed.hooks ?? {})).toContain(event);
+      expect(raw).toContain("inject-workflow-state.py");
+    });
+  }
+
+  it("kiro agent JSONs do NOT wire UserPromptSubmit (downgrade per Codex R3 #4)", async () => {
+    const fs = await import("node:fs");
+    const { dirname, join } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const __filename = fileURLToPath(import.meta.url);
+    const kiroAgentsDir = join(
+      dirname(__filename),
+      "..",
+      "src",
+      "templates",
+      "kiro",
+      "agents",
+    );
+    for (const entry of fs.readdirSync(kiroAgentsDir)) {
+      if (!entry.endsWith(".json")) continue;
+      const content = fs.readFileSync(join(kiroAgentsDir, entry), "utf-8");
+      expect(
+        content,
+        `kiro/agents/${entry} should not wire inject-workflow-state.py`,
+      ).not.toContain("inject-workflow-state.py");
+    }
+  });
 });
 
 // Roundtrip and derived-helper tests are in configurators/index.test.ts

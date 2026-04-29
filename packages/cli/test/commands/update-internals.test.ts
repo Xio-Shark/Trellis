@@ -13,6 +13,7 @@ import path from "node:path";
 import {
   cleanupEmptyDirs,
   loadUpdateSkipPaths,
+  shouldExcludeFromBackup,
   sortMigrationsForExecution,
 } from "../../src/commands/update.js";
 
@@ -66,12 +67,6 @@ describe("cleanupEmptyDirs", () => {
     fs.mkdirSync(path.join(tmpDir, ".trellis"), { recursive: true });
     cleanupEmptyDirs(tmpDir, ".trellis");
     expect(fs.existsSync(path.join(tmpDir, ".trellis"))).toBe(true);
-  });
-
-  it("[CR#1] does not delete .iflow root even if empty", () => {
-    fs.mkdirSync(path.join(tmpDir, ".iflow"), { recursive: true });
-    cleanupEmptyDirs(tmpDir, ".iflow");
-    expect(fs.existsSync(path.join(tmpDir, ".iflow"))).toBe(true);
   });
 
   it("recursively cleans parent directories but stops at root", () => {
@@ -205,5 +200,83 @@ describe("sortMigrationsForExecution", () => {
     const original = [...items];
     sortMigrationsForExecution(items);
     expect(items).toEqual(original);
+  });
+});
+
+// =============================================================================
+// shouldExcludeFromBackup — worktrees + user data must not end up in backups
+// =============================================================================
+
+describe("shouldExcludeFromBackup", () => {
+  // Platform-native worktree dirs host nested sub-repos spawned by the CLI.
+  // Snapshotting them on every update would duplicate gigabytes; they must
+  // be excluded regardless of which platform put them there.
+  it.each([
+    ".claude/worktrees/feature-x/src/main.ts",
+    ".cursor/worktrees/bugfix-1/README.md",
+    ".gemini/worktrees/exp/file.txt",
+    ".factory/worktrees/any/file.md",
+  ])("excludes %s (worktrees convention)", (p) => {
+    expect(shouldExcludeFromBackup(p)).toBe(true);
+  });
+
+  it("excludes singular /worktree/ variant", () => {
+    expect(shouldExcludeFromBackup(".opencode/worktree/branch/file.ts")).toBe(
+      true,
+    );
+  });
+
+  it.each([
+    ".opencode/node_modules/@opencode-ai/sdk/package.json",
+    ".trellis/.backup-2026-04-22T10-24-27/.opencode/node_modules/zod/index.js",
+  ])("excludes dependency tree %s", (p) => {
+    expect(shouldExcludeFromBackup(p)).toBe(true);
+  });
+
+  it.each([
+    ".trellis/workspace/developer/journal-1.md",
+    ".trellis/tasks/04-17-foo/prd.md",
+    ".trellis/spec/cli/backend/index.md",
+    ".trellis/backlog/idea.md",
+    ".trellis/agent-traces/trace.jsonl",
+  ])("excludes user data %s", (p) => {
+    expect(shouldExcludeFromBackup(p)).toBe(true);
+  });
+
+  it("excludes previous backups", () => {
+    expect(
+      shouldExcludeFromBackup(".trellis/.backup-2026-04-20T01-00-00/x"),
+    ).toBe(true);
+  });
+
+  it.each([
+    ".claude/commands/trellis/continue.md",
+    ".claude/skills/trellis-check/SKILL.md",
+    ".trellis/workflow.md",
+    ".trellis/scripts/get_context.py",
+    ".agents/skills/trellis-check/SKILL.md",
+  ])("includes managed file %s", (p) => {
+    expect(shouldExcludeFromBackup(p)).toBe(false);
+  });
+
+  it("does not treat 'worktrees' as a substring match outside path segments", () => {
+    // Files that happen to have "worktree" in their name but aren't inside a
+    // worktree dir should still be backed up.
+    expect(shouldExcludeFromBackup(".claude/worktree-notes.md")).toBe(false);
+  });
+
+  // Windows `path.relative` returns backslash paths. The slash-prefixed
+  // exclude patterns (/worktrees/, /tasks/, /spec/, ...) must still match
+  // after normalization, otherwise Trellis's native worktree protection
+  // silently fails on Windows and `collectAllFiles` descends into nested
+  // full project copies (observed in the field: stack-overflow crash on
+  // `trellis update --migrate`, late April 2026).
+  it.each([
+    ".claude\\worktrees\\feat-x\\src\\main.ts",
+    ".trellis\\tasks\\04-17-foo\\prd.md",
+    ".trellis\\workspace\\dev\\journal-1.md",
+    ".opencode\\node_modules\\zod\\index.js",
+  ])("excludes Windows-style backslash path %s", (p) => {
+    expect(shouldExcludeFromBackup(p)).toBe(true);
   });
 });

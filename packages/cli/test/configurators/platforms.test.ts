@@ -12,22 +12,39 @@ import { AI_TOOLS } from "../../src/types/ai-tools.js";
 import { setWriteMode } from "../../src/utils/file-writer.js";
 import {
   getAllAgents as getAllCodexAgents,
-  getAllSkills,
   getConfigTemplate as getCodexConfigTemplate,
   getHooksConfig as getCodexHooksConfig,
 } from "../../src/templates/codex/index.js";
-import { getAllWorkflows as getAllAntigravityWorkflows } from "../../src/templates/antigravity/index.js";
-import { getAllWorkflows as getAllWindsurfWorkflows } from "../../src/templates/windsurf/index.js";
-import { getAllSkills as getAllKiroSkills } from "../../src/templates/kiro/index.js";
-import { getAllCommands as getAllGeminiCommands } from "../../src/templates/gemini/index.js";
-import { getAllSkills as getAllQoderSkills } from "../../src/templates/qoder/index.js";
-import { getAllCommands as getAllCodebuddyCommands } from "../../src/templates/codebuddy/index.js";
 import {
   getAllHooks as getAllCopilotHooks,
-  getAllPrompts as getAllCopilotPrompts,
   getHooksConfig as getCopilotHooksConfig,
 } from "../../src/templates/copilot/index.js";
-import { resolvePlaceholders } from "../../src/configurators/shared.js";
+import { getHooksConfig as getCursorHooksConfig } from "../../src/templates/cursor/index.js";
+import {
+  getAllAgents as getPiAgents,
+  getExtensionTemplate as getPiExtensionTemplate,
+  getSettingsTemplate as getPiSettings,
+} from "../../src/templates/pi/index.js";
+import {
+  resolvePlaceholders,
+  resolveAllAsSkills,
+  resolveBundledSkills,
+  resolveCommands,
+  resolveSkills,
+  wrapWithCommandFrontmatter,
+} from "../../src/configurators/shared.js";
+
+const BUNDLED_SKILL_NAME = "trellis-meta";
+const BUNDLED_REFERENCE = path.join(
+  BUNDLED_SKILL_NAME,
+  "references",
+  "local-architecture",
+  "overview.md",
+);
+
+function readConfiguredFile(root: string, relativePath: string): string {
+  return fs.readFileSync(path.join(root, ...relativePath.split("/")), "utf-8");
+}
 
 // =============================================================================
 // getConfiguredPlatforms — detects existing platform directories
@@ -59,12 +76,6 @@ describe("getConfiguredPlatforms", () => {
     fs.mkdirSync(path.join(tmpDir, ".cursor"));
     const result = getConfiguredPlatforms(tmpDir);
     expect(result.has("cursor")).toBe(true);
-  });
-
-  it("detects .iflow directory as iflow", () => {
-    fs.mkdirSync(path.join(tmpDir, ".iflow"));
-    const result = getConfiguredPlatforms(tmpDir);
-    expect(result.has("iflow")).toBe(true);
   });
 
   it("detects .opencode directory as opencode", () => {
@@ -137,6 +148,12 @@ describe("getConfiguredPlatforms", () => {
     expect(result.has("droid")).toBe(true);
   });
 
+  it("detects .pi directory as pi", () => {
+    fs.mkdirSync(path.join(tmpDir, ".pi"));
+    const result = getConfiguredPlatforms(tmpDir);
+    expect(result.has("pi")).toBe(true);
+  });
+
   it("detects multiple platforms simultaneously", () => {
     for (const id of PLATFORM_IDS) {
       fs.mkdirSync(path.join(tmpDir, AI_TOOLS[id].configDir), {
@@ -186,11 +203,6 @@ describe("configurePlatform", () => {
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(true);
   });
 
-  it("configurePlatform('iflow') creates .iflow directory", async () => {
-    await configurePlatform("iflow", tmpDir);
-    expect(fs.existsSync(path.join(tmpDir, ".iflow"))).toBe(true);
-  });
-
   it("configurePlatform('opencode') creates .opencode directory", async () => {
     await configurePlatform("opencode", tmpDir);
     expect(fs.existsSync(path.join(tmpDir, ".opencode"))).toBe(true);
@@ -202,12 +214,42 @@ describe("configurePlatform", () => {
     expect(fs.existsSync(path.join(tmpDir, ".codex"))).toBe(true);
   });
 
-  it("configurePlatform('codex') writes all skill templates", async () => {
+  it("configurePlatform writes collected templates byte-for-byte for every platform", async () => {
+    for (const id of PLATFORM_IDS) {
+      const platformDir = fs.mkdtempSync(
+        path.join(os.tmpdir(), `trellis-parity-${id}-`),
+      );
+      try {
+        await configurePlatform(id, platformDir);
+        const templates = collectPlatformTemplates(id);
+        expect(
+          templates,
+          `${id} should expose template tracking`,
+        ).toBeInstanceOf(Map);
+        if (!templates) {
+          throw new Error(`${id} did not expose template tracking`);
+        }
+
+        for (const [relativePath, expectedContent] of templates) {
+          const targetPath = path.join(platformDir, ...relativePath.split("/"));
+          expect(
+            fs.existsSync(targetPath),
+            `${id} should write ${relativePath}`,
+          ).toBe(true);
+          expect(readConfiguredFile(platformDir, relativePath)).toBe(
+            expectedContent,
+          );
+        }
+      } finally {
+        fs.rmSync(platformDir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("configurePlatform('codex') writes shared skill templates from common source", async () => {
     await configurePlatform("codex", tmpDir);
 
-    const expectedSkills = getAllSkills();
-    const expectedNames = expectedSkills.map((skill) => skill.name).sort();
-
+    const expected = resolveAllAsSkills(AI_TOOLS.codex.templateContext);
     const skillsRoot = path.join(tmpDir, ".agents", "skills");
     const actualNames = fs
       .readdirSync(skillsRoot, { withFileTypes: true })
@@ -215,13 +257,16 @@ describe("configurePlatform", () => {
       .map((entry) => entry.name)
       .sort();
 
-    expect(actualNames).toEqual(expectedNames);
+    expect(actualNames).toEqual(
+      [...expected.map((s) => s.name), BUNDLED_SKILL_NAME].sort(),
+    );
 
-    for (const skill of expectedSkills) {
+    for (const skill of expected) {
       const skillPath = path.join(skillsRoot, skill.name, "SKILL.md");
       expect(fs.existsSync(skillPath)).toBe(true);
       expect(fs.readFileSync(skillPath, "utf-8")).toBe(skill.content);
     }
+    expect(fs.existsSync(path.join(skillsRoot, BUNDLED_REFERENCE))).toBe(true);
   });
 
   it("configurePlatform('codex') writes custom agents and config", async () => {
@@ -241,7 +286,28 @@ describe("configurePlatform", () => {
     for (const agent of expectedAgents) {
       const agentPath = path.join(codexAgentsRoot, `${agent.name}.toml`);
       expect(fs.existsSync(agentPath)).toBe(true);
-      expect(fs.readFileSync(agentPath, "utf-8")).toBe(agent.content);
+      const written = fs.readFileSync(agentPath, "utf-8");
+      // Codex is a class-2 (pull-based) platform. Prelude is injected into
+      // implement/check only — research is orthogonal (searches spec tree,
+      // no task dependency) and must stay pristine.
+      const needsPrelude = ["trellis-implement", "trellis-check"].includes(
+        agent.name,
+      );
+      if (needsPrelude) {
+        expect(written).toContain("Required: Load Trellis Context First");
+        expect(written).toContain("task.py current --source");
+        // Original body must still be present (prepend, not replace)
+        const originalBody = agent.content
+          .split("developer_instructions")[1]
+          ?.split('"""')[1]
+          ?.trim()
+          .split("\n")[0];
+        if (originalBody) {
+          expect(written).toContain(originalBody);
+        }
+      } else {
+        expect(written).toBe(agent.content);
+      }
     }
 
     const config = getCodexConfigTemplate();
@@ -256,8 +322,11 @@ describe("configurePlatform", () => {
     const hooksPath = path.join(tmpDir, ".codex", "hooks.json");
     expect(fs.existsSync(hooksPath)).toBe(true);
     const content = fs.readFileSync(hooksPath, "utf-8");
-    const expectedPythonCmd = process.platform === "win32" ? "python" : "python3";
-    expect(content).toContain(`"command": "${expectedPythonCmd} .codex/hooks/session-start.py"`);
+    const expectedPythonCmd =
+      process.platform === "win32" ? "python" : "python3";
+    expect(content).toContain(
+      `"command": "${expectedPythonCmd} .codex/hooks/session-start.py"`,
+    );
     expect(content).not.toContain("{{PYTHON_CMD}}");
   });
 
@@ -266,12 +335,10 @@ describe("configurePlatform", () => {
     expect(fs.existsSync(path.join(tmpDir, ".kiro", "skills"))).toBe(true);
   });
 
-  it("configurePlatform('kiro') writes all skill templates", async () => {
+  it("configurePlatform('kiro') writes all skill templates from common source", async () => {
     await configurePlatform("kiro", tmpDir);
 
-    const expectedSkills = getAllKiroSkills();
-    const expectedNames = expectedSkills.map((skill) => skill.name).sort();
-
+    const expected = resolveAllAsSkills(AI_TOOLS.kiro.templateContext);
     const skillsRoot = path.join(tmpDir, ".kiro", "skills");
     const actualNames = fs
       .readdirSync(skillsRoot, { withFileTypes: true })
@@ -279,13 +346,16 @@ describe("configurePlatform", () => {
       .map((entry) => entry.name)
       .sort();
 
-    expect(actualNames).toEqual(expectedNames);
+    expect(actualNames).toEqual(
+      [...expected.map((s) => s.name), BUNDLED_SKILL_NAME].sort(),
+    );
 
-    for (const skill of expectedSkills) {
+    for (const skill of expected) {
       const skillPath = path.join(skillsRoot, skill.name, "SKILL.md");
       expect(fs.existsSync(skillPath)).toBe(true);
       expect(fs.readFileSync(skillPath, "utf-8")).toBe(skill.content);
     }
+    expect(fs.existsSync(path.join(skillsRoot, BUNDLED_REFERENCE))).toBe(true);
   });
 
   it("configurePlatform('gemini') creates .gemini directory", async () => {
@@ -293,24 +363,36 @@ describe("configurePlatform", () => {
     expect(fs.existsSync(path.join(tmpDir, ".gemini"))).toBe(true);
   });
 
-  it("configurePlatform('gemini') writes all command templates as .toml", async () => {
+  it("configurePlatform('gemini') writes TOML commands + SKILL.md skills", async () => {
     await configurePlatform("gemini", tmpDir);
 
-    const expectedCommands = getAllGeminiCommands();
-    const expectedNames = expectedCommands.map((cmd) => cmd.name).sort();
-
+    // Commands as TOML
     const commandsDir = path.join(tmpDir, ".gemini", "commands", "trellis");
     expect(fs.existsSync(commandsDir)).toBe(true);
+    const tomlFiles = fs
+      .readdirSync(commandsDir)
+      .filter((f) => f.endsWith(".toml"));
+    expect(tomlFiles.length).toBe(
+      resolveCommands(AI_TOOLS.gemini.templateContext).length,
+    );
 
-    const actualFiles = fs.readdirSync(commandsDir).sort();
-    const actualNames = actualFiles.map((f) => f.replace(".toml", "")).sort();
-
-    expect(actualNames).toEqual(expectedNames);
-
-    for (const cmd of expectedCommands) {
-      const filePath = path.join(commandsDir, `${cmd.name}.toml`);
-      expect(fs.existsSync(filePath)).toBe(true);
-      expect(fs.readFileSync(filePath, "utf-8")).toBe(cmd.content);
+    // Skills as SKILL.md
+    const skillsDir = path.join(tmpDir, ".gemini", "skills");
+    expect(fs.existsSync(skillsDir)).toBe(true);
+    const skillDirs = fs
+      .readdirSync(skillsDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory());
+    expect(skillDirs.length).toBe(
+      resolveSkills(AI_TOOLS.gemini.templateContext).length +
+        resolveBundledSkills(AI_TOOLS.gemini.templateContext).filter((file) =>
+          file.relativePath.endsWith("/SKILL.md"),
+        ).length,
+    );
+    for (const dir of skillDirs) {
+      expect(dir.name.startsWith("trellis-")).toBe(true);
+      expect(fs.existsSync(path.join(skillsDir, dir.name, "SKILL.md"))).toBe(
+        true,
+      );
     }
   });
 
@@ -338,19 +420,13 @@ describe("configurePlatform", () => {
 
   it("configurePlatform('antigravity') creates .agent/workflows directory", async () => {
     await configurePlatform("antigravity", tmpDir);
-    expect(fs.existsSync(path.join(tmpDir, ".agent", "workflows"))).toBe(
-      true,
-    );
+    expect(fs.existsSync(path.join(tmpDir, ".agent", "workflows"))).toBe(true);
   });
 
-  it("configurePlatform('antigravity') writes all workflow templates", async () => {
+  it("configurePlatform('antigravity') writes all workflow templates from common source", async () => {
     await configurePlatform("antigravity", tmpDir);
 
-    const expectedWorkflows = getAllAntigravityWorkflows();
-    const expectedNames = expectedWorkflows
-      .map((workflow) => workflow.name)
-      .sort();
-
+    const expected = resolveCommands(AI_TOOLS.antigravity.templateContext);
     const workflowsRoot = path.join(tmpDir, ".agent", "workflows");
     const actualNames = fs
       .readdirSync(workflowsRoot, { withFileTypes: true })
@@ -358,12 +434,12 @@ describe("configurePlatform", () => {
       .map((entry) => entry.name.replace(/\.md$/, ""))
       .sort();
 
-    expect(actualNames).toEqual(expectedNames);
+    expect(actualNames).toEqual(expected.map((c) => c.name).sort());
 
-    for (const workflow of expectedWorkflows) {
-      const workflowPath = path.join(workflowsRoot, `${workflow.name}.md`);
+    for (const cmd of expected) {
+      const workflowPath = path.join(workflowsRoot, `${cmd.name}.md`);
       expect(fs.existsSync(workflowPath)).toBe(true);
-      expect(fs.readFileSync(workflowPath, "utf-8")).toBe(workflow.content);
+      expect(fs.readFileSync(workflowPath, "utf-8")).toBe(cmd.content);
     }
   });
 
@@ -374,26 +450,31 @@ describe("configurePlatform", () => {
     );
   });
 
-  it("configurePlatform('windsurf') writes all workflow templates", async () => {
+  it("configurePlatform('windsurf') writes workflows + skills", async () => {
     await configurePlatform("windsurf", tmpDir);
 
-    const expectedWorkflows = getAllWindsurfWorkflows();
-    const expectedNames = expectedWorkflows.map((workflow) => workflow.name).sort();
-
+    // Commands as workflows
     const workflowsRoot = path.join(tmpDir, ".windsurf", "workflows");
-    const actualNames = fs
-      .readdirSync(workflowsRoot, { withFileTypes: true })
-      .filter((entry) => entry.isFile())
-      .map((entry) => entry.name.replace(/\.md$/, ""))
-      .sort();
+    expect(fs.existsSync(workflowsRoot)).toBe(true);
+    const wfFiles = fs
+      .readdirSync(workflowsRoot)
+      .filter((f) => f.endsWith(".md"));
+    expect(wfFiles.length).toBe(
+      resolveCommands(AI_TOOLS.windsurf.templateContext).length,
+    );
 
-    expect(actualNames).toEqual(expectedNames);
-
-    for (const workflow of expectedWorkflows) {
-      const workflowPath = path.join(workflowsRoot, `${workflow.name}.md`);
-      expect(fs.existsSync(workflowPath)).toBe(true);
-      expect(fs.readFileSync(workflowPath, "utf-8")).toBe(workflow.content);
-    }
+    // Skills
+    const skillsDir = path.join(tmpDir, ".windsurf", "skills");
+    expect(fs.existsSync(skillsDir)).toBe(true);
+    const skillDirs = fs
+      .readdirSync(skillsDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory());
+    expect(skillDirs.length).toBe(
+      resolveSkills(AI_TOOLS.windsurf.templateContext).length +
+        resolveBundledSkills(AI_TOOLS.windsurf.templateContext).filter((file) =>
+          file.relativePath.endsWith("/SKILL.md"),
+        ).length,
+    );
   });
 
   it("configurePlatform('qoder') creates .qoder directory", async () => {
@@ -401,28 +482,47 @@ describe("configurePlatform", () => {
     expect(fs.existsSync(path.join(tmpDir, ".qoder"))).toBe(true);
   });
 
-  it("configurePlatform('qoder') writes all skill templates", async () => {
+  it("configurePlatform('qoder') writes commands + skills with the correct split", async () => {
     await configurePlatform("qoder", tmpDir);
 
-    const expectedSkills = getAllQoderSkills();
-    const expectedNames = expectedSkills.map((s) => s.name).sort();
+    const ctx = AI_TOOLS.qoder.templateContext;
+    const expectedCommands = resolveCommands(ctx);
+    const expectedSkills = resolveSkills(ctx);
+
+    const commandsDir = path.join(tmpDir, ".qoder", "commands");
+    const actualCommandFiles = fs
+      .readdirSync(commandsDir)
+      .filter((f) => f.endsWith(".md"))
+      .sort();
+    expect(actualCommandFiles).toEqual(
+      expectedCommands.map((c) => `trellis-${c.name}.md`).sort(),
+    );
+    for (const cmd of expectedCommands) {
+      const name = `trellis-${cmd.name}`;
+      const filePath = path.join(commandsDir, `${name}.md`);
+      const actual = fs.readFileSync(filePath, "utf-8");
+      expect(actual).toBe(wrapWithCommandFrontmatter(name, cmd.content));
+      expect(actual.startsWith(`---\nname: ${name}\ndescription: `)).toBe(true);
+    }
 
     const skillsDir = path.join(tmpDir, ".qoder", "skills");
-    expect(fs.existsSync(skillsDir)).toBe(true);
-
-    const actualDirs = fs
+    const actualSkillDirs = fs
       .readdirSync(skillsDir, { withFileTypes: true })
       .filter((e) => e.isDirectory())
       .map((e) => e.name)
       .sort();
-
-    expect(actualDirs).toEqual(expectedNames);
-
+    expect(actualSkillDirs).toEqual(
+      [...expectedSkills.map((s) => s.name), BUNDLED_SKILL_NAME].sort(),
+    );
     for (const skill of expectedSkills) {
       const filePath = path.join(skillsDir, skill.name, "SKILL.md");
-      expect(fs.existsSync(filePath)).toBe(true);
       expect(fs.readFileSync(filePath, "utf-8")).toBe(skill.content);
     }
+    expect(fs.existsSync(path.join(skillsDir, BUNDLED_REFERENCE))).toBe(true);
+
+    expect(actualSkillDirs).not.toContain("trellis-finish-work");
+    expect(actualSkillDirs).not.toContain("trellis-continue");
+    expect(actualSkillDirs).not.toContain("trellis-start");
   });
 
   it("configurePlatform('qoder') does not include compiled artifacts", async () => {
@@ -452,12 +552,10 @@ describe("configurePlatform", () => {
     expect(fs.existsSync(path.join(tmpDir, ".codebuddy"))).toBe(true);
   });
 
-  it("configurePlatform('codebuddy') writes all command templates in trellis/ subdirectory", async () => {
+  it("configurePlatform('codebuddy') writes all command templates from common source", async () => {
     await configurePlatform("codebuddy", tmpDir);
 
-    const expectedCommands = getAllCodebuddyCommands();
-    const expectedNames = expectedCommands.map((c) => c.name).sort();
-
+    const expected = resolveCommands(AI_TOOLS.codebuddy.templateContext);
     const commandsDir = path.join(tmpDir, ".codebuddy", "commands", "trellis");
     expect(fs.existsSync(commandsDir)).toBe(true);
 
@@ -467,14 +565,14 @@ describe("configurePlatform", () => {
       .map((f) => f.replace(".md", ""))
       .sort();
 
-    expect(actualFiles).toEqual(expectedNames);
+    expect(actualFiles).toEqual(expected.map((c) => c.name).sort());
 
-    for (const cmd of expectedCommands) {
+    for (const cmd of expected) {
       const content = fs.readFileSync(
         path.join(commandsDir, `${cmd.name}.md`),
         "utf-8",
       );
-      expect(content.length).toBeGreaterThan(0);
+      expect(content).toBe(cmd.content);
     }
   });
 
@@ -504,28 +602,49 @@ describe("configurePlatform", () => {
     await configurePlatform("copilot", tmpDir);
 
     expect(fs.existsSync(path.join(tmpDir, ".github", "copilot"))).toBe(true);
-    expect(fs.existsSync(path.join(tmpDir, ".github", "copilot", "hooks"))).toBe(true);
+    expect(
+      fs.existsSync(path.join(tmpDir, ".github", "copilot", "hooks")),
+    ).toBe(true);
 
     const expectedHooks = getAllCopilotHooks();
     for (const hook of expectedHooks) {
-      const hookPath = path.join(tmpDir, ".github", "copilot", "hooks", hook.name);
+      const hookPath = path.join(
+        tmpDir,
+        ".github",
+        "copilot",
+        "hooks",
+        hook.name,
+      );
       expect(fs.existsSync(hookPath)).toBe(true);
       expect(fs.readFileSync(hookPath, "utf-8")).toBe(hook.content);
     }
   });
 
-  it("configurePlatform('copilot') writes slash-command prompt files", async () => {
+  it("configurePlatform('copilot') writes prompts + skills", async () => {
     await configurePlatform("copilot", tmpDir);
 
+    // Prompts (commands)
     const promptsDir = path.join(tmpDir, ".github", "prompts");
     expect(fs.existsSync(promptsDir)).toBe(true);
+    const promptFiles = fs
+      .readdirSync(promptsDir)
+      .filter((f) => f.endsWith(".prompt.md"));
+    expect(promptFiles.length).toBe(
+      resolveCommands(AI_TOOLS.copilot.templateContext).length,
+    );
 
-    const expectedPrompts = getAllCopilotPrompts();
-    for (const prompt of expectedPrompts) {
-      const promptPath = path.join(promptsDir, `${prompt.name}.prompt.md`);
-      expect(fs.existsSync(promptPath)).toBe(true);
-      expect(fs.readFileSync(promptPath, "utf-8")).toBe(prompt.content);
-    }
+    // Skills
+    const skillsDir = path.join(tmpDir, ".github", "skills");
+    expect(fs.existsSync(skillsDir)).toBe(true);
+    const skillDirs = fs
+      .readdirSync(skillsDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory());
+    expect(skillDirs.length).toBe(
+      resolveSkills(AI_TOOLS.copilot.templateContext).length +
+        resolveBundledSkills(AI_TOOLS.copilot.templateContext).filter((file) =>
+          file.relativePath.endsWith("/SKILL.md"),
+        ).length,
+    );
   });
 
   it("configurePlatform('copilot') writes both tracked and discovery hooks config", async () => {
@@ -552,7 +671,11 @@ describe("configurePlatform", () => {
     expect(fs.existsSync(settingsPath)).toBe(true);
     // Should be valid JSON
     const content = fs.readFileSync(settingsPath, "utf-8");
-    expect(() => JSON.parse(content)).not.toThrow();
+    const settings = JSON.parse(content);
+    expect(settings).not.toHaveProperty("statusLine");
+    expect(
+      fs.existsSync(path.join(tmpDir, ".claude", "hooks", "statusline.py")),
+    ).toBe(false);
   });
 
   it("cursor configuration includes commands directory", async () => {
@@ -567,8 +690,9 @@ describe("configurePlatform", () => {
     ).toBe(true);
   });
 
-  it("droid configuration writes namespaced command files", async () => {
+  it("droid configuration writes commands + skills", async () => {
     await configurePlatform("droid", tmpDir);
+    // Commands (plain md, no frontmatter). Droid is agent-capable → no start.md.
     const startPath = path.join(
       tmpDir,
       ".factory",
@@ -576,18 +700,181 @@ describe("configurePlatform", () => {
       "trellis",
       "start.md",
     );
-    expect(fs.existsSync(startPath)).toBe(true);
-    const content = fs.readFileSync(startPath, "utf-8");
+    expect(fs.existsSync(startPath)).toBe(false);
+    const finishPath = path.join(
+      tmpDir,
+      ".factory",
+      "commands",
+      "trellis",
+      "finish-work.md",
+    );
+    expect(fs.existsSync(finishPath)).toBe(true);
+    const continuePath = path.join(
+      tmpDir,
+      ".factory",
+      "commands",
+      "trellis",
+      "continue.md",
+    );
+    expect(fs.existsSync(continuePath)).toBe(true);
+    // Skills (SKILL.md with frontmatter)
+    const skillPath = path.join(
+      tmpDir,
+      ".factory",
+      "skills",
+      "trellis-check",
+      "SKILL.md",
+    );
+    expect(fs.existsSync(skillPath)).toBe(true);
+    const content = fs.readFileSync(skillPath, "utf-8");
     expect(content.startsWith("---\n")).toBe(true);
-    expect(content).toMatch(/\ndescription:/);
+    expect(content).toContain("name: trellis-check");
+  });
+
+  it("configurePlatform('pi') creates extension-backed Pi assets", async () => {
+    await configurePlatform("pi", tmpDir);
+
+    expect(fs.existsSync(path.join(tmpDir, ".pi", "settings.json"))).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".pi", "prompts", "trellis-finish-work.md"),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(tmpDir, ".pi", "prompts", "trellis-continue.md")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(tmpDir, ".pi", "prompts", "trellis-start.md")),
+    ).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".pi", "skills", "trellis-check", "SKILL.md"),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(tmpDir, ".pi", "skills", BUNDLED_REFERENCE)),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(tmpDir, ".pi", "agents", "trellis-implement.md")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(tmpDir, ".pi", "agents", "trellis-check.md")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(tmpDir, ".pi", "agents", "trellis-research.md")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".pi", "extensions", "trellis", "index.ts"),
+      ),
+    ).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, ".pi", "hooks"))).toBe(false);
+
+    const extension = fs.readFileSync(
+      path.join(tmpDir, ".pi", "extensions", "trellis", "index.ts"),
+      "utf-8",
+    );
+    expect(extension).toContain('registerTool?.({\n    name: "subagent"');
+    expect(extension).toContain('pi.on?.("session_start"');
+    expect(extension).toContain('pi.on?.("tool_call"');
+    expect(extension).toContain("function injectTrellisContextIntoBash");
+    expect(extension).toContain("ctx?.sessionManager?.getSessionId");
+    expect(extension).toContain("TRELLIS_CONTEXT_ID: contextKey");
+    expect(extension).toContain("function stripMarkdownFrontmatter");
+    expect(extension).toContain("function parseAgentConfig");
+    expect(extension).toContain("function resolveSubagentRunConfig");
+    expect(extension).toContain("function buildPiModelArgs");
+    expect(extension).toContain(
+      'return thinking ? ["--thinking", thinking] : []',
+    );
+    expect(extension).toContain("function resolvePiInvocation");
+    expect(extension).toContain("TRELLIS_PI_CLI_JS");
+    expect(extension).toContain("...modelArgs");
+    expect(extension).toContain("child.stdin?.end(prompt)");
+    expect(extension).toContain("class BoundedBufferCollector");
+    expect(extension).toContain("function extractFinalAssistantText");
+    expect(extension).toContain("function formatPiOutput");
+    expect(extension).toContain('"## Trellis Agent Definition"');
+    expect(extension).toContain('content: [{ type: "text", text: output }]');
+    expect(extension).toContain("ctx?.ui?.notify?.(");
+    expect(extension).toContain("systemPrompt:");
+    expect(extension).not.toContain("message: buildTrellisContext");
+    expect(extension).not.toContain('message:\n      "Trellis project context');
+    expect(extension).not.toContain("persistent: true");
+    expect(extension).not.toContain(
+      '["--mode", "json", "-p", "--no-session", toPiPromptArgument(prompt)]',
+    );
+    expect(extension).not.toContain(".py");
+
+    const settings = JSON.parse(
+      fs.readFileSync(path.join(tmpDir, ".pi", "settings.json"), "utf-8"),
+    ) as { skills?: string[] };
+    expect(settings.skills).toEqual(["./skills"]);
+  });
+
+  it("configurePlatform('pi') writes tracked templates exactly", async () => {
+    await configurePlatform("pi", tmpDir);
+
+    const settings = getPiSettings();
+    expect(
+      fs.readFileSync(path.join(tmpDir, ".pi", settings.targetPath), "utf-8"),
+    ).toBe(resolvePlaceholders(settings.content));
+
+    expect(
+      fs.readFileSync(
+        path.join(tmpDir, ".pi", "extensions", "trellis", "index.ts"),
+        "utf-8",
+      ),
+    ).toBe(getPiExtensionTemplate());
+
+    for (const agent of getPiAgents()) {
+      const content = fs.readFileSync(
+        path.join(tmpDir, ".pi", "agents", `${agent.name}.md`),
+        "utf-8",
+      );
+      if (["trellis-implement", "trellis-check"].includes(agent.name)) {
+        expect(content).toContain("Required: Load Trellis Context First");
+      } else {
+        expect(content).toBe(agent.content);
+      }
+    }
+  });
+
+  it("collectPlatformTemplates('pi') maps prompts, skills, agents, extension, and settings", () => {
+    const templates = collectPlatformTemplates("pi");
+    expect(templates).toBeInstanceOf(Map);
+    expect(templates?.get(".pi/prompts/trellis-start.md")).toBeUndefined();
+    expect(templates?.get(".pi/prompts/trellis-finish-work.md")).toBeDefined();
+    expect(templates?.get(".pi/prompts/trellis-continue.md")).toBeDefined();
+    expect(templates?.get(".pi/skills/trellis-check/SKILL.md")).toBeDefined();
+    expect(
+      templates?.get(
+        ".pi/skills/trellis-meta/references/local-architecture/overview.md",
+      ),
+    ).toBeDefined();
+    expect(templates?.get(".pi/agents/trellis-implement.md")).toContain(
+      "Required: Load Trellis Context First",
+    );
+    expect(templates?.get(".pi/extensions/trellis/index.ts")).toBe(
+      getPiExtensionTemplate(),
+    );
+    expect(templates?.get(".pi/settings.json")).toBe(
+      resolvePlaceholders(getPiSettings().content),
+    );
   });
 
   it("collectPlatformTemplates('droid') maps commands under .factory/commands/trellis/", () => {
     const templates = collectPlatformTemplates("droid");
     expect(templates).toBeInstanceOf(Map);
-    expect(templates?.get(".factory/commands/trellis/start.md")).toBeDefined();
+    // Droid is agent-capable → start.md not emitted.
+    expect(
+      templates?.get(".factory/commands/trellis/start.md"),
+    ).toBeUndefined();
     expect(
       templates?.get(".factory/commands/trellis/finish-work.md"),
+    ).toBeDefined();
+    expect(
+      templates?.get(".factory/commands/trellis/continue.md"),
     ).toBeDefined();
   });
 
@@ -615,13 +902,28 @@ describe("configurePlatform", () => {
 
   it("codex hooks.json template keeps PYTHON_CMD placeholder", () => {
     const rawTemplate = getCodexHooksConfig();
-    expect(rawTemplate).toContain("{{PYTHON_CMD}} .codex/hooks/session-start.py");
+    expect(rawTemplate).toContain(
+      "{{PYTHON_CMD}} .codex/hooks/session-start.py",
+    );
+  });
+
+  it("cursor hooks.json matches both documented and native subagent tool names", () => {
+    const hooksConfig = JSON.parse(getCursorHooksConfig()) as {
+      hooks: { preToolUse: { matcher: string }[] };
+    };
+
+    expect(hooksConfig.hooks.preToolUse[0].matcher).toBe("Task|Subagent");
   });
 
   it("collectPlatformTemplates('copilot') includes tracked + discovery hooks config", () => {
     const templates = collectPlatformTemplates("copilot");
     expect(templates).toBeInstanceOf(Map);
-    expect(templates?.get(".github/prompts/start.prompt.md")).toBeDefined();
+    // Copilot is agent-capable → start.prompt.md not emitted.
+    expect(templates?.get(".github/prompts/start.prompt.md")).toBeUndefined();
+    expect(
+      templates?.get(".github/prompts/finish-work.prompt.md"),
+    ).toBeDefined();
+    expect(templates?.get(".github/prompts/continue.prompt.md")).toBeDefined();
     expect(templates?.get(".github/copilot/hooks.json")).toBe(
       resolvePlaceholders(getCopilotHooksConfig()),
     );

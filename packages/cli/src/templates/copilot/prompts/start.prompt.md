@@ -54,7 +54,7 @@ cat .trellis/spec/<package>/<layer>/index.md   # Package-specific guidelines
 cat .trellis/spec/guides/index.md              # Thinking guides (always read)
 ```
 
-> **Important**: The index files are navigation â€?they list the actual guideline files (e.g., `error-handling.md`, `conventions.md`, `mock-strategies.md`).
+> **Important**: The index files are navigation ï¿½?they list the actual guideline files (e.g., `error-handling.md`, `conventions.md`, `mock-strategies.md`).
 > At this step, just read the indexes to understand what's available.
 > When you start actual development, you MUST go back and read the specific guideline files relevant to your task, as listed in the index's Pre-Development Checklist.
 
@@ -72,8 +72,8 @@ When user describes a task, classify it:
 |------|----------|----------|
 | **Question** | User asks about code, architecture, or how something works | Answer directly |
 | **Trivial Fix** | Typo fix, comment update, single-line change | Direct Edit |
-| **Simple Task** | Clear goal, 1-2 files, well-defined scope | Quick confirm â†?Implement |
-| **Complex Task** | Vague goal, multiple files, architectural decisions | **Brainstorm â†?Task Workflow** |
+| **Simple Task** | Clear goal, 1-2 files, well-defined scope | Quick confirm ï¿½?Implement |
+| **Complex Task** | Vague goal, multiple files, architectural decisions | **Brainstorm ï¿½?Task Workflow** |
 
 ### Classification Signals
 
@@ -128,7 +128,7 @@ For simple, well-defined tasks:
 
 ## Complex Task - Brainstorm First
 
-For complex or vague tasks, **automatically start the brainstorm process** â€?do NOT skip directly to implementation.
+For complex or vague tasks, **automatically start the brainstorm process** ï¿½?do NOT skip directly to implementation.
 
 See `/` for the full process. Summary:
 
@@ -167,10 +167,10 @@ See `/` for the full process. Summary:
 
 ```
 From Brainstorm (Complex Task):
-  PRD confirmed â†?Research â†?Configure Context â†?Activate â†?Implement â†?Check â†?Complete
+  PRD confirmed ï¿½?Research ï¿½?Configure Context ï¿½?Activate ï¿½?Implement ï¿½?Check ï¿½?Complete
 
 From Simple Task:
-  Confirm â†?Create Task â†?Write PRD â†?Research â†?Configure Context â†?Activate â†?Implement â†?Check â†?Complete
+  Confirm ï¿½?Create Task ï¿½?Write PRD ï¿½?Research ï¿½?Configure Context ï¿½?Activate ï¿½?Implement ï¿½?Check ï¿½?Complete
 ```
 
 **Key principle: Research happens AFTER requirements are clear (PRD exists).**
@@ -248,7 +248,7 @@ Based on the confirmed PRD, call Research Agent to find relevant specs and patte
 
 ```
 Task(
-  subagent_type: "research",
+  subagent_type: "trellis-research",
   prompt: "Analyze the codebase for this task:
 
   Task: <goal from PRD>
@@ -267,24 +267,27 @@ Task(
   - <pattern>: <example file path>
 
   ## Files to Modify
-  - <path>: <what change>",
-  model: "opus"
+  - <path>: <what change>"
 )
 ```
 
 **Step 6: Configure Context** `[AI]`
 
-Initialize default context:
+`implement.jsonl` and `check.jsonl` were seeded on `task.py create` with a single self-describing `_example` line. Curate real entries now (see workflow.md Phase 1.3 for the full rule):
+
+- Put **spec files** (`.trellis/spec/<package>/<layer>/*.md`) and **research files** (`{TASK_DIR}/research/*.md`) only.
+- Do NOT put code files â€” those are read during implementation, not pre-registered here.
+- Split: `implement.jsonl` = specs the implement sub-agent needs; `check.jsonl` = specs the check sub-agent needs.
+
+Discover available specs:
 
 ```bash
-python3 ./.trellis/scripts/task.py init-context "$TASK_DIR" <type>
-# type: backend | frontend | fullstack
+python3 ./.trellis/scripts/get_context.py --mode packages
 ```
 
-Add code-spec files found by Research Agent:
+Append entries (either edit the jsonl file directly, or):
 
 ```bash
-# For each relevant code-spec and code pattern:
 python3 ./.trellis/scripts/task.py add-context "$TASK_DIR" implement "<path>" "<reason>"
 python3 ./.trellis/scripts/task.py add-context "$TASK_DIR" check "<path>" "<reason>"
 ```
@@ -295,7 +298,7 @@ python3 ./.trellis/scripts/task.py add-context "$TASK_DIR" check "<path>" "<reas
 python3 ./.trellis/scripts/task.py start "$TASK_DIR"
 ```
 
-This sets `.current-task` so hooks can inject context.
+This sets the active task through Trellis' session resolver so hooks can inject context for this AI session. If the command fails because no session identity is available, rerun it from an IDE/session that exposes session identity or set `TRELLIS_CONTEXT_ID`.
 
 ---
 
@@ -307,12 +310,11 @@ Call Implement Agent (code-spec context is auto-injected by hook):
 
 ```
 Task(
-  subagent_type: "implement",
+  subagent_type: "trellis-implement",
   prompt: "Implement the task described in prd.md.
 
   Follow all code-spec files that have been injected into your context.
-  Run lint and typecheck before finishing.",
-  model: "opus"
+  Run lint and typecheck before finishing."
 )
 ```
 
@@ -322,12 +324,11 @@ Call Check Agent (code-spec context is auto-injected by hook):
 
 ```
 Task(
-  subagent_type: "check",
+  subagent_type: "trellis-check",
   prompt: "Review all code changes against the code-spec requirements.
 
   Fix any issues you find directly.
-  Ensure lint and typecheck pass.",
-  model: "opus"
+  Ensure lint and typecheck pass."
 )
 ```
 
@@ -371,9 +372,8 @@ If yes, resume from the appropriate step (usually Step 7 or 8).
 | Script | Purpose |
 |--------|---------|
 | `python3 ./.trellis/scripts/get_context.py` | Get session context |
-| `python3 ./.trellis/scripts/task.py create` | Create task directory |
-| `python3 ./.trellis/scripts/task.py init-context` | Initialize jsonl files |
-| `python3 ./.trellis/scripts/task.py add-context` | Add code-spec/context file to jsonl |
+| `python3 ./.trellis/scripts/task.py create` | Create task directory (seeds jsonl on sub-agent platforms) |
+| `python3 ./.trellis/scripts/task.py add-context` | Append code-spec/research entry to jsonl |
 | `python3 ./.trellis/scripts/task.py start` | Set current task |
 | `python3 ./.trellis/scripts/task.py finish` | Clear current task |
 | `python3 ./.trellis/scripts/task.py archive` | Archive completed task |

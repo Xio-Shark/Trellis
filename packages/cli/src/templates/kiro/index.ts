@@ -1,50 +1,21 @@
 /**
- * Kiro Code skill templates
+ * Kiro templates
  *
- * These are GENERIC templates for user projects.
- * Do NOT use Trellis project's own .kiro/ directory (which may be customized).
+ * Kiro uses pure JSON agent definitions, not Markdown.
+ * Hooks are embedded in agent JSON, not in a separate config file.
  *
  * Directory structure:
  *   kiro/
- *   └── skills/
- *       └── <skill-name>/
- *           └── SKILL.md
+ *   └── agents/      # Agent definitions (JSON)
  */
 
-import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { createTemplateReader, type AgentTemplate } from "../template-utils.js";
+export type { AgentTemplate };
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const { listJsonAgents } = createTemplateReader(import.meta.url);
 
-function readTemplate(relativePath: string): string {
-  return readFileSync(join(__dirname, relativePath), "utf-8");
-}
-
-function listSkillNames(): string[] {
-  try {
-    return readdirSync(join(__dirname, "skills"), { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .sort();
-  } catch {
-    return [];
-  }
-}
-
-export interface SkillTemplate {
-  name: string;
-  content: string;
-}
-
-export function getAllSkills(): SkillTemplate[] {
-  const skills: SkillTemplate[] = [];
-
-  for (const name of listSkillNames()) {
-    const content = readTemplate(`skills/${name}/SKILL.md`);
-    skills.push({ name, content });
-  }
-
-  return skills;
-}
+/**
+ * Get all Kiro agent templates (JSON format).
+ * Content contains {{PYTHON_CMD}} placeholder that must be resolved before writing.
+ */
+export const getAllAgents = (): AgentTemplate[] => listJsonAgents();

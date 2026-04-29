@@ -19,6 +19,9 @@ src/migrations/
 {
   "version": "0.2.0",
   "description": "变更说明",
+  "breaking": false,
+  "recommendMigrate": false,
+  "changelog": "一行变更摘要",
   "migrations": [
     {
       "type": "rename",
@@ -36,6 +39,36 @@ src/migrations/
 ```
 
 **无需修改任何代码** - 构建时自动复制到 dist。
+
+### Breaking 版本必须提供 `migrationGuide` + `aiInstructions`
+
+任何 `breaking: true` + `recommendMigrate: true` 的 manifest 必须额外附带这两个字段：
+
+```json
+{
+  "version": "0.5.0-beta.0",
+  "breaking": true,
+  "recommendMigrate": true,
+  "migrationGuide": "## 0.4.x → 0.5.x: What This Release Actually Changes\n\n0.5.0-beta.0 is a breaking release...\n\n### 1. Skills got renamed: ...\n\n### 2. Six commands retired...",
+  "aiInstructions": "When helping a user migrate from 0.4.x to 0.5.x:\n\n1. Check for retired commands first...\n2. Run trellis update --migrate...",
+  "migrations": [ /* ... */ ]
+}
+```
+
+**强制原因**（历史事故驱动）：`update.ts` 生成 migration task 时会枚举 `fromVersion` 到 `toVersion` 之间**所有**带 `migrationGuide` 的 manifest 拼成 task PRD。如果当前 breaking release 漏写 `migrationGuide`：
+
+- 场景 A：用户从比 current 早 N 个版本升级 → migration task PRD 里全是 N-1 / N-2 时代的老 guide，**一字不提本次 breaking**
+- 场景 B：中间所有 manifest 都没 `migrationGuide` → task **根本不生成**，用户以为 update 是安全的、实际踩一脸 breaking
+
+历史事故：**0.5.0-beta.0**（206 条 migration、真正大 breaking）manifest 漏写 `migrationGuide`，导致 0.4 → 0.5 的用户一路迁盲。`0.5.0-beta.9` hotfix 回填了这份 guide，同时在 `packages/cli/scripts/create-manifest.js` 加了强制校验（`--stdin` 模式下 `breaking && recommendMigrate && !migrationGuide` 直接 exit 1）。
+
+**字段语义**：
+- `migrationGuide` —— 面向最终用户的 narrative，被模板化塞进 `.trellis/tasks/MM-DD-migrate-to-<version>/prd.md` 的 PRD section
+- `aiInstructions` —— 面向 AI 的指令：帮用户迁移时 grep 什么、check 什么、常见坑；和 `migrationGuide` 分开避免把 AI 指令和人类说明写在一起
+
+**何时 _不_ 需要**：
+- 非 breaking 版本（`breaking: false`）：不需要 `migrationGuide`
+- breaking 但 `recommendMigrate: false`：罕见（"breaking 但不建议 migrate" 基本不存在），真要这样跑，没校验强制。
 
 ## 迁移类型
 

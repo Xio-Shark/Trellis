@@ -15,23 +15,6 @@ session_commit_message: "chore: record journal"
 max_journal_lines: 2000
 
 #-------------------------------------------------------------------------------
-# Packages (Monorepo)
-#-------------------------------------------------------------------------------
-
-# Declare packages in this project and their source code paths.
-# If omitted, Trellis assumes a single-repo layout (spec/backend/, spec/frontend/).
-#
-packages:
-  cli:
-    path: packages/cli
-  docs-site:
-    path: docs-site
-    type: submodule
-
-# Default package used when --package is not specified.
-default_package: cli
-
-#-------------------------------------------------------------------------------
 # Task Lifecycle Hooks
 #-------------------------------------------------------------------------------
 
@@ -39,27 +22,38 @@ default_package: cli
 # Each hook receives TASK_JSON_PATH environment variable pointing to task.json.
 # Hook failures print a warning but do not block the main operation.
 #
+# hooks:
+#   after_create:
+#     - "echo 'Task created'"
+#   after_start:
+#     - "echo 'Task started'"
+#   after_finish:
+#     - "echo 'Task finished'"
+#   after_archive:
+#     - "echo 'Task archived'"
+
 #-------------------------------------------------------------------------------
-# Update Skip Paths
+# Monorepo / Packages
 #-------------------------------------------------------------------------------
 
-# Files or directories to skip during `trellis update`.
-# Use this to prevent update from re-adding files you intentionally removed.
+# Declare packages for monorepo projects.
+# Trellis auto-detects workspaces during `trellis init`, but you can also
+# configure them manually here.
 #
-update:
-  skip:
-    - .claude/commands/
-    - .agents/skills/
-    - .cursor/
+# packages:
+#   frontend:
+#     path: packages/frontend
+#   backend:
+#     path: packages/backend
+#   docs:
+#     path: docs-site
+#     type: submodule
+#   # For polyrepo / meta-repo layouts (independent .git in each subdir),
+#   # mark the package with `git: true`. The runtime treats it as an
+#   # independent repository for things like git-context display.
+#   webapp:
+#     path: ./webapp
+#     git: true
 
-#-------------------------------------------------------------------------------
-# Task Lifecycle Hooks
-#-------------------------------------------------------------------------------
-
-hooks:
-  after_create:
-    - "python3 .trellis/scripts/hooks/linear_sync.py create"
-  after_start:
-    - "python3 .trellis/scripts/hooks/linear_sync.py start"
-  after_archive:
-    - "python3 .trellis/scripts/hooks/linear_sync.py archive"
+# Default package used when --package is not specified.
+# default_package: frontend

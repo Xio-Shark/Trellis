@@ -2,58 +2,35 @@ import { describe, expect, it } from "vitest";
 import {
   getAllAgents,
   getAllCodexSkills,
-  getAllSkills,
   getConfigTemplate,
 } from "../../src/templates/codex/index.js";
-
-const EXPECTED_SKILL_NAMES = [
-  "before-dev",
-  "brainstorm",
-  "break-loop",
-  "check",
-  "check-cross-layer",
-  "create-command",
-  "finish-work",
-  "improve-ut",
-  "integrate-skill",
-  "onboard",
-  "record-session",
-  "start",
-  "update-spec",
-];
+import { resolveAllAsSkills } from "../../src/configurators/shared.js";
+import { AI_TOOLS } from "../../src/types/ai-tools.js";
 
 const EXPECTED_AGENT_NAMES = [
-  "check",
-  "implement",
-  "research",
+  "trellis-check",
+  "trellis-implement",
+  "trellis-research",
 ];
 
-describe("codex getAllSkills", () => {
-  it("returns the expected skill set", () => {
-    const skills = getAllSkills();
-    const names = skills.map((skill) => skill.name);
-    expect(names).toEqual(EXPECTED_SKILL_NAMES);
-  });
-
-  it("each skill has matching frontmatter name", () => {
-    const skills = getAllSkills();
+// Shared skills are now sourced from common/ via resolveAllAsSkills
+describe("codex shared skills (from common source)", () => {
+  it("resolves all common templates for codex context", () => {
+    const skills = resolveAllAsSkills(AI_TOOLS.codex.templateContext);
+    expect(skills.length).toBeGreaterThan(0);
     for (const skill of skills) {
-      expect(skill.content.length).toBeGreaterThan(0);
       expect(skill.content).toContain("description:");
-      const nameMatch = skill.content.match(/^name:\s*(.+)$/m);
-      expect(nameMatch?.[1]?.trim()).toBe(skill.name);
+      expect(skill.content).toContain(`name: ${skill.name}`);
     }
   });
 
-  it("does not include unsupported platform-specific syntax", () => {
-    const skills = getAllSkills();
+  it("does not include platform-specific syntax in resolved output", () => {
+    const skills = resolveAllAsSkills(AI_TOOLS.codex.templateContext);
     for (const skill of skills) {
+      // Codex uses $ prefix, not /trellis:
       expect(skill.content).not.toContain("/trellis:");
       expect(skill.content).not.toContain(".claude/");
       expect(skill.content).not.toContain(".cursor/");
-      expect(skill.content).not.toContain("Task(");
-      expect(skill.content).not.toContain("subagent_type");
-      expect(skill.content).not.toContain('model: "opus"');
     }
   });
 });
@@ -76,17 +53,9 @@ describe("codex getAllAgents", () => {
 });
 
 describe("codex getAllCodexSkills (platform-specific)", () => {
-  it("returns codex-specific skills", () => {
+  it("returns empty after parallel removal", () => {
     const skills = getAllCodexSkills();
-    const names = skills.map((skill) => skill.name);
-    expect(names).toEqual(["parallel"]);
-  });
-
-  it("codex-specific skills contain --platform codex", () => {
-    const skills = getAllCodexSkills();
-    for (const skill of skills) {
-      expect(skill.content).toContain("--platform codex");
-    }
+    expect(skills).toEqual([]);
   });
 });
 

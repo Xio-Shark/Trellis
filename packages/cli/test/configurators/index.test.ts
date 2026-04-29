@@ -12,7 +12,7 @@ import {
   isManagedRootDir,
   resolveCliFlag,
 } from "../../src/configurators/index.js";
-import { AI_TOOLS } from "../../src/types/ai-tools.js";
+import { AI_TOOLS, type AITool } from "../../src/types/ai-tools.js";
 
 // =============================================================================
 // Derived Constants
@@ -44,7 +44,10 @@ describe("ALL_MANAGED_DIRS", () => {
   });
 
   it("contains .trellis plus all managed dirs", () => {
-    expect(ALL_MANAGED_DIRS).toEqual([".trellis", ...new Set(PLATFORM_MANAGED_DIRS)]);
+    expect(ALL_MANAGED_DIRS).toEqual([
+      ".trellis",
+      ...new Set(PLATFORM_MANAGED_DIRS),
+    ]);
   });
 
   it("has no duplicates", () => {
@@ -62,7 +65,6 @@ describe("isManagedPath", () => {
   it("matches platform config sub-paths", () => {
     expect(isManagedPath(".claude/commands/foo.md")).toBe(true);
     expect(isManagedPath(".cursor/rules/bar.md")).toBe(true);
-    expect(isManagedPath(".iflow/hooks/test.py")).toBe(true);
     expect(isManagedPath(".opencode/config.json")).toBe(true);
     expect(isManagedPath(".agents/skills/start/SKILL.md")).toBe(true);
     expect(isManagedPath(".codex/agents/check.toml")).toBe(true);
@@ -72,13 +74,14 @@ describe("isManagedPath", () => {
     expect(isManagedPath(".github/prompts/start.prompt.md")).toBe(true);
     expect(isManagedPath(".github/copilot/hooks/session-start.py")).toBe(true);
     expect(isManagedPath(".github/hooks/trellis.json")).toBe(true);
+    expect(isManagedPath(".pi/extensions/trellis/index.ts")).toBe(true);
+    expect(isManagedPath(".pi/prompts/trellis-continue.md")).toBe(true);
   });
 
   // Positive: exact match (startsWith(d + "/") = false, === d = true)
   it("matches exact managed directory names", () => {
     expect(isManagedPath(".claude")).toBe(true);
     expect(isManagedPath(".cursor")).toBe(true);
-    expect(isManagedPath(".iflow")).toBe(true);
     expect(isManagedPath(".opencode")).toBe(true);
     expect(isManagedPath(".agents/skills")).toBe(true);
     expect(isManagedPath(".codex")).toBe(true);
@@ -135,7 +138,6 @@ describe("isManagedPath", () => {
   it("matches Windows-style backslash paths", () => {
     expect(isManagedPath(".claude\\commands\\foo.md")).toBe(true);
     expect(isManagedPath(".trellis\\spec\\backend")).toBe(true);
-    expect(isManagedPath(".iflow\\hooks\\test.py")).toBe(true);
     expect(isManagedPath(".agents\\skills\\start\\SKILL.md")).toBe(true);
     expect(isManagedPath(".codex\\agents\\check.toml")).toBe(true);
     expect(isManagedPath(".agent\\workflows\\start.md")).toBe(true);
@@ -146,6 +148,7 @@ describe("isManagedPath", () => {
       true,
     );
     expect(isManagedPath(".github\\hooks\\trellis.json")).toBe(true);
+    expect(isManagedPath(".pi\\extensions\\trellis\\index.ts")).toBe(true);
   });
 
   // Mixed separators
@@ -297,6 +300,23 @@ describe("getPlatformsWithPythonHooks", () => {
 // =============================================================================
 
 describe("collectPlatformTemplates", () => {
+  const SKILL_ROOTS: Record<AITool, string> = {
+    "claude-code": ".claude/skills",
+    cursor: ".cursor/skills",
+    opencode: ".opencode/skills",
+    codex: ".agents/skills",
+    kilo: ".kilocode/skills",
+    kiro: ".kiro/skills",
+    gemini: ".gemini/skills",
+    antigravity: ".agent/skills",
+    windsurf: ".windsurf/skills",
+    qoder: ".qoder/skills",
+    codebuddy: ".codebuddy/skills",
+    copilot: ".github/skills",
+    droid: ".factory/skills",
+    pi: ".pi/skills",
+  };
+
   it("does not throw for any platform", () => {
     for (const id of PLATFORM_IDS) {
       expect(() => collectPlatformTemplates(id)).not.toThrow();
@@ -319,7 +339,8 @@ describe("collectPlatformTemplates", () => {
           expect(
             managedPaths.some(
               (managedPath) =>
-                filePath === managedPath || filePath.startsWith(managedPath + "/"),
+                filePath === managedPath ||
+                filePath.startsWith(managedPath + "/"),
             ),
           ).toBe(true);
         }
@@ -336,11 +357,52 @@ describe("collectPlatformTemplates", () => {
     }
   });
 
+  it("tracks bundled trellis-meta files for every skill-writing platform", () => {
+    for (const [id, skillRoot] of Object.entries(SKILL_ROOTS)) {
+      const result = collectPlatformTemplates(id as AITool);
+      expect(result, `${id} should have template tracking`).toBeInstanceOf(Map);
+      expect(result?.has(`${skillRoot}/trellis-meta/SKILL.md`)).toBe(true);
+      expect(
+        result?.has(
+          `${skillRoot}/trellis-meta/references/local-architecture/overview.md`,
+        ),
+      ).toBe(true);
+    }
+  });
+
+  // POSIX-key invariant: collector keys feed the cross-platform hash
+  // dictionary in `.template-hashes.json`, which must be identical
+  // regardless of host OS. Backslash separators (Windows `path.join`)
+  // would silently corrupt the hash store and make every file appear
+  // "modified" after a cross-OS round-trip.
+  it("returned Map keys never contain backslash (POSIX-only)", () => {
+    for (const id of PLATFORM_IDS) {
+      const result = collectPlatformTemplates(id);
+      if (!result) continue;
+      for (const [filePath] of result) {
+        expect(filePath).not.toMatch(/\\/);
+      }
+    }
+  });
+
   it("copilot collectTemplates includes both tracked and discovery config files", () => {
     const result = collectPlatformTemplates("copilot");
     expect(result).toBeInstanceOf(Map);
-    expect(result?.has(".github/prompts/start.prompt.md")).toBe(true);
+    // Copilot is agent-capable → start.prompt.md is not generated.
+    expect(result?.has(".github/prompts/start.prompt.md")).toBe(false);
+    expect(result?.has(".github/prompts/finish-work.prompt.md")).toBe(true);
+    expect(result?.has(".github/prompts/continue.prompt.md")).toBe(true);
     expect(result?.has(".github/copilot/hooks.json")).toBe(true);
     expect(result?.has(".github/hooks/trellis.json")).toBe(true);
+  });
+
+  it("pi collectTemplates includes prompts, agents, extension, and settings", () => {
+    const result = collectPlatformTemplates("pi");
+    expect(result).toBeInstanceOf(Map);
+    expect(result?.has(".pi/prompts/trellis-start.md")).toBe(false);
+    expect(result?.has(".pi/prompts/trellis-finish-work.md")).toBe(true);
+    expect(result?.has(".pi/agents/trellis-implement.md")).toBe(true);
+    expect(result?.has(".pi/extensions/trellis/index.ts")).toBe(true);
+    expect(result?.has(".pi/settings.json")).toBe(true);
   });
 });

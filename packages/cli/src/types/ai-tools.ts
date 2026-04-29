@@ -11,7 +11,6 @@ export type AITool =
   | "claude-code"
   | "cursor"
   | "opencode"
-  | "iflow"
   | "codex"
   | "kilo"
   | "kiro"
@@ -21,7 +20,8 @@ export type AITool =
   | "qoder"
   | "codebuddy"
   | "copilot"
-  | "droid";
+  | "droid"
+  | "pi";
 
 /**
  * Template directory categories
@@ -31,7 +31,6 @@ export type TemplateDir =
   | "claude"
   | "cursor"
   | "opencode"
-  | "iflow"
   | "codex"
   | "kilo"
   | "kiro"
@@ -41,7 +40,8 @@ export type TemplateDir =
   | "qoder"
   | "codebuddy"
   | "copilot"
-  | "droid";
+  | "droid"
+  | "pi";
 
 /**
  * CLI flag names for platform selection (e.g., --claude, --cursor, --kilo, --kiro, --gemini, --antigravity)
@@ -51,7 +51,6 @@ export type CliFlag =
   | "claude"
   | "cursor"
   | "opencode"
-  | "iflow"
   | "codex"
   | "kilo"
   | "kiro"
@@ -61,7 +60,37 @@ export type CliFlag =
   | "qoder"
   | "codebuddy"
   | "copilot"
-  | "droid";
+  | "droid"
+  | "pi";
+
+/**
+ * Template context for placeholder resolution.
+ * Controls how common templates are rendered per platform.
+ */
+export interface TemplateContext {
+  /** Prefix for cross-referencing other commands/skills */
+  cmdRefPrefix: "/trellis:" | "/trellis-" | "$" | "/";
+  /** Description of AI executor actions shown in role tables */
+  executorAI:
+    | "Bash scripts or Task calls"
+    | "Bash scripts or tool calls"
+    | "Bash scripts or file reads";
+  /** Label for user-invocable actions */
+  userActionLabel: "Slash commands" | "Skills" | "Workflows" | "Prompts";
+  /** Platform supports spawning sub-agents with isolated context */
+  agentCapable: boolean;
+  /** Platform has hook system (SessionStart, PreToolUse) */
+  hasHooks: boolean;
+  /**
+   * CLI flag value for this platform (e.g. "claude", "codex", "kiro").
+   * Substituted into template commands via {{CLI_FLAG}} so rendered skill /
+   * command files can pass `--platform <flag>` to scripts that need to know
+   * the invoking platform, removing the need to re-detect at runtime.
+   * Duplicates the top-level `AIToolConfig.cliFlag` for convenience — the
+   * invariant is maintained in `AI_TOOLS` config blocks.
+   */
+  cliFlag: CliFlag;
+}
 
 /**
  * Configuration for an AI tool
@@ -87,6 +116,8 @@ export interface AIToolConfig {
   defaultChecked: boolean;
   /** Whether this tool uses Python hooks (affects Windows encoding detection) */
   hasPythonHooks: boolean;
+  /** Template context for placeholder resolution in common templates */
+  templateContext: TemplateContext;
 }
 
 /**
@@ -108,6 +139,14 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     cliFlag: "claude",
     defaultChecked: true,
     hasPythonHooks: true,
+    templateContext: {
+      cmdRefPrefix: "/trellis:",
+      executorAI: "Bash scripts or Task calls",
+      userActionLabel: "Slash commands",
+      agentCapable: true,
+      hasHooks: true,
+      cliFlag: "claude",
+    },
   },
   cursor: {
     name: "Cursor",
@@ -115,7 +154,15 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     configDir: ".cursor",
     cliFlag: "cursor",
     defaultChecked: true,
-    hasPythonHooks: false,
+    hasPythonHooks: true,
+    templateContext: {
+      cmdRefPrefix: "/trellis-",
+      executorAI: "Bash scripts or Task calls",
+      userActionLabel: "Slash commands",
+      agentCapable: true,
+      hasHooks: true,
+      cliFlag: "cursor",
+    },
   },
   opencode: {
     name: "OpenCode",
@@ -124,14 +171,14 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     cliFlag: "opencode",
     defaultChecked: false,
     hasPythonHooks: false,
-  },
-  iflow: {
-    name: "iFlow CLI",
-    templateDirs: ["common", "iflow"],
-    configDir: ".iflow",
-    cliFlag: "iflow",
-    defaultChecked: false,
-    hasPythonHooks: true,
+    templateContext: {
+      cmdRefPrefix: "/trellis:",
+      executorAI: "Bash scripts or Task calls",
+      userActionLabel: "Slash commands",
+      agentCapable: true,
+      hasHooks: false,
+      cliFlag: "opencode",
+    },
   },
   codex: {
     name: "Codex (also writes .agents/skills/ — read by Cursor, Gemini CLI, GitHub Copilot, Amp, Kimi Code)",
@@ -141,6 +188,14 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     cliFlag: "codex",
     defaultChecked: false,
     hasPythonHooks: true,
+    templateContext: {
+      cmdRefPrefix: "$",
+      executorAI: "Bash scripts or tool calls",
+      userActionLabel: "Skills",
+      agentCapable: true,
+      hasHooks: false,
+      cliFlag: "codex",
+    },
   },
   kilo: {
     name: "Kilo CLI",
@@ -149,14 +204,31 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     cliFlag: "kilo",
     defaultChecked: false,
     hasPythonHooks: false,
+    templateContext: {
+      cmdRefPrefix: "/trellis:",
+      executorAI: "Bash scripts or file reads",
+      userActionLabel: "Workflows",
+      agentCapable: false,
+      hasHooks: false,
+      cliFlag: "kilo",
+    },
   },
   kiro: {
     name: "Kiro Code",
     templateDirs: ["common", "kiro"],
     configDir: ".kiro/skills",
+    extraManagedPaths: [".kiro/agents", ".kiro/hooks"],
     cliFlag: "kiro",
     defaultChecked: false,
-    hasPythonHooks: false,
+    hasPythonHooks: true,
+    templateContext: {
+      cmdRefPrefix: "$",
+      executorAI: "Bash scripts or tool calls",
+      userActionLabel: "Skills",
+      agentCapable: true,
+      hasHooks: true,
+      cliFlag: "kiro",
+    },
   },
   gemini: {
     name: "Gemini CLI",
@@ -164,23 +236,49 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     configDir: ".gemini",
     cliFlag: "gemini",
     defaultChecked: false,
-    hasPythonHooks: false,
+    hasPythonHooks: true,
+    templateContext: {
+      cmdRefPrefix: "/trellis:",
+      executorAI: "Bash scripts or tool calls",
+      userActionLabel: "Slash commands",
+      agentCapable: true,
+      hasHooks: true,
+      cliFlag: "gemini",
+    },
   },
   antigravity: {
     name: "Antigravity",
     templateDirs: ["common", "antigravity"],
     configDir: ".agent/workflows",
+    extraManagedPaths: [".agent/skills"],
     cliFlag: "antigravity",
     defaultChecked: false,
     hasPythonHooks: false,
+    templateContext: {
+      cmdRefPrefix: "/",
+      executorAI: "Bash scripts or file reads",
+      userActionLabel: "Workflows",
+      agentCapable: false,
+      hasHooks: false,
+      cliFlag: "antigravity",
+    },
   },
   windsurf: {
     name: "Windsurf",
     templateDirs: ["common", "windsurf"],
     configDir: ".windsurf/workflows",
+    extraManagedPaths: [".windsurf/skills"],
     cliFlag: "windsurf",
     defaultChecked: false,
     hasPythonHooks: false,
+    templateContext: {
+      cmdRefPrefix: "/trellis-",
+      executorAI: "Bash scripts or file reads",
+      userActionLabel: "Workflows",
+      agentCapable: false,
+      hasHooks: false,
+      cliFlag: "windsurf",
+    },
   },
   qoder: {
     name: "Qoder",
@@ -188,7 +286,15 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     configDir: ".qoder",
     cliFlag: "qoder",
     defaultChecked: false,
-    hasPythonHooks: false,
+    hasPythonHooks: true,
+    templateContext: {
+      cmdRefPrefix: "$",
+      executorAI: "Bash scripts or tool calls",
+      userActionLabel: "Skills",
+      agentCapable: true,
+      hasHooks: true,
+      cliFlag: "qoder",
+    },
   },
   codebuddy: {
     name: "CodeBuddy",
@@ -196,16 +302,37 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     configDir: ".codebuddy",
     cliFlag: "codebuddy",
     defaultChecked: false,
-    hasPythonHooks: false,
+    hasPythonHooks: true,
+    templateContext: {
+      cmdRefPrefix: "/trellis:",
+      executorAI: "Bash scripts or Task calls",
+      userActionLabel: "Slash commands",
+      agentCapable: true,
+      hasHooks: true,
+      cliFlag: "codebuddy",
+    },
   },
   copilot: {
     name: "GitHub Copilot",
     templateDirs: ["common", "copilot"],
     configDir: ".github/copilot",
-    extraManagedPaths: [".github/hooks", ".github/prompts"],
+    extraManagedPaths: [
+      ".github/agents",
+      ".github/hooks",
+      ".github/prompts",
+      ".github/skills",
+    ],
     cliFlag: "copilot",
     defaultChecked: false,
     hasPythonHooks: true,
+    templateContext: {
+      cmdRefPrefix: "/",
+      executorAI: "Bash scripts or tool calls",
+      userActionLabel: "Prompts",
+      agentCapable: true,
+      hasHooks: true,
+      cliFlag: "copilot",
+    },
   },
   droid: {
     name: "Factory Droid",
@@ -213,7 +340,31 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     configDir: ".factory",
     cliFlag: "droid",
     defaultChecked: false,
+    hasPythonHooks: true,
+    templateContext: {
+      cmdRefPrefix: "/trellis-",
+      executorAI: "Bash scripts or Task calls",
+      userActionLabel: "Slash commands",
+      agentCapable: true,
+      hasHooks: true,
+      cliFlag: "droid",
+    },
+  },
+  pi: {
+    name: "Pi Agent",
+    templateDirs: ["common", "pi"],
+    configDir: ".pi",
+    cliFlag: "pi",
+    defaultChecked: false,
     hasPythonHooks: false,
+    templateContext: {
+      cmdRefPrefix: "/trellis-",
+      executorAI: "Bash scripts or tool calls",
+      userActionLabel: "Slash commands",
+      agentCapable: true,
+      hasHooks: true,
+      cliFlag: "pi",
+    },
   },
 };
 

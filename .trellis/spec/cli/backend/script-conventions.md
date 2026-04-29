@@ -6,7 +6,7 @@
 
 ## Overview
 
-All workflow scripts are written in **Python 3.10+** for cross-platform compatibility. Scripts use only the standard library (no external dependencies).
+All workflow scripts target **Python 3.9+** for cross-platform compatibility (matches macOS system `python3`; covers Ubuntu 22.04 LTS and newer). Scripts use only the standard library (no external dependencies). PEP 604 union annotations (`str | None`) are allowed only when the file declares `from __future__ import annotations` — see the Cross-Platform Compatibility section below.
 
 ---
 
@@ -24,35 +24,23 @@ All workflow scripts are written in **Python 3.10+** for cross-platform compatib
 │   ├── git.py            # run_git() — git command wrapper
 │   ├── types.py          # TaskData (TypedDict), TaskInfo (dataclass), AgentRecord
 │   ├── tasks.py          # load_task(), iter_active_tasks() — typed task access
+│   ├── active_task.py    # Session-scoped active task resolver
 │   ├── task_utils.py     # resolve_task_dir(), run_task_hooks()
 │   ├── task_store.py     # Task CRUD (create, archive, set-branch, etc.)
 │   ├── task_context.py   # JSONL context management (init-context, add-context)
 │   ├── task_queue.py     # Task queue CRUD
-│   ├── phase.py          # Multi-agent phase tracking
-│   ├── registry.py       # Agent registry management
 │   ├── config.py         # Config reader (config.yaml, hooks)
-│   ├── worktree.py       # Git worktree utilities + YAML parser
 │   ├── cli_adapter.py    # Multi-platform CLI abstraction
 │   ├── git_context.py    # Entry shim → session_context + packages_context
 │   ├── session_context.py    # Session context generation (text/json/record)
 │   └── packages_context.py  # Package discovery and context
 ├── hooks/                # Lifecycle hook scripts (project-specific)
 │   └── linear_sync.py    # Example: sync tasks to Linear
-├── multi_agent/          # Multi-agent pipeline scripts
-│   ├── __init__.py
-│   ├── start.py          # Start worktree agent
-│   ├── status.py         # Entry shim → status_display + status_monitor
-│   ├── status_display.py # Agent status formatting and display
-│   ├── status_monitor.py # Log parsing and process monitoring
-│   ├── plan.py           # Start plan agent
-│   ├── cleanup.py        # Cleanup worktree
-│   └── create_pr.py      # Create PR from task
 ├── task.py               # Entry shim → task_store + task_context
 ├── get_context.py        # Session context retrieval
 ├── init_developer.py     # Developer initialization
 ├── get_developer.py      # Get current developer
-├── add_session.py        # Session recording
-└── create_bootstrap.py   # Bootstrap task creation
+└── add_session.py        # Session recording
 ```
 
 ---
@@ -69,10 +57,10 @@ Three tiers:
 |------|---------|------|
 | **Foundation** | `io.py`, `log.py`, `git.py`, `paths.py` | Zero internal deps, used by everything |
 | **Domain** | `types.py`, `tasks.py`, `task_store.py`, `task_context.py`, `task_utils.py` | Task data model and operations |
-| **Infra** | `phase.py`, `registry.py`, `config.py`, `worktree.py`, `cli_adapter.py` | Multi-agent pipeline support |
+| **Infra** | `config.py`, `cli_adapter.py` | Platform abstraction and config |
 | **Context** | `session_context.py`, `packages_context.py`, `git_context.py` (shim) | Output generation |
 
-### Entry Scripts (`*.py`, `multi_agent/*.py`)
+### Entry Scripts (`*.py`)
 
 CLI tools that users run directly. Include docstring with usage.
 
@@ -100,19 +88,6 @@ def main() -> int:
 if __name__ == "__main__":
     sys.exit(main())
 ```
-
-### Bootstrap Shim (`multi_agent/_bootstrap.py`)
-
-Scripts in `multi_agent/` can't directly `from common.xxx import yyy` because Python's module resolution doesn't know about the parent `scripts/` directory. The `_bootstrap.py` shim adds it to `sys.path`:
-
-```python
-# Every multi_agent script must start with this:
-import _bootstrap  # noqa: F401 — adds parent scripts/ dir to sys.path
-
-from common.paths import get_repo_root  # now works
-```
-
-**Why not `sys.path.insert` inline?** The bootstrap shim is a single file, tested once, imported everywhere. Inline `sys.path.insert` was duplicated in every `multi_agent/*.py` file and easy to get wrong.
 
 ---
 
@@ -245,6 +220,160 @@ def run_git(args: list[str], cwd: Path | None = None) -> tuple[int, str, str]
 - Returns `(1, "", error_message)` on exception (never raises)
 - Backward-compatible alias in `git_context.py`: `_run_git_command = run_git`
 
+### `common/active_task.py` — Active Task Resolver
+
+All current-task consumers must use the active task resolver instead of reading
+`.trellis/.current-task` directly. The resolver is the single source of truth
+for session/window scoped task state:
+
+1. Derive a context key from platform input, `TRELLIS_CONTEXT_ID`, a
+   platform-native session environment variable when the host exports one, or
+   a Cursor shell ticket for a matching AI-run `task.py` command.
+2. Read `.trellis/.runtime/sessions/<session-key>.json`.
+3. If no context key or no session task is present, return no active task.
+4. If a session task exists but the task directory is stale, return stale
+   session state.
+
+| Function | Purpose |
+|----------|---------|
+| `resolve_context_key(platform_input, platform)` | Accepts `session_id` / `sessionId` / `sessionID`, Cursor `conversation_id`, and transcript path fallbacks |
+| `resolve_active_task(repo_root, platform_input, platform)` | Returns an `ActiveTask` with `task_path`, `source_type`, `context_key`, and `stale` |
+| `set_active_task(...)` | Writes session runtime state when a context key exists; returns `None` without a context key |
+| `clear_active_task(...)` | Deletes the current session file; returns no active task without a context key |
+
+`TRELLIS_CONTEXT_ID` is a context-key override for subprocesses. It is not a
+second task pointer and must never store a task path. A plain AI-run shell
+command cannot infer the current conversation/window unless the host process
+exports session identity in its environment or the command is launched with
+`TRELLIS_CONTEXT_ID`; without that identity, `task.py start` fails and explains
+how to provide a session runtime. For Claude Code, SessionStart receives
+`CLAUDE_ENV_FILE`; Trellis must append `export TRELLIS_CONTEXT_ID=<context-key>`
+there so later Bash tools inherit the same session identity. For OpenCode,
+`tool.execute.before` must prefix Bash commands with
+`TRELLIS_CONTEXT_ID` from plugin session identity when the command does not
+already set it, because some TUI sessions do not expose `OPENCODE_RUN_ID` to
+Bash. The prefix must match the host shell: use
+`export TRELLIS_CONTEXT_ID=<context-key>;` for POSIX shells and
+`$env:TRELLIS_CONTEXT_ID = '<context-key>';` for Windows PowerShell. Keep the
+assignment before the user's command so compound commands like
+`task.py start && task.py current` keep the same context for every command in
+the Bash invocation.
+For Cursor, `session-start.py` is not a reliable shell environment bridge.
+Instead, `inject-shell-session-context.py` must run on `beforeShellExecution`
+and write a short-lived `.trellis/.runtime/cursor-shell/*.json` ticket for
+matching `task.py start/current/finish` commands. The active task resolver may
+consume the ticket only when no env identity exists, the current `task.py`
+subcommand matches the ticket, the ticket is fresh, and exactly one context key
+matches. This keeps Cursor task state per conversation without accepting a
+global pointer.
+For Pi Agent, the generated TypeScript extension must read the real session id
+from `ctx.sessionManager.getSessionId()` and mutate Bash tool calls in
+`tool_call` by prefixing `export TRELLIS_CONTEXT_ID=<context-key>;`. The Python
+resolver then sees the explicit `TRELLIS_CONTEXT_ID` override; Pi does not need
+a `.current-task` fallback or a Python hook directory.
+
+#### Scenario: Active Task Runtime Lifecycle
+
+##### 1. Scope / Trigger
+
+- Trigger: any change to `task.py create/start/current/finish`, hook
+  current-task injection, plugin active-task display, or platform session
+  identity handling.
+- Reason: current-task state is a cross-platform runtime contract. A direct
+  `.current-task` read or an eager `.runtime` write can reintroduce multi-window
+  task pollution.
+
+##### 2. Signatures
+
+- `python3 .trellis/scripts/task.py create "<title>" [--slug <slug>]`
+- `python3 .trellis/scripts/task.py start <task-dir>`
+- `python3 .trellis/scripts/task.py current [--source]`
+- `python3 .trellis/scripts/task.py finish`
+- `resolve_active_task(repo_root, platform_input=None, platform=None) -> ActiveTask`
+- `set_active_task(task_path, repo_root, platform_input=None, platform=None) -> ActiveTask | None`
+- `clear_active_task(repo_root, platform_input=None, platform=None) -> ActiveTask`
+
+##### 3. Contracts
+
+- `task.py create` creates only task-owned files under
+  `.trellis/tasks/<date-slug>/`. It must not create `.trellis/.runtime/` and
+  must not write `.trellis/.current-task`.
+- `task.py start` writes session-local state only when a context key is
+  available. Otherwise it exits non-zero and must not write
+  `.trellis/.current-task`.
+- Session state is stored at
+  `.trellis/.runtime/sessions/<session-key>.json`. The runtime directory is
+  created lazily by the JSON write path.
+- Context filenames are derived from the resolved context key:
+  - `TRELLIS_CONTEXT_ID=session-demo` -> `session-demo.json`
+  - `CODEX_SESSION_ID=native-a` -> `codex_native-a.json`
+  - `CODEX_THREAD_ID=thread-a` -> `codex_thread-a.json`
+  - `OPENCODE_RUN_ID=run-a` -> `opencode_run-a.json`
+  - OpenCode plugin `sessionID=oc-a` -> `opencode_oc-a.json`
+  - `CURSOR_SESSION_ID=cursor-a` -> `cursor_cursor-a.json`
+  - transcript fallback -> `<platform>_transcript_<sha256-prefix>.json`
+- `TRELLIS_CONTEXT_ID` is already a complete context key. Do not prepend a
+  platform name to it.
+- `task.py finish` deletes only the current session file. Without a
+  context key it returns "no current task" and must not delete
+  `.trellis/.current-task`.
+- `task.py archive <task>` deletes every runtime session file whose
+  `current_task` points at the archived task before moving the task directory.
+
+##### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|-----------|-------------------|
+| `create` succeeds | Task files exist; no `.runtime`; no `.current-task` |
+| `start` without context key | Fails; no `.runtime`; no `.current-task`; hints IDE/session identity or `TRELLIS_CONTEXT_ID` |
+| `start` with `TRELLIS_CONTEXT_ID` | Writes `.runtime/sessions/<key>.json`; does not require `.current-task` |
+| `current --source` with same context key | Prints `Source: session:<key>` |
+| `current --source` without context | Prints `(none)` and `Source: none` |
+| stale session task + stale `.current-task` exists | Returns stale session state; no `.current-task` fallback |
+| `finish` with context key and active task | Deletes `.runtime/sessions/<key>.json` |
+| `finish` without context key | Returns no current task; does not delete `.current-task` |
+| `archive` for a task referenced by runtime sessions | Deletes those session files even when `finish` was skipped |
+
+##### 5. Good/Base/Bad Cases
+
+- Good: Cursor provides `conversation_id`; resolver writes
+  `cursor_<conversation-id>.json` and hook/plugin output includes the
+  session source.
+- Base: A normal shell command has no session env; `task.py start` fails with
+  a session identity hint and does not create `.current-task`.
+- Bad: `task.py create` pre-creates `.runtime`, or any resolver reads/writes
+  `.trellis/.current-task` as an active-task fallback.
+
+##### 6. Tests Required
+
+- Regression tests for `create` producing no runtime/current-task state.
+- Regression tests for `start` without a context key failing without creating
+  `.current-task`.
+- Regression tests for `TRELLIS_CONTEXT_ID` and platform-native env keys.
+- Hook/plugin tests proving the resolver source is surfaced.
+- Stale session tests proving no `.current-task` fallback occurs when the session task
+  path is stale.
+
+##### 7. Wrong vs Correct
+
+###### Wrong
+
+```python
+# Wrong: silently creates or deletes repo-global task state when no session
+# identity exists.
+if not resolve_context_key():
+    write_file(".trellis/.current-task", task_path)
+```
+
+###### Correct
+
+```python
+context_key = resolve_context_key(platform_input, platform)
+if not context_key:
+    return ActiveTask(None, "none")
+clear_session_context(context_key)
+```
+
 ### `common/types.py` — Typed Data Model
 
 #### Design Decision: TypedDict for Reads, Raw Dict for Writes
@@ -299,6 +428,16 @@ Replaces 9 scattered task iteration patterns with a single typed API.
 | `children_progress` | `(children, all_statuses) -> str` | Format `" [2/3 done]"` or `""` |
 
 **Sorting guarantee**: `iter_active_tasks` uses `sorted(tasks_dir.iterdir())` — same order as the filesystem `ls` output. This is frozen behavior; changing the sort would break display consistency.
+
+#### Parent-child invariant (children list)
+
+`children` on a parent task is the **historical** list of subtask dir names — it must NOT be pruned when a child is archived. The contract:
+
+- `cmd_archive` keeps the archived child's name in the parent's `children`.
+- `children_progress` treats any `child` not present in `all_statuses` (i.e. no longer in the active tasks dir) as **completed**, since `cmd_archive` always sets `status=completed` before moving the directory.
+- Renderers that walk children (e.g. `task.py:_print_task`) must guard with `if child_name in all_tasks` so archived entries are silently skipped, not shown.
+
+**Why**: pruning on archive caused `[1/6 done]` → `[0/5 done]` regression — both numerator and denominator dropped, hiding completed work. The single field `children` serves two readers (parent-to-child traversal and progress %); both must agree on its meaning. If you ever need an "active children only" view, derive it via `[c for c in t.children if c in all_statuses]`, do not mutate the field.
 
 ---
 
@@ -394,25 +533,105 @@ if sys.platform == "win32":
 | `io.TextIOWrapper(sys.stdout.buffer, ...)` | ❌ No | Creates wrapper, doesn't fix underlying encoding |
 | `PYTHONIOENCODING=utf-8` env var | ⚠️ Partial | Only works if set **before** Python starts |
 
-### CRITICAL: Always Use `python3` Explicitly
+### CRITICAL: PEP 604 Annotations Require `from __future__ import annotations`
 
-Windows does not support shebang (`#!/usr/bin/env python3`). Always document invocation with explicit `python3`:
+Any distributed Python template file (`templates/**/*.py` — both hooks and scripts) that uses PEP 604 union syntax (`str | None`, `dict | None`, etc.) in annotations **must** start with:
+
+```python
+from __future__ import annotations
+```
+
+immediately after the module docstring.
+
+**Why it matters**: The `{{PYTHON_CMD}}` placeholder resolves to `python` on
+Windows and `python3` on macOS/Linux. `trellis init` probes that same
+platform-selected command and soft-warns if it resolves to Python < 3.9, while
+hooks are invoked by the host AI CLI (Claude Code, Cursor, enterprise-forked CC
+distributions, etc.) in a subprocess whose **PATH may differ from the user's
+shell PATH**. Concrete failure mode observed in the field:
+
+- User's terminal `python3 --version` → 3.11.12 (homebrew / pyenv)
+- The AI CLI's hook subprocess inherits a minimal PATH (no `/opt/homebrew/bin`), so `python3` resolves to `/usr/bin/python3` → macOS system 3.9
+- `def f(x: str | None)` evaluates `str | None` at def-time on 3.9 → `TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'`
+- Hook crashes silently; user sees `SessionStart hook error` in debug log with no actionable hint
+
+`from __future__ import annotations` makes all annotations lazy strings (PEP 563), so PEP 604 syntax in annotations works on Python 3.7+. Runtime union usage (e.g. `isinstance(x, int | str)`) is **not** rescued by this import — avoid it in distributed templates.
+
+**Real-world incident**: `shared-hooks/session-start.py` and `shared-hooks/inject-subagent-context.py` lacked this import while `statusline.py` and the copilot/codex copies had it. The inconsistency went undetected until a user on an enterprise-forked Claude Code distribution hit the PEP 604 crash on SessionStart. Fix commit: `7e58432` (2026-04).
+
+#### DO
+
+```python
+#!/usr/bin/env python3
+"""Hook description."""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+def handler(x: str | None) -> dict | None:  # lazy annotation — safe on 3.9
+    ...
+```
+
+#### DON'T
+
+```python
+# BAD — annotations evaluated eagerly, crashes on Python < 3.10
+def handler(x: str | None) -> dict | None:
+    ...
+```
+
+```python
+# BAD — __future__ import does NOT rescue runtime union
+def check(x):
+    if isinstance(x, int | str):  # still crashes on 3.9
+        ...
+```
+
+#### Audit Check
+
+Run this before releasing any change that adds a new `.py` file to `templates/`:
+
+```bash
+cd packages/cli/src/templates
+for f in $(find . -name "*.py"); do
+    if grep -qE '^[^#]*: [A-Za-z_].*\|.*(None|[A-Z])|->.*\|' "$f" \
+       && ! grep -q "from __future__ import annotations" "$f"; then
+        echo "MISSING: $f"
+    fi
+done
+```
+
+Exit with 0 matches means all PEP 604 users have the future import.
+
+---
+
+### CRITICAL: Keep User-Facing Python Commands Platform-Aware
+
+Windows does not support shebang (`#!/usr/bin/env python3`). For any
+user-facing invocation string (docstrings, help text, error messages), either:
+
+- describe the rule explicitly: `python` on Windows, `python3` elsewhere
+- or render the command via the same placeholder / helper used at init time
+
+Do not hardcode `python3` into docs and then run `python` internally on
+Windows; that drift causes misleading bootstrap instructions.
 
 ```python
 # In docstrings
 """
 Usage:
-    python3 task.py create "My Task"
-    python3 task.py list --mine
+    python task.py create "My Task"      # Windows
+    python3 task.py create "My Task"     # macOS/Linux
 """
 
 # In error messages
-print("Usage: python3 task.py <command>")
-print("Run: python3 ./.trellis/scripts/init_developer.py <name>")
+print("Usage: python on Windows, python3 elsewhere")
+print("Run: {{PYTHON_CMD}} ./.trellis/scripts/init_developer.py <name>")
 
 # In help text
 print("Next steps:")
-print("  python3 task.py start <dir>")
+print("  {{PYTHON_CMD}} task.py start <dir>")
 ```
 
 ### Path Separators
@@ -573,7 +792,7 @@ def _auto_commit(scope: str, message: str, repo_root: Path) -> None:
 When a script needs different output for different use cases, use `--mode` (not separate scripts or additional flags).
 
 **Example**: `get_context.py` serves two modes:
-- `--mode default` — full session context (DEVELOPER, GIT STATUS, RECENT COMMITS, CURRENT TASK, ACTIVE TASKS, MY TASKS, JOURNAL, PATHS)
+- `--mode default` — full session runtime (DEVELOPER, GIT STATUS, RECENT COMMITS, CURRENT TASK, ACTIVE TASKS, MY TASKS, JOURNAL, PATHS)
 - `--mode record` — focused output for record-session (MY ACTIVE TASKS first with emphasis, GIT STATUS, RECENT COMMITS, CURRENT TASK)
 
 ```python
@@ -672,16 +891,75 @@ hooks:
     - "python3 .trellis/scripts/hooks/my_hook.py create"
 ```
 
-### Worktree Submodule Initialization
+### Task → Package Binding Contract
 
-When `start.py` creates a worktree for a task, it calls `_init_submodules_for_task()`:
+**Rule**: The `package` field on a task is **bound at `task create` time and frozen into `task.json.package`**. Downstream scripts read that field; they do **not** re-resolve package from path, cwd, or runtime context.
 
-1. Read `packages` from config.yaml via `get_packages()`
-2. Resolve target package from task data or `default_package`
-3. Check if the package is a submodule via `get_submodule_packages()`
-4. Run `git submodule status <path>` in the worktree
-5. Parse the status prefix (see "Parsing Structured Command Output" above)
-6. If uninitialized (`-` prefix): run `git submodule update --init <path>`
+**Why it matters**: Once a task exists, changing `default_package` in `config.yaml` will not retroactively rebind existing tasks. Path-based inference is not implemented anywhere in the script layer — callers (human or AI) must pass `--package` explicitly if they want non-default binding.
+
+**Resolution order at `task create`** (`common/task_store.py:cmd_create`):
+
+| Priority | Source | Behavior on invalid value |
+|---|---|---|
+| 1 | CLI `--package <pkg>` (explicit) | **Fail-fast**: print available packages, exit 1 |
+| 2 | `default_package` (config.yaml) | Warn to stderr, fall through to `None` |
+| 3 | `None` | Task stored with `package: null` (allowed; spec scope falls back to full scan) |
+
+Single-repo mode (`packages:` absent from config): `--package` triggers a stderr warning and is silently ignored; stored `package` is always `None`.
+
+**Resolution order at read-time** (any script reading an existing task):
+
+| Priority | Source |
+|---|---|
+| 1 | `task.json.package` (the frozen binding) |
+| 2 | `resolve_package(task_package=..., repo_root=...)` — falls back to `default_package` if `task.json.package` is missing/invalid |
+
+Do **not** re-infer package from cwd, worktree path, or git remote. If the task is mis-bound, fix the stored field, do not wrap reads in path logic.
+
+**Spec scope is a separate layer** (`common/packages_context.py:_resolve_scope_set`). It consumes `task.package` but also has its own config surface `session.spec_scope`:
+
+| `session.spec_scope` value | Behavior |
+|---|---|
+| omitted / `null` | Full scan — all packages in `spec_scope` |
+| `"active_task"` | Use current task's `package`; fall back to `default_package` if missing |
+| `list[str]` | Use the explicit list; invalid entries fall back to task / default |
+
+### Wrong vs Correct
+
+#### Wrong — re-inferring package at read-time
+
+```python
+# DON'T: re-derive package from cwd
+def get_task_package(task_dir: Path) -> str | None:
+    cwd = Path.cwd()
+    for name, cfg in get_packages(repo_root).items():
+        if cwd.is_relative_to(repo_root / cfg["path"]):
+            return name
+    return get_default_package(repo_root)
+```
+
+Why wrong: silently diverges from `task.json.package`. A task created under `packages/cli` but later read from `docs-site/` would flip package, breaking spec scope, session runtime, and Linear sync idempotency.
+
+#### Correct — read the frozen field, fall back through `resolve_package`
+
+```python
+task = load_task(task_dir)
+task_package = task.package if task and isinstance(task.package, str) else None
+package = resolve_package(task_package=task_package, repo_root=repo_root)
+# package is now: task.json binding → default_package → None (in that order)
+```
+
+### Tests Required
+
+When changing `cmd_create`, `resolve_package`, or `validate_package`:
+
+- `test/commands/task_store.test.ts` (or equivalent Python test):
+  - `--package <valid>` in monorepo → `task.json.package == <valid>`
+  - `--package <invalid>` in monorepo → exit 1, stderr lists available packages, no `task.json` written
+  - `--package <anything>` in single-repo → warning on stderr, `task.json.package is None`
+  - no `--package` in monorepo with `default_package` set → `task.json.package == default_package`
+  - no `--package` in monorepo with `default_package` missing from `packages:` → warning, `task.json.package is None`
+- Assertion points: `task_json_path.exists()`, `read_json(task_json_path)["package"]`, captured stderr.
 
 ---
 
@@ -869,7 +1147,7 @@ def get_phase_info(task_json: Path) -> str:
     action = _phase_action(data, phase)      # no file I/O
 ```
 
-**When to use**: Any module where public functions compose by calling other public functions that each read the same file (e.g., `phase.py`, `registry.py`).
+**When to use**: Any module where public functions compose by calling other public functions that each read the same file (e.g., `task_store.py`, `config.py`).
 
 ---
 
@@ -881,7 +1159,7 @@ def get_phase_info(task_json: Path) -> str:
 - Use type hints (Python 3.10+ syntax)
 - Return exit codes from `main()`
 - Print errors to stderr
-- Always use `python3` in documentation and messages
+- Keep user-facing Python commands platform-aware
 - Use `encoding="utf-8"` for all file operations
 
 ### DON'T
@@ -908,4 +1186,4 @@ See `.trellis/scripts/task.py` for a comprehensive example with:
 
 ## Migration Note
 
-> **Historical Context**: Scripts were migrated from Bash to Python in v0.3.0 for cross-platform compatibility. The old shell scripts are archived in `.trellis/scripts-shell-archive/` (if preserved).
+> **Historical Context**: Scripts were migrated from Bash to Python in v0.3.0 for cross-platform compatibility. In v0.5.0, the `multi_agent/` pipeline directory (`plan.py`, `start.py`, `status.py`, etc.) was removed along with `phase.py`, `registry.py`, and `worktree.py` from `common/`. The `_bootstrap.py` shim is no longer needed.

@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   settingsTemplate,
-  getAllCommands,
   getAllAgents,
-  getAllHooks,
   getSettingsTemplate,
 } from "../../src/templates/claude/index.js";
 
@@ -19,10 +17,25 @@ describe("settingsTemplate", () => {
   it("is a non-empty string", () => {
     expect(settingsTemplate.length).toBeGreaterThan(0);
   });
+
+  // v0.5.0-beta.8: pin CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=1 at the project
+  // level so Bash tool cwd changes don't leak into subsequent hook invocations.
+  // Without this, a user who runs `cd frontend/` via Bash tool leaves cwd stuck
+  // in `frontend/`, and the next UserPromptSubmit hook (which resolves
+  // `.claude/hooks/inject-workflow-state.py` relative to cwd) crashes with
+  // ENOENT. We can't fix this via command-string rewriting because
+  // $CLAUDE_PROJECT_DIR doesn't expand on Windows shells (see CC issue #6023).
+  // The env-var approach is read by CC internally, identical on all platforms.
+  it("sets CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=1 in env", () => {
+    const settings = JSON.parse(settingsTemplate) as {
+      env?: Record<string, string>;
+    };
+    expect(settings.env?.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR).toBe("1");
+  });
 });
 
 // =============================================================================
-// settingsTemplate — SessionStart hook matchers (MIN-231)
+// settingsTemplate — SessionStart hook matchers
 // =============================================================================
 
 describe("settingsTemplate SessionStart matchers", () => {
@@ -53,48 +66,7 @@ describe("settingsTemplate SessionStart matchers", () => {
   });
 });
 
-// =============================================================================
-// getAllCommands — reads command templates from filesystem
-// =============================================================================
-
-const EXPECTED_COMMAND_NAMES = [
-  "before-dev",
-  "brainstorm",
-  "break-loop",
-  "check-cross-layer",
-  "check",
-  "create-command",
-  "finish-work",
-  "integrate-skill",
-  "onboard",
-  "parallel",
-  "record-session",
-  "start",
-  "update-spec",
-];
-
-describe("getAllCommands", () => {
-  it("returns the expected command set", () => {
-    const commands = getAllCommands();
-    const names = commands.map((cmd) => cmd.name);
-    expect(names).toEqual(EXPECTED_COMMAND_NAMES);
-  });
-
-  it("each command has name and content", () => {
-    const commands = getAllCommands();
-    for (const cmd of commands) {
-      expect(cmd.name.length).toBeGreaterThan(0);
-      expect(cmd.content.length).toBeGreaterThan(0);
-    }
-  });
-
-  it("command names do not include .md extension", () => {
-    const commands = getAllCommands();
-    for (const cmd of commands) {
-      expect(cmd.name).not.toContain(".md");
-    }
-  });
-});
+// Commands are now sourced from common/ templates and tested in platforms.test.ts
 
 // =============================================================================
 // getAllAgents — reads agent templates
@@ -111,21 +83,7 @@ describe("getAllAgents", () => {
 });
 
 // =============================================================================
-// getAllHooks — reads hook templates
-// =============================================================================
-
-describe("getAllHooks", () => {
-  it("each hook has targetPath and content", () => {
-    const hooks = getAllHooks();
-    for (const hook of hooks) {
-      expect(hook.targetPath.startsWith("hooks/")).toBe(true);
-      expect(hook.content.length).toBeGreaterThan(0);
-    }
-  });
-});
-
-// =============================================================================
-// getSettingsTemplate — returns settings as HookTemplate
+// getSettingsTemplate — returns settings as SettingsTemplate
 // =============================================================================
 
 describe("getSettingsTemplate", () => {

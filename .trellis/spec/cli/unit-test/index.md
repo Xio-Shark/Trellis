@@ -14,7 +14,7 @@ This project uses **Vitest** with TypeScript ESM. Tests live in a centralized `t
 
 | Guide | Description | Status |
 |-------|-------------|--------|
-| [Conventions](./conventions.md) | File naming, structure, assertion patterns, when to write tests | Done |
+| [Conventions](./conventions.md) | File naming, structure, assertion patterns, test isolation (env-leak guard), when to write tests | Done |
 | [Mock Strategies](./mock-strategies.md) | What to mock, how, and the minimal mocking principle | Done |
 | [Integration Patterns](./integration-patterns.md) | Function-level integration tests for commands | Done |
 

@@ -12,12 +12,35 @@
 | Config | `vitest.config.ts` |
 | Include | `test/**/*.test.ts` |
 | Exclude | `third/**` |
+| Setup files | `test/setup.ts` (runs before any test, strips host-shell session env vars — see "Test Isolation" below) |
 | Lint scope | `eslint src/ test/` |
 | Module system | ESM (`"type": "module"` + `"module": "NodeNext"`) |
 | Coverage provider | `@vitest/coverage-v8` |
 | Coverage command | `pnpm test:coverage` |
 | Coverage scope | `src/**/*.ts` (excludes `src/cli/index.ts`) |
 | Coverage reports | `text` (terminal), `html` (`./coverage/index.html`), `json-summary` |
+
+---
+
+## Test Isolation
+
+### Strip host-shell session env vars at process start
+
+Several Trellis modules (e.g. `OpenCodeContext.getContextKey`, `TrellisContext.getActiveTask`) consult `process.env.TRELLIS_CONTEXT_ID` and `process.env.OPENCODE_RUN_ID` as **highest-priority overrides** — production behavior, by design.
+
+When tests run inside a Claude Code or OpenCode session, those env vars leak from the parent shell into the vitest process and **hijack the resolver**, ignoring the test's mocked `platformInput`. Symptom: tests expecting a derived `opencode_oc-a` contextKey receive `claude_<host-session-id>` instead, failing deterministically only on dev machines.
+
+**Convention**: `test/setup.ts` is registered via `setupFiles` in `vitest.config.ts` and unconditionally `delete`s these env vars before any test loads:
+
+```ts
+// test/setup.ts
+delete process.env.TRELLIS_CONTEXT_ID;
+delete process.env.OPENCODE_RUN_ID;
+```
+
+**When to extend**: any new env var that production resolvers honor as a user override, AND that the dev's host shell may export, must be added to `test/setup.ts`. Do NOT fix this in production code by ignoring the env var — the override is a real feature for end users.
+
+**When NOT to use**: tests that *intentionally* exercise the env-override path should set the env explicitly inside the test (`process.env.X = "..."` in a `beforeEach` and restore in `afterEach`).
 
 ---
 

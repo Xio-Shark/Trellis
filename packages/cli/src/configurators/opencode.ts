@@ -1,18 +1,21 @@
-/**
- * OpenCode configurator
- *
- * Configures OpenCode by copying templates from src/templates/opencode/.
- * This uses the dogfooding pattern - the same files used by Trellis project itself.
- */
-
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
+import { AI_TOOLS } from "../types/ai-tools.js";
 import { getOpenCodeTemplatePath } from "../templates/extract.js";
 import { ensureDir, writeFile } from "../utils/file-writer.js";
+import { toPosix } from "../utils/posix.js";
+import {
+  collectSkillTemplates,
+  resolveBundledSkills,
+  resolveCommands,
+  resolveSkills,
+} from "./shared.js";
 
 /**
- * Files to exclude when copying templates
- * These are build artifacts or platform-specific files
+ * Files under packages/cli/src/templates/opencode/ that are NOT user-facing
+ * assets (build artifacts, runtime caches, etc.). The template dir has a
+ * real package.json that declares the @opencode-ai/plugin dep — that one
+ * IS user-facing and must be shipped.
  */
 const EXCLUDE_PATTERNS = [
   ".d.ts",
@@ -24,9 +27,6 @@ const EXCLUDE_PATTERNS = [
   ".gitignore",
 ];
 
-/**
- * Check if a file should be excluded
- */
 function shouldExclude(filename: string): boolean {
   for (const pattern of EXCLUDE_PATTERNS) {
     if (filename.endsWith(pattern) || filename === pattern) {
@@ -37,65 +37,72 @@ function shouldExclude(filename: string): boolean {
 }
 
 /**
- * Recursively copy directory, excluding build artifacts
- * Uses writeFile to handle file conflicts with the global writeMode setting
+ * Walk the opencode template directory and produce a `Map<relPath, content>`
+ * rooted at `.opencode/`. Shared by both `configureOpenCode` (init-time write)
+ * and `collectOpenCodeTemplates` (update-time hash tracking) so the two paths
+ * always agree on the exact file set. `commands/` is handled separately (sourced
+ * from common template context, not from this directory tree).
  */
-async function copyDirFiltered(src: string, dest: string): Promise<void> {
-  ensureDir(dest);
+function walkOpenCodeTemplateDir(): Map<string, string> {
+  const files = new Map<string, string>();
+  const sourcePath = getOpenCodeTemplatePath();
 
-  for (const entry of readdirSync(src)) {
-    if (shouldExclude(entry)) {
-      continue;
-    }
-
-    const srcPath = path.join(src, entry);
-    const destPath = path.join(dest, entry);
-    const stat = statSync(srcPath);
-
-    if (stat.isDirectory()) {
-      await copyDirFiltered(srcPath, destPath);
-    } else {
-      const content = readFileSync(srcPath, "utf-8");
-      await writeFile(destPath, content);
+  function walk(relDir: string): void {
+    const absDir = path.join(sourcePath, relDir);
+    for (const entry of readdirSync(absDir)) {
+      if (shouldExclude(entry)) continue;
+      const absEntry = path.join(absDir, entry);
+      const relEntry = relDir ? path.join(relDir, entry) : entry;
+      const stat = statSync(absEntry);
+      if (stat.isDirectory()) {
+        // Skip commands/ — that's sourced from common/ templates, not the
+        // opencode/ dir. Including both paths would double-write.
+        if (relEntry === "commands") continue;
+        walk(relEntry);
+      } else {
+        const content = readFileSync(absEntry, "utf-8");
+        // Map keys are logical paths used as cross-platform hash keys / lookup
+        // keys downstream. Always POSIX, regardless of host OS.
+        files.set(toPosix(path.join(".opencode", relEntry)), content);
+      }
     }
   }
+
+  walk("");
+  return files;
 }
 
 /**
- * Configure OpenCode by copying from templates
+ * Collect all opencode template files that `trellis update` should track.
  *
- * The opencode templates include:
- * - commands/ - Slash commands
- * - agents/ - Multi-agent pipeline configurations
- * - plugins/ - Context injection plugins
- * - lib/ - Shared JavaScript utilities
- * - package.json - Plugin dependencies
+ * Must stay in sync with `configureOpenCode`: both paths produce the same
+ * `Map<relPath, content>`. If they drift, update will spuriously flag newly
+ * init'd files as modifications on the next run.
+ */
+export function collectOpenCodeTemplates(): Map<string, string> {
+  const files = walkOpenCodeTemplateDir();
+  const ctx = AI_TOOLS.opencode.templateContext;
+  for (const cmd of resolveCommands(ctx)) {
+    files.set(`.opencode/commands/trellis/${cmd.name}.md`, cmd.content);
+  }
+  for (const [filePath, content] of collectSkillTemplates(
+    ".opencode/skills",
+    resolveSkills(ctx),
+    resolveBundledSkills(ctx),
+  )) {
+    files.set(filePath, content);
+  }
+  return files;
+}
+
+/**
+ * Configure OpenCode at init time by writing the same file set enumerated
+ * by `collectOpenCodeTemplates`.
  */
 export async function configureOpenCode(cwd: string): Promise<void> {
-  const sourcePath = getOpenCodeTemplatePath();
-  const destPath = path.join(cwd, ".opencode");
-
-  // Copy templates, excluding build artifacts
-  await copyDirFiltered(sourcePath, destPath);
-}
-
-/**
- * Configure OpenCode agents for Multi-Agent Pipeline
- *
- * @deprecated Agents are now included in the main .opencode directory copy.
- * This function is kept for backwards compatibility but does nothing.
- */
-export async function configureOpenCodeAgents(_cwd: string): Promise<void> {
-  // Agents are now copied as part of configureOpenCode
-  // This function is kept for API compatibility
-}
-
-/**
- * Configure OpenCode with full Multi-Agent Pipeline support
- *
- * This is now equivalent to just calling configureOpenCode since the entire
- * .opencode directory is copied at once.
- */
-export async function configureOpenCodeFull(cwd: string): Promise<void> {
-  await configureOpenCode(cwd);
+  for (const [relPath, content] of collectOpenCodeTemplates()) {
+    const absPath = path.join(cwd, relPath);
+    ensureDir(path.dirname(absPath));
+    await writeFile(absPath, content);
+  }
 }

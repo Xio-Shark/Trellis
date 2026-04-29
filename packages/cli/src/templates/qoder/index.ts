@@ -1,50 +1,22 @@
 /**
- * Qoder skill templates
+ * Qoder templates
  *
  * These are GENERIC templates for user projects.
- * Do NOT use Trellis project's own .qoder/ directory (which may be customized).
  *
  * Directory structure:
  *   qoder/
- *   └── skills/
- *       └── <skill-name>/
- *           └── SKILL.md
+ *   ├── agents/         # Multi-agent pipeline agents
+ *   └── settings.json   # Settings configuration
  */
 
-import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import {
+  createTemplateReader,
+  type AgentTemplate,
+  type HookTemplate,
+} from "../template-utils.js";
+export type { AgentTemplate, HookTemplate };
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const { listMdAgents, getSettings } = createTemplateReader(import.meta.url);
 
-function readTemplate(relativePath: string): string {
-  return readFileSync(join(__dirname, relativePath), "utf-8");
-}
-
-function listSkillNames(): string[] {
-  try {
-    return readdirSync(join(__dirname, "skills"), { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .sort();
-  } catch {
-    return [];
-  }
-}
-
-export interface SkillTemplate {
-  name: string;
-  content: string;
-}
-
-export function getAllSkills(): SkillTemplate[] {
-  const skills: SkillTemplate[] = [];
-
-  for (const name of listSkillNames()) {
-    const content = readTemplate(`skills/${name}/SKILL.md`);
-    skills.push({ name, content });
-  }
-
-  return skills;
-}
+export const getAllAgents = (): AgentTemplate[] => listMdAgents();
+export const getSettingsTemplate = (): HookTemplate => getSettings();

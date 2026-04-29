@@ -2,40 +2,15 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import {
   getTrellisTemplatePath,
-  getCursorTemplatePath,
   getClaudeTemplatePath,
   getOpenCodeTemplatePath,
-  getIflowTemplatePath,
-  getCodexTemplatePath,
-  getKiloTemplatePath,
-  getKiroTemplatePath,
-  getGeminiTemplatePath,
-  getAntigravityTemplatePath,
-  getWindsurfTemplatePath,
-  getQoderTemplatePath,
-  getCodebuddyTemplatePath,
-  getCopilotTemplatePath,
-  getDroidTemplatePath,
-  getDroidSourcePath,
+  getPiTemplatePath,
+  getPiSourcePath,
   getTrellisSourcePath,
-  getCursorSourcePath,
-  getClaudeSourcePath,
-  getIflowSourcePath,
-  getOpenCodeSourcePath,
-  getCodexSourcePath,
-  getKiroSourcePath,
-  getGeminiSourcePath,
-  getAntigravitySourcePath,
-  getWindsurfSourcePath,
   readTrellisFile,
   readTemplate,
   readScript,
   readMarkdown,
-  readCursorFile,
-  readClaudeFile,
-  readOpenCodeFile,
-  readKiloFile,
-  readGeminiFile,
 } from "../../src/templates/extract.js";
 
 // =============================================================================
@@ -45,12 +20,6 @@ import {
 describe("template path functions", () => {
   it("getTrellisTemplatePath returns existing directory", () => {
     const p = getTrellisTemplatePath();
-    expect(fs.existsSync(p)).toBe(true);
-    expect(fs.statSync(p).isDirectory()).toBe(true);
-  });
-
-  it("getCursorTemplatePath returns existing directory", () => {
-    const p = getCursorTemplatePath();
     expect(fs.existsSync(p)).toBe(true);
     expect(fs.statSync(p).isDirectory()).toBe(true);
   });
@@ -67,68 +36,8 @@ describe("template path functions", () => {
     expect(fs.statSync(p).isDirectory()).toBe(true);
   });
 
-  it("getIflowTemplatePath returns existing directory", () => {
-    const p = getIflowTemplatePath();
-    expect(fs.existsSync(p)).toBe(true);
-    expect(fs.statSync(p).isDirectory()).toBe(true);
-  });
-
-  it("getCodexTemplatePath returns existing directory", () => {
-    const p = getCodexTemplatePath();
-    expect(fs.existsSync(p)).toBe(true);
-    expect(fs.statSync(p).isDirectory()).toBe(true);
-  });
-
-  it("getKiloTemplatePath returns existing directory", () => {
-    const p = getKiloTemplatePath();
-    expect(fs.existsSync(p)).toBe(true);
-    expect(fs.statSync(p).isDirectory()).toBe(true);
-  });
-
-  it("getKiroTemplatePath returns existing directory", () => {
-    const p = getKiroTemplatePath();
-    expect(fs.existsSync(p)).toBe(true);
-    expect(fs.statSync(p).isDirectory()).toBe(true);
-  });
-
-  it("getGeminiTemplatePath returns existing directory", () => {
-    const p = getGeminiTemplatePath();
-    expect(fs.existsSync(p)).toBe(true);
-    expect(fs.statSync(p).isDirectory()).toBe(true);
-  });
-
-  it("getAntigravityTemplatePath returns existing directory", () => {
-    const p = getAntigravityTemplatePath();
-    expect(fs.existsSync(p)).toBe(true);
-    expect(fs.statSync(p).isDirectory()).toBe(true);
-  });
-
-  it("getWindsurfTemplatePath returns existing directory", () => {
-    const p = getWindsurfTemplatePath();
-    expect(fs.existsSync(p)).toBe(true);
-    expect(fs.statSync(p).isDirectory()).toBe(true);
-  });
-
-  it("getQoderTemplatePath returns existing directory", () => {
-    const p = getQoderTemplatePath();
-    expect(fs.existsSync(p)).toBe(true);
-    expect(fs.statSync(p).isDirectory()).toBe(true);
-  });
-
-  it("getCodebuddyTemplatePath returns existing directory", () => {
-    const p = getCodebuddyTemplatePath();
-    expect(fs.existsSync(p)).toBe(true);
-    expect(fs.statSync(p).isDirectory()).toBe(true);
-  });
-
-  it("getCopilotTemplatePath returns existing directory", () => {
-    const p = getCopilotTemplatePath();
-    expect(fs.existsSync(p)).toBe(true);
-    expect(fs.statSync(p).isDirectory()).toBe(true);
-  });
-
-  it("getDroidTemplatePath returns existing directory", () => {
-    const p = getDroidTemplatePath();
+  it("getPiTemplatePath returns existing directory", () => {
+    const p = getPiTemplatePath();
     expect(fs.existsSync(p)).toBe(true);
     expect(fs.statSync(p).isDirectory()).toBe(true);
   });
@@ -143,44 +52,8 @@ describe("deprecated source path aliases", () => {
     expect(getTrellisSourcePath()).toBe(getTrellisTemplatePath());
   });
 
-  it("getCursorSourcePath equals getCursorTemplatePath", () => {
-    expect(getCursorSourcePath()).toBe(getCursorTemplatePath());
-  });
-
-  it("getClaudeSourcePath equals getClaudeTemplatePath", () => {
-    expect(getClaudeSourcePath()).toBe(getClaudeTemplatePath());
-  });
-
-  it("getIflowSourcePath equals getIflowTemplatePath", () => {
-    expect(getIflowSourcePath()).toBe(getIflowTemplatePath());
-  });
-
-  it("getOpenCodeSourcePath equals getOpenCodeTemplatePath", () => {
-    expect(getOpenCodeSourcePath()).toBe(getOpenCodeTemplatePath());
-  });
-
-  it("getCodexSourcePath equals getCodexTemplatePath", () => {
-    expect(getCodexSourcePath()).toBe(getCodexTemplatePath());
-  });
-
-  it("getKiroSourcePath equals getKiroTemplatePath", () => {
-    expect(getKiroSourcePath()).toBe(getKiroTemplatePath());
-  });
-
-  it("getGeminiSourcePath equals getGeminiTemplatePath", () => {
-    expect(getGeminiSourcePath()).toBe(getGeminiTemplatePath());
-  });
-
-  it("getAntigravitySourcePath equals getAntigravityTemplatePath", () => {
-    expect(getAntigravitySourcePath()).toBe(getAntigravityTemplatePath());
-  });
-
-  it("getWindsurfSourcePath equals getWindsurfTemplatePath", () => {
-    expect(getWindsurfSourcePath()).toBe(getWindsurfTemplatePath());
-  });
-
-  it("getDroidSourcePath equals getDroidTemplatePath", () => {
-    expect(getDroidSourcePath()).toBe(getDroidTemplatePath());
+  it("getPiSourcePath equals getPiTemplatePath", () => {
+    expect(getPiSourcePath()).toBe(getPiTemplatePath());
   });
 });
 
@@ -193,7 +66,7 @@ describe("readTrellisFile", () => {
     const content = readTrellisFile("workflow.md");
     expect(typeof content).toBe("string");
     expect(content.length).toBeGreaterThan(0);
-    expect(content).toContain("#"); // markdown heading
+    expect(content).toContain("#");
   });
 
   it("reads a script file", () => {
@@ -218,7 +91,7 @@ describe("readTemplate", () => {
 });
 
 // =============================================================================
-// readScript — helper wrapping readTrellisFile
+// readScript / readMarkdown helpers
 // =============================================================================
 
 describe("readScript", () => {
@@ -229,90 +102,10 @@ describe("readScript", () => {
   });
 });
 
-// =============================================================================
-// readMarkdown — helper wrapping readTrellisFile
-// =============================================================================
-
 describe("readMarkdown", () => {
   it("reads workflow.md", () => {
     const content = readMarkdown("workflow.md");
     expect(typeof content).toBe("string");
     expect(content).toContain("#");
-  });
-});
-
-// =============================================================================
-// Platform file readers
-// =============================================================================
-
-describe("readCursorFile", () => {
-  it("reads a file from cursor templates", () => {
-    // Cursor templates should have at least a commands directory
-    const cursorPath = getCursorTemplatePath();
-    const entries = fs.readdirSync(cursorPath);
-    if (entries.length > 0) {
-      // Find a readable file
-      for (const entry of entries) {
-        const fullPath = `${cursorPath}/${entry}`;
-        if (fs.statSync(fullPath).isFile()) {
-          const content = readCursorFile(entry);
-          expect(typeof content).toBe("string");
-          return;
-        }
-      }
-    }
-  });
-});
-
-describe("readClaudeFile", () => {
-  it("reads settings.json from claude templates", () => {
-    const content = readClaudeFile("settings.json");
-    expect(typeof content).toBe("string");
-    expect(content.length).toBeGreaterThan(0);
-    // Should be valid JSON
-    expect(() => JSON.parse(content)).not.toThrow();
-  });
-});
-
-describe("readOpenCodeFile", () => {
-  it("can read a file from opencode templates", () => {
-    const opencodePath = getOpenCodeTemplatePath();
-    const entries = fs.readdirSync(opencodePath);
-    if (entries.length > 0) {
-      for (const entry of entries) {
-        const fullPath = `${opencodePath}/${entry}`;
-        if (fs.statSync(fullPath).isFile()) {
-          const content = readOpenCodeFile(entry);
-          expect(typeof content).toBe("string");
-          return;
-        }
-      }
-    }
-  });
-});
-
-describe("readKiloFile", () => {
-  it("can read a file from kilo templates", () => {
-    const kiloPath = getKiloTemplatePath();
-    const entries = fs.readdirSync(kiloPath);
-    if (entries.length > 0) {
-      for (const entry of entries) {
-        const fullPath = `${kiloPath}/${entry}`;
-        if (fs.statSync(fullPath).isFile()) {
-          const content = readKiloFile(entry);
-          expect(typeof content).toBe("string");
-          return;
-        }
-      }
-    }
-  });
-});
-
-describe("readGeminiFile", () => {
-  it("reads a toml file from gemini templates", () => {
-    const content = readGeminiFile("commands/trellis/start.toml");
-    expect(typeof content).toBe("string");
-    expect(content.length).toBeGreaterThan(0);
-    expect(content).toContain("description = ");
   });
 });

@@ -261,6 +261,100 @@ let mutableCount = 0;
 
 ---
 
+## Schema Deprecation: Audit ALL Writers, Not Just the Creator
+
+**Trigger**: Removing a field from a persisted schema (e.g. `task.json`, migration manifests, config files).
+
+**Common mistake**: Remove the field from the creator (`cmd_create` / init) and the reader (normalize / load), but forget that **other writers** (hooks, triggers, sub-processes) still re-populate the field on every event. Net effect: field "deprecated" in docs, but still appears in newly-written files — you've declared a cleanup but haven't executed it.
+
+### Scope / Trigger
+- Any commit that removes a field from a schema struct or JSON output.
+- Trigger is independent of whether the reader still tolerates the field.
+
+### Audit Contract
+Before landing the removal, produce a writer inventory:
+
+```bash
+# Find every place that writes the field (not just the schema definition)
+grep -rn "<field_name>" --include="*.py" --include="*.ts" --include="*.js" .
+```
+
+Classify each hit:
+
+| Kind | Example | Action |
+|------|---------|--------|
+| **Schema / creator** | `task_store.cmd_create`, `utils/task-json.ts:emptyTaskJson` (TS factory used by `init.ts` + `update.ts`) | Drop field from output |
+| **Writer / updater** | `inject-subagent-context.py:update_current_phase`, OpenCode plugin equivalent | **Drop the write call OR delete the function entirely** |
+| **Reader / getter** | `tasks.py:load_task` (defaults via `data.get("field", default)` on `TaskInfo`) | Keep with tolerance default (`data.get("field", null)`) — handles legacy files |
+| **Docs / comments** | spec, README, PRDs | Update references |
+| **Tests** | Assertions on field presence | Flip to "must NOT contain field" |
+
+### Validation & Error Matrix
+| Condition | Expected behaviour |
+|-----------|-------------------|
+| Fresh task: field present in `task.json` | ❌ regression — writer missed |
+| Old task still has field | ✅ tolerated (reader defaults) |
+| Two runs of the same lifecycle op | ✅ field never re-appears |
+
+### Tests Required
+- **Writer regression**: call creator → assert field NOT in output. Example: `test task.py create does NOT write legacy current_phase / next_action`.
+- **Writer-after-event regression**: simulate the downstream event that historically re-wrote the field (e.g. spawn sub-agent → hook fires) → re-read file → assert field still absent.
+- **Reader compatibility**: mock a legacy file containing the field → assert reader does not raise.
+
+### Wrong vs Correct
+#### Wrong — cleanup only touches the creator
+```python
+# task_store.cmd_create — dropped current_phase
+task_data = {"status": "planning", ...}  # current_phase removed
+```
+```python
+# inject-subagent-context.py — still writes it on every spawn
+def update_current_phase(task_dir, subagent_type):
+    task = read_json(task_dir / "task.json")
+    task["current_phase"] = next_phase(...)  # ← re-populates deprecated field
+    write_json(task_dir / "task.json", task)
+```
+Net: after the first `implement` spawn, `task.json` contains `current_phase` again. Deprecation undone silently.
+
+#### Correct — delete every writer, or route through a single entry point
+Option A: delete the writer function.
+```python
+# inject-subagent-context.py
+# (update_current_phase + its call removed; the hook no longer writes phase)
+```
+Option B: keep the writer but have it stop emitting the field.
+```python
+def update_task_state(task_dir, subagent_type):
+    task = read_json(task_dir / "task.json")
+    task["last_subagent"] = subagent_type  # new field
+    # current_phase not written
+    write_json(task_dir / "task.json", task)
+```
+
+### Why
+A field is "gone" only after every code path that could produce it is removed. Silently leaving ghost writers makes the deprecation non-executable and forces future readers to keep supporting the field forever.
+
+### Case Study (2026-04-22): `current_phase` / `next_action` drift across 4 writers + type declaration
+
+The task `04-21-task-schema-unify` ran a retroactive audit on the 0.5.0-beta.0 deprecation of `current_phase` / `next_action` and found **four** drift modes that the original cleanup missed, across **both TypeScript and Python**:
+
+| # | Location | Drift mode | Why the first audit missed it |
+|---|----------|------------|-------------------------------|
+| 1 | `packages/cli/src/commands/init.ts` (`interface TaskJson` + `getBootstrapTaskJson`) | Divergent 17-field TS interface + inline object literal | Audit grepped for field names, but this writer omitted them rather than writing them — it silently diverged in shape, not content |
+| 2 | `packages/cli/src/commands/update.ts` (migration-task inline literal) | Inline TS object still wrote `current_phase: 0` + `next_action: [...]` | Writer lives in a language the original Python-focused audit skipped |
+| 3 | `.trellis/scripts/create_bootstrap.py` | Orphan Python CLI — its own 13-field shape incl. structured subtasks | Not invoked by any command; shipped as template but dead. Easy to miss because grepping for "bootstrap" returns too many hits |
+| 4 | `.trellis/scripts/common/types.py` — `TaskData` TypedDict declared `current_phase: int` + `next_action: list[dict]` | **Type-declaration writer**: no runtime code produces the field, but readers that annotate `TaskData` get IDE autocomplete for ghost fields, and code reviewers see "valid field" | A TypedDict is technically a declaration, not a writer — but to the reader-side contract, it IS a writer of expectations |
+
+**Three lessons added to the audit discipline**:
+
+1. **Cross-language grep**: when a field is removed, grep must span `.py`, `.ts`, `.js`, AND `.json` (migration manifest changelogs can leak field names that get copy-pasted). Restrict by `--include="*.py" --include="*.ts"` plus checking manifest `.json` files.
+2. **Shipped-but-unused code counts**: any file enumerated in a template registry (`packages/cli/src/templates/trellis/index.ts`, `templates/markdown/index.ts`) is a writer of user expectations even if no command invokes it. Orphan = still writes.
+3. **Type declarations count as writers of the reader-side contract**: a TypedDict / TS interface that still declares the deprecated field misleads consumers the same way a runtime writer does. Prune declarations in the same PR as runtime writers.
+
+**Consolidation outcome**: `packages/cli/src/utils/task-json.ts` now exports a single `TaskJson` type + `emptyTaskJson(overrides)` factory. Both `init.ts` and `update.ts` route through it. The audit set for future schema changes is now: canonical Python `cmd_create` (runtime) + canonical TS `emptyTaskJson` (bootstrap + migration) + `TaskData` TypedDict (declaration). Three surfaces instead of seven.
+
+---
+
 ## Quality Checklist
 
 Before committing, ensure:
@@ -316,6 +410,81 @@ if (hasExplicitTools) {
 ```
 
 **Why**: Users specify explicit flags intentionally. The `-y` flag means "skip interactive prompts", not "ignore my other flags".
+
+### Scenario: Non-Interactive Batch Flags Must Not Prompt
+
+#### 1. Scope / Trigger
+
+- Trigger: any command that accepts batch-resolution flags such as `--force`,
+  `--skip-all`, `--create-new`, or a command-specific `--yes`.
+- Reason: these flags are explicit consent for non-interactive execution. A
+  later confirmation prompt can crash CI or smoke tests when stdin is closed.
+
+#### 2. Signatures
+
+- `trellis update --force`
+- `trellis update --skip-all`
+- `trellis update --create-new`
+- `trellis update --force --migrate`
+- `update({ force?: boolean, skipAll?: boolean, createNew?: boolean, migrate?: boolean })`
+
+#### 3. Contracts
+
+- `--force`, `--skip-all`, and `--create-new` resolve file conflicts without
+  per-file prompts.
+- The same flags also bypass the final `Proceed?` confirmation prompt.
+- `--migrate` alone may still prompt for modified migration entries and final
+  confirmation.
+- `--dry-run` must return before any mutation or confirmation prompt.
+- A no-op update with batch flags must still complete without touching
+  `inquirer.prompt`.
+
+#### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|-----------|-------------------|
+| `update --force --migrate` in non-TTY shell | exits 0 or a domain error; never crashes with readline/inquirer lifecycle errors |
+| `update --force` with modified template | overwrites, updates hash, no prompt |
+| `update --skip-all` with modified template | preserves file, no prompt |
+| `update --create-new` with modified template | writes `.new`, no prompt |
+| `update --migrate` without batch flag | may prompt interactively |
+| `update --dry-run` | no prompt, no backup, no writes |
+
+#### 5. Good/Base/Bad Cases
+
+- Good: `node dist/cli/index.js update --force --migrate` can run as a smoke
+  test with closed stdin and either update files or report already up to date.
+- Base: `trellis update --migrate` in a terminal asks the user how to handle
+  modified migrated files.
+- Bad: `--force` resolves file conflicts but still asks `Proceed?`, then
+  crashes in CI with `ERR_USE_AFTER_CLOSE`.
+
+#### 6. Tests Required
+
+- Integration test that clears the `inquirer.prompt` mock after setup and
+  asserts `update({ force: true })` does not call it.
+- Existing force/skip/create-new tests must continue to assert file outcomes.
+- Real CLI smoke test after build:
+  `node packages/cli/dist/cli/index.js update --force --migrate`.
+
+#### 7. Wrong vs Correct
+
+##### Wrong
+
+```typescript
+if (!options.dryRun) {
+  await inquirer.prompt([{ name: "proceed", message: "Proceed?" }]);
+}
+```
+
+##### Correct
+
+```typescript
+const batchMode = options.force || options.skipAll || options.createNew;
+if (!options.dryRun && !batchMode) {
+  await inquirer.prompt([{ name: "proceed", message: "Proceed?" }]);
+}
+```
 
 ### Data-Driven Configuration
 
@@ -432,6 +601,79 @@ fetchedTemplates = []; // Clear stale data from previous source
 ```
 
 **Why**: Shared mutable state across branches is a silent bug factory. The later guard (`registry && fetchedTemplates.length === 0`) depends on `fetchedTemplates` reflecting the *current* source, not a previous one.
+
+### Scenario: Registry Probe and Download Must Share Backend
+
+#### 1. Scope / Trigger
+
+When a CLI registry flow probes one backend to decide marketplace vs direct-download mode, and then downloads content later, the chosen backend is part of the control-flow contract. This applies to `trellis init --registry`, especially private/self-hosted Git registries.
+
+#### 2. Signatures
+
+```typescript
+type RegistryBackend = "http" | "git";
+
+interface RegistryProbeResult {
+  templates: SpecTemplate[];
+  isNotFound: boolean;
+  backend: RegistryBackend;
+  error?: RegistryBackendError;
+}
+```
+
+#### 3. Contracts
+
+- `backend` records which implementation produced the probe result.
+- `isNotFound: true` means the registry path exists but has no `index.json`; it may enter direct-download mode.
+- `error` means the probe failed and must not enter direct-download mode.
+- Download functions that receive a registry must either use the probe's `backend` or re-probe before downloading.
+
+#### 4. Validation & Error Matrix
+
+| Condition | Result |
+|---|---|
+| `index.json` exists and parses | `templates.length > 0`, `isNotFound: false`, `backend` set |
+| No `index.json` at a valid registry path | `templates: []`, `isNotFound: true`, `backend` set |
+| Auth failure / invalid login-page JSON / network failure | `isNotFound: false`, `error` set, abort or loop back |
+| Template path outside repo root | `path-not-found` error |
+| Git ref missing | `ref-not-found` error |
+
+#### 5. Good/Base/Bad Cases
+
+- Good: private GitLab probe uses local Git credentials and download copies from the same Git checkout strategy.
+- Base: public registry probe uses HTTP and download uses the existing HTTP/giget path.
+- Bad: probe succeeds through Git, but download rebuilds a raw/giget URL and fails authentication.
+
+#### 6. Tests Required
+
+- Probe test for public registry remains `backend: "http"`.
+- Probe test for self-hosted/SSH registry returns `backend: "git"`.
+- Download test passes a prefetched template plus `registryBackend: "git"` and verifies filesystem output.
+- Failure tests assert auth/ref/path/invalid-json errors do not set `isNotFound: true`.
+
+#### 7. Wrong vs Correct
+
+```typescript
+// Wrong: backend choice is lost after probe
+const probe = await probeRegistryIndex(indexUrl, registry);
+const template = probe.templates.find((t) => t.id === selected);
+await downloadTemplateById(cwd, selected, strategy, template, registry);
+
+// Correct: download uses the same backend that proved access during probe
+const probe = await probeRegistryIndex(indexUrl, registry);
+const template = probe.templates.find((t) => t.id === selected);
+await downloadTemplateById(
+  cwd,
+  selected,
+  strategy,
+  template,
+  registry,
+  undefined,
+  probe.backend,
+);
+```
+
+**Why**: Authentication and reachability are backend-specific. A successful Git probe only proves Git access; it does not prove raw HTTP or giget access.
 
 ---
 

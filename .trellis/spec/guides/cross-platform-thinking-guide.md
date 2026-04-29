@@ -26,16 +26,19 @@
 | `python3` command | ✅ Always available | ⚠️ May need `python` |
 | `python` command | ⚠️ May be Python 2 | ✅ Usually Python 3 |
 
-**Rule 1**: Always use explicit `python3` in documentation, help text, and error messages.
+**Rule 1**: For user-facing docs, help text, and error messages, either:
+
+- state the platform rule explicitly (`python` on Windows, `python3` elsewhere), or
+- render the command through the same platform-aware helper / placeholder the code uses.
 
 ```python
 # BAD - Assumes shebang works
 print("Usage: ./script.py <args>")
 print("Run: script.py <args>")
 
-# GOOD - Explicit interpreter
-print("Usage: python3 script.py <args>")
-print("Run: python3 ./script.py <args>")
+# GOOD - Platform-aware wording
+print("Usage: python on Windows, python3 elsewhere")
+print("Run: {{PYTHON_CMD}} ./.trellis/scripts/task.py <args>")
 ```
 
 **Rule 2**: When generating config files at init time, use placeholder + platform detection:
@@ -63,25 +66,28 @@ const PYTHON_CMD = platform() === "win32" ? "python" : "python3"
 execSync(`${PYTHON_CMD} "${scriptPath}"`, { ... })
 ```
 
-**Rule 4**: If you need to verify Python is actually installed (not just choose command):
+**Rule 4**: If you need to verify Python is actually installed (not just choose
+the command), probe the same platform-selected alias you will later render or
+execute:
 
 ```typescript
-function getPythonCommand(): string {
+function getPythonCommand(platform = process.platform): string {
+  return platform === "win32" ? "python" : "python3";
+}
+
+function warnIfPythonTooOld(): void {
+  const cmd = getPythonCommand();
   try {
-    execSync("python3 --version", { stdio: "pipe" });
-    return "python3";
+    execSync(`${cmd} --version`, { stdio: "pipe" });
   } catch {
-    try {
-      execSync("python --version", { stdio: "pipe" });
-      return "python";
-    } catch {
-      return "python3"; // Default, will fail with clear error
-    }
+    // Missing Python is a separate error path; don't silently swap aliases.
   }
 }
 ```
 
-**Rule 3**: When calling Python from Python, use `sys.executable`:
+**Rule 5**: Don't assume the Python version the AI CLI uses matches your shell's `python3`. The user's terminal may resolve `python3` → homebrew 3.11, but AI CLI hosts (including enterprise-forked Claude Code / Cursor distributions) spawn hook subprocesses with a minimal PATH that resolves `python3` → `/usr/bin/python3` → macOS system 3.9. Distributed templates must either target the lowest plausible version or use `from __future__ import annotations` for PEP 604 syntax. See `cli/backend/script-conventions.md` → **CRITICAL: PEP 604 Annotations Require `from __future__ import annotations`** for the hard rule and audit check.
+
+**Rule 6**: When calling Python from Python, use `sys.executable`:
 
 ```python
 import sys
@@ -102,7 +108,7 @@ subprocess.run([sys.executable, "other_script.py"])
 | `\` separator | ❌ Escape char | ✅ Native |
 | `pathlib.Path` | ✅ Works | ✅ Works |
 
-**Rule**: Use `pathlib.Path` for all path operations.
+**Rule (Python)**: Use `pathlib.Path` for all path operations.
 
 ```python
 # BAD - String concatenation
@@ -113,6 +119,51 @@ from pathlib import Path
 path = Path(base) / filename
 ```
 
+#### Logical key vs filesystem path (TypeScript)
+
+A path string has two distinct roles. **Treat them differently.**
+
+| Role | OS-native (`\` on Windows) | Always POSIX (`/`) |
+|------|---------------------------|--------------------|
+| `fs.readFileSync(p)` / `path.join(cwd, x)` for fs call | ✅ Required | ❌ May fail on Windows |
+| `Map<relPath, content>` key, JSON field, hash dictionary key, anything persisted across OS | ❌ Cross-OS mismatch | ✅ Required |
+
+**Rule**: Anywhere a path string crosses OS or persists (Map keys consumed by another OS, JSON fields, hash dictionary keys), normalize to POSIX. Anywhere it goes straight to `fs.*`, leave OS-native.
+
+**Single source of truth**: `packages/cli/src/utils/posix.ts` exports `toPosix(p)`. Don't sprinkle `replaceAll('\\', '/')` at every `path.join` site — apply `toPosix` **once at the boundary**: collector exit (Map key entering hash dictionary) or write-time (`saveHashes` before `JSON.stringify`).
+
+```typescript
+// BAD - logical key carries OS-native separator
+function collectTemplates(): Map<string, string> {
+  const files = new Map<string, string>();
+  for (const entry of walk(dir)) {
+    files.set(path.join(".opencode", entry), readFile(entry));  // \ on Windows
+  }
+  return files;
+}
+
+// GOOD - normalize at the boundary
+import { toPosix } from "../utils/posix.js";
+
+function collectTemplates(): Map<string, string> {
+  const files = new Map<string, string>();
+  for (const entry of walk(dir)) {
+    files.set(toPosix(path.join(".opencode", entry)), readFile(entry));
+  }
+  return files;
+}
+
+// ALSO ACCEPTABLE - write-side defense (for storage helpers like saveHashes)
+function saveHashes(cwd: string, hashes: Record<string, string>): void {
+  const normalized = Object.fromEntries(
+    Object.entries(hashes).map(([k, v]) => [toPosix(k), v])
+  );
+  fs.writeFileSync(getHashesPath(cwd), JSON.stringify(normalized, null, 2));
+}
+```
+
+**Common offender**: `path.relative(cwd, fullPath)` produces `\` on Windows. If you then use that string as a hash dictionary lookup key (`hashes[relPath]`), `toPosix` it first, or the lookup misses on Windows.
+
 ### 3. Line Endings
 
 | Format | macOS/Linux | Windows | Git |
@@ -120,13 +171,30 @@ path = Path(base) / filename
 | `\n` (LF) | ✅ Native | ⚠️ Some tools | ✅ Normalized |
 | `\r\n` (CRLF) | ⚠️ Extra char | ✅ Native | Converted |
 
-**Rule**: Use `.gitattributes` to enforce consistent line endings.
+**Rule 1**: Use `.gitattributes` to enforce consistent line endings.
 
 ```gitattributes
 * text=auto eol=lf
 *.sh text eol=lf
 *.py text eol=lf
 ```
+
+**Rule 2**: When hashing or comparing **content** across platforms, normalize line endings before computing the hash. `.gitattributes` only governs git checkout — files written by users, scripts, or `core.autocrlf=true` may still arrive as CRLF, and `sha256(LF)` ≠ `sha256(CRLF)` for otherwise-identical content.
+
+```typescript
+// BAD - Windows users with autocrlf=true get a different hash
+export function computeHash(content: string): string {
+  return createHash("sha256").update(content, "utf-8").digest("hex");
+}
+
+// GOOD - normalize before hashing so logical content hashes identically
+export function computeHash(content: string): string {
+  const normalized = content.replace(/\r\n/g, "\n");
+  return createHash("sha256").update(normalized, "utf-8").digest("hex");
+}
+```
+
+Apply this rule wherever the hash crosses OS boundaries (template hash dictionary, content fingerprints stored in JSON, integrity checks against a remote registry).
 
 ### 4. Environment Variables
 
@@ -136,7 +204,7 @@ path = Path(base) / filename
 | `PATH` separator | `:` | `;` |
 | Case sensitivity | ✅ Case-sensitive | ❌ Case-insensitive |
 
-**Rule**: Use `pathlib.Path.home()` instead of environment variables.
+**Rule 1**: Use `pathlib.Path.home()` instead of environment variables.
 
 ```python
 # BAD
@@ -145,6 +213,25 @@ home = os.environ.get("HOME")
 # GOOD
 home = Path.home()
 ```
+
+**Rule 2**: When injecting environment variables into shell commands, generate
+the prefix for the actual host shell. Do not assume `export` works everywhere.
+AI tool "Bash" surfaces on Windows may execute through PowerShell.
+
+```javascript
+// BAD - breaks when the host shell is PowerShell
+command = `export TRELLIS_CONTEXT_ID=${shellQuote(contextKey)}; ${command}`;
+
+// GOOD - shell-aware command prefix
+const prefix = process.platform === "win32"
+  ? `$env:TRELLIS_CONTEXT_ID = ${powershellQuote(contextKey)}; `
+  : `export TRELLIS_CONTEXT_ID=${shellQuote(contextKey)}; `;
+command = `${prefix}${command}`;
+```
+
+Also make duplicate-injection detection shell-aware. A guard that only matches
+`export VAR=` will miss PowerShell's `$env:VAR = ...` form and can wrap an
+already-correct command a second time.
 
 ### 5. Command Availability
 
@@ -249,7 +336,7 @@ When making platform-related changes, check **all these locations**:
 ```bash
 # Find all places that might need updating
 grep -r "python [a-z]" --include="*.py" --include="*.md"
-grep -r "\./" --include="*.py" --include="*.md" | grep -v python3
+grep -r "{{PYTHON_CMD}}\\|python3\\|python " --include="*.py" --include="*.md"
 ```
 
 ---
@@ -258,9 +345,13 @@ grep -r "\./" --include="*.py" --include="*.md" | grep -v python3
 
 Before committing cross-platform code:
 
-- [ ] All Python invocations use `python3` explicitly (docs) or `sys.executable` (code)
+- [ ] User-facing Python invocations are platform-aware (`python` on Windows, `python3` elsewhere) or use `{{PYTHON_CMD}}`
+- [ ] Python subprocesses from Python use `sys.executable`
 - [ ] All paths use `pathlib.Path`
 - [ ] No hardcoded path separators (`/` or `\`)
+- [ ] Path strings used as logical/persisted keys (Map keys, JSON fields, hash dictionary keys) are normalized via `toPosix()`; `fs.*` calls keep OS-native paths
+- [ ] Content hashes computed across OSes normalize line endings (`\r\n` → `\n`) before hashing
+- [ ] Cross-OS JSON with potential legacy pollution carries a `__version` sentinel and the loader discards unknown/legacy versions
 - [ ] No platform-specific commands without fallbacks (e.g., `tail -f`)
 - [ ] All file I/O specifies `encoding="utf-8"` and `errors="replace"`
 - [ ] All subprocess calls specify `encoding="utf-8"` and `errors="replace"`
@@ -290,6 +381,56 @@ output = {
 
 > **Warning**: Different hook types may have different output formats.
 > Always check the specific documentation for each hook event.
+
+---
+
+## Cross-Platform Persisted JSON: Schema Migration Sentinel
+
+When a JSON file may be read/written across OSes (committed to git, synced via cloud, copied between machines) **and an older format may already exist on user disks with cross-platform pollution** (Windows-style keys, CRLF-derived hashes, locale-encoded strings), add a `__version` sentinel and let the loader discard old formats so the writer regenerates clean data.
+
+**Why not migrate-in-place?** Path-key migration (`\\` → `/`) plus hash-input migration (CRLF → LF re-hash) plus encoding fixes are correlated — trying to translate the old payload risks producing wrong values. Discarding and regenerating is **safe**: the data is recomputable from disk, and `loadX` returning `{}` triggers the existing init/update path to rebuild canonical entries.
+
+```typescript
+const SCHEMA_VERSION = 2;
+type StoredV2 = { __version: number; hashes: Record<string, string> };
+
+export function loadHashes(cwd: string): Record<string, string> {
+  const file = getHashesPath(cwd);
+  if (!fs.existsSync(file)) return {};
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, "utf-8")) as unknown;
+
+    // Reject legacy flat format (no __version) and unknown versions.
+    // The next saveHashes / initializeHashes will write a fresh v2 file.
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      (parsed as StoredV2).__version !== SCHEMA_VERSION ||
+      typeof (parsed as StoredV2).hashes !== "object"
+    ) {
+      return {};
+    }
+    return (parsed as StoredV2).hashes;
+  } catch {
+    return {};
+  }
+}
+
+export function saveHashes(cwd: string, hashes: Record<string, string>): void {
+  const payload: StoredV2 = { __version: SCHEMA_VERSION, hashes };
+  fs.writeFileSync(getHashesPath(cwd), JSON.stringify(payload, null, 2));
+}
+```
+
+**When to apply**:
+- Hash dictionaries / content fingerprints (e.g., `.template-hashes.json`)
+- Cache files where stale entries are recomputable from authoritative source
+- Any cross-OS persisted file where format change correlates with cross-platform fixes
+
+**When NOT to apply** — if losing the data hurts the user (task state, drafts, settings the user typed). Use real migration there. Sentinel + discard is only safe when data is recomputable.
+
+**Reference**: `packages/cli/src/utils/template-hash.ts` v2 envelope.
 
 ---
 
@@ -373,6 +514,9 @@ python3 script.py  # Works!
 # User's Windows (Python from python.org)
 python3 script.py  # 'python3' is not recognized
 python script.py   # Works!
+
+# Trellis docs/config should say the rule, not guess one alias everywhere
+{{PYTHON_CMD}} script.py
 ```
 
 ### 5. "UTF-8 is the default everywhere"

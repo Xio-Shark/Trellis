@@ -146,6 +146,7 @@ vite.config.ts.timestamp-*
 
 # Trellis local state (should not be committed)
 .trellis/.current-task
+.trellis/.runtime/
 .trellis/.developer
 .trellis/hooks.local.json
 
@@ -180,3 +181,7 @@ smoke_test/
 
 # Claude Code scheduled tasks session lock
 .claude/scheduled_tasks.lock
+
+tmp/
+tmp1/
+.playwright-mcp

@@ -1,65 +1,51 @@
-/**
- * CodeBuddy configurator
- *
- * Configures CodeBuddy by copying templates from src/templates/codebuddy/.
- * CodeBuddy uses nested directories: .codebuddy/commands/trellis/<name>.md
- */
-
-import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
-import { getCodebuddyTemplatePath } from "../templates/extract.js";
+import { AI_TOOLS } from "../types/ai-tools.js";
 import { ensureDir, writeFile } from "../utils/file-writer.js";
+import {
+  resolvePlaceholders,
+  resolveCommands,
+  resolveSkills,
+  resolveBundledSkills,
+  writeSkills,
+  writeAgents,
+  writeSharedHooks,
+} from "./shared.js";
+import {
+  getAllAgents,
+  getSettingsTemplate,
+} from "../templates/codebuddy/index.js";
 
 /**
- * Files to exclude when copying templates
- * These are TypeScript compilation artifacts
- */
-const EXCLUDE_PATTERNS = [".d.ts", ".d.ts.map", ".js", ".js.map"];
-
-/**
- * Check if a file should be excluded
- */
-function shouldExclude(filename: string): boolean {
-  for (const pattern of EXCLUDE_PATTERNS) {
-    if (filename.endsWith(pattern)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Recursively copy directory, excluding build artifacts
- * Uses writeFile to handle file conflicts with the global writeMode setting
- */
-async function copyDirFiltered(src: string, dest: string): Promise<void> {
-  ensureDir(dest);
-
-  for (const entry of readdirSync(src)) {
-    if (shouldExclude(entry)) {
-      continue;
-    }
-
-    const srcPath = path.join(src, entry);
-    const destPath = path.join(dest, entry);
-    const stat = statSync(srcPath);
-
-    if (stat.isDirectory()) {
-      await copyDirFiltered(srcPath, destPath);
-    } else {
-      const content = readFileSync(srcPath, "utf-8");
-      await writeFile(destPath, content);
-    }
-  }
-}
-
-/**
- * Configure CodeBuddy by copying from templates
+ * Configure CodeBuddy:
+ * - commands/trellis/ — start + finish-work as slash commands
+ * - skills/trellis-{name}/SKILL.md — other 5 as auto-triggered skills
+ * - agents/{name}.md — sub-agent definitions
+ * - hooks/*.py — shared hook scripts
+ * - settings.json — hook configuration
  */
 export async function configureCodebuddy(cwd: string): Promise<void> {
-  const sourcePath = getCodebuddyTemplatePath();
-  const destPath = path.join(cwd, ".codebuddy");
+  const config = AI_TOOLS.codebuddy;
+  const ctx = config.templateContext;
+  const configRoot = path.join(cwd, config.configDir);
 
-  // Copy templates, excluding build artifacts
-  await copyDirFiltered(sourcePath, destPath);
+  // Commands
+  const commandsDir = path.join(configRoot, "commands", "trellis");
+  ensureDir(commandsDir);
+  for (const cmd of resolveCommands(ctx)) {
+    await writeFile(path.join(commandsDir, `${cmd.name}.md`), cmd.content);
+  }
+
+  await writeSkills(
+    path.join(configRoot, "skills"),
+    resolveSkills(ctx),
+    resolveBundledSkills(ctx),
+  );
+  await writeAgents(path.join(configRoot, "agents"), getAllAgents());
+  await writeSharedHooks(path.join(configRoot, "hooks"), "codebuddy");
+
+  const settings = getSettingsTemplate();
+  await writeFile(
+    path.join(configRoot, settings.targetPath),
+    resolvePlaceholders(settings.content),
+  );
 }

@@ -87,12 +87,24 @@ vi.mock("inquirer", () => ({
 }));
 ```
 
-**update**: `--dryRun` returns before confirm prompt. All other modes (`force`, `skipAll`, `createNew`) still hit the confirm prompt. Mock must return `{ proceed: true }`.
+**update**: `--dryRun` returns before confirm prompt. Batch-resolution modes
+(`force`, `skipAll`, `createNew`) must not hit the final confirm prompt either.
+Plain interactive update paths and `migrate` without a batch flag may still
+prompt, so the default mock should return `{ proceed: true }`.
 
 ```typescript
 vi.mock("inquirer", () => ({
   default: { prompt: vi.fn().mockResolvedValue({ proceed: true }) },
 }));
+```
+
+When testing a non-interactive batch path, clear the mock after setup and assert
+it was not called:
+
+```typescript
+vi.mocked(inquirer.prompt).mockClear();
+await update({ force: true });
+expect(inquirer.prompt).not.toHaveBeenCalled();
 ```
 
 ---

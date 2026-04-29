@@ -1,19 +1,33 @@
 import path from "node:path";
-import { getAllWorkflows } from "../templates/windsurf/index.js";
+import { AI_TOOLS } from "../types/ai-tools.js";
 import { ensureDir, writeFile } from "../utils/file-writer.js";
+import {
+  resolveBundledSkills,
+  resolveCommands,
+  resolveSkills,
+  writeSkills,
+} from "./shared.js";
 
 /**
- * Configure Windsurf by writing workflow templates.
- *
- * Output:
- * - .windsurf/workflows/<workflow-name>.md
+ * Configure Windsurf:
+ * - workflows/ — start + finish-work as slash commands
+ * - skills/trellis-{name}/SKILL.md — other 5 as auto-triggered skills
  */
 export async function configureWindsurf(cwd: string): Promise<void> {
-  const workflowRoot = path.join(cwd, ".windsurf", "workflows");
-  ensureDir(workflowRoot);
+  const ctx = AI_TOOLS.windsurf.templateContext;
 
-  for (const workflow of getAllWorkflows()) {
-    const targetPath = path.join(workflowRoot, `${workflow.name}.md`);
-    await writeFile(targetPath, workflow.content);
+  const workflowsDir = path.join(cwd, ".windsurf", "workflows");
+  ensureDir(workflowsDir);
+  for (const cmd of resolveCommands(ctx)) {
+    await writeFile(
+      path.join(workflowsDir, `trellis-${cmd.name}.md`),
+      cmd.content,
+    );
   }
+
+  await writeSkills(
+    path.join(cwd, ".windsurf", "skills"),
+    resolveSkills(ctx),
+    resolveBundledSkills(ctx),
+  );
 }

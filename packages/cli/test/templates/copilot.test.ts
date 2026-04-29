@@ -39,14 +39,22 @@ describe("copilot getHooksConfig", () => {
 		);
 	});
 
-	it("defines only SessionStart command hook with timeout", () => {
+	it("defines SessionStart + userPromptSubmitted command hooks", () => {
 		const parsed = JSON.parse(getHooksConfig()) as {
-			hooks?: Record<string, { type?: string; timeout?: number }[]>;
+			hooks?: Record<
+				string,
+				{ type?: string; timeout?: number; timeoutSec?: number }[]
+			>;
 		};
 
-		expect(Object.keys(parsed.hooks ?? {})).toEqual(["SessionStart"]);
+		expect(Object.keys(parsed.hooks ?? {})).toEqual([
+			"SessionStart",
+			"userPromptSubmitted",
+		]);
 		expect(parsed.hooks?.SessionStart?.[0]?.type).toBe("command");
 		expect(parsed.hooks?.SessionStart?.[0]?.timeout).toBe(10);
+		expect(parsed.hooks?.userPromptSubmitted?.[0]?.type).toBe("command");
+		expect(parsed.hooks?.userPromptSubmitted?.[0]?.timeoutSec).toBe(5);
 	});
 });
 

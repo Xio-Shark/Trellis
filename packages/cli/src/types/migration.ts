@@ -15,8 +15,15 @@ export interface MigrationItem {
   from: string;
   /** Target path for renames (relative to project root) */
   to?: string;
-  /** Human-readable description of the change */
+  /** Human-readable description of WHAT this migration does */
   description?: string;
+  /**
+   * Optional context shown in the "confirm" prompt explaining WHY the user is
+   * being asked about this specific file. Use this for version-specific nuance
+   * (e.g. a known hash-tracking gap from a prior CLI version) that would
+   * otherwise have to be hardcoded in update.ts. Keep it short (1-2 sentences).
+   */
+  reason?: string;
   /** Known template hashes for safe-file-delete (only delete if content matches) */
   allowed_hashes?: string[];
 }

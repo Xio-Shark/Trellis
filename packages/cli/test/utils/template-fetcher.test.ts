@@ -1,10 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
+  downloadRegistryDirect,
+  downloadTemplateById,
   getInstallPath,
   normalizeRegistrySource,
   parseRegistrySource,
+  probeRegistryIndex,
+  type RegistrySource,
 } from "../../src/utils/template-fetcher.js";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 // =============================================================================
 // getInstallPath — pure function (EASY)
@@ -229,9 +240,7 @@ describe("parseRegistrySource", () => {
   });
 
   it("accepts SSH URL with .git suffix", () => {
-    const result = parseRegistrySource(
-      "git@git.company.com:myorg/myrepo.git",
-    );
+    const result = parseRegistrySource("git@git.company.com:myorg/myrepo.git");
     expect(result.provider).toBe("gitlab");
     expect(result.repo).toBe("myorg/myrepo");
     expect(result.host).toBe("git.company.com");
@@ -295,16 +304,19 @@ describe("parseRegistrySource", () => {
   it("does not set host for public GitLab", () => {
     const result = parseRegistrySource("gitlab:myorg/myrepo/specs");
     expect(result.host).toBeUndefined();
+    expect(result.preferGit).toBe(false);
   });
 
   it("does not set host for public GitHub HTTPS", () => {
     const result = parseRegistrySource("https://github.com/myorg/myrepo");
     expect(result.host).toBeUndefined();
+    expect(result.preferGit).toBe(false);
   });
 
   it("does not set host for public GitLab HTTPS", () => {
     const result = parseRegistrySource("https://gitlab.com/myorg/myrepo");
     expect(result.host).toBeUndefined();
+    expect(result.preferGit).toBe(false);
   });
 
   it("accepts self-hosted HTTPS URL with .git suffix", () => {
@@ -381,9 +393,7 @@ describe("parseRegistrySource", () => {
   });
 
   it("maps ssh://git@github.com to gh: provider without host", () => {
-    const result = parseRegistrySource(
-      "ssh://git@github.com/myorg/myrepo",
-    );
+    const result = parseRegistrySource("ssh://git@github.com/myorg/myrepo");
     expect(result.provider).toBe("gh");
     expect(result.repo).toBe("myorg/myrepo");
     expect(result.host).toBeUndefined();
@@ -402,9 +412,9 @@ describe("normalizeRegistrySource", () => {
   });
 
   it("converts GitHub HTTPS URL with subdir", () => {
-    expect(
-      normalizeRegistrySource("https://github.com/user/repo/specs"),
-    ).toBe("gh:user/repo/specs");
+    expect(normalizeRegistrySource("https://github.com/user/repo/specs")).toBe(
+      "gh:user/repo/specs",
+    );
   });
 
   it("converts GitHub HTTPS URL with /tree/branch/path", () => {
@@ -444,5 +454,417 @@ describe("normalizeRegistrySource", () => {
     expect(normalizeRegistrySource("https://example.com/repo")).toBe(
       "https://example.com/repo",
     );
+  });
+});
+
+describe("probeRegistryIndex", () => {
+  it("keeps public registries on the HTTP backend", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          version: 1,
+          templates: [
+            {
+              id: "backend",
+              type: "spec",
+              name: "Backend",
+              path: "marketplace/specs/backend",
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const registry = parseRegistrySource("gh:myorg/registry/marketplace");
+    const result = await probeRegistryIndex(
+      `${registry.rawBaseUrl}/index.json`,
+      registry,
+    );
+
+    expect(result.backend).toBe("http");
+    expect(result.isNotFound).toBe(false);
+    expect(result.error).toBeUndefined();
+    expect(result.templates.map((template) => template.id)).toEqual([
+      "backend",
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// =============================================================================
+// git-backed registry backend
+// =============================================================================
+
+function hasGit(): boolean {
+  try {
+    execFileSync("git", ["--version"], { stdio: "pipe" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function writeFixtureFiles(root: string, files: Record<string, string>): void {
+  for (const [relativePath, content] of Object.entries(files)) {
+    const fullPath = path.join(root, relativePath);
+    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+    fs.writeFileSync(fullPath, content, "utf-8");
+  }
+}
+
+interface GitRegistryFixture {
+  tmpDir: string;
+  repoDir: string;
+  registry: RegistrySource;
+}
+
+async function withGitRegistry<T>(
+  files: Record<string, string>,
+  subdir: string,
+  callback: (fixture: GitRegistryFixture) => Promise<T>,
+): Promise<T> {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-git-reg-"));
+  const repoDir = path.join(tmpDir, "repo");
+  fs.mkdirSync(repoDir, { recursive: true });
+
+  try {
+    execFileSync("git", ["init"], { cwd: repoDir, stdio: "pipe" });
+    execFileSync("git", ["checkout", "-b", "main"], {
+      cwd: repoDir,
+      stdio: "pipe",
+    });
+    writeFixtureFiles(repoDir, files);
+    execFileSync("git", ["add", "."], { cwd: repoDir, stdio: "pipe" });
+    execFileSync(
+      "git",
+      [
+        "-c",
+        "user.name=Trellis Test",
+        "-c",
+        "user.email=trellis@example.com",
+        "commit",
+        "-m",
+        "fixture",
+      ],
+      { cwd: repoDir, stdio: "pipe" },
+    );
+
+    const registry: RegistrySource = {
+      provider: "gitlab",
+      repo: "local/registry",
+      subdir,
+      ref: "main",
+      rawBaseUrl: `https://git.company.com/local/registry/-/raw/main/${subdir}`,
+      gigetSource: `gitlab:local/registry/${subdir}`,
+      host: "git.company.com",
+      gitUrl: repoDir,
+      preferGit: true,
+      sourceKind: "https",
+    };
+
+    return await callback({ tmpDir, repoDir, registry });
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+async function withFakeGit<T>(
+  stderr: string,
+  callback: () => Promise<T>,
+): Promise<T> {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-fake-git-"));
+  const gitPath = path.join(tmpDir, "git");
+  const previousPath = process.env.PATH;
+
+  try {
+    fs.writeFileSync(
+      gitPath,
+      `#!/bin/sh\necho "${stderr.replace(/"/g, '\\"')}" >&2\nexit 128\n`,
+      "utf-8",
+    );
+    fs.chmodSync(gitPath, 0o755);
+    process.env.PATH = `${tmpDir}${path.delimiter}${previousPath ?? ""}`;
+    return await callback();
+  } finally {
+    if (previousPath === undefined) {
+      delete process.env.PATH;
+    } else {
+      process.env.PATH = previousPath;
+    }
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+const gitDescribe = hasGit() ? describe : describe.skip;
+const posixIt = process.platform === "win32" ? it.skip : it;
+
+gitDescribe("git-backed registry backend", () => {
+  it("probes index.json through local Git credentials", async () => {
+    await withGitRegistry(
+      {
+        "marketplace/index.json": JSON.stringify({
+          version: 1,
+          templates: [
+            {
+              id: "backend",
+              type: "spec",
+              name: "Backend",
+              path: "templates/backend",
+            },
+          ],
+        }),
+      },
+      "marketplace",
+      async ({ registry }) => {
+        const result = await probeRegistryIndex(
+          `${registry.rawBaseUrl}/index.json`,
+          registry,
+        );
+
+        expect(result.backend).toBe("git");
+        expect(result.isNotFound).toBe(false);
+        expect(result.error).toBeUndefined();
+        expect(result.templates.map((template) => template.id)).toEqual([
+          "backend",
+        ]);
+      },
+    );
+  });
+
+  it("downloads marketplace templates through the same Git backend", async () => {
+    await withGitRegistry(
+      {
+        "marketplace/index.json": JSON.stringify({
+          version: 1,
+          templates: [
+            {
+              id: "backend",
+              type: "spec",
+              name: "Backend",
+              path: "templates/backend",
+            },
+          ],
+        }),
+        "templates/backend/rules.md": "remote rules\n",
+      },
+      "marketplace",
+      async ({ registry, tmpDir }) => {
+        const cwd = path.join(tmpDir, "project");
+        const result = await downloadTemplateById(
+          cwd,
+          "backend",
+          "overwrite",
+          undefined,
+          registry,
+        );
+
+        expect(result.success).toBe(true);
+        expect(
+          fs.readFileSync(
+            path.join(cwd, ".trellis", "spec", "rules.md"),
+            "utf-8",
+          ),
+        ).toBe("remote rules\n");
+      },
+    );
+  });
+
+  it("uses an explicit Git backend for prefetched marketplace templates", async () => {
+    await withGitRegistry(
+      {
+        "marketplace/index.json": JSON.stringify({
+          version: 1,
+          templates: [
+            {
+              id: "backend",
+              type: "spec",
+              name: "Backend",
+              path: "templates/backend",
+            },
+          ],
+        }),
+        "templates/backend/rules.md": "remote rules\n",
+      },
+      "marketplace",
+      async ({ registry, tmpDir }) => {
+        const publicGitLabRegistry: RegistrySource = {
+          ...registry,
+          host: undefined,
+          rawBaseUrl:
+            "https://gitlab.com/local/registry/-/raw/main/marketplace",
+          gigetSource: "gitlab:local/registry/marketplace",
+          preferGit: false,
+          sourceKind: "prefixed",
+        };
+        const cwd = path.join(tmpDir, "project");
+        const result = await downloadTemplateById(
+          cwd,
+          "backend",
+          "overwrite",
+          {
+            id: "backend",
+            type: "spec",
+            name: "Backend",
+            path: "templates/backend",
+          },
+          publicGitLabRegistry,
+          undefined,
+          "git",
+        );
+
+        expect(result.success).toBe(true);
+        expect(
+          fs.readFileSync(
+            path.join(cwd, ".trellis", "spec", "rules.md"),
+            "utf-8",
+          ),
+        ).toBe("remote rules\n");
+      },
+    );
+  });
+
+  it("uses direct download mode when index.json is absent", async () => {
+    await withGitRegistry(
+      {
+        "spec/keep.md": "remote keep\n",
+        "spec/new.md": "remote new\n",
+      },
+      "spec",
+      async ({ registry, tmpDir }) => {
+        const probe = await probeRegistryIndex(
+          `${registry.rawBaseUrl}/index.json`,
+          registry,
+        );
+        expect(probe.backend).toBe("git");
+        expect(probe.isNotFound).toBe(true);
+
+        const cwd = path.join(tmpDir, "project");
+        const specDir = path.join(cwd, ".trellis", "spec");
+        fs.mkdirSync(specDir, { recursive: true });
+        fs.writeFileSync(path.join(specDir, "keep.md"), "local keep\n");
+
+        const result = await downloadRegistryDirect(cwd, registry, "append");
+
+        expect(result.success).toBe(true);
+        expect(fs.readFileSync(path.join(specDir, "keep.md"), "utf-8")).toBe(
+          "local keep\n",
+        );
+        expect(fs.readFileSync(path.join(specDir, "new.md"), "utf-8")).toBe(
+          "remote new\n",
+        );
+      },
+    );
+  });
+
+  it("classifies missing refs without falling back to direct mode", async () => {
+    await withGitRegistry(
+      {
+        "marketplace/index.json": JSON.stringify({ version: 1, templates: [] }),
+      },
+      "marketplace",
+      async ({ registry }) => {
+        const result = await probeRegistryIndex(
+          `${registry.rawBaseUrl}/index.json`,
+          { ...registry, ref: "missing-ref" },
+        );
+
+        expect(result.isNotFound).toBe(false);
+        expect(result.error?.kind).toBe("ref-not-found");
+      },
+    );
+  });
+
+  it("classifies missing registry paths without falling back to direct mode", async () => {
+    await withGitRegistry(
+      { "other/index.json": JSON.stringify({ version: 1, templates: [] }) },
+      "missing",
+      async ({ registry }) => {
+        const result = await probeRegistryIndex(
+          `${registry.rawBaseUrl}/index.json`,
+          registry,
+        );
+
+        expect(result.isNotFound).toBe(false);
+        expect(result.error?.kind).toBe("path-not-found");
+      },
+    );
+  });
+
+  it("classifies missing marketplace template paths", async () => {
+    await withGitRegistry(
+      {
+        "marketplace/index.json": JSON.stringify({
+          version: 1,
+          templates: [
+            {
+              id: "backend",
+              type: "spec",
+              name: "Backend",
+              path: "templates/missing",
+            },
+          ],
+        }),
+      },
+      "marketplace",
+      async ({ registry, tmpDir }) => {
+        const result = await downloadTemplateById(
+          path.join(tmpDir, "project"),
+          "backend",
+          "overwrite",
+          undefined,
+          registry,
+        );
+
+        expect(result.success).toBe(false);
+        expect(result.message).toContain(
+          'Template path "templates/missing" was not found',
+        );
+      },
+    );
+  });
+
+  it("classifies invalid index JSON without falling back to direct mode", async () => {
+    await withGitRegistry(
+      { "marketplace/index.json": "not json" },
+      "marketplace",
+      async ({ registry }) => {
+        const result = await probeRegistryIndex(
+          `${registry.rawBaseUrl}/index.json`,
+          registry,
+        );
+
+        expect(result.isNotFound).toBe(false);
+        expect(result.error?.kind).toBe("invalid-json");
+      },
+    );
+  });
+});
+
+posixIt("classifies Git authentication failures", async () => {
+  const registry: RegistrySource = {
+    provider: "gitlab",
+    repo: "private/registry",
+    subdir: "marketplace",
+    ref: "main",
+    rawBaseUrl:
+      "https://git.company.com/private/registry/-/raw/main/marketplace",
+    gigetSource: "gitlab:private/registry/marketplace",
+    host: "git.company.com",
+    gitUrl: "git@git.company.com:private/registry.git",
+    preferGit: true,
+    sourceKind: "ssh",
+  };
+
+  await withFakeGit("Authentication failed", async () => {
+    const result = await probeRegistryIndex(
+      `${registry.rawBaseUrl}/index.json`,
+      registry,
+    );
+
+    expect(result.isNotFound).toBe(false);
+    expect(result.error?.kind).toBe("auth");
+    expect(result.error?.message).toContain("local Git credentials");
   });
 });

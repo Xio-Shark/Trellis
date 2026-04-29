@@ -58,16 +58,7 @@ export interface ConfigTemplate {
   content: string;
 }
 
-export function getAllSkills(): SkillTemplate[] {
-  const skills: SkillTemplate[] = [];
-
-  for (const name of listDirectories("skills")) {
-    const content = readTemplate(`skills/${name}/SKILL.md`);
-    skills.push({ name, content });
-  }
-
-  return skills;
-}
+// Shared skills are now sourced from common/ templates (see templates/common/index.ts)
 
 export function getAllAgents(): AgentTemplate[] {
   const agents: AgentTemplate[] = [];

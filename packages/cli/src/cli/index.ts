@@ -62,7 +62,6 @@ program
   .description("Initialize trellis in the current project")
   .option("--cursor", "Include Cursor commands")
   .option("--claude", "Include Claude Code commands")
-  .option("--iflow", "Include iFlow CLI commands")
   .option("--opencode", "Include OpenCode commands")
   .option("--codex", "Include Codex skills")
   .option("--kilo", "Include Kilo CLI commands")
@@ -74,6 +73,7 @@ program
   .option("--codebuddy", "Include CodeBuddy commands")
   .option("--copilot", "Include GitHub Copilot hooks")
   .option("--droid", "Include Factory Droid commands")
+  .option("--pi", "Include Pi Agent extension assets")
   .option("-y, --yes", "Skip prompts and use defaults")
   .option(
     "-u, --user <name>",
@@ -104,6 +104,9 @@ program
         chalk.red("Error:"),
         error instanceof Error ? error.message : error,
       );
+      if (process.env.DEBUG || process.env.TRELLIS_DEBUG) {
+        console.error(error instanceof Error ? error.stack : error);
+      }
       process.exit(1);
     }
   });
@@ -132,6 +135,9 @@ program
         chalk.red("Error:"),
         error instanceof Error ? error.message : error,
       );
+      if (process.env.DEBUG || process.env.TRELLIS_DEBUG) {
+        console.error(error instanceof Error ? error.stack : error);
+      }
       process.exit(1);
     }
   });

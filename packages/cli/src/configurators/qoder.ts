@@ -1,59 +1,57 @@
-/**
- * Qoder configurator
- *
- * Configures Qoder by copying templates from src/templates/qoder/.
- * Qoder uses skills (SKILL.md), no hooks or agents.
- */
-
-import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
-import { getQoderTemplatePath } from "../templates/extract.js";
+import { AI_TOOLS } from "../types/ai-tools.js";
 import { ensureDir, writeFile } from "../utils/file-writer.js";
+import {
+  resolvePlaceholders,
+  resolveCommands,
+  resolveSkills,
+  resolveBundledSkills,
+  wrapWithCommandFrontmatter,
+  writeSkills,
+  writeAgents,
+  writeSharedHooks,
+  applyPullBasedPreludeMarkdown,
+} from "./shared.js";
+import { getAllAgents, getSettingsTemplate } from "../templates/qoder/index.js";
 
-const EXCLUDE_PATTERNS = [
-  ".d.ts",
-  ".d.ts.map",
-  ".js",
-  ".js.map",
-  "__pycache__",
-  "node_modules",
-  "bun.lock",
-  ".gitignore",
-];
-
-function shouldExclude(filename: string): boolean {
-  for (const pattern of EXCLUDE_PATTERNS) {
-    if (filename.endsWith(pattern) || filename === pattern) {
-      return true;
-    }
-  }
-  return false;
-}
-
-async function copyDirFiltered(src: string, dest: string): Promise<void> {
-  ensureDir(dest);
-
-  for (const entry of readdirSync(src)) {
-    if (shouldExclude(entry)) {
-      continue;
-    }
-
-    const srcPath = path.join(src, entry);
-    const destPath = path.join(dest, entry);
-    const stat = statSync(srcPath);
-
-    if (stat.isDirectory()) {
-      await copyDirFiltered(srcPath, destPath);
-    } else {
-      const content = readFileSync(srcPath, "utf-8");
-      await writeFile(destPath, content);
-    }
-  }
-}
-
+/**
+ * Configure Qoder (pull-based class-2 platform).
+ *
+ * Qoder Custom Commands require YAML frontmatter with `name` + `description`
+ * and use a flat layout, so session-boundary commands get wrapped via
+ * `wrapWithCommandFrontmatter`; auto-trigger workflows stay as plain skills.
+ * `inject-subagent-context.py` is excluded because Qoder's hook can't inject
+ * sub-agent prompts — sub-agents pull task context themselves.
+ */
 export async function configureQoder(cwd: string): Promise<void> {
-  const sourcePath = getQoderTemplatePath();
-  const destPath = path.join(cwd, ".qoder");
+  const config = AI_TOOLS.qoder;
+  const ctx = config.templateContext;
+  const configRoot = path.join(cwd, config.configDir);
 
-  await copyDirFiltered(sourcePath, destPath);
+  const commandsDir = path.join(configRoot, "commands");
+  ensureDir(commandsDir);
+  for (const cmd of resolveCommands(ctx)) {
+    const name = `trellis-${cmd.name}`;
+    await writeFile(
+      path.join(commandsDir, `${name}.md`),
+      wrapWithCommandFrontmatter(name, cmd.content),
+    );
+  }
+
+  await writeSkills(
+    path.join(configRoot, "skills"),
+    resolveSkills(ctx),
+    resolveBundledSkills(ctx),
+  );
+  await writeAgents(
+    path.join(configRoot, "agents"),
+    applyPullBasedPreludeMarkdown(getAllAgents()),
+  );
+  await writeSharedHooks(path.join(configRoot, "hooks"), "qoder");
+
+  const settings = getSettingsTemplate();
+  await writeFile(
+    path.join(configRoot, settings.targetPath),
+    resolvePlaceholders(settings.content),
+  );
 }

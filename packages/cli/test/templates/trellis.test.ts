@@ -5,26 +5,16 @@ import {
   commonPaths,
   commonDeveloper,
   commonGitContext,
-  commonWorktree,
   commonTaskQueue,
   commonTaskUtils,
-  commonPhase,
-  commonRegistry,
+  commonActiveTask,
   commonCliAdapter,
-  multiAgentInit,
-  multiAgentStart,
-  multiAgentCleanup,
-  multiAgentStatus,
-  multiAgentCreatePr,
-  multiAgentPlan,
   getDeveloperScript,
   initDeveloperScript,
   taskScript,
   getContextScript,
   addSessionScript,
-  createBootstrapScript,
   workflowMdTemplate,
-  worktreeYamlTemplate,
   gitignoreTemplate,
   getAllScripts,
 } from "../../src/templates/trellis/index.js";
@@ -40,26 +30,16 @@ describe("trellis template constants", () => {
     commonPaths,
     commonDeveloper,
     commonGitContext,
-    commonWorktree,
     commonTaskQueue,
     commonTaskUtils,
-    commonPhase,
-    commonRegistry,
+    commonActiveTask,
     commonCliAdapter,
-    multiAgentInit,
-    multiAgentStart,
-    multiAgentCleanup,
-    multiAgentStatus,
-    multiAgentCreatePr,
-    multiAgentPlan,
     getDeveloperScript,
     initDeveloperScript,
     taskScript,
     getContextScript,
     addSessionScript,
-    createBootstrapScript,
     workflowMdTemplate,
-    worktreeYamlTemplate,
     gitignoreTemplate,
   };
 
@@ -74,6 +54,7 @@ describe("trellis template constants", () => {
     const pyScripts = [
       commonInit,
       commonPaths,
+      commonActiveTask,
       getDeveloperScript,
       taskScript,
     ];
@@ -116,9 +97,9 @@ describe("getAllScripts", () => {
     expect(scripts.has("__init__.py")).toBe(true);
     expect(scripts.has("common/__init__.py")).toBe(true);
     expect(scripts.has("common/paths.py")).toBe(true);
+    expect(scripts.has("common/active_task.py")).toBe(true);
     expect(scripts.has("task.py")).toBe(true);
     expect(scripts.has("get_developer.py")).toBe(true);
-    expect(scripts.has("multi_agent/start.py")).toBe(true);
   });
 
   it("has at least one entry", () => {
@@ -138,5 +119,12 @@ describe("getAllScripts", () => {
     expect(scripts.get("__init__.py")).toBe(scriptsInit);
     expect(scripts.get("common/__init__.py")).toBe(commonInit);
     expect(scripts.get("task.py")).toBe(taskScript);
+  });
+
+  it("does not contain multi_agent entries", () => {
+    const scripts = getAllScripts();
+    for (const [key] of scripts) {
+      expect(key, `${key} should not be a multi_agent script`).not.toContain("multi_agent");
+    }
   });
 });

@@ -229,6 +229,34 @@ title: 'Templates'
 ...
 ```
 
+### Mixed Block/Inline JSX Closing Tag
+
+**Symptom**: Whole page renders as `A parsing error occurred. Please contact the owner of this website.` The title also falls back to the file slug (e.g. "Ch12 multi platform" instead of the frontmatter title), confirming MDX compilation failed for the entire file — not just the block.
+
+**Cause**: Callout components (`<Note>`, `<Warning>`, `<Info>`, `<Tip>`) accept either inline form (tag + content + close on one line) OR block form (tags on own lines). Mixing the two breaks the MDX parser.
+
+```mdx
+<!-- DON'T: opening on own line, closing glued to content -->
+<Note>
+  Don't pick **Full re-initialize** — it overwrites existing config.</Note>
+
+<!-- DON'T: opening glued to content, closing on own line -->
+<Note>Don't pick **Full re-initialize** — it overwrites existing config.
+</Note>
+```
+
+```mdx
+<!-- DO: fully inline (short content) -->
+<Note>Don't pick **Full re-initialize** — it overwrites existing config.</Note>
+
+<!-- DO: fully block (multi-line or markdown-heavy content) -->
+<Note>
+  Don't pick **Full re-initialize** — it overwrites existing config.
+</Note>
+```
+
+**Prevention**: Pick one form per callout and keep both tags consistent. When the body contains backtick code spans, bolded text, or more than one sentence, default to the block form for readability.
+
 ### Table Column Alignment
 
 **Problem**: markdownlint MD060 requires consistent table pipe alignment.

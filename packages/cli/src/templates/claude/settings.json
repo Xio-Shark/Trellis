@@ -1,7 +1,6 @@
 {
-  "statusLine": {
-    "type": "command",
-    "command": "{{PYTHON_CMD}} .claude/hooks/statusline.py"
+  "env": {
+    "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1"
   },
   "hooks": {
     "SessionStart": [
@@ -58,14 +57,13 @@
         ]
       }
     ],
-    "SubagentStop": [
+    "UserPromptSubmit": [
       {
-        "matcher": "check",
         "hooks": [
           {
             "type": "command",
-            "command": "{{PYTHON_CMD}} .claude/hooks/ralph-loop.py",
-            "timeout": 10
+            "command": "{{PYTHON_CMD}} .claude/hooks/inject-workflow-state.py",
+            "timeout": 5
           }
         ]
       }

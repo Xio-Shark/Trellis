@@ -13,6 +13,7 @@ import {
   getConfiguredPlatforms,
   getPlatformsWithPythonHooks,
 } from "../configurators/index.js";
+import { getPythonCommandForPlatform } from "../configurators/shared.js";
 import { AI_TOOLS, type CliFlag } from "../types/ai-tools.js";
 import { DIR_NAMES, FILE_NAMES, PATHS } from "../constants/paths.js";
 import { VERSION } from "../constants/version.js";
@@ -22,6 +23,7 @@ import {
   writeFile,
   type WriteMode,
 } from "../utils/file-writer.js";
+import { emptyTaskJson, type TaskJson } from "../utils/task-json.js";
 import {
   detectProjectType,
   detectMonorepo,
@@ -41,58 +43,76 @@ import {
   type SpecTemplate,
   type TemplateStrategy,
   type RegistrySource,
+  type RegistryBackend,
 } from "../utils/template-fetcher.js";
 import { setupProxy, maskProxyUrl } from "../utils/proxy.js";
 
-/**
- * Detect available Python command (python3 or python) and verify version >= 3.10
- */
-function getPythonCommand(): string {
-  const MIN_MAJOR = 3;
-  const MIN_MINOR = 10;
+const MIN_PYTHON_MAJOR = 3;
+const MIN_PYTHON_MINOR = 9;
+const PYTHON_VERSION_RE = /Python (\d+)\.(\d+)/;
 
-  function checkVersion(cmd: string): boolean {
-    try {
-      const output = execSync(`${cmd} --version`, { stdio: "pipe" })
-        .toString()
-        .trim();
-      const match = output.match(/Python (\d+)\.(\d+)/);
-      if (!match) return false;
-      const [, major, minor] = match.map(Number);
-      return major > MIN_MAJOR || (major === MIN_MAJOR && minor >= MIN_MINOR);
-    } catch {
-      return false;
-    }
-  }
+export function isSupportedPythonVersion(versionOutput: string): boolean {
+  const match = versionOutput.match(PYTHON_VERSION_RE);
+  if (!match) return false;
 
-  if (checkVersion("python3")) return "python3";
-  if (checkVersion("python")) return "python";
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  return (
+    major > MIN_PYTHON_MAJOR ||
+    (major === MIN_PYTHON_MAJOR && minor >= MIN_PYTHON_MINOR)
+  );
+}
 
-  // Check if Python exists but is too old
+function detectPythonVersion(command: string): string | null {
   try {
-    const output = execSync("python3 --version", { stdio: "pipe" })
-      .toString()
-      .trim();
-    console.warn(
-      chalk.yellow(
-        `⚠️  ${output} detected, but Trellis requires Python ≥ 3.10`,
-      ),
-    );
+    return execSync(`${command} --version`, {
+      encoding: "utf-8",
+      stdio: "pipe",
+    }).trim();
   } catch {
-    try {
-      const output = execSync("python --version", { stdio: "pipe" })
-        .toString()
-        .trim();
-      console.warn(
-        chalk.yellow(
-          `⚠️  ${output} detected, but Trellis requires Python ≥ 3.10`,
-        ),
-      );
-    } catch {
-      // No Python at all
-    }
+    return null;
   }
-  return "python3";
+}
+
+export function requireSupportedPython(command: string): string {
+  const versionOutput = detectPythonVersion(command);
+  if (!versionOutput) {
+    throw new Error(
+      `Python command "${command}" not found. Trellis init requires Python ≥ 3.9.`,
+    );
+  }
+
+  if (!isSupportedPythonVersion(versionOutput)) {
+    throw new Error(
+      `${versionOutput} detected via "${command}", but Trellis init requires Python ≥ 3.9.`,
+    );
+  }
+
+  return versionOutput;
+}
+
+function getOsDisplayName(
+  platform: NodeJS.Platform = process.platform,
+): string {
+  switch (platform) {
+    case "win32":
+      return "Windows";
+    case "darwin":
+      return "macOS";
+    case "linux":
+      return "Linux";
+    default:
+      return platform;
+  }
+}
+
+function logPythonAdaptationNotice(command: "python" | "python3"): void {
+  const osName = getOsDisplayName();
+  console.log(
+    chalk.blue(
+      `📌 ${osName} detected: Trellis rendered Python commands as "${command}" in generated hooks, settings, and help text`,
+    ),
+  );
 }
 
 // =============================================================================
@@ -101,33 +121,143 @@ function getPythonCommand(): string {
 
 const BOOTSTRAP_TASK_NAME = "00-bootstrap-guidelines";
 
-function getBootstrapPrdContent(
+/**
+ * Slugify a developer name for safe use in task directory names.
+ *
+ * Unlike `sanitizePkgName` (which only strips npm @scope/ prefixes), this
+ * handles arbitrary developer input: spaces, Unicode letters, punctuation,
+ * path separators. Returns "user" fallback when input slugifies to empty.
+ *
+ * Exported for unit testing; not part of the public API.
+ */
+export function slugifyDeveloperName(name: string): string {
+  const slug = name
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^\p{Letter}\p{Number}]+/gu, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "user";
+}
+
+/**
+ * Write a task skeleton (task.json + prd.md).
+ *
+ * Idempotent: if the task dir already exists, returns true without touching
+ * anything. Shared by both creator bootstrap and joiner onboarding flows.
+ */
+function writeTaskSkeleton(
+  cwd: string,
+  taskName: string,
+  taskJson: TaskJson,
+  prdContent: string,
+): boolean {
+  const taskDir = path.join(cwd, PATHS.TASKS, taskName);
+  if (fs.existsSync(taskDir)) return true; // idempotent
+
+  try {
+    fs.mkdirSync(taskDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(taskDir, FILE_NAMES.TASK_JSON),
+      JSON.stringify(taskJson, null, 2),
+      "utf-8",
+    );
+    fs.writeFileSync(path.join(taskDir, FILE_NAMES.PRD), prdContent, "utf-8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Compute the bootstrap checklist items (previously stored as structured
+ * `subtasks: [{name, status}]` in task.json). Per task 04-21-task-schema-unify
+ * (D1), these live as markdown `- [ ]` items in prd.md instead, so task.json
+ * stays canonical with `subtasks: string[]` (child task dir names, same as
+ * task_store.py).
+ */
+function getBootstrapChecklistItems(
   projectType: ProjectType,
   packages?: DetectedPackage[],
+): string[] {
+  if (packages && packages.length > 0) {
+    const items = packages.map((pkg) => `Fill guidelines for ${pkg.name}`);
+    items.push("Add code examples");
+    return items;
+  }
+  if (projectType === "frontend") {
+    return ["Fill frontend guidelines", "Add code examples"];
+  }
+  if (projectType === "backend") {
+    return ["Fill backend guidelines", "Add code examples"];
+  }
+  return [
+    "Fill backend guidelines",
+    "Fill frontend guidelines",
+    "Add code examples",
+  ];
+}
+
+function getBootstrapRelatedFiles(
+  projectType: ProjectType,
+  packages?: DetectedPackage[],
+): string[] {
+  if (packages && packages.length > 0) {
+    return packages.map((pkg) => `.trellis/spec/${sanitizePkgName(pkg.name)}/`);
+  }
+  if (projectType === "frontend") {
+    return [".trellis/spec/frontend/"];
+  }
+  if (projectType === "backend") {
+    return [".trellis/spec/backend/"];
+  }
+  return [".trellis/spec/backend/", ".trellis/spec/frontend/"];
+}
+
+function getBootstrapPrdContent(
+  projectType: ProjectType,
+  pythonCmd: "python" | "python3",
+  packages?: DetectedPackage[],
 ): string {
-  const header = `# Bootstrap: Fill Project Development Guidelines
+  const checklistItems = getBootstrapChecklistItems(projectType, packages);
+  const checklistMarkdown = checklistItems
+    .map((item) => `- [ ] ${item}`)
+    .join("\n");
 
-## Purpose
+  const header = `# Bootstrap Task: Fill Project Development Guidelines
 
-Welcome to Trellis! This is your first task.
+**You (the AI) are running this task. The developer does not read this file.**
 
-AI agents use \`.trellis/spec/\` to understand YOUR project's coding conventions.
-**Starting from scratch = AI writes generic code that doesn't match your project style.**
+The developer just ran \`trellis init\` on this project for the first time.
+\`.trellis/\` now exists with empty spec scaffolding, and this bootstrap task
+exists under \`.trellis/tasks/\`. When they want to work on it, they should start
+this task from a session that provides Trellis session identity.
 
-Filling these guidelines is a one-time setup that pays off for every future AI session.
+**Your job**: help them populate \`.trellis/spec/\` with the team's real
+coding conventions. Every future AI session — this project's
+\`trellis-implement\` and \`trellis-check\` sub-agents — auto-loads spec files
+listed in per-task jsonl manifests. Empty spec = sub-agents write generic
+code. Real spec = sub-agents match the team's actual patterns.
+
+Don't dump instructions. Open with a short greeting, figure out if the repo
+has any existing convention docs (CLAUDE.md, .cursorrules, etc.), and drive
+the rest conversationally.
 
 ---
 
-## Your Task
+## Status (update the checkboxes as you complete each item)
 
-Fill in the guideline files based on your **existing codebase**.
+${checklistMarkdown}
+
+---
+
+## Spec files to populate
 `;
 
   const backendSection = `
 
-### Backend Guidelines
+### Backend guidelines
 
-| File | What to Document |
+| File | What to document |
 |------|------------------|
 | \`.trellis/spec/backend/directory-structure.md\` | Where different file types go (routes, services, utils) |
 | \`.trellis/spec/backend/database-guidelines.md\` | ORM, migrations, query patterns, naming conventions |
@@ -138,9 +268,9 @@ Fill in the guideline files based on your **existing codebase**.
 
   const frontendSection = `
 
-### Frontend Guidelines
+### Frontend guidelines
 
-| File | What to Document |
+| File | What to document |
 |------|------------------|
 | \`.trellis/spec/frontend/directory-structure.md\` | Component/page/hook organization |
 | \`.trellis/spec/frontend/component-guidelines.md\` | Component patterns, props conventions |
@@ -152,18 +282,20 @@ Fill in the guideline files based on your **existing codebase**.
 
   const footer = `
 
-### Thinking Guides (Optional)
+### Thinking guides (already populated)
 
-The \`.trellis/spec/guides/\` directory contains thinking guides that are already
-filled with general best practices. You can customize them for your project if needed.
+\`.trellis/spec/guides/\` contains general thinking guides pre-filled with
+best practices. Customize only if something clearly doesn't fit this project.
 
 ---
 
-## How to Fill Guidelines
+## How to fill the spec
 
-### Step 0: Import from Existing Specs (Recommended)
+### Step 1: Import from existing convention files first (preferred)
 
-Many projects already have coding conventions documented. **Check these first** before writing from scratch:
+Search the repo for existing convention docs. If any exist, read them and
+extract the relevant rules into the matching \`.trellis/spec/\` files —
+usually much faster than documenting from scratch.
 
 | File / Directory | Tool |
 |------|------|
@@ -180,50 +312,60 @@ Many projects already have coding conventions documented. **Check these first** 
 | \`CONTRIBUTING.md\` | General project conventions |
 | \`.editorconfig\` | Editor formatting rules |
 
-If any of these exist, read them first and extract the relevant coding conventions into the corresponding \`.trellis/spec/\` files. This saves significant effort compared to writing everything from scratch.
+### Step 2: Analyze the codebase for anything not covered by existing docs
 
-### Step 1: Analyze the Codebase
+Scan real code to discover patterns. Before writing each spec file:
+- Find 2-3 real examples of each pattern in the codebase.
+- Reference real file paths (not hypothetical ones).
+- Document anti-patterns the team clearly avoids.
 
-Ask AI to help discover patterns from actual code:
+### Step 3: Document reality, not ideals
 
-- "Read all existing config files (CLAUDE.md, .cursorrules, etc.) and extract coding conventions into .trellis/spec/"
-- "Analyze my codebase and document the patterns you see"
-- "Find error handling / component / API patterns and document them"
+**Critical**: write what the code *actually does*, not what it should do.
+Sub-agents match the spec, so aspirational patterns that don't exist in the
+codebase will cause sub-agents to write code that looks out of place.
 
-### Step 2: Document Reality, Not Ideals
-
-Write what your codebase **actually does**, not what you wish it did.
-AI needs to match existing patterns, not introduce new ones.
-
-- **Look at existing code** - Find 2-3 examples of each pattern
-- **Include file paths** - Reference real files as examples
-- **List anti-patterns** - What does your team avoid?
+If the team has known tech debt, document the current state — improvement
+is a separate conversation, not a bootstrap concern.
 
 ---
 
-## Completion Checklist
+## Quick explainer of the runtime (share when they ask "why do we need spec at all")
 
-- [ ] Guidelines filled for your project type
-- [ ] At least 2-3 real code examples in each guideline
-- [ ] Anti-patterns documented
+- Every AI coding task spawns two sub-agents: \`trellis-implement\` (writes
+  code) and \`trellis-check\` (verifies quality).
+- Each task has \`implement.jsonl\` / \`check.jsonl\` manifests listing which
+  spec files to load.
+- The platform hook auto-injects those spec files + the task's \`prd.md\`
+  into every sub-agent prompt, so the sub-agent codes/reviews per team
+  conventions without anyone pasting them manually.
+- Source of truth: \`.trellis/spec/\`. That's why filling it well now pays
+  off forever.
 
-When done:
+---
+
+## Completion
+
+When the developer confirms the checklist items above are done with real
+examples (not placeholders), guide them to run:
 
 \`\`\`bash
-python3 ./.trellis/scripts/task.py finish
-python3 ./.trellis/scripts/task.py archive 00-bootstrap-guidelines
+${pythonCmd} ./.trellis/scripts/task.py finish
+${pythonCmd} ./.trellis/scripts/task.py archive 00-bootstrap-guidelines
 \`\`\`
+
+After archive, every new developer who joins this project will get a
+\`00-join-<slug>\` onboarding task instead of this bootstrap task.
 
 ---
 
-## Why This Matters
+## Suggested opening line
 
-After completing this task:
-
-1. AI will write code that matches your project style
-2. Relevant \`/trellis:before-*-dev\` commands will inject real context
-3. \`/trellis:check-*\` commands will validate against your actual standards
-4. Future developers (human or AI) will onboard faster
+"Welcome to Trellis! Your init just set me up to help you fill the project
+spec — a one-time setup so every future AI session follows the team's
+conventions instead of writing generic code. Before we start, do you have
+any existing convention docs (CLAUDE.md, .cursorrules, CONTRIBUTING.md,
+etc.) I can pull from, or should I scan the codebase from scratch?"
 `;
 
   let content = header;
@@ -255,71 +397,22 @@ After completing this task:
   return content;
 }
 
-interface TaskJson {
-  id: string;
-  name: string;
-  description: string;
-  status: string;
-  dev_type: string;
-  priority: string;
-  creator: string;
-  assignee: string;
-  createdAt: string;
-  completedAt: null;
-  commit: null;
-  subtasks: { name: string; status: string }[];
-  children: string[];
-  parent: string | null;
-  relatedFiles: string[];
-  notes: string;
-  meta: Record<string, unknown>;
-}
-
 function getBootstrapTaskJson(
   developer: string,
   projectType: ProjectType,
   packages?: DetectedPackage[],
 ): TaskJson {
   const today = new Date().toISOString().split("T")[0];
+  const relatedFiles = getBootstrapRelatedFiles(projectType, packages);
 
-  let subtasks: { name: string; status: string }[];
-  let relatedFiles: string[];
-
-  if (packages && packages.length > 0) {
-    // Monorepo: subtask per package
-    subtasks = packages.map((pkg) => ({
-      name: `Fill guidelines for ${pkg.name}`,
-      status: "pending",
-    }));
-    subtasks.push({ name: "Add code examples", status: "pending" });
-    relatedFiles = packages.map(
-      (pkg) => `.trellis/spec/${sanitizePkgName(pkg.name)}/`,
-    );
-  } else if (projectType === "frontend") {
-    subtasks = [
-      { name: "Fill frontend guidelines", status: "pending" },
-      { name: "Add code examples", status: "pending" },
-    ];
-    relatedFiles = [".trellis/spec/frontend/"];
-  } else if (projectType === "backend") {
-    subtasks = [
-      { name: "Fill backend guidelines", status: "pending" },
-      { name: "Add code examples", status: "pending" },
-    ];
-    relatedFiles = [".trellis/spec/backend/"];
-  } else {
-    // fullstack
-    subtasks = [
-      { name: "Fill backend guidelines", status: "pending" },
-      { name: "Fill frontend guidelines", status: "pending" },
-      { name: "Add code examples", status: "pending" },
-    ];
-    relatedFiles = [".trellis/spec/backend/", ".trellis/spec/frontend/"];
-  }
-
-  return {
+  // Canonical 24-field shape via emptyTaskJson factory.
+  // Checklist items (previously stored as structured `subtasks`) are now
+  // rendered as `- [ ]` items in prd.md; task.json.subtasks is always
+  // string[] (child task dir names) per the canonical schema.
+  return emptyTaskJson({
     id: BOOTSTRAP_TASK_NAME,
-    name: "Bootstrap Guidelines",
+    name: BOOTSTRAP_TASK_NAME,
+    title: "Bootstrap Guidelines",
     description: "Fill in project development guidelines for AI agents",
     status: "in_progress",
     dev_type: "docs",
@@ -327,15 +420,9 @@ function getBootstrapTaskJson(
     creator: developer,
     assignee: developer,
     createdAt: today,
-    completedAt: null,
-    commit: null,
-    subtasks,
-    children: [],
-    parent: null,
     relatedFiles,
     notes: `First-time setup task created by trellis init (${projectType} project)`,
-    meta: {},
-  };
+  });
 }
 
 /**
@@ -344,41 +431,174 @@ function getBootstrapTaskJson(
 function createBootstrapTask(
   cwd: string,
   developer: string,
+  pythonCmd: "python" | "python3",
   projectType: ProjectType,
   packages?: DetectedPackage[],
 ): boolean {
-  const taskDir = path.join(cwd, PATHS.TASKS, BOOTSTRAP_TASK_NAME);
-  const taskRelativePath = `${PATHS.TASKS}/${BOOTSTRAP_TASK_NAME}`;
+  const taskJson = getBootstrapTaskJson(developer, projectType, packages);
+  const prdContent = getBootstrapPrdContent(projectType, pythonCmd, packages);
+  return writeTaskSkeleton(cwd, BOOTSTRAP_TASK_NAME, taskJson, prdContent);
+}
 
-  // Check if already exists
-  if (fs.existsSync(taskDir)) {
-    return true; // Already exists, not an error
-  }
+// =============================================================================
+// Joiner Onboarding Task Creation
+// =============================================================================
 
-  try {
-    // Create task directory
-    fs.mkdirSync(taskDir, { recursive: true });
+/**
+ * task.json factory for joiner onboarding. Mirrors the bootstrap factory but
+ * uses dev_type "docs", higher priority "P1", and the developer-specific task
+ * name (so multiple joiners in the same checkout don't collide).
+ */
+function getJoinerTaskJson(developer: string, taskName: string): TaskJson {
+  const today = new Date().toISOString().split("T")[0];
+  return emptyTaskJson({
+    id: taskName,
+    name: taskName,
+    title: `Joining: Onboard to this Trellis project (${developer})`,
+    description:
+      "Onboard a new developer to an existing Trellis project: learn the workflow, conventions, and find assigned work",
+    status: "in_progress",
+    dev_type: "docs",
+    priority: "P1",
+    creator: developer,
+    assignee: developer,
+    createdAt: today,
+    notes:
+      "Generated by trellis init for a new developer joining an existing Trellis project",
+  });
+}
 
-    // Write task.json
-    const taskJson = getBootstrapTaskJson(developer, projectType, packages);
-    fs.writeFileSync(
-      path.join(taskDir, FILE_NAMES.TASK_JSON),
-      JSON.stringify(taskJson, null, 2),
-      "utf-8",
-    );
+/**
+ * PRD content for joiner onboarding. Kept concise (~80 lines) — deeper
+ * guidance lives in skills and docs.
+ */
+function getJoinerPrdContent(
+  developer: string,
+  pythonCmd: "python" | "python3",
+): string {
+  const slug = slugifyDeveloperName(developer);
+  return `# Joiner Onboarding Task
 
-    // Write prd.md
-    const prdContent = getBootstrapPrdContent(projectType, packages);
-    fs.writeFileSync(path.join(taskDir, FILE_NAMES.PRD), prdContent, "utf-8");
+**You (the AI) are running this task. The developer does not read this file.**
 
-    // Set as current task
-    const currentTaskFile = path.join(cwd, PATHS.CURRENT_TASK_FILE);
-    fs.writeFileSync(currentTaskFile, taskRelativePath, "utf-8");
+\`${developer}\` just ran \`trellis init\` on a fresh clone, saw "Developer
+initialized", and will now start asking you questions in chat. This joiner task
+exists under \`.trellis/tasks/\`; when they want to work on it, they should
+start it from a session that provides Trellis session identity.
 
-    return true;
-  } catch {
-    return false;
-  }
+Your job is to orient them to Trellis. Don't dump all of this at them — open
+with a short greeting, ask where they want to start, and fill in the rest as
+they engage.
+
+---
+
+## Topics to cover (adapt order to their questions)
+
+### 1. What Trellis is + the workflow
+
+Trellis is a workflow layer over Claude Code / Cursor / etc. that keeps AI
+agents consistent with project-specific conventions instead of writing generic
+code every session.
+
+- **Three phases**: Plan (brainstorm → \`prd.md\`) → Execute (code + check) →
+  Finish (capture + wrap). Full reference: \`.trellis/workflow.md\`.
+- **Task lifecycle**: planning → in_progress → done → archive, under
+  \`.trellis/tasks/\`.
+- **Core slash commands**:
+  - \`/trellis:continue\` — resume the current session's active task
+  - \`/trellis:finish-work\` — wrap up a finished task
+  - \`/trellis:start\` — session boot from scratch (not needed here; the
+    SessionStart hook does its job automatically)
+
+### 2. Runtime mechanics (explain when they ask "how does it know what to do")
+
+- **SessionStart hook** runs \`get_context.py\` and injects identity, git
+  status, session active task, active tasks, and workflow phase into the AI
+  conversation at every session start.
+- **\`<workflow-state>\` tag** is auto-injected with every user message,
+  carrying the current task + phase hint.
+- **\`/trellis:continue\`** loads the Phase Index, reads \`prd.md\` + recent
+  activity, and routes to the right skill (\`trellis-brainstorm\` for planning,
+  \`trellis-implement\` for coding, \`trellis-check\` for verification).
+- **\`trellis-implement\` sub-agent** is spawned when code needs to be written.
+  The platform hook reads \`{TASK_DIR}/implement.jsonl\` and auto-injects those
+  spec files + \`prd.md\` into the sub-agent's prompt so it codes per project
+  conventions.
+- **\`trellis-check\` sub-agent** follows the same pattern with \`check.jsonl\`
+  — reviews changes against specs, auto-fixes issues, runs lint/typecheck.
+
+File layout (mention when they ask "where does what live"):
+- \`.trellis/.runtime/sessions/<session>.json\` — session active-task state, gitignored
+- \`.trellis/tasks/<task>/{implement,check}.jsonl\` — per-task context manifests
+- \`.trellis/spec/\` — project-wide conventions (source of truth)
+- \`.trellis/workspace/${developer}/journal-*.md\` — their session log,
+  rotated at ~2000 lines
+
+### 3. This project's actual conventions
+
+- Summarize \`.trellis/spec/\` for them — what coding conventions this
+  specific team enforces.
+- Point at the last 5 entries in \`.trellis/tasks/archive/\` as a rhythm
+  example of how people actually work here. **If archive is empty** (the
+  project just started), skip this — don't invent examples.
+- Not your job in this onboarding to teach them the business code itself —
+  the README and their teammates handle that.
+
+### 4. Their assigned work
+
+- Check if \`.trellis/workspace/${developer}/\` already exists — if yes, it's
+  their journal from another machine and worth mentioning.
+- Run \`${pythonCmd} ./.trellis/scripts/task.py list --assignee ${developer}\` to
+  show tasks assigned to them. (Quote the name if it contains spaces.)
+- Remind them that the "My Tasks" section appears in the SessionStart context
+  on every new session.
+
+---
+
+## Optional: walk through a small task end-to-end
+
+If they want to practice before touching real work, offer to pick a tiny
+P3 task or a typo fix and run the full cycle together: \`/trellis:continue\`
+→ you implement via sub-agents → \`/trellis:finish-work\`.
+
+---
+
+## Completion
+
+When they feel oriented (or after you've covered the four topics with
+reasonable back-and-forth), guide them to run:
+
+\`\`\`bash
+${pythonCmd} ./.trellis/scripts/task.py finish
+${pythonCmd} ./.trellis/scripts/task.py archive 00-join-${slug}
+\`\`\`
+
+---
+
+## Suggested opening line
+
+"Welcome! Your \`trellis init\` set me up to onboard you to this project. I
+can walk you through the workflow, show you the runtime mechanics under the
+hood, summarize the team's spec, or jump to what you're already curious about
+— which would you prefer?"
+`;
+}
+
+/**
+ * Create joiner onboarding task for a new developer on an existing Trellis
+ * project. Task name is slugified to be filesystem-safe for arbitrary
+ * developer names (spaces, Unicode, punctuation).
+ */
+function createJoinerOnboardingTask(
+  cwd: string,
+  developer: string,
+  pythonCmd: "python" | "python3",
+): boolean {
+  const slug = slugifyDeveloperName(developer);
+  const taskName = `00-join-${slug}`;
+  const taskJson = getJoinerTaskJson(developer, taskName);
+  const prdContent = getJoinerPrdContent(developer, pythonCmd);
+  return writeTaskSkeleton(cwd, taskName, taskJson, prdContent);
 }
 
 /**
@@ -389,6 +609,7 @@ async function handleReinit(
   cwd: string,
   options: InitOptions,
   developerName: string | undefined,
+  pythonCmd: "python" | "python3",
 ): Promise<boolean> {
   const TOOLS = getInitToolChoices();
   const configuredPlatforms = getConfiguredPlatforms(cwd);
@@ -511,8 +732,14 @@ async function handleReinit(
       }
     }
 
+    // Capture pre-init state: if .developer did not exist before we ran
+    // init_developer.py, this checkout had no identity → treat as a new
+    // joiner onboarding onto an existing Trellis project.
+    const hadDeveloperFileBefore = fs.existsSync(
+      path.join(cwd, DIR_NAMES.WORKFLOW, FILE_NAMES.DEVELOPER),
+    );
+
     try {
-      const pythonCmd = getPythonCommand();
       const scriptPath = path.join(cwd, PATHS.SCRIPTS, "init_developer.py");
       execSync(`${pythonCmd} "${scriptPath}" "${devName}"`, {
         cwd,
@@ -524,8 +751,28 @@ async function handleReinit(
         chalk.yellow("⚠ Could not initialize developer. Run manually:"),
       );
       console.log(
-        chalk.gray(`  python3 .trellis/scripts/init_developer.py ${devName}`),
+        chalk.gray(
+          `  ${pythonCmd} .trellis/scripts/init_developer.py ${devName}`,
+        ),
       );
+    }
+
+    // Create joiner onboarding task for fresh checkouts (no prior .developer).
+    // Runs outside the init_developer try/catch so failures surface as warnings.
+    if (!hadDeveloperFileBefore) {
+      try {
+        if (!createJoinerOnboardingTask(cwd, devName, pythonCmd)) {
+          console.warn(
+            chalk.yellow("⚠ Failed to create joiner onboarding task"),
+          );
+        }
+      } catch (err) {
+        console.warn(
+          chalk.yellow(
+            `⚠ Joiner onboarding setup failed: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+      }
     }
   }
 
@@ -535,7 +782,6 @@ async function handleReinit(
 interface InitOptions {
   cursor?: boolean;
   claude?: boolean;
-  iflow?: boolean;
   opencode?: boolean;
   codex?: boolean;
   kilo?: boolean;
@@ -547,6 +793,7 @@ interface InitOptions {
   codebuddy?: boolean;
   copilot?: boolean;
   droid?: boolean;
+  pi?: boolean;
   yes?: boolean;
   user?: string;
   force?: boolean;
@@ -592,6 +839,8 @@ function writeMonorepoConfig(cwd: string, packages: DetectedPackage[]): void {
     lines.push(`    path: ${pkg.path}`);
     if (pkg.isSubmodule) {
       lines.push("    type: submodule");
+    } else if (pkg.isGitRepo) {
+      lines.push("    git: true");
     }
   }
 
@@ -618,6 +867,12 @@ interface InitAnswers {
 export async function init(options: InitOptions): Promise<void> {
   const cwd = process.cwd();
   const isFirstInit = !fs.existsSync(path.join(cwd, DIR_NAMES.WORKFLOW));
+  // Captured here (before createWorkflowStructure + init_developer run) so
+  // the three-branch dispatch at the bottom can tell "fresh clone joiner"
+  // (.trellis/ exists, .developer missing) apart from "creator first init".
+  const hadDeveloperFileAtStart = fs.existsSync(
+    path.join(cwd, DIR_NAMES.WORKFLOW, FILE_NAMES.DEVELOPER),
+  );
 
   // Generate ASCII art banner dynamically using FIGlet "Rebel" font
   const banner = figlet.textSync("Trellis", { font: "Rebel" });
@@ -666,12 +921,20 @@ export async function init(options: InitOptions): Promise<void> {
     console.log(chalk.blue("👤 Developer:"), chalk.gray(developerName));
   }
 
+  const pythonCmd = getPythonCommandForPlatform();
+  requireSupportedPython(pythonCmd);
+
   // ==========================================================================
   // Re-init fast path: skip full flow when .trellis/ already exists
   // ==========================================================================
 
   if (!isFirstInit && !options.force && !options.skipExisting) {
-    const reinitDone = await handleReinit(cwd, options, developerName);
+    const reinitDone = await handleReinit(
+      cwd,
+      options,
+      developerName,
+      pythonCmd,
+    );
     if (reinitDone) return;
     // reinitDone === false means user chose "full re-initialize" → fall through
   }
@@ -733,9 +996,28 @@ export async function init(options: InitOptions): Promise<void> {
     if (options.monorepo === true && !detected) {
       console.log(
         chalk.red(
-          "Error: --monorepo specified but no monorepo configuration found.",
+          "Error: --monorepo specified but no multi-package layout detected.",
         ),
       );
+      console.log("");
+      console.log(chalk.gray("Checked:"));
+      console.log(chalk.gray("  ✗ pnpm-workspace.yaml"));
+      console.log(chalk.gray("  ✗ package.json workspaces"));
+      console.log(chalk.gray("  ✗ Cargo.toml [workspace]"));
+      console.log(chalk.gray("  ✗ go.work"));
+      console.log(chalk.gray("  ✗ pyproject.toml [tool.uv.workspace]"));
+      console.log(chalk.gray("  ✗ .gitmodules"));
+      console.log(chalk.gray("  ✗ sibling .git directories (need ≥ 2)"));
+      console.log("");
+      console.log("To configure manually, add to .trellis/config.yaml:");
+      console.log("");
+      console.log(chalk.cyan("  packages:"));
+      console.log(chalk.cyan("    frontend:"));
+      console.log(chalk.cyan("      path: ./frontend"));
+      console.log(chalk.cyan("      git: true       # if it has its own .git"));
+      console.log(chalk.cyan("    backend:"));
+      console.log(chalk.cyan("      path: ./backend"));
+      console.log(chalk.cyan("      git: true"));
       return;
     }
 
@@ -748,12 +1030,16 @@ export async function init(options: InitOptions): Promise<void> {
         // Show detected packages and ask
         console.log(chalk.blue("\n🔍 Detected monorepo packages:"));
         for (const pkg of detected) {
-          const sub = pkg.isSubmodule ? chalk.gray(" (submodule)") : "";
+          const tag = pkg.isSubmodule
+            ? chalk.gray(" (submodule)")
+            : pkg.isGitRepo
+              ? chalk.gray(" (git repo)")
+              : "";
           console.log(
             chalk.gray(`   - ${pkg.name}`) +
               chalk.gray(` (${pkg.path})`) +
               chalk.gray(` [${pkg.type}]`) +
-              sub,
+              tag,
           );
         }
         console.log("");
@@ -922,6 +1208,7 @@ export async function init(options: InitOptions): Promise<void> {
 
   // Pre-fetched templates list (used to pass selected SpecTemplate to downloadTemplateById)
   let fetchedTemplates: SpecTemplate[] = [];
+  let registryBackend: RegistryBackend | undefined;
 
   // Determine the index URL based on registry
   const indexUrl = registry
@@ -950,10 +1237,13 @@ export async function init(options: InitOptions): Promise<void> {
     process.stdout.write(chalk.gray(`   Loading... 0s/${timeoutSec}s`));
     let templates: SpecTemplate[];
     let registryProbeNotFound = false;
+    let registryProbeError: Error | undefined;
     if (registry) {
-      const probeResult = await probeRegistryIndex(indexUrl);
+      const probeResult = await probeRegistryIndex(indexUrl, registry);
       templates = probeResult.templates;
       registryProbeNotFound = probeResult.isNotFound;
+      registryProbeError = probeResult.error;
+      registryBackend = probeResult.backend;
     } else {
       templates = await fetchTemplateIndex(indexUrl);
     }
@@ -973,7 +1263,7 @@ export async function init(options: InitOptions): Promise<void> {
       // Custom registry: transient error (not a 404) — abort, don't misclassify
       console.log(
         chalk.red(
-          "   Could not reach registry (network issue). Check your connection and try again.",
+          `   ${registryProbeError?.message ?? "Could not reach registry. Check your connection and try again."}`,
         ),
       );
       return;
@@ -1040,8 +1330,12 @@ export async function init(options: InitOptions): Promise<void> {
                 `   Checking for templates at ${registry.gigetSource}...`,
               ),
             );
-            const customProbe = await probeRegistryIndex(customIndexUrl);
+            const customProbe = await probeRegistryIndex(
+              customIndexUrl,
+              registry,
+            );
             const customTemplates = customProbe.templates;
+            registryBackend = customProbe.backend;
             if (customTemplates.length > 0) {
               // Marketplace mode: show picker with custom templates
               fetchedTemplates = customTemplates;
@@ -1103,7 +1397,7 @@ export async function init(options: InitOptions): Promise<void> {
               // Transient error (not 404) — loop back, don't misclassify
               console.log(
                 chalk.yellow(
-                  "   Could not reach registry (network issue). Try again or enter a different source.",
+                  `   ${customProbe.error?.message ?? "Could not reach registry. Try again or enter a different source."}`,
                 ),
               );
               registry = undefined; // Reset so we don't fall through to direct download
@@ -1160,7 +1454,9 @@ export async function init(options: InitOptions): Promise<void> {
   if (options.yes && registry && !selectedTemplate && !monorepoPackages) {
     const probeResult = await probeRegistryIndex(
       `${registry.rawBaseUrl}/index.json`,
+      registry,
     );
+    registryBackend = probeResult.backend;
     if (probeResult.templates.length > 0) {
       // Marketplace mode requires interactive selection — can't auto-select
       console.log(
@@ -1175,7 +1471,7 @@ export async function init(options: InitOptions): Promise<void> {
       // Transient error (not 404) — abort, don't misclassify as direct-download
       console.log(
         chalk.red(
-          "Error: Could not reach registry (network issue). Check your connection and try again.",
+          `Error: ${probeResult.error?.message ?? "Could not reach registry. Check your connection and try again."}`,
         ),
       );
       return;
@@ -1203,6 +1499,8 @@ export async function init(options: InitOptions): Promise<void> {
       templateStrategy,
       prefetched,
       registry,
+      undefined,
+      registryBackend,
     );
 
     if (result.success) {
@@ -1254,6 +1552,8 @@ export async function init(options: InitOptions): Promise<void> {
       cwd,
       registry,
       templateStrategy,
+      undefined,
+      registryBackend,
     );
 
     if (result.success) {
@@ -1279,11 +1579,9 @@ export async function init(options: InitOptions): Promise<void> {
   // ==========================================================================
 
   // Create workflow structure with project type
-  // Multi-agent is enabled by default
   console.log(chalk.blue("📁 Creating workflow structure..."));
   await createWorkflowStructure(cwd, {
     projectType,
-    multiAgent: true,
     skipSpecTemplates: useRemoteTemplate,
     packages: monorepoPackages,
     remoteSpecPackages,
@@ -1308,17 +1606,12 @@ export async function init(options: InitOptions): Promise<void> {
     }
   }
 
-  // Show Windows platform detection notice
-  if (process.platform === "win32") {
-    const pythonPlatforms = getPlatformsWithPythonHooks();
-    const hasSelectedPythonPlatform = pythonPlatforms.some((id) =>
-      tools.includes(AI_TOOLS[id].cliFlag),
-    );
-    if (hasSelectedPythonPlatform) {
-      console.log(
-        chalk.yellow('📌 Windows detected: Using "python" for hooks'),
-      );
-    }
+  const pythonPlatforms = getPlatformsWithPythonHooks();
+  const hasSelectedPythonPlatform = pythonPlatforms.some((id) =>
+    tools.includes(AI_TOOLS[id].cliFlag),
+  );
+  if (hasSelectedPythonPlatform) {
+    logPythonAdaptationNotice(pythonCmd);
   }
 
   // Create root files (skip if exists)
@@ -1335,24 +1628,49 @@ export async function init(options: InitOptions): Promise<void> {
   // Initialize developer identity (silent - no output)
   if (developerName) {
     try {
-      const pythonCmd = getPythonCommand();
       const scriptPath = path.join(cwd, PATHS.SCRIPTS, "init_developer.py");
       execSync(`${pythonCmd} "${scriptPath}" "${developerName}"`, {
         cwd,
         stdio: "pipe", // Silent
       });
-
-      // Create bootstrap task only on first init (not re-init for new platforms/devices)
-      if (isFirstInit) {
-        createBootstrapTask(cwd, developerName, projectType, monorepoPackages);
-      }
     } catch {
       // Silent failure - user can run init_developer.py manually
     }
-  }
 
-  // Print "What We Solve" section
-  printWhatWeSolve();
+    // Three-branch dispatch using flags captured at init() start (before
+    // createWorkflowStructure/init_developer ran, so they reflect the disk
+    // state of the user's checkout, not the state this init just produced):
+    //   isFirstInit=true                       → creator bootstrap (new project)
+    //   isFirstInit=false + no .developer file → joiner onboarding (fresh clone)
+    //   isFirstInit=false + .developer exists  → same-dev re-init, no task
+    //
+    // Runs OUTSIDE the init_developer try/catch (which uses stdio: "pipe")
+    // so joiner failures surface as warnings instead of being silently
+    // swallowed.
+    if (isFirstInit) {
+      createBootstrapTask(
+        cwd,
+        developerName,
+        pythonCmd,
+        projectType,
+        monorepoPackages,
+      );
+    } else if (!hadDeveloperFileAtStart) {
+      try {
+        if (!createJoinerOnboardingTask(cwd, developerName, pythonCmd)) {
+          console.warn(
+            chalk.yellow("⚠ Failed to create joiner onboarding task"),
+          );
+        }
+      } catch (err) {
+        console.warn(
+          chalk.yellow(
+            `⚠ Joiner onboarding setup failed: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+      }
+    }
+  }
 }
 
 /**
@@ -1373,52 +1691,11 @@ function askInput(prompt: string): Promise<string> {
 }
 
 async function createRootFiles(cwd: string): Promise<void> {
-  const agentsPath = path.join(cwd, "AGENTS.md");
+  const agentsPath = path.join(cwd, FILE_NAMES.AGENTS);
 
   // Write AGENTS.md from template
   const agentsWritten = await writeFile(agentsPath, agentsMdContent);
   if (agentsWritten) {
     console.log(chalk.blue("📄 Created AGENTS.md"));
   }
-}
-
-/**
- * Print "What We Solve" section showing Trellis value proposition
- * Styled like a meme/rant to resonate with developer pain points
- */
-function printWhatWeSolve(): void {
-  console.log(
-    chalk.gray("\nSound familiar? ") +
-      chalk.bold("You'll never say these again!!\n"),
-  );
-
-  // Pain point 1: Bug loop → Thinking Guides + Ralph Loop
-  console.log(chalk.gray("✗ ") + '"Fix A → break B → fix B → break A..."');
-  console.log(
-    chalk.green("  ✓ ") +
-      chalk.white("Thinking Guides + Ralph Loop: Think first, verify after"),
-  );
-  // Pain point 2: Instructions ignored/forgotten → Sub-agents + per-agent spec injection
-  console.log(
-    chalk.gray("✗ ") +
-      '"Wrote CLAUDE.md, AI ignored it. Reminded AI, it forgot 5 turns later."',
-  );
-  console.log(
-    chalk.green("  ✓ ") +
-      chalk.white("Spec Injection: Rules enforced per task, not per chat"),
-  );
-  // Pain point 3: Missing connections → Cross-Layer Guide
-  console.log(chalk.gray("✗ ") + '"Code works but nothing connects..."');
-  console.log(
-    chalk.green("  ✓ ") +
-      chalk.white("Cross-Layer Guide: Map data flow before coding"),
-  );
-  // Pain point 4: Code explosion → Plan Agent
-  console.log(chalk.gray("✗ ") + '"Asked for a button, got 9000 lines"');
-  console.log(
-    chalk.green("  ✓ ") +
-      chalk.white("Plan Agent: Rejects and splits oversized tasks"),
-  );
-
-  console.log("");
 }
