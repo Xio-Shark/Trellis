@@ -204,7 +204,7 @@ Apply this rule wherever the hash crosses OS boundaries (template hash dictionar
 | `PATH` separator | `:` | `;` |
 | Case sensitivity | ✅ Case-sensitive | ❌ Case-insensitive |
 
-**Rule**: Use `pathlib.Path.home()` instead of environment variables.
+**Rule 1**: Use `pathlib.Path.home()` instead of environment variables.
 
 ```python
 # BAD
@@ -213,6 +213,25 @@ home = os.environ.get("HOME")
 # GOOD
 home = Path.home()
 ```
+
+**Rule 2**: When injecting environment variables into shell commands, generate
+the prefix for the actual host shell. Do not assume `export` works everywhere.
+AI tool "Bash" surfaces on Windows may execute through PowerShell.
+
+```javascript
+// BAD - breaks when the host shell is PowerShell
+command = `export TRELLIS_CONTEXT_ID=${shellQuote(contextKey)}; ${command}`;
+
+// GOOD - shell-aware command prefix
+const prefix = process.platform === "win32"
+  ? `$env:TRELLIS_CONTEXT_ID = ${powershellQuote(contextKey)}; `
+  : `export TRELLIS_CONTEXT_ID=${shellQuote(contextKey)}; `;
+command = `${prefix}${command}`;
+```
+
+Also make duplicate-injection detection shell-aware. A guard that only matches
+`export VAR=` will miss PowerShell's `$env:VAR = ...` form and can wrap an
+already-correct command a second time.
 
 ### 5. Command Availability
 

@@ -10,7 +10,23 @@ interface TestContextCollector {
   processed: Set<string>;
   markProcessed(directory: string, sessionID: string): void;
   isProcessed(directory: string, sessionID: string): boolean;
-  clear(directory: string, sessionID: string): void;
+  clear(sessionID: string): void;
+}
+
+interface OpenCodeInjectHooks {
+  "tool.execute.before": (
+    input: unknown,
+    output: { args: { command: string } },
+  ) => Promise<void>;
+}
+
+async function createOpenCodeInjectHooks(
+  platform: NodeJS.Platform = "linux",
+): Promise<OpenCodeInjectHooks> {
+  return (await injectSubagentContextPlugin({
+    directory: "/tmp/trellis-opencode-test",
+    platform,
+  })) as OpenCodeInjectHooks;
 }
 
 describe("opencode session context dedupe", () => {
@@ -107,14 +123,7 @@ describe("opencode session-start history detection", () => {
 
 describe("opencode bash session context", () => {
   it("injects TRELLIS_CONTEXT_ID into Bash commands from plugin sessionID", async () => {
-    const hooks = (await injectSubagentContextPlugin({
-      directory: "/tmp/trellis-opencode-test",
-    })) as {
-      "tool.execute.before": (
-        input: unknown,
-        output: { args: { command: string } },
-      ) => Promise<void>;
-    };
+    const hooks = await createOpenCodeInjectHooks();
     const output = {
       args: {
         command: "python3 ./.trellis/scripts/task.py start .trellis/tasks/demo",
@@ -131,15 +140,26 @@ describe("opencode bash session context", () => {
     );
   });
 
-  it("does not duplicate an explicit TRELLIS_CONTEXT_ID assignment", async () => {
-    const hooks = (await injectSubagentContextPlugin({
-      directory: "/tmp/trellis-opencode-test",
-    })) as {
-      "tool.execute.before": (
-        input: unknown,
-        output: { args: { command: string } },
-      ) => Promise<void>;
+  it("uses PowerShell environment syntax on Windows", async () => {
+    const hooks = await createOpenCodeInjectHooks("win32");
+    const output = {
+      args: {
+        command: "python ./.trellis/scripts/task.py start .trellis/tasks/demo",
+      },
     };
+
+    await hooks["tool.execute.before"](
+      { tool: "bash", sessionID: "oc-a" },
+      output,
+    );
+
+    expect(output.args.command).toBe(
+      "$env:TRELLIS_CONTEXT_ID = 'opencode_oc-a'; python ./.trellis/scripts/task.py start .trellis/tasks/demo",
+    );
+  });
+
+  it("does not duplicate an explicit TRELLIS_CONTEXT_ID assignment", async () => {
+    const hooks = await createOpenCodeInjectHooks();
     const output = {
       args: {
         command:
@@ -158,14 +178,7 @@ describe("opencode bash session context", () => {
   });
 
   it("does not duplicate an explicit exported TRELLIS_CONTEXT_ID", async () => {
-    const hooks = (await injectSubagentContextPlugin({
-      directory: "/tmp/trellis-opencode-test",
-    })) as {
-      "tool.execute.before": (
-        input: unknown,
-        output: { args: { command: string } },
-      ) => Promise<void>;
-    };
+    const hooks = await createOpenCodeInjectHooks();
     const output = {
       args: {
         command:
@@ -183,15 +196,27 @@ describe("opencode bash session context", () => {
     );
   });
 
-  it("does not treat a grep pattern as an explicit TRELLIS_CONTEXT_ID assignment", async () => {
-    const hooks = (await injectSubagentContextPlugin({
-      directory: "/tmp/trellis-opencode-test",
-    })) as {
-      "tool.execute.before": (
-        input: unknown,
-        output: { args: { command: string } },
-      ) => Promise<void>;
+  it("does not duplicate an explicit PowerShell TRELLIS_CONTEXT_ID assignment", async () => {
+    const hooks = await createOpenCodeInjectHooks("win32");
+    const output = {
+      args: {
+        command:
+          "$env:TRELLIS_CONTEXT_ID = 'manual'; python ./.trellis/scripts/task.py current",
+      },
     };
+
+    await hooks["tool.execute.before"](
+      { tool: "bash", sessionID: "oc-a" },
+      output,
+    );
+
+    expect(output.args.command).toBe(
+      "$env:TRELLIS_CONTEXT_ID = 'manual'; python ./.trellis/scripts/task.py current",
+    );
+  });
+
+  it("does not treat a grep pattern as an explicit TRELLIS_CONTEXT_ID assignment", async () => {
+    const hooks = await createOpenCodeInjectHooks();
     const output = {
       args: {
         command: "env | sort | grep '^TRELLIS_CONTEXT_ID='",

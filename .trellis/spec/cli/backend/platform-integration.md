@@ -331,8 +331,10 @@ scoping when `session_id` or `conversation_id` is present. OpenCode uses
 share the same runtime file; otherwise it falls back to `sessionID` from plugin
 input or event properties. OpenCode TUI builds may not expose `OPENCODE_RUN_ID`
 to the Bash tool even though plugin events include `sessionID`; the OpenCode
-plugin must therefore inject `export TRELLIS_CONTEXT_ID=<context-key>;` into Bash tool
-commands in `tool.execute.before` when the command does not already set it.
+plugin must therefore inject a shell-aware `TRELLIS_CONTEXT_ID` prefix into Bash
+tool commands in `tool.execute.before` when the command does not already set
+it: POSIX shells use `export TRELLIS_CONTEXT_ID=<context-key>;`, while Windows
+PowerShell uses `$env:TRELLIS_CONTEXT_ID = '<context-key>';`.
 Cursor must use `beforeShellExecution` as the shell bridge. The hook writes a
 short-lived `.trellis/.runtime/cursor-shell/*.json` ticket containing the
 `conversation_id`-derived context key for matching `task.py start/current/finish`
@@ -357,8 +359,8 @@ they launch. Claude Code is special: SessionStart provides `CLAUDE_ENV_FILE`,
 so the shared hook must persist `export TRELLIS_CONTEXT_ID=<context-key>` there
 for later Bash tool calls in the same conversation. OpenCode is also special:
 there is no env-file bridge, so the JS plugin must prefix Bash tool commands
-with `export TRELLIS_CONTEXT_ID=<context-key>;` using plugin session identity before
-execution. Cursor has no reliable command-env bridge, so `beforeShellExecution`
+with a shell-aware `TRELLIS_CONTEXT_ID` assignment using plugin session identity
+before execution. Cursor has no reliable command-env bridge, so `beforeShellExecution`
 must create the short-lived shell ticket described above. Without one of these
 session signals, `task.py start` must fail with a clear session identity hint
 and must not write `.trellis/.current-task`.

@@ -1,3 +1,4 @@
+/* global process */
 /**
  * Trellis Context Injection Plugin
  *
@@ -259,6 +260,19 @@ function shellQuote(value) {
   return `'${String(value).replace(/'/g, "'\\''")}'`
 }
 
+function powershellQuote(value) {
+  return `'${String(value).replace(/'/g, "''")}'`
+}
+
+function buildTrellisContextPrefix(contextKey, hostPlatform = process.platform) {
+  if (hostPlatform === "win32") {
+    // OpenCode's Windows Bash tool runs through PowerShell, not a POSIX shell.
+    return `$env:TRELLIS_CONTEXT_ID = ${powershellQuote(contextKey)}; `
+  }
+
+  return `export TRELLIS_CONTEXT_ID=${shellQuote(contextKey)}; `
+}
+
 function getBashCommandKey(args) {
   if (!args || typeof args !== "object") return null
   if (typeof args.command === "string") return "command"
@@ -271,7 +285,8 @@ function commandStartsWithTrellisContext(command) {
   return (
     /^TRELLIS_CONTEXT_ID\s*=/.test(firstCommand) ||
     /^export\s+TRELLIS_CONTEXT_ID\s*=/.test(firstCommand) ||
-    /^env\s+(?:[^\s=]+\s+)*TRELLIS_CONTEXT_ID\s*=/.test(firstCommand)
+    /^env\s+(?:[^\s=]+\s+)*TRELLIS_CONTEXT_ID\s*=/.test(firstCommand) ||
+    /^\$env:TRELLIS_CONTEXT_ID\s*=/i.test(firstCommand)
   )
 }
 
@@ -279,7 +294,7 @@ function commandStartsWithTrellisContext(command) {
  * OpenCode TUI may not expose OPENCODE_RUN_ID to Bash. The plugin hook still
  * receives session identity, so inject it into Bash commands before execution.
  */
-function injectTrellisContextIntoBash(ctx, input, output) {
+function injectTrellisContextIntoBash(ctx, input, output, hostPlatform) {
   const args = output?.args
   const commandKey = getBashCommandKey(args)
   if (!commandKey) return false
@@ -291,7 +306,7 @@ function injectTrellisContextIntoBash(ctx, input, output) {
   const contextKey = ctx.getContextKey(input)
   if (!contextKey) return false
 
-  args[commandKey] = `export TRELLIS_CONTEXT_ID=${shellQuote(contextKey)}; ${command}`
+  args[commandKey] = `${buildTrellisContextPrefix(contextKey, hostPlatform)}${command}`
   return true
 }
 
@@ -300,7 +315,7 @@ function injectTrellisContextIntoBash(ctx, input, output) {
 // (packages/opencode/src/plugin/index.ts — `for ([_, fn] of Object.entries(mod)) await fn(input)`);
 // the previous `{ id, server }` object shape failed with
 // `TypeError: fn is not a function` in 1.2.x.
-export default async ({ directory }) => {
+export default async ({ directory, platform: hostPlatform = process.platform }) => {
   const ctx = new TrellisContext(directory)
   debugLog("inject", "Plugin loaded, directory:", directory)
 
@@ -311,7 +326,7 @@ export default async ({ directory }) => {
 
           const toolName = input?.tool?.toLowerCase()
           if (toolName === "bash") {
-            if (injectTrellisContextIntoBash(ctx, input, output)) {
+            if (injectTrellisContextIntoBash(ctx, input, output, hostPlatform)) {
               debugLog("inject", "Injected TRELLIS_CONTEXT_ID into Bash command")
             }
             return
