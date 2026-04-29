@@ -23,6 +23,8 @@ export const DIR_NAMES = {
 
 // File names
 export const FILE_NAMES = {
+  /** Root agent instructions file */
+  AGENTS: "AGENTS.md",
   /** Developer identity file */
   DEVELOPER: ".developer",
   /** Current task pointer */

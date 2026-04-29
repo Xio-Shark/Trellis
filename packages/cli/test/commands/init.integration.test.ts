@@ -28,8 +28,9 @@ vi.mock("node:child_process", () => ({
 
 import { init } from "../../src/commands/init.js";
 import { VERSION } from "../../src/constants/version.js";
-import { DIR_NAMES, PATHS } from "../../src/constants/paths.js";
+import { DIR_NAMES, FILE_NAMES, PATHS } from "../../src/constants/paths.js";
 import { collectPlatformTemplates } from "../../src/configurators/index.js";
+import { computeHash } from "../../src/utils/template-hash.js";
 import { execSync } from "node:child_process";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
@@ -653,7 +654,15 @@ describe("init() integration", () => {
       ".template-hashes.json",
     );
     expect(fs.existsSync(hashPath)).toBe(true);
-    const hashes = JSON.parse(fs.readFileSync(hashPath, "utf-8"));
+    const hashesFile = JSON.parse(fs.readFileSync(hashPath, "utf-8")) as {
+      hashes?: Record<string, string>;
+    };
+    const hashes = hashesFile.hashes ?? {};
+    const agentsContent = fs.readFileSync(
+      path.join(tmpDir, FILE_NAMES.AGENTS),
+      "utf-8",
+    );
+    expect(hashes[FILE_NAMES.AGENTS]).toBe(computeHash(agentsContent));
     expect(Object.keys(hashes).length).toBeGreaterThan(0);
   });
 

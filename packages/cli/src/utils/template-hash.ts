@@ -17,7 +17,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-import { DIR_NAMES } from "../constants/paths.js";
+import { DIR_NAMES, FILE_NAMES } from "../constants/paths.js";
 import { ALL_MANAGED_DIRS } from "../configurators/index.js";
 import type { TemplateHashes } from "../types/migration.js";
 import { toPosix } from "./posix.js";
@@ -263,6 +263,9 @@ export function getModificationStatus(
  */
 const TEMPLATE_DIRS = ALL_MANAGED_DIRS;
 
+/** Root-level template files written by init and managed by update. */
+const TEMPLATE_FILES = [FILE_NAMES.AGENTS] as const;
+
 /**
  * Patterns to exclude from hash tracking
  */
@@ -339,6 +342,24 @@ function collectFiles(
  */
 export function initializeHashes(cwd: string): number {
   const hashes: TemplateHashes = {};
+
+  for (const relativePath of TEMPLATE_FILES) {
+    if (shouldExcludeFromHash(relativePath)) {
+      continue;
+    }
+
+    const fullPath = path.join(cwd, relativePath);
+    if (!fs.existsSync(fullPath)) {
+      continue;
+    }
+
+    try {
+      const content = fs.readFileSync(fullPath, "utf-8");
+      hashes[relativePath] = computeHash(content);
+    } catch {
+      // Skip files that can't be read (binary, etc.)
+    }
+  }
 
   // Collect all template files
   for (const dir of TEMPLATE_DIRS) {
