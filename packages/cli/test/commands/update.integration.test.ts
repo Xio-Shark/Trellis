@@ -293,6 +293,34 @@ describe("update() integration", () => {
     expect(fs.readFileSync(targetFull, "utf-8")).toBe(modifiedOldContent);
   });
 
+  it("#4d preserves user AGENTS.md without TRELLIS markers by appending the managed block", async () => {
+    await setupProject();
+
+    const targetRelative = FILE_NAMES.AGENTS;
+    const targetFull = path.join(tmpDir, targetRelative);
+    const templateContent = fs.readFileSync(targetFull, "utf-8");
+
+    // User has a hand-written AGENTS.md with no TRELLIS:START/END markers at
+    // all (predates 0.5.0-beta.18 or was authored by hand). Pre-fix behavior
+    // would clobber this content; post-fix should append the managed block.
+    const userContent = "# Project notes\n\nThings the team agreed on.\n";
+    fs.writeFileSync(targetFull, userContent);
+
+    await update({ force: true });
+
+    const result = fs.readFileSync(targetFull, "utf-8");
+    expect(result).toContain("# Project notes");
+    expect(result).toContain("Things the team agreed on.");
+    expect(result).toContain("<!-- TRELLIS:START -->");
+    expect(result).toContain("<!-- TRELLIS:END -->");
+    // Managed block should sit AFTER the user content, not replace it.
+    expect(result.indexOf("# Project notes")).toBeLessThan(
+      result.indexOf("<!-- TRELLIS:START -->"),
+    );
+    // Tail equals the canonical template (force-applied managed block).
+    expect(result.endsWith(templateContent.trimEnd() + "\n")).toBe(true);
+  });
+
   it("#5 force overwrites user-modified files", async () => {
     await setupProject();
 

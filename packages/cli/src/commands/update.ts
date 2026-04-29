@@ -145,10 +145,24 @@ function buildAgentsMdTemplate(cwd: string): string {
   }
 
   const existingContent = fs.readFileSync(fullPath, "utf-8");
-  return (
-    replaceTrellisManagedBlock(existingContent, agentsMdContent) ??
-    agentsMdContent
-  );
+
+  // Existing file already has TRELLIS:START/END markers — replace just the
+  // managed block, preserving everything outside it.
+  const replaced = replaceTrellisManagedBlock(existingContent, agentsMdContent);
+  if (replaced !== null) {
+    return replaced;
+  }
+
+  // Existing file has no managed-block markers (pre-0.5.0-beta.18 project, or
+  // user hand-wrote AGENTS.md without ever running through Trellis). Append
+  // the template's managed block at the end so user content is preserved
+  // instead of clobbered.
+  const templateBlock = getTrellisManagedBlock(agentsMdContent);
+  if (!templateBlock) {
+    return agentsMdContent;
+  }
+  const trimmed = existingContent.replace(/\s+$/, "");
+  return `${trimmed}\n\n${templateBlock}\n`;
 }
 
 function isKnownUntrackedTemplate(
