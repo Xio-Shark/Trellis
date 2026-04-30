@@ -104,7 +104,7 @@ python3 ./.trellis/scripts/get_context.py --mode phase --step <X.Y>  # detailed 
   breadcrumb that every supported AI platform's UserPromptSubmit hook
   reads. inject-workflow-state.py (Python platforms) and
   inject-workflow-state.js (OpenCode plugin) only parse them — there is no
-  fallback dict baked into the scripts after v0.5.0-beta.20.
+  fallback dict baked into the scripts after v0.5.0-rc.0.
 
   STATUS charset: [A-Za-z0-9_-]+. When the hook can't find a tag, it
   degrades to a generic "Refer to workflow.md for current step." line —

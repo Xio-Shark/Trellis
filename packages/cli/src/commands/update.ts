@@ -634,7 +634,7 @@ function collectTemplateFiles(
   // shared hooks, so scripts break silently when workflow.md drifts from the
   // CLI version.
   //
-  // Starting v0.5.0-beta.20, the breadcrumb tag blocks
+  // Starting v0.5.0-rc.0, the breadcrumb tag blocks
   // `[workflow-state:STATUS]...[/workflow-state:STATUS]` are managed via
   // per-block replacement (similar to AGENTS.md's TRELLIS:START/END managed
   // block) so user customizations to the rest of the file (Phase Index,

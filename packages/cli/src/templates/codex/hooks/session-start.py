@@ -231,7 +231,7 @@ def _strip_breadcrumb_tag_blocks(content: str) -> str:
 def _build_workflow_toc(workflow_path: Path) -> str:
     """Inject workflow guide: TOC + Phase Index + Phase 1/2/3 step details.
 
-    Since v0.5.0-beta.20 the [workflow-state:STATUS] breadcrumb tag blocks
+    Since v0.5.0-rc.0 the [workflow-state:STATUS] breadcrumb tag blocks
     live inside ## Phase Index. They're consumed by inject-workflow-state.py
     on each UserPromptSubmit, so strip them from the session-start payload
     to avoid duplicating context.

@@ -2109,7 +2109,7 @@ describe("regression: current-task path normalization", () => {
     writeSessionContext("session_workflow-a", ".trellis/tasks/issue-106");
     writeWorkflowStateHook();
     // overwrite workflow.md with empty content (no tag blocks). After
-    // v0.5.0-beta.20 the fallback dict was removed — the hook now degrades
+    // v0.5.0-rc.0 the fallback dict was removed — the hook now degrades
     // to the generic "Refer to workflow.md" line so users see (and fix) the
     // broken state instead of being silently masked by hardcoded text.
     writeWorkflowMd("# Empty\n");
@@ -2170,8 +2170,8 @@ describe("regression: current-task path normalization", () => {
     );
   });
 
-  it("[workflow-state-r5] inject-workflow-state.py contains no _FALLBACK_BREADCRUMBS dict (post-beta.20 collapse)", () => {
-    // R5: the fallback breadcrumb dict was removed in v0.5.0-beta.20 to
+  it("[workflow-state-r5] inject-workflow-state.py contains no _FALLBACK_BREADCRUMBS dict (post-rc.0 collapse)", () => {
+    // R5: the fallback breadcrumb dict was removed in v0.5.0-rc.0 to
     // collapse three sources (workflow.md / py / js) to one. This test
     // guards against accidental re-introduction.
     const py = injectWorkflowStateScript ?? "";
