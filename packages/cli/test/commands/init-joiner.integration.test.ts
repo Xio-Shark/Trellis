@@ -61,10 +61,18 @@ describe("init() joiner onboarding", () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  /** Helper: simulate a fresh clone — `.trellis/` committed, `.developer` absent */
+  /**
+   * Helper: simulate a fresh clone of an existing Trellis project — `.trellis/`
+   * committed (with at least one archived task indicating prior work),
+   * `.developer` absent. Real fresh-clone state always has either an active or
+   * archived bootstrap task; an empty `tasks/` indicates an aborted partial
+   * init (issue #204) and triggers the bootstrap fallback instead of joiner.
+   */
   function simulateExistingCheckout(): void {
     const workflow = path.join(tmpDir, DIR_NAMES.WORKFLOW);
-    fs.mkdirSync(path.join(workflow, DIR_NAMES.TASKS), { recursive: true });
+    fs.mkdirSync(path.join(workflow, DIR_NAMES.TASKS, "archive"), {
+      recursive: true,
+    });
     fs.mkdirSync(path.join(workflow, DIR_NAMES.SPEC), { recursive: true });
     fs.mkdirSync(path.join(workflow, DIR_NAMES.WORKSPACE), { recursive: true });
   }
@@ -142,6 +150,26 @@ describe("init() joiner onboarding", () => {
     // Bootstrap task NOT created
     expect(
       fs.existsSync(path.join(tmpDir, PATHS.TASKS, "00-bootstrap-guidelines")),
+    ).toBe(false);
+  });
+
+  it("#2b issue #204: existing .trellis/ but tasks/ empty → bootstrap fallback (not joiner)", async () => {
+    // Simulates the user's scenario: first init aborted partway after writing
+    // .trellis/ skeleton but before creating bootstrap; second run sees
+    // isFirstInit=false but tasks/ is empty, so bootstrap-fallback fires
+    // instead of mis-routing to joiner.
+    const workflow = path.join(tmpDir, DIR_NAMES.WORKFLOW);
+    fs.mkdirSync(path.join(workflow, DIR_NAMES.TASKS), { recursive: true });
+    fs.mkdirSync(path.join(workflow, DIR_NAMES.SPEC), { recursive: true });
+    fs.mkdirSync(path.join(workflow, DIR_NAMES.WORKSPACE), { recursive: true });
+
+    await init({ yes: true, user: "alice", force: true });
+
+    expect(
+      fs.existsSync(path.join(tmpDir, PATHS.TASKS, "00-bootstrap-guidelines")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(tmpDir, PATHS.TASKS, "00-join-alice")),
     ).toBe(false);
   });
 

@@ -897,6 +897,11 @@ export async function init(options: InitOptions): Promise<void> {
   } else if (options.skipExisting) {
     writeMode = "skip";
     console.log(chalk.gray("Mode: Skip existing files\n"));
+  } else if (options.yes) {
+    // -y implies non-interactive: never prompt on conflicts. Default to skip
+    // (preserve user files) — explicit --force is required to overwrite.
+    writeMode = "skip";
+    console.log(chalk.gray("Mode: Non-interactive (skip existing files)\n"));
   }
   setWriteMode(writeMode);
 
@@ -1644,10 +1649,19 @@ export async function init(options: InitOptions): Promise<void> {
     //   isFirstInit=false + no .developer file → joiner onboarding (fresh clone)
     //   isFirstInit=false + .developer exists  → same-dev re-init, no task
     //
+    // Tasks-empty fallback (issue #204): if .trellis/ exists but tasks dir is
+    // empty, the previous init aborted before creating the bootstrap task. Run
+    // bootstrap creation regardless of isFirstInit. writeTaskSkeleton is
+    // idempotent so repeated triggers are safe.
+    //
     // Runs OUTSIDE the init_developer try/catch (which uses stdio: "pipe")
     // so joiner failures surface as warnings instead of being silently
     // swallowed.
-    if (isFirstInit) {
+    const tasksDir = path.join(cwd, PATHS.TASKS);
+    const tasksEmpty =
+      !fs.existsSync(tasksDir) || fs.readdirSync(tasksDir).length === 0;
+
+    if (isFirstInit || tasksEmpty) {
       createBootstrapTask(
         cwd,
         developerName,
