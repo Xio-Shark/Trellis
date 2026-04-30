@@ -505,7 +505,7 @@ _BREADCRUMB_TAG_RE = re.compile(
 def _strip_breadcrumb_tag_blocks(content: str) -> str:
     """Remove `[workflow-state:STATUS]...[/workflow-state:STATUS]` blocks.
 
-    The tag blocks live inside `## Phase Index` (since v0.5.0-beta.20, when
+    The tag blocks live inside `## Phase Index` (since v0.5.0-rc.0, when
     they were colocated with their phase summaries) and are consumed by the
     UserPromptSubmit hook (`inject-workflow-state.py`). The session-start
     payload already covers the full step bodies, so re-inlining the
@@ -526,7 +526,7 @@ def _build_workflow_overview(workflow_path: Path) -> str:
     Trellis) are NOT injected — Core Principles is short prose the AI can
     Read on demand; Trellis System lists reference commands duplicated in
     step bodies; Customizing Trellis is for forks. Workflow-state breadcrumb
-    tag blocks (which now live inside Phase Index since v0.5.0-beta.20) are
+    tag blocks (which now live inside Phase Index since v0.5.0-rc.0) are
     stripped from the extracted range — they're consumed by the
     UserPromptSubmit hook, not the session-start preamble.
 
@@ -548,7 +548,7 @@ def _build_workflow_overview(workflow_path: Path) -> str:
     out_lines += ["", "---", ""]
 
     # Extract Phase Index through the end of Phase 3 (before "Customizing
-    # Trellis" — the docs-for-forks footer added in v0.5.0-beta.20). Since
+    # Trellis" — the docs-for-forks footer added in v0.5.0-rc.0). Since
     # sections appear in order Phase Index → Phase 1 → Phase 2 → Phase 3 →
     # Customizing Trellis, a single range grab captures all four. The
     # breadcrumb tag blocks now embedded inside Phase Index are stripped so

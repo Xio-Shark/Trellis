@@ -67,7 +67,7 @@ def get_phase_index() -> str:
     `## Phase 2: Execute`, `## Phase 3: Finish`, stops at
     `## Customizing Trellis (for forks)` (the docs-for-forks footer).
     `[workflow-state:STATUS]` tag blocks (now embedded in Phase Index since
-    v0.5.0-beta.20) are consumed by the UserPromptSubmit hook so they're
+    v0.5.0-rc.0) are consumed by the UserPromptSubmit hook so they're
     stripped from this output.
     """
     text = _read_workflow()

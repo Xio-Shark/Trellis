@@ -77,6 +77,20 @@ Links to related content or next actions.
 | Section heading | Sentence case | "Configure your settings"             |
 | Description     | Sentence      | "Learn how to set up authentication." |
 
+### Technical Architecture Openings
+
+Open technical architecture pages with the system thesis, then immediately ground it in concrete scope, modules, and source-of-truth files. Product positioning is acceptable when it names the architecture being documented; audience storytelling is not.
+
+**Good:**
+
+> Trellis is a Team-level Agent Harness with built-in LLM wiki. In implementation terms, that means two systems share the same project files: the agent harness controls workflow execution, and the LLM wiki stores specs, tasks, research, and journals.
+
+**Avoid:**
+
+> This page is for contributors and fork modders: engineers extending Trellis itself, not end users.
+
+**Why**: Architecture docs should preserve the conceptual model, but the opening must quickly become a technical map. Audience labels and unsupported positioning prose make the page feel like a pitch instead of a technical contract.
+
 ### Lists
 
 **Use bullet lists for:**
