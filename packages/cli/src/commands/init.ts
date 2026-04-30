@@ -933,7 +933,20 @@ export async function init(options: InitOptions): Promise<void> {
   // Re-init fast path: skip full flow when .trellis/ already exists
   // ==========================================================================
 
-  if (!isFirstInit && !options.force && !options.skipExisting) {
+  // Aborted-init recovery (issue #204): if .trellis/ exists but tasks/ is
+  // empty, the previous init never reached bootstrap creation. Fall through
+  // to the full flow so the main-dispatch tasksEmpty fallback fires —
+  // handleReinit's joiner branch would otherwise mis-route the recovery.
+  const tasksDirEarly = path.join(cwd, PATHS.TASKS);
+  const tasksEmptyEarly =
+    !fs.existsSync(tasksDirEarly) || fs.readdirSync(tasksDirEarly).length === 0;
+
+  if (
+    !isFirstInit &&
+    !options.force &&
+    !options.skipExisting &&
+    !tasksEmptyEarly
+  ) {
     const reinitDone = await handleReinit(
       cwd,
       options,
