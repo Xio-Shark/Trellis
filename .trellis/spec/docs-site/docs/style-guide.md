@@ -140,6 +140,33 @@ Technical specifications and API details.
 | 500  | Server Error |
 ```
 
+### Architecture Content
+
+Architecture and system-overview pages should explain the request or
+workflow path before listing components.
+
+```mdx
+## From one request
+
+Explain how a user action moves through the system:
+input -> state lookup -> context selection -> execution -> verification
+-> persistence.
+
+## Component recap
+
+Summarize each component after the reader understands why it appears.
+```
+
+**Why**: Component-first pages force readers to memorize names before
+they understand the problem each component solves. A workflow-first path
+shows when each file, hook, script, or role becomes necessary, then the
+recap table reinforces the model.
+
+**Reference detail**: Put exhaustive field tables, path matrices, and
+per-platform configuration in reference pages or appendices. The
+architecture page should summarize and link to those references instead
+of duplicating them.
+
 ---
 
 ## Formatting Standards
