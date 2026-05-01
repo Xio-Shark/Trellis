@@ -4067,6 +4067,26 @@ describe("regression: research agent persists findings to task dir", () => {
     expect(data.instructions).toContain("{TASK_DIR}/research/");
     expect(data.instructions).toMatch(/PERSIST|persist/);
   });
+
+  it("opencode research.md grants write/edit permission and has persist instruction", () => {
+    const content = fs.readFileSync(
+      path.join(
+        repoRoot,
+        "packages/cli/src/templates/opencode/agents/trellis-research.md",
+      ),
+      "utf-8",
+    );
+    const fm = content.split("---\n")[1] ?? "";
+    // OpenCode uses YAML permission block, not Claude-style `tools:` list
+    expect(fm).toMatch(/^\s*write:\s*allow\s*$/m);
+    expect(fm).toMatch(/^\s*edit:\s*allow\s*$/m);
+    // Body must reference persist target and PERSIST keyword
+    expect(content).toContain("{TASK_DIR}/research/");
+    expect(content).toMatch(/PERSIST|[Pp]ersist/);
+    // Must not have blanket "Modify any files" forbidden rule (the pre-fix
+    // body's central failure)
+    expect(content).not.toMatch(/^- Modify any files\s*$/m);
+  });
 });
 
 describe("regression: templates/markdown/spec contains only .md.txt files (0.5.0-beta.9)", () => {
