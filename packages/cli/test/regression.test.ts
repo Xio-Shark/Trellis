@@ -4121,3 +4121,38 @@ describe("regression: templates/markdown/spec contains only .md.txt files (0.5.0
     ).toEqual([]);
   });
 });
+
+describe("regression: opencode plugin files have only export default (#212)", () => {
+  // OpenCode 1.2.x plugin loader iterates `Object.entries(mod)` and invokes
+  // every export as a plugin factory. Named exports alongside the default get
+  // called with wrong args, the loader aborts, and the default factory
+  // silently never runs — no error surfaces to stderr or to the plugin's own
+  // debug log. dc2bea3 fixed session-start.js by extracting named exports to
+  // lib/session-utils.js. This test prevents regression: any future named
+  // export added directly to a `.opencode/plugins/*.js` file would silently
+  // break that plugin's hooks on user machines.
+  const __dirname2 = path.dirname(fileURLToPath(import.meta.url));
+  const repoRoot = path.resolve(__dirname2, "../../..");
+  const pluginsDir = path.join(
+    repoRoot,
+    "packages/cli/src/templates/opencode/plugins",
+  );
+  const pluginFiles = fs
+    .readdirSync(pluginsDir)
+    .filter((f) => f.endsWith(".js"));
+
+  for (const file of pluginFiles) {
+    it(`${file} has exactly one export, and it is 'export default'`, () => {
+      const content = fs.readFileSync(path.join(pluginsDir, file), "utf-8");
+      const exportLines = content
+        .split("\n")
+        .filter((l) => /^export\s/.test(l));
+      expect(
+        exportLines,
+        `${file} must have exactly one top-level export (got ${exportLines.length}). ` +
+          `Move helper functions/constants to ../lib/ — opencode loader treats every export as a plugin factory.`,
+      ).toHaveLength(1);
+      expect(exportLines[0]).toMatch(/^export\s+default\s/);
+    });
+  }
+});
