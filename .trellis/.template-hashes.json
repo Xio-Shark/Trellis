@@ -122,6 +122,7 @@
     ".cursor/hooks/session-start.py": "37746289c023803183a4df51f80072d2c0d35172f943c64508eedf97501547cc",
     ".agents/skills/trellis-continue/SKILL.md": "aba3e18dc4a4d893ab9b3e3bb830acd111c72aacf319a059955ef9e3097e1117",
     ".codex/hooks/session-start.py": "8c2cf3d6681cc9a766faff4774310fdbc14373419c16e1c6139e18ec49b51663",
-    ".pi/prompts/trellis-continue.md": "cdb8cd157654b76014742cb8405da038d5feedce4c3228212b489c6c57a68e3d"
+    ".pi/prompts/trellis-continue.md": "cdb8cd157654b76014742cb8405da038d5feedce4c3228212b489c6c57a68e3d",
+    ".opencode/agents/trellis-research.md": "2c5135aefe280fd4508554e58c64bd13f5f9fe58b8bb25393e68496b29bfae4e"
   }
 }
