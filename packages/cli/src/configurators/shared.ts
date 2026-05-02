@@ -18,6 +18,26 @@ export function getPythonCommandForPlatform(
 }
 
 /**
+ * Replace literal `python3` with `python` on Windows, excluding shebang lines.
+ *
+ * Applied at init/update write time so that all file types (including .py, .md,
+ * .toml, .json) get the correct command for the host platform without needing
+ * template-level changes or runtime detection code.
+ *
+ * On non-Windows platforms this is a no-op (returns content unchanged).
+ * The replacement is idempotent: running it twice produces the same result.
+ */
+export function replacePythonCommandLiterals(content: string): string {
+  if (process.platform !== "win32") return content;
+  return content
+    .split("\n")
+    .map((line) =>
+      line.startsWith("#!") ? line : line.replaceAll("python3", "python"),
+    )
+    .join("\n");
+}
+
+/**
  * Resolve platform-specific placeholders in template content.
  *
  * When called without a context, only resolves {{PYTHON_CMD}} (legacy behavior
@@ -62,7 +82,9 @@ export function resolvePlaceholders(
   content: string,
   context?: TemplateContext,
 ): string {
-  let result = content.replace(RE_PYTHON_CMD, getPythonCommandForPlatform());
+  let result = replacePythonCommandLiterals(
+    content.replace(RE_PYTHON_CMD, getPythonCommandForPlatform()),
+  );
 
   if (!context) return result;
 
@@ -306,12 +328,18 @@ export async function writeSkills(
   for (const skill of skills) {
     const skillDir = path.join(skillsRoot, skill.name);
     ensureDir(skillDir);
-    await writeFile(path.join(skillDir, "SKILL.md"), skill.content);
+    await writeFile(
+      path.join(skillDir, "SKILL.md"),
+      replacePythonCommandLiterals(skill.content),
+    );
   }
   for (const skillFile of bundledSkills) {
     const targetPath = path.join(skillsRoot, skillFile.relativePath);
     ensureDir(path.dirname(targetPath));
-    await writeFile(targetPath, skillFile.content);
+    await writeFile(
+      targetPath,
+      replacePythonCommandLiterals(skillFile.content),
+    );
   }
 }
 
@@ -323,7 +351,10 @@ export async function writeAgents(
 ): Promise<void> {
   ensureDir(agentsDir);
   for (const agent of agents) {
-    await writeFile(path.join(agentsDir, `${agent.name}${ext}`), agent.content);
+    await writeFile(
+      path.join(agentsDir, `${agent.name}${ext}`),
+      replacePythonCommandLiterals(agent.content),
+    );
   }
 }
 
@@ -336,7 +367,10 @@ export async function writeSharedHooks(
     await import("../templates/shared-hooks/index.js");
   ensureDir(hooksDir);
   for (const hook of getSharedHookScriptsForPlatform(platform)) {
-    await writeFile(path.join(hooksDir, hook.name), hook.content);
+    await writeFile(
+      path.join(hooksDir, hook.name),
+      replacePythonCommandLiterals(hook.content),
+    );
   }
 }
 
@@ -358,7 +392,7 @@ export function buildPullBasedPrelude(agentType: SubAgentType): string {
   // context buckets keyed by role (not by platform-visible agent name).
   const jsonl = agentType === "check" ? "check.jsonl" : "implement.jsonl";
 
-  return `## Required: Load Trellis Context First
+  return replacePythonCommandLiterals(`## Required: Load Trellis Context First
 
 This platform does NOT auto-inject task context via hook. Before doing anything else, you MUST load context yourself:
 
@@ -374,7 +408,7 @@ If there is no active task or the task has no \`prd.md\`, ask the user what to w
 
 ---
 
-`;
+`);
 }
 
 /** Insert prelude into a markdown agent definition (after YAML frontmatter). */
