@@ -36,35 +36,31 @@ For each commit that touches `src/`:
 
 ### Step 4: Draft Changelog
 
-**Voice**: technical reference, not product story. See `.trellis/spec/docs-site/docs/style-guide.md` → "Changelog / Release Notes Voice" for the canonical rules. Quick summary:
+**Voice**: technical reference doc. Short, clear, plain. Not a story, not a sales pitch. Style guide: `.trellis/spec/docs-site/docs/style-guide.md` → "Changelog / Release Notes Voice".
 
 **DO**
 
-- Lead each section with one sentence stating what changed.
+- Lead each `###` section with **one** sentence stating what changed. Then table / code / bullets. Done.
 - Use feature names as headings (`### Joiner onboarding task`), not outcomes (`### New devs no longer stuck`).
-- Prefer tables, code blocks, and bullets over paragraphs.
-- Include concrete identifiers users will grep for: file paths, function names, flag names, migration entries.
-- Match sibling sections across `changelog/` and `zh/changelog/` — same nouns, same structure, translated prose.
+- Include grep-able identifiers: file paths, function names, flag names, migration entries.
+- Mirror English and Chinese 1:1 — same sections, same tables, same code blocks; only prose translated.
 
 **DON'T**
 
-- Rhetorical questions ("然后呢？然后就没然后了" / "but then what?").
-- Emotional framing ("一脸懵", "吐槽", "devs were stuck") — describes feelings, not the change.
-- Filler adverbs ("simply", "easily", "just").
-- Narrative backstory in the opening paragraph. Background (if any) goes into a later paragraph, a collapsible `<Note>`, or gets dropped entirely. Product narrative belongs in the task PRD or a blog post, not the changelog.
-- Outcome-phrased headings that age badly or aren't greppable.
+- **No "Why X" / "Background" / "Rationale" paragraphs.** If the change isn't self-explanatory from the diff + one-sentence opener, the entry is too vague — split it or trim it. Multi-sentence justification belongs in the task PRD or commit body.
+- **No Tests section, no test counts.** "847/847 pass" / "5 new regression tests" is commit-message material, not user-facing changelog.
+- **No "Internal" section bloat.** Only include internal entries if they materially change behavior the user can observe (e.g. byte-identity affecting multi-platform setups). Function-rename refactors, internal flag flips, spec-file edits → drop unless directly relevant.
+- No rhetorical questions ("然后呢？然后就没然后了" / "but then what?").
+- No emotional framing ("一脸懵", "吐槽", "devs were stuck").
+- No filler adverbs ("simply", "easily", "just").
+- No outcome-phrased headings that age badly or aren't greppable.
+- No marketing voice. Don't sell the change. State it.
 
-**Organize entries into sections**:
+**Length cap**: each `###` section ≤ ~120 words. Going over means you're explaining instead of describing — trim.
 
-```
-**Enhancements:**
-- feat(scope): description
+**Allowed top-level sections** (ordered): `Enhancements` (feat), `Bug Fixes` (fix), `Internal` (only if user-observable), `Upgrade`. Skip any section with no entries — don't ship an empty heading.
 
-**Bug Fixes:**
-- fix(scope): description
-```
-
-For the docs-site MDX version of the changelog (Step 7), expand each one-liner into a tight technical block — opening sentence + tables / code / bullets. No storytelling paragraphs.
+**Manifest `changelog` field** (terminal display during `trellis update`): same rules, single string with `\n` separators, group with `**Enhancements:**` / `**Bug Fixes:**` / `**Internal:**` bold prefixes.
 
 ### Step 5: Determine Manifest Fields
 
@@ -145,18 +141,9 @@ Create changelog files for both English and Chinese:
 1. `docs-site/changelog/v<version>.mdx` — English changelog
 2. `docs-site/zh/changelog/v<version>.mdx` — Chinese changelog
 
-Use the format from previous changelog files (frontmatter with title + description date, then content). Structure and section ordering must match between the English and Chinese versions 1:1.
+Use the format from previous changelog files (frontmatter with title + description date, then content). Structure and section ordering must match between English and Chinese 1:1.
 
-**Voice reminder** (repeat of Step 4 rules — the MDX files are what users actually read):
-
-- Open each `###` section with one sentence stating what changed. Don't bury it under backstory.
-- Section heading = feature name (`### Joiner onboarding task`), not outcome (`### New devs no longer stuck`).
-- Tables, code blocks, bullets over prose. Include exact identifiers — file paths, function names, flag names, migration entry paths — so users can grep.
-- No rhetorical questions, no emotional framing, no "simply / easily / just". Reference-doc tone.
-- Skim the previous `docs-site/changelog/v*.mdx` for the house style before writing — section naming, depth, use of "Upgrade" footer, install command.
-- Zh version is a translation of the same structure, not a re-imagining. Same tables, same code blocks, same identifiers.
-
-See `.trellis/spec/docs-site/docs/style-guide.md` → "Changelog / Release Notes Voice" for the full rule set and a before/after example.
+**Voice**: same rules as Step 4 — apply them. MDX is what users actually read; if the manifest's `changelog` field is sharp but the MDX expands into prose, you've broken the contract. Skim the most recent `docs-site/changelog/v*.mdx` for sectioning and footer style before writing.
 
 3. Update `docs-site/docs.json`:
    - Add `"changelog/v<version>"` to the English changelog pages list (at the top)

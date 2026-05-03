@@ -300,6 +300,18 @@ to generate three task types: creator bootstrap, joiner onboarding, or no task.
 
 Lead with the change. Background (if any) goes into a second paragraph or a collapsed "Why" subsection — not in the opening sentence.
 
+### Don't: section bloat
+
+**Don't ship these sections in a changelog:**
+
+- `## Tests` / `## Test Coverage` — "847/847 pass" / "5 new regression tests" is commit-message material. Users care about behavior, not test counts.
+- `## Internal` (default) — refactor function-renames, internal flag flips, spec-file edits. Only include an Internal entry if it changes user-observable behavior in a multi-platform / multi-version setup. Otherwise drop it.
+- `## Why` / `## Background` / `## Rationale` — multi-sentence justifications. If the change isn't clear from a one-sentence opener + table/code, the entry is too vague — split it or trim it. Long-form rationale belongs in the task PRD or commit body.
+
+**Length cap**: each `###` section ≤ ~120 words. Going over means you're explaining instead of describing — trim.
+
+**Allowed top-level sections** (ordered, skip empty ones): `Enhancements` (`feat`), `Bug Fixes` (`fix`), `Internal` (only if user-observable), `Upgrade`. No empty headings.
+
 ### Section heading rules
 
 - **Use feature names, not outcomes**: `### Joiner onboarding task`, not `### New developers aren't thrown into a black box anymore`.
