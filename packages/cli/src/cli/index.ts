@@ -4,6 +4,7 @@ import chalk from "chalk";
 import { Command } from "commander";
 import { init } from "../commands/init.js";
 import { update } from "../commands/update.js";
+import { uninstall } from "../commands/uninstall.js";
 import { DIR_NAMES } from "../constants/paths.js";
 import { VERSION, PACKAGE_NAME } from "../constants/version.js";
 import { compareVersions } from "../utils/compare-versions.js";
@@ -129,6 +130,31 @@ program
         createNew: options.createNew as boolean,
         allowDowngrade: options.allowDowngrade as boolean,
         migrate: options.migrate as boolean,
+      });
+    } catch (error) {
+      console.error(
+        chalk.red("Error:"),
+        error instanceof Error ? error.message : error,
+      );
+      if (process.env.DEBUG || process.env.TRELLIS_DEBUG) {
+        console.error(error instanceof Error ? error.stack : error);
+      }
+      process.exit(1);
+    }
+  });
+
+program
+  .command("uninstall")
+  .description(
+    "Remove all trellis files (managed platform files + .trellis/) from this project",
+  )
+  .option("-y, --yes", "Skip confirmation prompt")
+  .option("--dry-run", "List what would be removed without changing anything")
+  .action(async (options: Record<string, unknown>) => {
+    try {
+      await uninstall({
+        yes: options.yes as boolean,
+        dryRun: options.dryRun as boolean,
       });
     } catch (error) {
       console.error(
