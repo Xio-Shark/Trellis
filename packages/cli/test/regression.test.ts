@@ -4077,7 +4077,6 @@ describe("regression: research agent persists findings to task dir", () => {
     "packages/cli/src/templates/claude/agents/trellis-research.md",
     "packages/cli/src/templates/cursor/agents/trellis-research.md",
     "packages/cli/src/templates/qoder/agents/trellis-research.md",
-    "packages/cli/src/templates/gemini/agents/trellis-research.md",
     "packages/cli/src/templates/codebuddy/agents/trellis-research.md",
     "packages/cli/src/templates/droid/droids/trellis-research.md",
   ];
@@ -4098,6 +4097,21 @@ describe("regression: research agent persists findings to task dir", () => {
       expect(content).not.toMatch(/^- Modify any files\s*$/m);
     });
   }
+
+  // Gemini CLI 0.40+ rejects the comma-separated `tools:` line that other
+  // platforms accept (Zod expects an array or omission). Trellis omits the
+  // line entirely so the sub-agent inherits parent tools — see issue #224
+  // and research/agent-tools-frontmatter.md. The persist contract still
+  // applies (body references {TASK_DIR}/research/ and the PERSIST keyword).
+  it("[packages/cli/src/templates/gemini/agents/trellis-research.md] omits tools line + has persist instruction", () => {
+    const rel = "packages/cli/src/templates/gemini/agents/trellis-research.md";
+    const content = fs.readFileSync(path.join(repoRoot, rel), "utf-8");
+    const fm = content.split("---\n")[1] ?? "";
+    expect(fm).not.toMatch(/^tools:/m);
+    expect(content).toContain("{TASK_DIR}/research/");
+    expect(content).toMatch(/PERSIST|[Pp]ersist/);
+    expect(content).not.toMatch(/^- Modify any files\s*$/m);
+  });
 
   it("codex research.toml uses workspace-write sandbox and persist instruction", () => {
     const content = fs.readFileSync(
@@ -4216,4 +4230,128 @@ describe("regression: opencode plugin files have only export default (#212)", ()
       expect(exportLines[0]).toMatch(/^export\s+default\s/);
     });
   }
+});
+
+// =============================================================================
+// regression: Gemini CLI 0.40.x template compatibility (issue #224)
+// =============================================================================
+
+describe("regression: Gemini CLI 0.40.x template compatibility (#224)", () => {
+  const __dirname2 = path.dirname(fileURLToPath(import.meta.url));
+  const repoRoot = path.resolve(__dirname2, "../../..");
+  const geminiAgentsDir = path.resolve(
+    __dirname2,
+    "../src/templates/gemini/agents",
+  );
+
+  it("[#224] gemini agent .md files do NOT carry a comma-separated tools line", () => {
+    // Gemini CLI 0.40+ Zod schema rejects `tools: a, b, c` with
+    // "tools: Expected array, received string". Trellis omits the line so
+    // sub-agents inherit parent tools (per research/agent-tools-frontmatter.md).
+    for (const entry of fs.readdirSync(geminiAgentsDir)) {
+      if (!entry.endsWith(".md")) continue;
+      const content = fs.readFileSync(
+        path.join(geminiAgentsDir, entry),
+        "utf-8",
+      );
+      const fm = content.split("---\n")[1] ?? "";
+      expect(
+        fm,
+        `gemini/agents/${entry} must NOT include a tools: line — Gemini CLI 0.40+ rejects the comma-separated form`,
+      ).not.toMatch(/^tools:/m);
+    }
+  });
+
+  it("[#224] gemini settings.json uses BeforeAgent (not UserPromptSubmit)", () => {
+    const settingsPath = path.resolve(
+      repoRoot,
+      "packages/cli/src/templates/gemini/settings.json",
+    );
+    const raw = fs.readFileSync(settingsPath, "utf-8");
+    const parsed = JSON.parse(raw) as { hooks?: Record<string, unknown> };
+    expect(parsed.hooks).toBeDefined();
+    expect(Object.keys(parsed.hooks ?? {})).toContain("BeforeAgent");
+    expect(Object.keys(parsed.hooks ?? {})).not.toContain("UserPromptSubmit");
+  });
+
+  it("[#224] inject-workflow-state.py emits BeforeAgent for gemini, UserPromptSubmit otherwise", () => {
+    const hookPath = path.resolve(
+      repoRoot,
+      "packages/cli/src/templates/shared-hooks/inject-workflow-state.py",
+    );
+    const content = fs.readFileSync(hookPath, "utf-8");
+    // The platform branch: `"BeforeAgent" if _detect_platform(...) == "gemini"`
+    expect(content).toMatch(
+      /"BeforeAgent"\s+if\s+_detect_platform\([^)]*\)\s*==\s*"gemini"\s+else\s+"UserPromptSubmit"/,
+    );
+  });
+
+  it("[#224] configurePlatform('gemini') writes shared skills to .agents/skills, NOT .gemini/skills", async () => {
+    const tmpDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), "trellis-gemini-issue224-"),
+    );
+    try {
+      setWriteMode("force");
+      await configurePlatform("gemini", tmpDir);
+      expect(fs.existsSync(path.join(tmpDir, ".agents", "skills"))).toBe(true);
+      expect(fs.existsSync(path.join(tmpDir, ".gemini", "skills"))).toBe(false);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      setWriteMode("ask");
+    }
+  });
+
+  it("[#224] codex + gemini render byte-identical content for shared `.agents/skills/` files", () => {
+    const codexFiles = collectPlatformTemplates("codex");
+    const geminiFiles = collectPlatformTemplates("gemini");
+    expect(codexFiles).toBeInstanceOf(Map);
+    expect(geminiFiles).toBeInstanceOf(Map);
+    if (!codexFiles || !geminiFiles) return;
+
+    let overlapCount = 0;
+    for (const [filePath, codexContent] of codexFiles) {
+      if (!filePath.startsWith(".agents/skills/")) continue;
+      const geminiContent = geminiFiles.get(filePath);
+      if (geminiContent === undefined) continue;
+      overlapCount++;
+      expect(
+        geminiContent,
+        `Codex and Gemini disagree on ${filePath} — last-writer-wins would corrupt the shared skill`,
+      ).toBe(codexContent);
+    }
+    // At least the 5 shared workflow skills + bundled trellis-meta files must
+    // overlap. If this drops to 0 the assertion above is silently passing.
+    expect(overlapCount).toBeGreaterThan(0);
+  });
+
+  it("[#224] needsCodexUpgrade looks for Codex-only command-as-skill markers, not bare `.agents/skills/` prefix", () => {
+    // Regression: with Gemini also writing to `.agents/skills/` (5 shared
+    // workflow skills only), the legacy-Codex detector previously triggered
+    // a false-positive `.codex/` install on every fresh `init --gemini` +
+    // `update` cycle. The fix narrows detection to Codex-only files
+    // (`trellis-continue/SKILL.md`, `trellis-finish-work/SKILL.md`) which
+    // Gemini does NOT write (it puts continue/finish-work under
+    // `.gemini/commands/trellis/*.toml`).
+    const updateSrc = fs.readFileSync(
+      path.resolve(repoRoot, "packages/cli/src/commands/update.ts"),
+      "utf-8",
+    );
+    // Must check for Codex-only command-as-skill markers, not the bare
+    // `.agents/skills/` prefix.
+    expect(updateSrc).toMatch(
+      /\.agents\/skills\/trellis-continue\/SKILL\.md/,
+    );
+    expect(updateSrc).toMatch(
+      /\.agents\/skills\/trellis-finish-work\/SKILL\.md/,
+    );
+    // Must NOT use the broad `startsWith(".agents/skills/")` heuristic
+    // inside needsCodexUpgrade — that would re-introduce the false positive.
+    const needsCodexUpgradeBody = updateSrc.match(
+      /function needsCodexUpgrade\([^)]*\)[^{]*\{([\s\S]*?)\n\}/,
+    )?.[1];
+    expect(needsCodexUpgradeBody).toBeDefined();
+    expect(needsCodexUpgradeBody ?? "").not.toMatch(
+      /startsWith\(["']\.agents\/skills\/["']\)/,
+    );
+  });
 });

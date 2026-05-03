@@ -1,9 +1,13 @@
-import { describe, expect, it, vi, afterEach } from "vitest";
+import { describe, expect, it, afterEach } from "vitest";
 import {
   getPythonCommandForPlatform,
   replacePythonCommandLiterals,
+  resolveAllAsSkillsNeutral,
   resolvePlaceholders,
+  resolvePlaceholdersNeutral,
+  resolveSkillsNeutral,
 } from "../../src/configurators/shared.js";
+import { AI_TOOLS } from "../../src/types/ai-tools.js";
 import type { TemplateContext } from "../../src/types/ai-tools.js";
 
 // ---------------------------------------------------------------------------
@@ -420,5 +424,146 @@ describe("resolvePlaceholders", () => {
       const input = "{{UNKNOWN}} and {{#UNKNOWN_FLAG}}x{{/UNKNOWN_FLAG}}";
       expect(resolvePlaceholders(input, claudeCtx)).toBe(input);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolvePlaceholdersNeutral — neutral CMD_REF for shared `.agents/skills/`
+// (issue #224 fix: avoid Codex+Gemini last-writer-wins on identical files)
+// ---------------------------------------------------------------------------
+
+describe("resolvePlaceholdersNeutral", () => {
+  it("renders {{CMD_REF:name}} as `name` (Trellis command) — platform-neutral", () => {
+    expect(
+      resolvePlaceholdersNeutral("See {{CMD_REF:brainstorm}}", claudeCtx),
+    ).toBe("See `brainstorm` (Trellis command)");
+    expect(
+      resolvePlaceholdersNeutral("See {{CMD_REF:brainstorm}}", codexCtx),
+    ).toBe("See `brainstorm` (Trellis command)");
+  });
+
+  it("produces byte-identical CMD_REF output across platforms", () => {
+    const input =
+      "Run {{CMD_REF:check}} then {{CMD_REF:finish-work}} after coding.";
+    const claudeOut = resolvePlaceholdersNeutral(input, claudeCtx);
+    const codexOut = resolvePlaceholdersNeutral(input, codexCtx);
+    const cursorOut = resolvePlaceholdersNeutral(input, cursorCtx);
+    expect(claudeOut).toBe(codexOut);
+    expect(codexOut).toBe(cursorOut);
+  });
+
+  it("still resolves {{PYTHON_CMD}}", () => {
+    const result = resolvePlaceholdersNeutral(
+      "{{PYTHON_CMD}} script.py",
+      claudeCtx,
+    );
+    const py = process.platform === "win32" ? "python" : "python3";
+    expect(result).toBe(`${py} script.py`);
+  });
+
+  it("still resolves {{CLI_FLAG}} per platform (used by Codex-only command-as-skill files)", () => {
+    expect(
+      resolvePlaceholdersNeutral("--platform {{CLI_FLAG}}", codexCtx),
+    ).toBe("--platform codex");
+    expect(
+      resolvePlaceholdersNeutral("--platform {{CLI_FLAG}}", claudeCtx),
+    ).toBe("--platform claude");
+  });
+
+  it("still resolves {{EXECUTOR_AI}} and {{USER_ACTION_LABEL}} per platform", () => {
+    // Defensive: not used in current shared skills, but kept functional for
+    // future templates.
+    expect(
+      resolvePlaceholdersNeutral("{{EXECUTOR_AI}}", claudeCtx),
+    ).toBe("Bash scripts or Task calls");
+    expect(
+      resolvePlaceholdersNeutral("{{USER_ACTION_LABEL}}", codexCtx),
+    ).toBe("Skills");
+  });
+
+  it("still applies conditional blocks per context", () => {
+    const template = [
+      "{{#AGENT_CAPABLE}}",
+      "Spawn agent",
+      "{{/AGENT_CAPABLE}}",
+      "{{^AGENT_CAPABLE}}",
+      "Inline edit",
+      "{{/AGENT_CAPABLE}}",
+    ].join("\n");
+    expect(resolvePlaceholdersNeutral(template, claudeCtx)).toContain(
+      "Spawn agent",
+    );
+    expect(resolvePlaceholdersNeutral(template, cursorCtx)).toContain(
+      "Inline edit",
+    );
+  });
+
+  it("returns content unchanged when no context is provided (legacy parity)", () => {
+    const input = "See {{CMD_REF:brainstorm}}";
+    expect(resolvePlaceholdersNeutral(input)).toBe(input);
+  });
+
+  it("handles empty content", () => {
+    expect(resolvePlaceholdersNeutral("", claudeCtx)).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveSkillsNeutral / resolveAllAsSkillsNeutral — cross-platform parity
+// for `.agents/skills/` writes
+// ---------------------------------------------------------------------------
+
+describe("resolveSkillsNeutral / resolveAllAsSkillsNeutral", () => {
+  it("resolveSkillsNeutral produces byte-identical output for Codex and Gemini", () => {
+    const codexSkills = resolveSkillsNeutral(AI_TOOLS.codex.templateContext);
+    const geminiSkills = resolveSkillsNeutral(AI_TOOLS.gemini.templateContext);
+    expect(codexSkills.length).toBe(geminiSkills.length);
+    for (let i = 0; i < codexSkills.length; i++) {
+      expect(codexSkills[i].name).toBe(geminiSkills[i].name);
+      expect(codexSkills[i].content).toBe(geminiSkills[i].content);
+    }
+  });
+
+  it("resolveSkillsNeutral renders CMD_REF without platform-specific prefix", () => {
+    // The neutral output must not contain platform-prefixed tokens for any
+    // command that CMD_REF references in the shared skills (Codex `$name`,
+    // Claude `/trellis:name`, Cursor `/trellis-name`).
+    const neutral = resolveSkillsNeutral(AI_TOOLS.codex.templateContext);
+    const cmdRefNames = [
+      "start",
+      "brainstorm",
+      "check",
+      "break-loop",
+      "update-spec",
+      "finish-work",
+    ];
+    for (const skill of neutral) {
+      for (const name of cmdRefNames) {
+        expect(
+          skill.content,
+          `${skill.name} leaks Codex prefix for ${name}`,
+        ).not.toContain(`$${name}`);
+        expect(
+          skill.content,
+          `${skill.name} leaks Claude prefix for ${name}`,
+        ).not.toContain(`/trellis:${name}`);
+        expect(
+          skill.content,
+          `${skill.name} leaks Cursor prefix for ${name}`,
+        ).not.toContain(`/trellis-${name}`);
+      }
+    }
+  });
+
+  it("resolveAllAsSkillsNeutral keeps the 5 shared skills byte-identical to resolveSkillsNeutral", () => {
+    const all = resolveAllAsSkillsNeutral(AI_TOOLS.codex.templateContext);
+    const fiveOnly = resolveSkillsNeutral(AI_TOOLS.codex.templateContext);
+    const sharedNames = new Set(fiveOnly.map((s) => s.name));
+    const allShared = all.filter((s) => sharedNames.has(s.name));
+    expect(allShared.length).toBe(fiveOnly.length);
+    for (const five of fiveOnly) {
+      const match = allShared.find((s) => s.name === five.name);
+      expect(match?.content).toBe(five.content);
+    }
   });
 });

@@ -38,9 +38,11 @@ import {
   replacePythonCommandLiterals,
   resolvePlaceholders,
   resolveAllAsSkills,
+  resolveAllAsSkillsNeutral,
   resolveBundledSkills,
   resolveCommands,
   resolveSkills,
+  resolveSkillsNeutral,
   wrapWithCommandFrontmatter,
   collectSkillTemplates,
   applyPullBasedPreludeMarkdown,
@@ -207,7 +209,7 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
       const ctx = AI_TOOLS.codex.templateContext;
       for (const [filePath, content] of collectSkillTemplates(
         ".agents/skills",
-        resolveAllAsSkills(ctx),
+        resolveAllAsSkillsNeutral(ctx),
         resolveBundledSkills(ctx),
       )) {
         files.set(filePath, content);
@@ -276,9 +278,12 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
         const toml = `description = "Trellis: ${cmd.name}"\n\nprompt = """\n${cmd.content}\n"""\n`;
         files.set(`.gemini/commands/trellis/${cmd.name}.toml`, toml);
       }
+      // Shared skills written to `.agents/skills/` (Gemini CLI 0.40+ workspace
+      // alias). Neutral resolver keeps content byte-identical to Codex's writes
+      // for the same skill names.
       for (const [filePath, content] of collectSkillTemplates(
-        ".gemini/skills",
-        resolveSkills(ctx),
+        ".agents/skills",
+        resolveSkillsNeutral(ctx),
         resolveBundledSkills(ctx),
       )) {
         files.set(filePath, content);

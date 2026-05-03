@@ -79,13 +79,28 @@ Both regexes MUST use the `\1` backreference variant — `[workflow-state:([A-Za
 
    ```json
    {"hookSpecificOutput": {
-     "hookEventName": "UserPromptSubmit",
+     "hookEventName": "<platform-event-name>",
      "additionalContext": "<workflow-state>...</workflow-state>"
    }}
    ```
 
    The platform host injects `additionalContext` as system-level preamble
    for that turn.
+
+   `hookEventName` MUST echo the host's per-turn event name or the host's
+   schema validator will reject the payload. The shared hook detects the
+   platform via `_detect_platform()` and emits the matching value:
+
+   | Detected platform | `hookEventName` value |
+   |---|---|
+   | gemini | `BeforeAgent` |
+   | all others (claude, cursor, codex, qoder, codebuddy, droid, copilot, kiro) | `UserPromptSubmit` |
+
+   When adding a new hook-capable platform whose per-turn event name is not
+   `UserPromptSubmit`, extend `_detect_platform()` and the `hook_event_name`
+   selector in `inject-workflow-state.py` (and the OpenCode `.js` plugin if
+   the new platform shares its `chat.message`-style envelope). Do NOT
+   hardcode `UserPromptSubmit` at any new emission site.
 
 ---
 
