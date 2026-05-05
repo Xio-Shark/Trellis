@@ -25,6 +25,10 @@ warnings.filterwarnings("ignore")
 
 
 def should_skip_injection() -> bool:
+    if os.environ.get("TRELLIS_HOOKS") == "0":
+        return True
+    if os.environ.get("TRELLIS_DISABLE_HOOKS") == "1":
+        return True
     return os.environ.get("COPILOT_NON_INTERACTIVE") == "1"
 
 

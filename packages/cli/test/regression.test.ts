@@ -2039,6 +2039,58 @@ describe("regression: current-task path normalization", () => {
     );
   });
 
+  it("[trellis-hooks-env] runtime: shared hooks emit no additionalContext when TRELLIS_HOOKS=0", () => {
+    setupTaskRepo();
+    writeSessionContext("claude_session-a", ".trellis/tasks/issue-106");
+
+    const claudeSession = expectTemplateContent(
+      claudeSessionStart,
+      "claude session-start",
+    );
+    const workflowState = expectTemplateContent(
+      getSharedHookScripts().find((h) => h.name === "inject-workflow-state.py")
+        ?.content,
+      "inject-workflow-state",
+    );
+    writeProjectFile(path.join(".claude", "hooks", "session-start.py"), claudeSession);
+    writeProjectFile(
+      path.join(".claude", "hooks", "inject-workflow-state.py"),
+      workflowState,
+    );
+
+    const stdinPayload = JSON.stringify({ cwd: tmpDir, session_id: "session-a" });
+
+    // Baseline: gate off, hooks emit content (sanity check)
+    const baselineSession = runPython(
+      path.join(".claude", "hooks", "session-start.py"),
+      stdinPayload,
+    );
+    expect(baselineSession).toContain("hookSpecificOutput");
+
+    // With TRELLIS_HOOKS=0: shared hooks short-circuit with empty stdout
+    const gatedSession = runPython(
+      path.join(".claude", "hooks", "session-start.py"),
+      stdinPayload,
+      { TRELLIS_HOOKS: "0" },
+    );
+    expect(gatedSession.trim()).toBe("");
+
+    const gatedWorkflow = runPython(
+      path.join(".claude", "hooks", "inject-workflow-state.py"),
+      stdinPayload,
+      { TRELLIS_HOOKS: "0" },
+    );
+    expect(gatedWorkflow.trim()).toBe("");
+
+    // TRELLIS_DISABLE_HOOKS=1 has the same effect
+    const gatedAlt = runPython(
+      path.join(".claude", "hooks", "session-start.py"),
+      stdinPayload,
+      { TRELLIS_DISABLE_HOOKS: "1" },
+    );
+    expect(gatedAlt.trim()).toBe("");
+  });
+
   it("[session-current-task] OpenCode context layer normalizes backslash refs for downstream plugins", () => {
     setupTaskRepo();
     writeSessionContext("opencode_oc-a", ".trellis\\tasks\\issue-106");
@@ -4409,6 +4461,52 @@ describe("regression: Gemini CLI 0.40.x template compatibility (#224)", () => {
     // At least the 5 shared workflow skills + bundled trellis-meta files must
     // overlap. If this drops to 0 the assertion above is silently passing.
     expect(overlapCount).toBeGreaterThan(0);
+  });
+
+  it("[trellis-hooks-env] all hook templates honor TRELLIS_HOOKS=0 / TRELLIS_DISABLE_HOOKS=1", () => {
+    // All shipped hook scripts must early-return when the operator sets
+    // TRELLIS_HOOKS=0 (or TRELLIS_DISABLE_HOOKS=1), so subprocess wrappers
+    // and casual-chat scenarios can disable Trellis injection without
+    // editing config or restarting under different settings.
+    const sharedHookTargets = [
+      "session-start.py",
+      "inject-workflow-state.py",
+      "inject-subagent-context.py",
+      "inject-shell-session-context.py",
+    ];
+    for (const name of sharedHookTargets) {
+      const script = getSharedHookScripts().find((h) => h.name === name)?.content;
+      expect(script, `shared-hooks/${name} should exist`).toBeTruthy();
+      expect(script).toContain('os.environ.get("TRELLIS_HOOKS") == "0"');
+      expect(script).toContain('os.environ.get("TRELLIS_DISABLE_HOOKS") == "1"');
+    }
+
+    // Platform-specific Python session-start variants (codex, copilot)
+    for (const [label, hooks] of [
+      ["codex", getCodexHooks()],
+      ["copilot", getCopilotHooks()],
+    ] as const) {
+      const sessionStart = hooks.find((h) => h.name === "session-start.py")?.content;
+      expect(sessionStart, `${label} session-start should exist`).toBeTruthy();
+      expect(sessionStart).toContain('os.environ.get("TRELLIS_HOOKS") == "0"');
+      expect(sessionStart).toContain('os.environ.get("TRELLIS_DISABLE_HOOKS") == "1"');
+    }
+
+    // OpenCode JS plugins (no TS export — read from disk)
+    const openCodePluginDir = path.resolve(
+      repoRoot,
+      "packages/cli/src/templates/opencode/plugins",
+    );
+    const jsPlugins = [
+      "session-start.js",
+      "inject-workflow-state.js",
+      "inject-subagent-context.js",
+    ];
+    for (const name of jsPlugins) {
+      const content = fs.readFileSync(path.join(openCodePluginDir, name), "utf-8");
+      expect(content).toContain('process.env.TRELLIS_HOOKS === "0"');
+      expect(content).toContain('process.env.TRELLIS_DISABLE_HOOKS === "1"');
+    }
   });
 
   it("[#224] needsCodexUpgrade looks for Codex-only command-as-skill markers, not bare `.agents/skills/` prefix", () => {
