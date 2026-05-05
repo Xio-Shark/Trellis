@@ -11,26 +11,21 @@
 # Keep AGENTS.md as the primary project instruction file.
 project_doc_fallback_filenames = ["AGENTS.md"]
 
-# Trellis-required features. Both can also be set at user level if you
-# prefer one global toggle.
-# - codex_hooks: enables SessionStart + UserPromptSubmit hooks defined
-#   in this directory's hooks.json (Trellis context injection).
-# - multi_agent_v2: forces structured subagent orchestration with the
-#   `wait` tool — parent must block on terminal status before acting,
-#   instead of cancelling / re-spawning impatiently. Incompatible with
-#   [agents].max_threads (codex will reject the combination).
-[features]
-codex_hooks = true
+# Codex hooks (`hooks.json` in this directory) load automatically once
+# the project is trusted — no feature flag needed. CodexHooks is Stable
+# and default_enabled: true in codex's feature registry; the legacy
+# `[features].codex_hooks = true` flag is no longer required.
 
-# v2 orchestration tuning. `enabled = true` is required — the table form
-# does NOT auto-enable the feature without it (codex source:
-# MultiAgentV2ConfigToml::enabled returns self.enabled).
-# - max_concurrent_threads_per_session: bumps default 4 → 6 to leave
-#   headroom when research fans out into parallel sub-topics.
-# - min_wait_timeout_ms: 480000 ms = 8 min. Trellis subagents
-#   (research / implement / check) routinely take 2–10 min; clamping
-#   the floor up from codex's 10 s prevents the parent from giving up
-#   prematurely and re-spawning. Hard ceiling is 3,600,000 (1 h).
+# multi_agent_v2 forces structured subagent orchestration with the
+# `wait` tool — parent must block on terminal status before acting,
+# instead of cancelling / re-spawning. Incompatible with
+# [agents].max_threads (codex will reject the combination).
+# `enabled = true` is required inside the table — the table form does
+# NOT auto-enable the feature without it.
+# - max_concurrent_threads_per_session: bumps default 4 → 6.
+# - min_wait_timeout_ms: 480000 ms = 8 min. Codex default is 10 s, too
+#   short for Trellis subagents that routinely take 2-10 min. Hard
+#   ceiling is 3,600,000 (1 h).
 [features.multi_agent_v2]
 enabled = true
 max_concurrent_threads_per_session = 6
