@@ -28,6 +28,7 @@ import {
 import {
   resolvePlaceholders,
   resolveAllAsSkills,
+  resolveAllAsSkillsNeutral,
   resolveBundledSkills,
   resolveCommands,
   resolveSkills,
@@ -250,7 +251,10 @@ describe("configurePlatform", () => {
   it("configurePlatform('codex') writes shared skill templates from common source", async () => {
     await configurePlatform("codex", tmpDir);
 
-    const expected = resolveAllAsSkills(AI_TOOLS.codex.templateContext);
+    // Codex writes shared skills under `.agents/skills/` using the neutral
+    // placeholder resolver so the rendered files are byte-identical to
+    // Gemini's writes for the same skill names — see issue #224 fix.
+    const expected = resolveAllAsSkillsNeutral(AI_TOOLS.codex.templateContext);
     const skillsRoot = path.join(tmpDir, ".agents", "skills");
     const actualNames = fs
       .readdirSync(skillsRoot, { withFileTypes: true })
@@ -379,8 +383,12 @@ describe("configurePlatform", () => {
       resolveCommands(AI_TOOLS.gemini.templateContext).length,
     );
 
-    // Skills as SKILL.md
-    const skillsDir = path.join(tmpDir, ".gemini", "skills");
+    // Skills as SKILL.md under the shared `.agents/skills/` root (Gemini CLI
+    // 0.40+ reads this directory as a workspace alias). The platform-private
+    // `.gemini/skills/` directory must NOT exist — writing there causes the
+    // duplicate-skill warnings reported in issue #224.
+    expect(fs.existsSync(path.join(tmpDir, ".gemini", "skills"))).toBe(false);
+    const skillsDir = path.join(tmpDir, ".agents", "skills");
     expect(fs.existsSync(skillsDir)).toBe(true);
     const skillDirs = fs
       .readdirSync(skillsDir, { withFileTypes: true })

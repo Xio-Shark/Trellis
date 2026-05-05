@@ -27,9 +27,10 @@ export function collectPiTemplates(): Map<string, string> {
     files.set(`.pi/prompts/trellis-${command.name}.md`, command.content);
   }
 
-  // Pi can discover `.agents/skills`, but Trellis common skills still render
-  // platform-specific command refs. Keep a Pi-owned skill root until shared
-  // Agent Skill text is platform-neutral.
+  // Skills written under `.pi/skills/` (Pi-owned skill root). Pi can also
+  // discover `.agents/skills/` shared with Codex/Gemini; switching is
+  // intentionally deferred to a follow-up because Pi has its own skill
+  // discovery semantics that aren't covered by this task.
   for (const [filePath, content] of collectSkillTemplates(
     ".pi/skills",
     resolveSkills(ctx),
@@ -66,8 +67,8 @@ export async function configurePi(cwd: string): Promise<void> {
     );
   }
 
-  // See collectPiTemplates(): this intentionally stays under `.pi/skills`
-  // until the shared `.agents/skills` rendering is safe for Pi.
+  // See collectPiTemplates(): Pi keeps a private `.pi/skills/` root for now.
+  // Cross-platform `.agents/skills/` adoption is a separate decision.
   await writeSkills(
     path.join(configRoot, "skills"),
     resolveSkills(ctx),

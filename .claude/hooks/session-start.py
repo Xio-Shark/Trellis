@@ -60,7 +60,13 @@ def _has_curated_jsonl_entry(jsonl_path: Path) -> bool:
 
 
 def should_skip_injection() -> bool:
-    """Check if any platform's non-interactive flag is set."""
+    """Check if any platform's non-interactive flag is set, or if Trellis
+    hooks are explicitly disabled via TRELLIS_HOOKS=0 / TRELLIS_DISABLE_HOOKS=1.
+    """
+    if os.environ.get("TRELLIS_HOOKS") == "0":
+        return True
+    if os.environ.get("TRELLIS_DISABLE_HOOKS") == "1":
+        return True
     non_interactive_vars = [
         "CLAUDE_NON_INTERACTIVE",
         "QODER_NON_INTERACTIVE",

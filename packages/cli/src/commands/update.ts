@@ -558,8 +558,21 @@ function needsCodexUpgrade(cwd: string): boolean {
     return false;
   }
 
+  // Codex-only marker: legacy Codex installs always tracked the
+  // command-as-skill files `trellis-continue/SKILL.md` and
+  // `trellis-finish-work/SKILL.md` under `.agents/skills/`. Other platforms
+  // that share `.agents/skills/` (e.g. Gemini CLI 0.40+ via the workspace
+  // alias — issue #224) only write the 5 workflow skills (brainstorm,
+  // before-dev, check, break-loop, update-spec) and never these two
+  // command files, so their presence in the hash file is a reliable signal
+  // that the project was originally configured with Codex before `.codex/`
+  // existed as a separate config dir.
   const hashes = loadHashes(cwd);
-  return Object.keys(hashes).some((key) => key.startsWith(".agents/skills/"));
+  const keys = Object.keys(hashes);
+  return (
+    keys.some((key) => key === ".agents/skills/trellis-continue/SKILL.md") ||
+    keys.some((key) => key === ".agents/skills/trellis-finish-work/SKILL.md")
+  );
 }
 
 function preserveExistingClaudeStatusLine(

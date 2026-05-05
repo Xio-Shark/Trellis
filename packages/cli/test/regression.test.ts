@@ -2039,6 +2039,58 @@ describe("regression: current-task path normalization", () => {
     );
   });
 
+  it("[trellis-hooks-env] runtime: shared hooks emit no additionalContext when TRELLIS_HOOKS=0", () => {
+    setupTaskRepo();
+    writeSessionContext("claude_session-a", ".trellis/tasks/issue-106");
+
+    const claudeSession = expectTemplateContent(
+      claudeSessionStart,
+      "claude session-start",
+    );
+    const workflowState = expectTemplateContent(
+      getSharedHookScripts().find((h) => h.name === "inject-workflow-state.py")
+        ?.content,
+      "inject-workflow-state",
+    );
+    writeProjectFile(path.join(".claude", "hooks", "session-start.py"), claudeSession);
+    writeProjectFile(
+      path.join(".claude", "hooks", "inject-workflow-state.py"),
+      workflowState,
+    );
+
+    const stdinPayload = JSON.stringify({ cwd: tmpDir, session_id: "session-a" });
+
+    // Baseline: gate off, hooks emit content (sanity check)
+    const baselineSession = runPython(
+      path.join(".claude", "hooks", "session-start.py"),
+      stdinPayload,
+    );
+    expect(baselineSession).toContain("hookSpecificOutput");
+
+    // With TRELLIS_HOOKS=0: shared hooks short-circuit with empty stdout
+    const gatedSession = runPython(
+      path.join(".claude", "hooks", "session-start.py"),
+      stdinPayload,
+      { TRELLIS_HOOKS: "0" },
+    );
+    expect(gatedSession.trim()).toBe("");
+
+    const gatedWorkflow = runPython(
+      path.join(".claude", "hooks", "inject-workflow-state.py"),
+      stdinPayload,
+      { TRELLIS_HOOKS: "0" },
+    );
+    expect(gatedWorkflow.trim()).toBe("");
+
+    // TRELLIS_DISABLE_HOOKS=1 has the same effect
+    const gatedAlt = runPython(
+      path.join(".claude", "hooks", "session-start.py"),
+      stdinPayload,
+      { TRELLIS_DISABLE_HOOKS: "1" },
+    );
+    expect(gatedAlt.trim()).toBe("");
+  });
+
   it("[session-current-task] OpenCode context layer normalizes backslash refs for downstream plugins", () => {
     setupTaskRepo();
     writeSessionContext("opencode_oc-a", ".trellis\\tasks\\issue-106");
@@ -2054,6 +2106,85 @@ describe("regression: current-task path normalization", () => {
     expect(ctx.resolveTaskDir(".trellis\\tasks\\issue-106")).toBe(
       path.join(tmpDir, ".trellis", "tasks", "issue-106"),
     );
+  });
+
+  // ------------------------------------------------------------
+  // Single-session fallback (issue #225 — class-2 sub-agents)
+  // ------------------------------------------------------------
+
+  function runTaskCurrent(envOverrides: NodeJS.ProcessEnv = {}): {
+    output: string;
+    status: number;
+  } {
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    let output = "";
+    let status = 0;
+    try {
+      output = execSync(
+        `${pythonCmd} ${JSON.stringify(taskScriptPath)} current --source`,
+        {
+          cwd: tmpDir,
+          encoding: "utf-8",
+          env: sessionEnv(envOverrides),
+        },
+      );
+    } catch (error) {
+      status =
+        typeof (error as { status?: unknown }).status === "number"
+          ? (error as { status: number }).status
+          : 1;
+      output = String((error as { stdout?: unknown }).stdout ?? "");
+    }
+    return { output, status };
+  }
+
+  it("[session-fallback] single session file — fallback returns its task with session-fallback source", () => {
+    setupTaskRepo();
+    writeSessionContext("codex_session_parent", ".trellis/tasks/issue-106");
+
+    const { output, status } = runTaskCurrent();
+    expect(status).toBe(0);
+    expect(output).toContain("Current task: .trellis/tasks/issue-106");
+    expect(output).toContain("Source: session-fallback:codex_session_parent");
+  });
+
+  it("[session-fallback] zero session files — no fallback, returns none", () => {
+    setupTaskRepo();
+    // No session files written
+
+    const { output, status } = runTaskCurrent();
+    expect(status).toBe(1);
+    expect(output).toContain("Current task: (none)");
+    expect(output).toContain("Source: none");
+  });
+
+  it("[session-fallback] multiple session files — refuses to guess, returns none", () => {
+    setupTaskRepo();
+    writeSessionContext("codex_session_a", ".trellis/tasks/issue-106");
+    writeProjectFile(
+      path.join(".trellis", "tasks", "other-task", "task.json"),
+      JSON.stringify({ title: "other", status: "in_progress" }, null, 2),
+    );
+    writeSessionContext("codex_session_b", ".trellis/tasks/other-task");
+
+    const { output, status } = runTaskCurrent();
+    expect(status).toBe(1);
+    expect(output).toContain("Current task: (none)");
+    expect(output).toContain("Source: none");
+  });
+
+  it("[session-fallback] explicit context-key match takes precedence over fallback", () => {
+    setupTaskRepo();
+    writeSessionContext("codex_session_explicit", ".trellis/tasks/issue-106");
+
+    const { output, status } = runTaskCurrent({
+      TRELLIS_CONTEXT_ID: "codex_session_explicit",
+    });
+    expect(status).toBe(0);
+    expect(output).toContain("Current task: .trellis/tasks/issue-106");
+    // Source should be "session:" (precise match), not "session-fallback:"
+    expect(output).toContain("Source: session:codex_session_explicit");
+    expect(output).not.toContain("session-fallback");
   });
 
   // ------------------------------------------------------------
@@ -3927,6 +4058,14 @@ describe("regression: class-2 platforms use pull-based sub-agent context", () =>
         }
       });
 
+      it("[issue-225] prelude tells sub-agent to look for `Active task:` line in dispatch prompt first", () => {
+        for (const file of preludeAgents) {
+          const content = fs.readFileSync(path.join(tmpDir, file), "utf-8");
+          expect(content).toContain("Active task:");
+          expect(content).toContain("dispatch prompt");
+        }
+      });
+
       it("research definition does NOT contain pull-based prelude", () => {
         // research is orthogonal: it searches .trellis/spec/ and doesn't
         // depend on an active task. Prelude would make it fail when Phase 1.2
@@ -4077,7 +4216,6 @@ describe("regression: research agent persists findings to task dir", () => {
     "packages/cli/src/templates/claude/agents/trellis-research.md",
     "packages/cli/src/templates/cursor/agents/trellis-research.md",
     "packages/cli/src/templates/qoder/agents/trellis-research.md",
-    "packages/cli/src/templates/gemini/agents/trellis-research.md",
     "packages/cli/src/templates/codebuddy/agents/trellis-research.md",
     "packages/cli/src/templates/droid/droids/trellis-research.md",
   ];
@@ -4098,6 +4236,21 @@ describe("regression: research agent persists findings to task dir", () => {
       expect(content).not.toMatch(/^- Modify any files\s*$/m);
     });
   }
+
+  // Gemini CLI 0.40+ rejects the comma-separated `tools:` line that other
+  // platforms accept (Zod expects an array or omission). Trellis omits the
+  // line entirely so the sub-agent inherits parent tools — see issue #224
+  // and research/agent-tools-frontmatter.md. The persist contract still
+  // applies (body references {TASK_DIR}/research/ and the PERSIST keyword).
+  it("[packages/cli/src/templates/gemini/agents/trellis-research.md] omits tools line + has persist instruction", () => {
+    const rel = "packages/cli/src/templates/gemini/agents/trellis-research.md";
+    const content = fs.readFileSync(path.join(repoRoot, rel), "utf-8");
+    const fm = content.split("---\n")[1] ?? "";
+    expect(fm).not.toMatch(/^tools:/m);
+    expect(content).toContain("{TASK_DIR}/research/");
+    expect(content).toMatch(/PERSIST|[Pp]ersist/);
+    expect(content).not.toMatch(/^- Modify any files\s*$/m);
+  });
 
   it("codex research.toml uses workspace-write sandbox and persist instruction", () => {
     const content = fs.readFileSync(
@@ -4216,4 +4369,174 @@ describe("regression: opencode plugin files have only export default (#212)", ()
       expect(exportLines[0]).toMatch(/^export\s+default\s/);
     });
   }
+});
+
+// =============================================================================
+// regression: Gemini CLI 0.40.x template compatibility (issue #224)
+// =============================================================================
+
+describe("regression: Gemini CLI 0.40.x template compatibility (#224)", () => {
+  const __dirname2 = path.dirname(fileURLToPath(import.meta.url));
+  const repoRoot = path.resolve(__dirname2, "../../..");
+  const geminiAgentsDir = path.resolve(
+    __dirname2,
+    "../src/templates/gemini/agents",
+  );
+
+  it("[#224] gemini agent .md files do NOT carry a comma-separated tools line", () => {
+    // Gemini CLI 0.40+ Zod schema rejects `tools: a, b, c` with
+    // "tools: Expected array, received string". Trellis omits the line so
+    // sub-agents inherit parent tools (per research/agent-tools-frontmatter.md).
+    for (const entry of fs.readdirSync(geminiAgentsDir)) {
+      if (!entry.endsWith(".md")) continue;
+      const content = fs.readFileSync(
+        path.join(geminiAgentsDir, entry),
+        "utf-8",
+      );
+      const fm = content.split("---\n")[1] ?? "";
+      expect(
+        fm,
+        `gemini/agents/${entry} must NOT include a tools: line — Gemini CLI 0.40+ rejects the comma-separated form`,
+      ).not.toMatch(/^tools:/m);
+    }
+  });
+
+  it("[#224] gemini settings.json uses BeforeAgent (not UserPromptSubmit)", () => {
+    const settingsPath = path.resolve(
+      repoRoot,
+      "packages/cli/src/templates/gemini/settings.json",
+    );
+    const raw = fs.readFileSync(settingsPath, "utf-8");
+    const parsed = JSON.parse(raw) as { hooks?: Record<string, unknown> };
+    expect(parsed.hooks).toBeDefined();
+    expect(Object.keys(parsed.hooks ?? {})).toContain("BeforeAgent");
+    expect(Object.keys(parsed.hooks ?? {})).not.toContain("UserPromptSubmit");
+  });
+
+  it("[#224] inject-workflow-state.py emits BeforeAgent for gemini, UserPromptSubmit otherwise", () => {
+    const hookPath = path.resolve(
+      repoRoot,
+      "packages/cli/src/templates/shared-hooks/inject-workflow-state.py",
+    );
+    const content = fs.readFileSync(hookPath, "utf-8");
+    // The platform branch: `"BeforeAgent" if _detect_platform(...) == "gemini"`
+    expect(content).toMatch(
+      /"BeforeAgent"\s+if\s+_detect_platform\([^)]*\)\s*==\s*"gemini"\s+else\s+"UserPromptSubmit"/,
+    );
+  });
+
+  it("[#224] configurePlatform('gemini') writes shared skills to .agents/skills, NOT .gemini/skills", async () => {
+    const tmpDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), "trellis-gemini-issue224-"),
+    );
+    try {
+      setWriteMode("force");
+      await configurePlatform("gemini", tmpDir);
+      expect(fs.existsSync(path.join(tmpDir, ".agents", "skills"))).toBe(true);
+      expect(fs.existsSync(path.join(tmpDir, ".gemini", "skills"))).toBe(false);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      setWriteMode("ask");
+    }
+  });
+
+  it("[#224] codex + gemini render byte-identical content for shared `.agents/skills/` files", () => {
+    const codexFiles = collectPlatformTemplates("codex");
+    const geminiFiles = collectPlatformTemplates("gemini");
+    expect(codexFiles).toBeInstanceOf(Map);
+    expect(geminiFiles).toBeInstanceOf(Map);
+    if (!codexFiles || !geminiFiles) return;
+
+    let overlapCount = 0;
+    for (const [filePath, codexContent] of codexFiles) {
+      if (!filePath.startsWith(".agents/skills/")) continue;
+      const geminiContent = geminiFiles.get(filePath);
+      if (geminiContent === undefined) continue;
+      overlapCount++;
+      expect(
+        geminiContent,
+        `Codex and Gemini disagree on ${filePath} — last-writer-wins would corrupt the shared skill`,
+      ).toBe(codexContent);
+    }
+    // At least the 5 shared workflow skills + bundled trellis-meta files must
+    // overlap. If this drops to 0 the assertion above is silently passing.
+    expect(overlapCount).toBeGreaterThan(0);
+  });
+
+  it("[trellis-hooks-env] all hook templates honor TRELLIS_HOOKS=0 / TRELLIS_DISABLE_HOOKS=1", () => {
+    // All shipped hook scripts must early-return when the operator sets
+    // TRELLIS_HOOKS=0 (or TRELLIS_DISABLE_HOOKS=1), so subprocess wrappers
+    // and casual-chat scenarios can disable Trellis injection without
+    // editing config or restarting under different settings.
+    const sharedHookTargets = [
+      "session-start.py",
+      "inject-workflow-state.py",
+      "inject-subagent-context.py",
+      "inject-shell-session-context.py",
+    ];
+    for (const name of sharedHookTargets) {
+      const script = getSharedHookScripts().find((h) => h.name === name)?.content;
+      expect(script, `shared-hooks/${name} should exist`).toBeTruthy();
+      expect(script).toContain('os.environ.get("TRELLIS_HOOKS") == "0"');
+      expect(script).toContain('os.environ.get("TRELLIS_DISABLE_HOOKS") == "1"');
+    }
+
+    // Platform-specific Python session-start variants (codex, copilot)
+    for (const [label, hooks] of [
+      ["codex", getCodexHooks()],
+      ["copilot", getCopilotHooks()],
+    ] as const) {
+      const sessionStart = hooks.find((h) => h.name === "session-start.py")?.content;
+      expect(sessionStart, `${label} session-start should exist`).toBeTruthy();
+      expect(sessionStart).toContain('os.environ.get("TRELLIS_HOOKS") == "0"');
+      expect(sessionStart).toContain('os.environ.get("TRELLIS_DISABLE_HOOKS") == "1"');
+    }
+
+    // OpenCode JS plugins (no TS export — read from disk)
+    const openCodePluginDir = path.resolve(
+      repoRoot,
+      "packages/cli/src/templates/opencode/plugins",
+    );
+    const jsPlugins = [
+      "session-start.js",
+      "inject-workflow-state.js",
+      "inject-subagent-context.js",
+    ];
+    for (const name of jsPlugins) {
+      const content = fs.readFileSync(path.join(openCodePluginDir, name), "utf-8");
+      expect(content).toContain('process.env.TRELLIS_HOOKS === "0"');
+      expect(content).toContain('process.env.TRELLIS_DISABLE_HOOKS === "1"');
+    }
+  });
+
+  it("[#224] needsCodexUpgrade looks for Codex-only command-as-skill markers, not bare `.agents/skills/` prefix", () => {
+    // Regression: with Gemini also writing to `.agents/skills/` (5 shared
+    // workflow skills only), the legacy-Codex detector previously triggered
+    // a false-positive `.codex/` install on every fresh `init --gemini` +
+    // `update` cycle. The fix narrows detection to Codex-only files
+    // (`trellis-continue/SKILL.md`, `trellis-finish-work/SKILL.md`) which
+    // Gemini does NOT write (it puts continue/finish-work under
+    // `.gemini/commands/trellis/*.toml`).
+    const updateSrc = fs.readFileSync(
+      path.resolve(repoRoot, "packages/cli/src/commands/update.ts"),
+      "utf-8",
+    );
+    // Must check for Codex-only command-as-skill markers, not the bare
+    // `.agents/skills/` prefix.
+    expect(updateSrc).toMatch(
+      /\.agents\/skills\/trellis-continue\/SKILL\.md/,
+    );
+    expect(updateSrc).toMatch(
+      /\.agents\/skills\/trellis-finish-work\/SKILL\.md/,
+    );
+    // Must NOT use the broad `startsWith(".agents/skills/")` heuristic
+    // inside needsCodexUpgrade — that would re-introduce the false positive.
+    const needsCodexUpgradeBody = updateSrc.match(
+      /function needsCodexUpgrade\([^)]*\)[^{]*\{([\s\S]*?)\n\}/,
+    )?.[1];
+    expect(needsCodexUpgradeBody).toBeDefined();
+    expect(needsCodexUpgradeBody ?? "").not.toMatch(
+      /startsWith\(["']\.agents\/skills\/["']\)/,
+    );
+  });
 });

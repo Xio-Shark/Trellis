@@ -119,6 +119,69 @@ export function resolvePlaceholders(
   return result;
 }
 
+/**
+ * Resolve placeholders for files written under `.agents/skills/` (the shared
+ * Agent Skills directory consumed by multiple platforms via the upstream
+ * `.agents/skills/` workspace alias — Codex, Gemini CLI 0.40+, etc.).
+ *
+ * Identical to {@link resolvePlaceholders} except that {@link CMD_REF} is
+ * rendered in a platform-neutral form (`` `name` (Trellis command) ``)
+ * instead of substituting a platform-specific prefix. This is the only
+ * placeholder that varies between platforms in the 5 shared workflow skills
+ * (`brainstorm`, `before-dev`, `check`, `break-loop`, `update-spec`), so
+ * neutralizing it makes the rendered SKILL.md files byte-identical regardless
+ * of which Trellis configurator wrote them — eliminating the
+ * "last-writer-wins" collision when both Codex and Gemini target
+ * `.agents/skills/`.
+ *
+ * `{{CLI_FLAG}}`, `{{EXECUTOR_AI}}`, `{{USER_ACTION_LABEL}}`, conditionals,
+ * and `{{PYTHON_CMD}}` are still resolved from the platform context. The 5
+ * shared skills do not use those placeholders, so they remain platform-
+ * neutral. Codex-only skill files (e.g. `trellis-continue/SKILL.md`,
+ * `trellis-finish-work/SKILL.md` written via `resolveAllAsSkillsNeutral`) DO
+ * use `{{CLI_FLAG}}` / `{{PYTHON_CMD}}` and resolve to Codex-correct values
+ * — no other platform writes those files, so byte-identity is not required.
+ */
+export function resolvePlaceholdersNeutral(
+  content: string,
+  context?: TemplateContext,
+): string {
+  let result = replacePythonCommandLiterals(
+    content.replace(RE_PYTHON_CMD, getPythonCommandForPlatform()),
+  );
+
+  if (!context) return result;
+
+  // Neutral form for the only collision-causing placeholder
+  result = result.replace(
+    RE_CMD_REF,
+    (_match, name: string) => `\`${name}\` (Trellis command)`,
+  );
+  result = result.replace(RE_EXECUTOR_AI, context.executorAI);
+  result = result.replace(RE_USER_ACTION_LABEL, context.userActionLabel);
+  result = result.replace(RE_CLI_FLAG, context.cliFlag);
+
+  // Conditional blocks (resolved per platform — none of the 5 shared skills
+  // use conditionals, but Codex-only command-as-skill files might in future).
+  const flagValues: Record<(typeof CONDITIONAL_FLAGS)[number], boolean> = {
+    AGENT_CAPABLE: context.agentCapable,
+    HAS_HOOKS: context.hasHooks,
+  };
+
+  for (const flag of CONDITIONAL_FLAGS) {
+    const value = flagValues[flag];
+    const { pos, neg } = CONDITIONAL_REGEXES[flag];
+    pos.lastIndex = 0;
+    neg.lastIndex = 0;
+    result = result.replace(pos, value ? "$1" : "");
+    result = result.replace(neg, value ? "" : "$1");
+  }
+
+  result = result.replace(RE_BLANK_LINES, "\n\n");
+
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // Template wrapping utilities
 // ---------------------------------------------------------------------------
@@ -281,6 +344,46 @@ export function resolveSkills(ctx: TemplateContext): ResolvedTemplate[] {
 }
 
 /**
+ * Same as {@link resolveSkills} but uses {@link resolvePlaceholdersNeutral}
+ * so the rendered SKILL.md files are byte-identical across any two platforms
+ * that target `.agents/skills/`. Use this for shared `.agents/skills/`
+ * writes (Gemini); platform-private skill roots should keep
+ * {@link resolveSkills}.
+ */
+export function resolveSkillsNeutral(ctx: TemplateContext): ResolvedTemplate[] {
+  return getSkillTemplates().map((tmpl) => ({
+    name: `trellis-${tmpl.name}`,
+    content: wrapWithSkillFrontmatter(
+      `trellis-${tmpl.name}`,
+      resolvePlaceholdersNeutral(tmpl.content, ctx),
+    ),
+  }));
+}
+
+/**
+ * Same as {@link resolveAllAsSkills} but uses
+ * {@link resolvePlaceholdersNeutral} for the 5 shared skills. The 2 command
+ * templates (continue, finish-work) folded into the skill set still resolve
+ * `{{CLI_FLAG}}` / `{{PYTHON_CMD}}` per platform — only Codex writes those
+ * files into `.agents/skills/`, so byte-identity isn't required there.
+ */
+export function resolveAllAsSkillsNeutral(
+  ctx: TemplateContext,
+): ResolvedTemplate[] {
+  const templates = [
+    ...filterCommands(getCommandTemplates(), ctx),
+    ...getSkillTemplates(),
+  ];
+  return templates.map((tmpl) => ({
+    name: `trellis-${tmpl.name}`,
+    content: wrapWithSkillFrontmatter(
+      `trellis-${tmpl.name}`,
+      resolvePlaceholdersNeutral(tmpl.content, ctx),
+    ),
+  }));
+}
+
+/**
  * Resolve multi-file built-in skills.
  *
  * Unlike workflow skills, bundled skills already contain their own SKILL.md
@@ -394,17 +497,26 @@ export function buildPullBasedPrelude(agentType: SubAgentType): string {
 
   return replacePythonCommandLiterals(`## Required: Load Trellis Context First
 
-This platform does NOT auto-inject task context via hook. Before doing anything else, you MUST load context yourself:
+This platform does NOT auto-inject task context via hook. Before doing anything else, you MUST load context yourself.
 
-1. Run \`python3 ./.trellis/scripts/task.py current --source\` to find the active task path and source (e.g. \`Current task: .trellis/tasks/04-17-foo\`).
-2. Read the task's \`prd.md\` (requirements) and \`info.md\` if it exists (technical design).
-3. Read \`<task-path>/${jsonl}\` — JSONL list of dev spec files relevant to this agent.
-4. For each entry in the JSONL, Read its \`file\` path — these are the dev specs you must follow.
+### Step 1: Find the active task path
+
+Try in order — stop at the first one that yields a task path:
+
+1. **Look at the dispatch prompt** you received from the main agent. If its first line is \`Active task: <path>\` (e.g. \`Active task: .trellis/tasks/04-17-foo\`), use that path. The main agent is required to include this line on class-2 platforms.
+2. **Run** \`python3 ./.trellis/scripts/task.py current --source\` and read the \`Current task:\` line.
+3. **If both fail** (no \`Active task:\` line in the prompt and \`task.py current\` returns no task), ask the user which task to work on; do NOT guess.
+
+### Step 2: Load task context from the resolved path
+
+1. Read the task's \`prd.md\` (requirements) and \`info.md\` if it exists (technical design).
+2. Read \`<task-path>/${jsonl}\` — JSONL list of dev spec files relevant to this agent.
+3. For each entry in the JSONL, Read its \`file\` path — these are the dev specs you must follow.
    **Skip rows without a \`"file"\` field** (e.g. \`{"_example": "..."}\` seed rows left over from \`task.py create\` before the curator ran).
 
 If \`${jsonl}\` has no curated entries (only a seed row, or the file is missing), fall back to: read \`prd.md\`, list available specs with \`python3 ./.trellis/scripts/get_context.py --mode packages\`, and pick the specs that match the task domain yourself. Do NOT block on the missing jsonl — proceed with prd-only context plus your spec judgment.
 
-If there is no active task or the task has no \`prd.md\`, ask the user what to work on; do NOT proceed without context.
+If the resolved task path has no \`prd.md\`, ask the user what to work on; do NOT proceed without context.
 
 ---
 

@@ -10,7 +10,7 @@ import {
 import { ensureDir, writeFile } from "../utils/file-writer.js";
 import {
   resolvePlaceholders,
-  resolveAllAsSkills,
+  resolveAllAsSkillsNeutral,
   resolveBundledSkills,
   applyPullBasedPreludeToml,
   writeSkills,
@@ -26,10 +26,15 @@ import {
  */
 export async function configureCodex(cwd: string): Promise<void> {
   // Shared skills from common source → .agents/skills/
+  // Uses the neutral placeholder resolver so the 5 shared workflow skills
+  // (brainstorm, before-dev, check, break-loop, update-spec) render to the
+  // same bytes regardless of which platform writes them — required because
+  // Gemini CLI 0.40+ also targets `.agents/skills/` (last-writer-wins is
+  // safe when both writers produce identical output).
   const sharedSkillsRoot = path.join(cwd, ".agents", "skills");
   await writeSkills(
     sharedSkillsRoot,
-    resolveAllAsSkills(AI_TOOLS.codex.templateContext),
+    resolveAllAsSkillsNeutral(AI_TOOLS.codex.templateContext),
     resolveBundledSkills(AI_TOOLS.codex.templateContext),
   );
 

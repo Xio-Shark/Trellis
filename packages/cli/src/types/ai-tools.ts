@@ -234,6 +234,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     name: "Gemini CLI",
     templateDirs: ["common", "gemini"],
     configDir: ".gemini",
+    supportsAgentSkills: true,
     cliFlag: "gemini",
     defaultChecked: false,
     hasPythonHooks: true,

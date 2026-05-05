@@ -130,6 +130,31 @@ When adding a new platform `{platform}`, update the following:
 > - Platform detection uses `.codex/` only — `.agents/skills/` alone does NOT trigger codex detection
 > - `configDir` is `".codex"`, with `supportsAgentSkills: true` to auto-include `.agents/skills` in managed paths
 
+#### Rule: `.agents/skills/` writes use `resolvePlaceholdersNeutral()`
+
+`.agents/skills/` is a **shared destination**: multiple configurators (Codex, Gemini CLI 0.40+ via the workspace alias, future agentskills.io consumers) all write into the same path. Per-platform `{{CMD_REF:name}}` resolution (`$name` for Codex, `/trellis:name` for Gemini, etc.) makes the same `<skill>/SKILL.md` differ byte-for-byte depending on which configurator ran last → "last-writer-wins" content collisions and `.template-hashes.json` churn.
+
+**Rule**: Anything written under `.agents/skills/` MUST be rendered via `resolvePlaceholdersNeutral()` (in `configurators/shared.ts`), which substitutes `` `name` (Trellis command) `` for `{{CMD_REF:name}}` instead of a platform prefix. All other placeholders (`{{CLI_FLAG}}`, `{{EXECUTOR_AI}}`, `{{USER_ACTION_LABEL}}`, conditionals, `{{PYTHON_CMD}}`) still resolve from the platform context — those don't appear in the 5 shared workflow skills (`brainstorm`, `before-dev`, `check`, `break-loop`, `update-spec`), so the rendered output stays identical across writers.
+
+Per-platform skill directories (`.claude/skills/`, `.cursor/skills/`, `.qoder/skills/`, etc.) keep using `resolvePlaceholders()` — `{{CMD_REF}}` resolves to the platform-correct slash form there, because no other configurator writes those paths.
+
+**Codex-only files under `.agents/skills/`** (currently `trellis-continue/SKILL.md` and `trellis-finish-work/SKILL.md`, written via `resolveAllAsSkillsNeutral()`) are an explicit exception: only Codex writes them, so byte-identity across platforms is not required and they may use `{{CLI_FLAG}}` / `{{PYTHON_CMD}}`. They still go through the neutral helper to keep `{{CMD_REF}}` neutralized for consistency with the surrounding shared skills.
+
+**Wrong**:
+```typescript
+// Codex configurator
+files.set(".agents/skills/check/SKILL.md", resolvePlaceholders(tmpl, codexCtx));
+// Gemini configurator (later)
+files.set(".agents/skills/check/SKILL.md", resolvePlaceholders(tmpl, geminiCtx));
+// → byte-different SKILL.md from the same template; whoever runs last wins
+```
+
+**Correct**:
+```typescript
+files.set(".agents/skills/check/SKILL.md", resolvePlaceholdersNeutral(tmpl, ctx));
+// → byte-identical regardless of which configurator wrote it
+```
+
 **Kiro JSON agent pattern** (Kiro):
 
 | Directory | Contents |
@@ -783,6 +808,16 @@ Platform's hook either doesn't expose a sub-agent spawn event or can't modify th
 | Qoder | No `Task` tool concept; `SubagentStart` input has no `prompt` field; Context Isolation |
 | Codex | `PreToolUse` only fires for Bash; `CollabAgentSpawn` hook unimplemented ([#15486](https://github.com/openai/codex/issues/15486)) |
 | Copilot | `preToolUse` doesn't enforce on subagents ([#2392](https://github.com/github/copilot-cli/issues/2392), [#2540](https://github.com/github/copilot-cli/issues/2540)) |
+
+#### Active task discovery on class-2 platforms (issue #225)
+
+Sub-agents on class-2 platforms run as **separate sessions** with their own session ids — they do not inherit the parent's `<PLATFORM>_SESSION_ID` env, so the session-scoped active-task resolver (see `### Active Task Resolution` above) returns `None` for the sub-agent's own session key. To bridge that gap the prelude (`buildPullBasedPrelude` in `src/configurators/shared.ts`) tells sub-agents to discover the active task in this order:
+
+1. **`Active task: <path>` line in dispatch prompt** — primary path. The main agent is required by `workflow.md`'s `[workflow-state:in_progress]` breadcrumb to prefix every class-2 sub-agent dispatch with `Active task: <path from task.py current>`. The breadcrumb fires on every `UserPromptSubmit` while `task.json.status == in_progress`, so the rule is reinjected per turn.
+2. **`task.py current --source`** — secondary. Resolves via the session-scoped runtime store. Returns `Source: session:<key>` on a precise match, or `Source: session-fallback:<key>` when the runtime contains exactly one session file (single-window inference; see `_resolve_single_session_fallback` in `active_task.py`). Returns nothing when ≥2 session files exist — refuses to guess across windows so 04-21's multi-session isolation contract holds.
+3. **Ask the user** — terminal fallback when both above yield nothing.
+
+When changing the prelude, the dispatch protocol, or the `session-fallback` semantics, all three layers must stay aligned. `regression.test.ts > [issue-225]` and `regression.test.ts > [session-fallback]` are the contract tests; `templates/trellis.test.ts > [issue-225]` asserts the workflow.md breadcrumb still carries the protocol. Manual e2e runbook lives in the historical task `.trellis/tasks/<archive>/05-04-fix-codex-subagent-missing-active-task/manual-verify.md`.
 
 ### Mode C — Extension-backed (1 platform)
 

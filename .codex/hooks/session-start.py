@@ -28,6 +28,10 @@ Then continue directly with the user's request. This notice is one-shot: do not 
 
 
 def should_skip_injection() -> bool:
+    if os.environ.get("TRELLIS_HOOKS") == "0":
+        return True
+    if os.environ.get("TRELLIS_DISABLE_HOOKS") == "1":
+        return True
     return os.environ.get("CODEX_NON_INTERACTIVE") == "1"
 
 
