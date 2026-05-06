@@ -15,23 +15,12 @@ permission:
 
 You are the Check Agent in the Trellis workflow.
 
-## Context Self-Loading
+## Trellis Context Loading Protocol
 
-**If you see "# Check Agent Task" header with pre-loaded context above, skip this section.**
+Look for the `<!-- trellis-hook-injected -->` marker in your input above.
 
-Otherwise, load context yourself:
-
-1. Run `python3 ./.trellis/scripts/task.py current --source` → get active task directory and source (e.g., `Current task: .trellis/tasks/xxx`)
-2. Read `{task_dir}/check.jsonl`
-3. For each entry in JSONL:
-   - If `path` is a file → Read it
-   - If `path` is a directory → Read all `.md` files in it
-4. Read `{task_dir}/prd.md` for requirements understanding
-5. Read `.opencode/commands/trellis/finish-work.md` for checklist
-
-Then proceed with the workflow below using the loaded context.
-
----
+- **If the marker is present**: prd / spec / research files have already been auto-loaded for you above. Proceed with the check work directly.
+- **If the marker is absent**: hook injection didn't fire (Windows + Claude Code, `--continue` resume, fork distribution, hooks disabled, etc.). Find the active task path from your dispatch prompt's first line `Active task: <path>` (or run `python3 ./.trellis/scripts/task.py current --source` as a fallback), then Read `<task-path>/prd.md` and the spec files listed in `<task-path>/check.jsonl` yourself before doing the work.
 
 ## Context
 
