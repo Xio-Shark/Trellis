@@ -367,6 +367,10 @@ def _get_task_status(trellis_dir: Path, input_data: dict) -> str:
         "Sub-agent roster: `trellis-implement` (writes code), `trellis-check` (verifies + self-fixes), "
         "`trellis-research` (persists findings to `research/*.md` — use when you'd otherwise do "
         "multiple WebFetch/WebSearch inline).\n"
+        "Sub-agent self-exemption: if you are reading this as a `trellis-implement` or "
+        "`trellis-check` sub-agent (your own role / agent name reflects that), this dispatch "
+        "instruction does NOT apply to you — you are already the dispatched sub-agent. "
+        "Implement / check directly without spawning another sub-agent of the same kind.\n"
         "User override (per-turn escape hatch): if the user's CURRENT message explicitly tells the "
         "main session to handle it directly (\"你直接改\" / \"别派 sub-agent\" / \"main session 写就行\" / "
         "\"do it inline\" / \"不用 sub-agent\"), honor it for this turn and edit code directly. "
@@ -693,7 +697,11 @@ Read and follow all instructions below carefully.
         "`trellis-implement` and `trellis-check` (so JSONL context is loaded by "
         "the sub-agents) rather than editing code in the main session. "
         "Honor a per-turn user override only if the user's current message "
-        "explicitly opts out (see <task-status> below for override phrases).\n\n"
+        "explicitly opts out (see <task-status> below for override phrases).\n"
+        "- Sub-agent self-exemption: if you are reading this as a `trellis-implement` "
+        "or `trellis-check` sub-agent, the \"dispatch trellis-implement / trellis-check\" "
+        "rule above does NOT apply to you — you are already the dispatched sub-agent. "
+        "Do NOT spawn another sub-agent of the same kind; implement / check directly.\n\n"
     )
 
     # guides/ is cross-package thinking — always include inline (small, broadly useful)
