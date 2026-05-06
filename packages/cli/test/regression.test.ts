@@ -1006,38 +1006,74 @@ describe("regression: current-task path normalization", () => {
     return content ?? "";
   }
 
-  it("[session-current-task] task.py start without context key fails without creating .current-task", () => {
+  it("[session-current-task] task.py start without context key enters degraded mode (returns 0, no pointer)", () => {
+    // 0.5.3 hotfix: task.py start no longer hard-fails when no session identity
+    // is available (Windows + Claude Code, --continue resume, etc.). Instead it
+    // prints a degraded-mode warning and returns 0 so the AI workflow can
+    // proceed.
     setupTaskRepo();
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
 
-    let output = "";
-    let status = 0;
-    try {
-      execSync(
-        `${pythonCmd} ${JSON.stringify(taskScriptPath)} start ${JSON.stringify(".trellis\\\\tasks\\\\issue-106")}`,
-        {
-          cwd: tmpDir,
-          encoding: "utf-8",
-          env: sessionEnv(),
-        },
-      );
-    } catch (error) {
-      status =
-        typeof (error as { status?: unknown }).status === "number"
-          ? ((error as { status: number }).status)
-          : 1;
-      output = String((error as { stdout?: unknown }).stdout ?? "");
-    }
+    const output = execSync(
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} start ${JSON.stringify(".trellis\\\\tasks\\\\issue-106")}`,
+      {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        env: sessionEnv(),
+      },
+    );
 
-    expect(status).toBe(1);
-    expect(output).toContain("Cannot set active task without a session identity");
+    expect(output).toContain("Session identity not available");
+    expect(output).toContain("degraded");
+    expect(output).toContain("conversation context");
     expect(output).toContain("TRELLIS_CONTEXT_ID");
+
+    // No active-task pointer written
     expect(
       fs.existsSync(path.join(tmpDir, ".trellis", ".current-task")),
     ).toBe(false);
     expect(
       fs.existsSync(path.join(tmpDir, ".trellis", ".runtime")),
     ).toBe(false);
+
+    // task.json.status remains in_progress (was already in_progress; degraded
+    // mode preserves the existing status when not planning)
+    const taskJsonPath = path.join(
+      tmpDir,
+      ".trellis",
+      "tasks",
+      "issue-106",
+      "task.json",
+    );
+    const taskJson = JSON.parse(fs.readFileSync(taskJsonPath, "utf-8"));
+    expect(taskJson.status).toBe("in_progress");
+  });
+
+  it("[session-current-task] task.py start in degraded mode flips planning → in_progress", () => {
+    // Verify the status flip path of degraded mode by setting up a task with
+    // status=planning explicitly, then asserting the flip happened without a
+    // session identity being available.
+    setupTaskRepo();
+    const taskJsonPath = path.join(
+      tmpDir,
+      ".trellis",
+      "tasks",
+      "issue-106",
+      "task.json",
+    );
+    const taskJson = JSON.parse(fs.readFileSync(taskJsonPath, "utf-8"));
+    taskJson.status = "planning";
+    fs.writeFileSync(taskJsonPath, JSON.stringify(taskJson, null, 2), "utf-8");
+
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    const output = execSync(
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} start ${JSON.stringify(".trellis\\\\tasks\\\\issue-106")}`,
+      { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
+    );
+
+    expect(output).toContain("planning → in_progress");
+    const after = JSON.parse(fs.readFileSync(taskJsonPath, "utf-8"));
+    expect(after.status).toBe("in_progress");
   });
 
   it("[session-current-task] task.py start writes session runtime state when TRELLIS_CONTEXT_ID is set", () => {
@@ -4598,4 +4634,103 @@ describe("regression: session-start.py f-string Python <=3.11 compat (0.5.2)", (
       expect(r.stdout ?? "").toContain("OK");
     });
   }
+});
+
+describe("regression: sub-agent context injection fallback (0.5.3)", () => {
+  // 0.5.3 hotfix: class-1 platforms (claude / cursor / opencode / kiro /
+  // codebuddy / droid) used to rely entirely on PreToolUse hook injection for
+  // sub-agent task context. When the hook silently failed (Windows + Claude
+  // Code issue #53254 / #25981 / #36156, --continue resume, fork
+  // distributions, hooks disabled) sub-agents received the dispatch prompt
+  // without prd / spec / jsonl context, with no recovery path.
+  //
+  // The fix: hook output now begins with a `<!-- trellis-hook-injected -->`
+  // marker, and every class-1 trellis-implement / trellis-check definition
+  // file carries a Trellis Context Loading Protocol section telling the
+  // sub-agent to load context itself when the marker is absent.
+  const HOOK_INJECTED_MARKER = "<!-- trellis-hook-injected -->";
+
+  it("inject-subagent-context.py emits the marker for implement / check / finish", () => {
+    const hook = getSharedHookScripts().find(
+      (h) => h.name === "inject-subagent-context.py",
+    );
+    expect(hook).toBeDefined();
+    const src = hook?.content ?? "";
+    // Marker must appear in build_implement_prompt / build_check_prompt /
+    // build_finish_prompt (research is intentionally NOT marker'd — it has no
+    // task binding).
+    expect(src).toContain(HOOK_INJECTED_MARKER);
+    // Must appear at least three times (one per implement / check / finish).
+    const matches = src.match(/<!--\s*trellis-hook-injected\s*-->/g) ?? [];
+    expect(matches.length).toBeGreaterThanOrEqual(3);
+  });
+
+  // 5 markdown class-1 platforms × 2 agents = 10 markdown files.
+  // Kiro is a JSON file (separate test below).
+  const CLASS1_MD_AGENT_FILES: { platform: string; rel: string; agent: "implement" | "check" }[] = [
+    { platform: "claude", rel: "packages/cli/src/templates/claude/agents/trellis-implement.md", agent: "implement" },
+    { platform: "claude", rel: "packages/cli/src/templates/claude/agents/trellis-check.md", agent: "check" },
+    { platform: "cursor", rel: "packages/cli/src/templates/cursor/agents/trellis-implement.md", agent: "implement" },
+    { platform: "cursor", rel: "packages/cli/src/templates/cursor/agents/trellis-check.md", agent: "check" },
+    { platform: "codebuddy", rel: "packages/cli/src/templates/codebuddy/agents/trellis-implement.md", agent: "implement" },
+    { platform: "codebuddy", rel: "packages/cli/src/templates/codebuddy/agents/trellis-check.md", agent: "check" },
+    { platform: "opencode", rel: "packages/cli/src/templates/opencode/agents/trellis-implement.md", agent: "implement" },
+    { platform: "opencode", rel: "packages/cli/src/templates/opencode/agents/trellis-check.md", agent: "check" },
+    { platform: "droid", rel: "packages/cli/src/templates/droid/droids/trellis-implement.md", agent: "implement" },
+    { platform: "droid", rel: "packages/cli/src/templates/droid/droids/trellis-check.md", agent: "check" },
+  ];
+
+  const __dirnameFb = path.dirname(fileURLToPath(import.meta.url));
+  const repoRootFb = path.resolve(__dirnameFb, "../../..");
+
+  for (const { platform, rel, agent } of CLASS1_MD_AGENT_FILES) {
+    it(`${platform}/${agent} markdown agent file carries marker + fallback protocol`, () => {
+      const content = fs.readFileSync(path.join(repoRootFb, rel), "utf-8");
+      // 1. References the marker
+      expect(content).toContain(HOOK_INJECTED_MARKER);
+      // 2. Has the protocol heading
+      expect(content).toContain("Trellis Context Loading Protocol");
+      // 3. Tells AI how to find the active task path
+      expect(content).toContain("Active task:");
+      // 4. Tells AI which task files to Read in fallback path
+      expect(content).toContain("prd.md");
+      const expectedJsonl = agent === "implement" ? "implement.jsonl" : "check.jsonl";
+      expect(content).toContain(expectedJsonl);
+    });
+  }
+
+  for (const agent of ["implement", "check"] as const) {
+    it(`kiro/${agent} JSON agent carries marker + fallback protocol in instructions`, () => {
+      const filePath = path.join(
+        repoRootFb,
+        `packages/cli/src/templates/kiro/agents/trellis-${agent}.json`,
+      );
+      const json = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+      const instructions: string = json.instructions ?? "";
+      expect(instructions).toContain(HOOK_INJECTED_MARKER);
+      expect(instructions).toContain("Trellis Context Loading Protocol");
+      expect(instructions).toContain("Active task:");
+      expect(instructions).toContain("prd.md");
+      const expectedJsonl = agent === "implement" ? "implement.jsonl" : "check.jsonl";
+      expect(instructions).toContain(expectedJsonl);
+    });
+  }
+
+  it("workflow.md dispatch protocol covers all platforms (not class-2 only)", () => {
+    const workflowPath = path.join(
+      repoRootFb,
+      "packages/cli/src/templates/trellis/workflow.md",
+    );
+    const wf = fs.readFileSync(workflowPath, "utf-8");
+    // The protocol must enforce `Active task: <path>` for trellis-implement
+    // and trellis-check, with trellis-research explicitly excluded.
+    expect(wf).toContain("Sub-agent dispatch protocol");
+    expect(wf).toContain("all platforms");
+    expect(wf).toContain("EXCEPT trellis-research");
+    expect(wf).toContain("Active task:");
+    // Must NOT scope the rule to class-2 only — that was the pre-0.5.3 limit.
+    expect(wf).not.toMatch(
+      /Sub-agent dispatch protocol \(class-2 platforms[^)]*\)/,
+    );
+  });
 });
