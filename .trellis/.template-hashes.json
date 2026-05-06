@@ -131,6 +131,7 @@
     ".codex/agents/trellis-check.toml": "ba40d588acacfc638bb0282056d1383af91f2a77e8c2dbfce5fb43a9edf3707a",
     ".codex/agents/trellis-implement.toml": "b9a7016f5d482fd56f246d6ad81c82804e648c052df8c809bb01f3b8b6afd3d0",
     ".pi/agents/trellis-check.md": "36001b6cbba1c05c4cfdc3489e98a5c3a824a6643eac74c603ed561cfa065549",
-    ".pi/agents/trellis-implement.md": "06bda0c92cad9807ceb940081c85d6e9c9b483653bda04b19330e1ec788a6bac"
+    ".pi/agents/trellis-implement.md": "06bda0c92cad9807ceb940081c85d6e9c9b483653bda04b19330e1ec788a6bac",
+    ".opencode/package.json": "4b155e844fde1467e331e898b378e66820c323110ef1ecae6fce3844358535ea"
   }
 }
