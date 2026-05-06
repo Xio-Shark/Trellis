@@ -18,28 +18,6 @@ import sys
 from io import StringIO
 from pathlib import Path
 
-FIRST_REPLY_NOTICE = """<first-reply-notice>
-On the first visible assistant reply in this session, begin with exactly one short Chinese sentence:
-Trellis SessionStart 已注入：workflow、当前任务状态、开发者身份、git 状态、active tasks、spec 索引已加载。
-Then continue directly with the user's request. This notice is one-shot: do not repeat it after the first assistant reply in the same session.
-</first-reply-notice>"""
-
-# IMPORTANT: Force stdout to use UTF-8 on Windows
-# This fixes UnicodeEncodeError when outputting non-ASCII characters
-if sys.platform.startswith("win"):
-    import io as _io
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
-    elif hasattr(sys.stdout, "detach"):
-        sys.stdout = _io.TextIOWrapper(sys.stdout.detach(), encoding="utf-8", errors="replace")  # type: ignore[union-attr]
-
-
-
-
-
-# =============================================================================
-# Windows Git-Bash/MSYS path normalization
-# =============================================================================
 
 def _normalize_windows_shell_path(path_str: str) -> str:
     """Normalize Unix-style shell paths to real Windows paths.
@@ -84,6 +62,25 @@ def _normalize_windows_shell_path(path_str: str) -> str:
         return f"{drive}:\\{rest.replace('/', '\\')}"
 
     return path_str
+
+
+FIRST_REPLY_NOTICE = """<first-reply-notice>
+On the first visible assistant reply in this session, begin with exactly one short Chinese sentence:
+Trellis SessionStart 已注入：workflow、当前任务状态、开发者身份、git 状态、active tasks、spec 索引已加载。
+Then continue directly with the user's request. This notice is one-shot: do not repeat it after the first assistant reply in the same session.
+</first-reply-notice>"""
+
+# IMPORTANT: Force stdout to use UTF-8 on Windows
+# This fixes UnicodeEncodeError when outputting non-ASCII characters
+if sys.platform.startswith("win"):
+    import io as _io
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+    elif hasattr(sys.stdout, "detach"):
+        sys.stdout = _io.TextIOWrapper(sys.stdout.detach(), encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+
+
+
 def _has_curated_jsonl_entry(jsonl_path: Path) -> bool:
     """Return True iff jsonl has at least one row with a ``file`` field.
 
