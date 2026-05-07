@@ -2812,6 +2812,45 @@ print(len(entries))
     }
   });
 
+  it("[issue-241-followup] codex sub-agent toml files disable collab tools at protocol level", () => {
+    // 0.5.6 added prompt-layer guidance (`fork_turns="none"`) to AGENTS.md but
+    // it didn't reach Ca11back's reproduction in #241 — the sub-agent still
+    // inherited the parent transcript and called wait_agent on parent's
+    // spawn records. Structural fix: each Codex sub-agent role file disables
+    // multi_agent / multi_agent_v2 features so spawn_agent / wait_agent /
+    // list_agents / close_agent simply don't exist in the sub-agent's tool
+    // list. Codex agent role files support full ConfigToml override layers
+    // (codex-rs/core/src/config/agent_roles.rs:217-225) — `[features]` table
+    // included. No prompt-layer prose needed — if the tool doesn't exist, the
+    // model can't call it.
+    const templateRoot = path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "..",
+      "src",
+      "templates",
+    );
+    const codexAgentFiles = [
+      "codex/agents/trellis-implement.toml",
+      "codex/agents/trellis-check.toml",
+      "codex/agents/trellis-research.toml",
+    ];
+
+    for (const relativePath of codexAgentFiles) {
+      const content = fs.readFileSync(
+        path.join(templateRoot, relativePath),
+        "utf-8",
+      );
+      expect(
+        content,
+        `${relativePath} should disable [features].multi_agent`,
+      ).toMatch(/\[features\][\s\S]*?multi_agent\s*=\s*false/);
+      expect(
+        content,
+        `${relativePath} should disable [features.multi_agent_v2]`,
+      ).toMatch(/\[features\.multi_agent_v2\][\s\S]*?enabled\s*=\s*false/);
+    }
+  });
+
   it("[workflow-state-r2] template workflow.md [workflow-state:planning] mentions Phase 1.3 + jsonl curation", () => {
     const wf = templateWorkflowMd();
     const match = wf.match(
