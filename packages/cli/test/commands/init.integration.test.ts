@@ -584,35 +584,27 @@ describe("init() integration", () => {
   });
 
   it("#7b throws when the selected Python command is below 3.9", async () => {
-    const expectedPythonCmd =
-      process.platform === "win32" ? "python" : "python3";
-
-    vi.mocked(execSync).mockImplementation(((cmd: string) => {
-      if (cmd === `${expectedPythonCmd} --version`) {
-        return "Python 3.8.18";
-      }
-      return "";
-    }) as typeof execSync);
+    // v0.5.7: init now tries a fallback chain (#236). Mock every candidate to
+    // return the same too-old version so all candidates fail uniformly.
+    vi.mocked(execSync).mockImplementation(
+      (() => "Python 3.8.18") as typeof execSync,
+    );
 
     await expect(init({ yes: true, claude: true })).rejects.toThrow(
-      `Python 3.8.18 detected via "${expectedPythonCmd}", but Trellis init requires Python ≥ 3.9.`,
+      /No supported Python command found.*Python 3\.8\.18 \(< 3\.9\)/s,
     );
     expect(fs.existsSync(path.join(tmpDir, DIR_NAMES.WORKFLOW))).toBe(false);
   });
 
   it("#7c throws when the selected Python command is missing", async () => {
-    const expectedPythonCmd =
-      process.platform === "win32" ? "python" : "python3";
-
-    vi.mocked(execSync).mockImplementation(((cmd: string) => {
-      if (cmd === `${expectedPythonCmd} --version`) {
-        throw new Error("not found");
-      }
-      return "";
+    // v0.5.7: init now tries a fallback chain (#236). Mock every candidate to
+    // throw "not found" so all candidates fail.
+    vi.mocked(execSync).mockImplementation((() => {
+      throw new Error("not found");
     }) as typeof execSync);
 
     await expect(init({ yes: true, claude: true })).rejects.toThrow(
-      `Python command "${expectedPythonCmd}" not found. Trellis init requires Python ≥ 3.9.`,
+      /No supported Python command found.*not found/s,
     );
     expect(fs.existsSync(path.join(tmpDir, DIR_NAMES.WORKFLOW))).toBe(false);
   });
