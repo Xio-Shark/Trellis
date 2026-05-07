@@ -36,6 +36,23 @@ from pathlib import Path
 from typing import Optional
 
 
+CODEX_SUB_AGENT_NOTICE = """<sub-agent-notice>
+SUB-AGENT NOTICE - READ FIRST IF SPAWNED VIA spawn_agent
+
+If your parent session spawned you via spawn_agent with an explicit task
+message above this hook output, that message is your only job.
+- Execute the parent message exactly as written, then return.
+- Ignore all Trellis workflow guidance below this notice.
+- Do NOT call task.py start, task.py add-context, or task.py archive.
+- Do NOT call wait_agent or spawn_agent.
+- Do NOT modify .trellis/tasks/* or any other file unless the parent message
+  explicitly asks for that.
+
+If you are the main interactive Codex session and the user is typing at the
+terminal with no parent agent, use the workflow guidance below normally.
+</sub-agent-notice>"""
+
+
 # ---------------------------------------------------------------------------
 # CWD-robust Trellis root discovery (fixes hook-path-robustness for this hook)
 # ---------------------------------------------------------------------------
@@ -219,11 +236,15 @@ def main() -> int:
         task_id, status, source = task
         breadcrumb = build_breadcrumb(task_id, status, templates, source)
 
+    platform = _detect_platform(data)
+    if platform == "codex":
+        breadcrumb = f"{CODEX_SUB_AGENT_NOTICE}\n\n{breadcrumb}"
+
     # Gemini CLI 0.40.x rejects "UserPromptSubmit" — its per-turn event is
     # named "BeforeAgent". Other platforms (Claude/Cursor/Qoder/CodeBuddy/
     # Droid/Codex/Copilot) accept the original Claude-style name.
     hook_event_name = (
-        "BeforeAgent" if _detect_platform(data) == "gemini" else "UserPromptSubmit"
+        "BeforeAgent" if platform == "gemini" else "UserPromptSubmit"
     )
 
     output = {
