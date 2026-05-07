@@ -53,6 +53,30 @@ terminal with no parent agent, use the workflow guidance below normally.
 </sub-agent-notice>"""
 
 
+# Bootstrap notice for Codex while the session has no active task. Replaces the
+# heavyweight SessionStart context injection — instead of pushing 9.5 KB of
+# workflow text up front, we just nudge the AI to read the `trellis-start` skill once.
+# The nudge keeps showing up while status == "no_task" (cheap text, AI won't
+# re-read after the first time). Once a task is created the breadcrumb status
+# flips and this notice stops appearing automatically. Sub-agents are warded
+# off by the <sub-agent-notice> above plus the explicit exemption below.
+CODEX_NO_TASK_BOOTSTRAP_NOTICE = """<trellis-bootstrap>
+You are running in a Trellis-managed Codex session and there is no active task yet.
+If you have not already loaded Trellis context this session, read the `trellis-start` skill once:
+
+  $trellis-start
+
+(equivalent to reading `.agents/skills/trellis-start/SKILL.md` and following its Steps 1-3)
+
+The skill walks you through workflow.md, dev profile, git status, active tasks, and spec
+indexes. Then route the user's request per the <workflow-state> A/B/C rules below.
+
+Sub-agent exemption: if you are a sub-agent (spawned via spawn_agent with a parent task
+message), DO NOT read `$trellis-start`. Execute the parent message directly as instructed by the
+<sub-agent-notice> above.
+</trellis-bootstrap>"""
+
+
 # ---------------------------------------------------------------------------
 # CWD-robust Trellis root discovery (fixes hook-path-robustness for this hook)
 # ---------------------------------------------------------------------------
@@ -238,7 +262,11 @@ def main() -> int:
 
     platform = _detect_platform(data)
     if platform == "codex":
-        breadcrumb = f"{CODEX_SUB_AGENT_NOTICE}\n\n{breadcrumb}"
+        parts: list[str] = [CODEX_SUB_AGENT_NOTICE]
+        if task is None:
+            parts.append(CODEX_NO_TASK_BOOTSTRAP_NOTICE)
+        parts.append(breadcrumb)
+        breadcrumb = "\n\n".join(parts)
 
     # Gemini CLI 0.40.x rejects "UserPromptSubmit" — its per-turn event is
     # named "BeforeAgent". Other platforms (Claude/Cursor/Qoder/CodeBuddy/
