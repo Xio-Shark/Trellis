@@ -241,7 +241,7 @@ function getOsDisplayName(
   }
 }
 
-function logPythonAdaptationNotice(command: "python" | "python3"): void {
+function logPythonAdaptationNotice(command: string): void {
   const osName = getOsDisplayName();
   console.log(
     chalk.blue(
@@ -350,7 +350,7 @@ function getBootstrapRelatedFiles(
 
 function getBootstrapPrdContent(
   projectType: ProjectType,
-  pythonCmd: "python" | "python3",
+  pythonCmd: string,
   packages?: DetectedPackage[],
 ): string {
   const checklistItems = getBootstrapChecklistItems(projectType, packages);
@@ -566,7 +566,7 @@ function getBootstrapTaskJson(
 function createBootstrapTask(
   cwd: string,
   developer: string,
-  pythonCmd: "python" | "python3",
+  pythonCmd: string,
   projectType: ProjectType,
   packages?: DetectedPackage[],
 ): boolean {
@@ -607,10 +607,7 @@ function getJoinerTaskJson(developer: string, taskName: string): TaskJson {
  * PRD content for joiner onboarding. Kept concise (~80 lines) — deeper
  * guidance lives in skills and docs.
  */
-function getJoinerPrdContent(
-  developer: string,
-  pythonCmd: "python" | "python3",
-): string {
+function getJoinerPrdContent(developer: string, pythonCmd: string): string {
   const slug = slugifyDeveloperName(developer);
   return `# Joiner Onboarding Task
 
@@ -727,7 +724,7 @@ hood, summarize the team's spec, or jump to what you're already curious about
 function createJoinerOnboardingTask(
   cwd: string,
   developer: string,
-  pythonCmd: "python" | "python3",
+  pythonCmd: string,
 ): boolean {
   const slug = slugifyDeveloperName(developer);
   const taskName = `00-join-${slug}`;
@@ -744,7 +741,7 @@ async function handleReinit(
   cwd: string,
   options: InitOptions,
   developerName: string | undefined,
-  pythonCmd: "python" | "python3",
+  pythonCmd: string,
 ): Promise<boolean> {
   const TOOLS = getInitToolChoices();
   const configuredPlatforms = getConfiguredPlatforms(cwd);
