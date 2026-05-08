@@ -7,15 +7,13 @@ import {
   getConfigTemplate,
   getHooksConfig,
 } from "../templates/codex/index.js";
-import { getCommandTemplates } from "../templates/common/index.js";
 import { ensureDir, writeFile } from "../utils/file-writer.js";
 import {
   resolvePlaceholders,
-  resolvePlaceholdersNeutral,
   resolveAllAsSkillsNeutral,
   resolveBundledSkills,
+  resolveCodexTrellisStartSkill,
   applyPullBasedPreludeToml,
-  wrapWithSkillFrontmatter,
   writeSkills,
   writeSharedHooks,
   replacePythonCommandLiterals,
@@ -42,24 +40,22 @@ export async function configureCodex(cwd: string): Promise<void> {
   );
 
   // Additionally write `trellis-start` to .agents/skills/ — Codex-specific.
-  // The SessionStart hook was removed (de-recursion fix); inject-workflow-state.py
+  // The SessionStart hook was removed in 0.5.5 (de-recursion); inject-workflow-state.py
   // injects a `<trellis-bootstrap>` block on no_task turns instructing the AI to
   // invoke `$trellis-start` to load workflow context. Without this skill, that
   // invocation has nothing to resolve. Other agent-capable platforms keep their
   // working SessionStart hooks and don't need this.
-  const startTemplate = getCommandTemplates().find((t) => t.name === "start");
-  if (startTemplate) {
-    const trellisStartDir = path.join(sharedSkillsRoot, "trellis-start");
+  // Must stay in sync with `collectPlatformTemplates.codex.collectTemplates`
+  // (configurators/index.ts) — both share `resolveCodexTrellisStartSkill`.
+  const trellisStart = resolveCodexTrellisStartSkill(
+    AI_TOOLS.codex.templateContext,
+  );
+  if (trellisStart) {
+    const trellisStartDir = path.join(sharedSkillsRoot, trellisStart.name);
     ensureDir(trellisStartDir);
     await writeFile(
       path.join(trellisStartDir, "SKILL.md"),
-      wrapWithSkillFrontmatter(
-        "trellis-start",
-        resolvePlaceholdersNeutral(
-          startTemplate.content,
-          AI_TOOLS.codex.templateContext,
-        ),
-      ),
+      trellisStart.content,
     );
   }
 

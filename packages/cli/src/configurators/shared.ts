@@ -419,6 +419,38 @@ export function resolveAllAsSkillsNeutral(
 }
 
 /**
+ * Codex needs a `trellis-start` skill in `.agents/skills/` so the
+ * `<trellis-bootstrap>` notice from `inject-workflow-state.py` resolves
+ * to an actual skill file (the bootstrap notice tells the AI to invoke
+ * `$trellis-start` once on the first `no_task` turn — added in 0.5.5
+ * after the Codex SessionStart hook was removed for de-recursion).
+ *
+ * Built from `common/commands/start.md` + skill frontmatter; renders
+ * neutrally so init and update produce byte-identical output. Returns
+ * `null` if the template is missing (defensive — should never happen).
+ *
+ * Used by both `configureCodex()` (init path, file write) and
+ * `collectPlatformTemplates.codex` (update path, manifest map). Both
+ * paths must agree, otherwise upgraded users miss the file (which broke
+ * 0.4.x → 0.5.5/0.5.6 upgrades — see #247-style symptom: AI reports
+ * "no .agents/skills/trellis-start/SKILL.md" because update only ran
+ * `collectTemplates` and never wrote the file).
+ */
+export function resolveCodexTrellisStartSkill(
+  ctx: TemplateContext,
+): ResolvedTemplate | null {
+  const startTemplate = getCommandTemplates().find((t) => t.name === "start");
+  if (!startTemplate) return null;
+  return {
+    name: "trellis-start",
+    content: wrapWithSkillFrontmatter(
+      "trellis-start",
+      resolvePlaceholdersNeutral(startTemplate.content, ctx),
+    ),
+  };
+}
+
+/**
  * Resolve multi-file built-in skills.
  *
  * Unlike workflow skills, bundled skills already contain their own SKILL.md
