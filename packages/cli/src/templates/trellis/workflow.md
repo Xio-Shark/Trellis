@@ -245,7 +245,7 @@ If you reach this state with uncommitted code, return to Phase 3.4 first — `/f
 
 When a user request matches one of these intents, load the corresponding skill (or dispatch the corresponding sub-agent) first — do not skip skills.
 
-[Claude Code, Cursor, OpenCode, Codex, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
+[Claude Code, Cursor, OpenCode, codex-sub-agent, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
 
 | User intent | Route |
 |---|---|
@@ -257,9 +257,9 @@ When a user request matches one of these intents, load the corresponding skill (
 
 **Why `trellis-before-dev` is NOT in this table:** you are not the one writing code — the `trellis-implement` sub-agent is. Sub-agent platforms get spec context via `implement.jsonl` injection / prelude, not via the main thread loading `trellis-before-dev`.
 
-[/Claude Code, Cursor, OpenCode, Codex, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
+[/Claude Code, Cursor, OpenCode, codex-sub-agent, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
 
-[Kilo, Antigravity, Windsurf]
+[codex-inline, Kilo, Antigravity, Windsurf]
 
 | User intent | Skill |
 |---|---|
@@ -269,11 +269,11 @@ When a user request matches one of these intents, load the corresponding skill (
 | Stuck / fixed same bug several times | `trellis-break-loop` |
 | Spec needs update | `trellis-update-spec` |
 
-[/Kilo, Antigravity, Windsurf]
+[/codex-inline, Kilo, Antigravity, Windsurf]
 
 ### DO NOT skip skills
 
-[Claude Code, Cursor, OpenCode, Codex, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
+[Claude Code, Cursor, OpenCode, codex-sub-agent, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
 
 | What you're thinking | Why it's wrong |
 |---|---|
@@ -282,9 +282,9 @@ When a user request matches one of these intents, load the corresponding skill (
 | "I already know the spec" | The spec may have been updated since you last read it; the sub-agent gets the fresh copy, you may not |
 | "Code first, check later" | `trellis-check` surfaces issues you won't notice yourself; earlier is cheaper |
 
-[/Claude Code, Cursor, OpenCode, Codex, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
+[/Claude Code, Cursor, OpenCode, codex-sub-agent, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
 
-[Kilo, Antigravity, Windsurf]
+[codex-inline, Kilo, Antigravity, Windsurf]
 
 | What you're thinking | Why it's wrong |
 |---|---|
@@ -293,7 +293,7 @@ When a user request matches one of these intents, load the corresponding skill (
 | "I already know the spec" | The spec may have been updated since you last read it; read again |
 | "Code first, check later" | `trellis-check` surfaces issues you won't notice yourself; earlier is cheaper |
 
-[/Kilo, Antigravity, Windsurf]
+[/codex-inline, Kilo, Antigravity, Windsurf]
 
 ### Loading Step Detail
 
@@ -342,7 +342,7 @@ Return to this step whenever requirements change and revise `prd.md`.
 
 Research can happen at any time during requirement exploration. It isn't limited to local code — you can use any available tool (MCP servers, skills, web search, etc.) to look up external information, including third-party library docs, industry practices, API references, etc.
 
-[Claude Code, Cursor, OpenCode, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
+[Claude Code, Cursor, OpenCode, codex-sub-agent, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
 
 Spawn the research sub-agent:
 
@@ -350,13 +350,13 @@ Spawn the research sub-agent:
 - **Task description**: Research <specific question>
 - **Key requirement**: Research output MUST be persisted to `{TASK_DIR}/research/`
 
-[/Claude Code, Cursor, OpenCode, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
+[/Claude Code, Cursor, OpenCode, codex-sub-agent, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
 
-[Codex, Kilo, Antigravity, Windsurf]
+[codex-inline, Kilo, Antigravity, Windsurf]
 
-Do the research in the main session directly and write findings into `{TASK_DIR}/research/`. (For Codex this avoids the `fork_turns="none"` isolation that prevents `trellis-research` sub-agents from resolving the active task path.)
+Do the research in the main session directly and write findings into `{TASK_DIR}/research/`. (For `codex-inline` this avoids the `fork_turns="none"` isolation that prevents `trellis-research` sub-agents from resolving the active task path.)
 
-[/Codex, Kilo, Antigravity, Windsurf]
+[/codex-inline, Kilo, Antigravity, Windsurf]
 
 **Research artifact conventions**:
 - One file per research topic (e.g. `research/auth-library-comparison.md`)
@@ -369,7 +369,7 @@ Brainstorm and research can interleave freely — pause to research a technical 
 
 #### 1.3 Configure context `[required · once]`
 
-[Claude Code, Cursor, OpenCode, Codex, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
+[Claude Code, Cursor, OpenCode, codex-sub-agent, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
 
 Curate `implement.jsonl` and `check.jsonl` so the Phase 2 sub-agents get the right spec context. These files were seeded on `task create` with a single self-describing `_example` line; your job here is to fill in real entries.
 
@@ -410,13 +410,13 @@ Delete the seed `_example` line once real entries exist (optional — it's skipp
 
 Skip when: `implement.jsonl` has agent-curated entries (the seed row alone doesn't count).
 
-[/Claude Code, Cursor, OpenCode, Codex, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
+[/Claude Code, Cursor, OpenCode, codex-sub-agent, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
 
-[Kilo, Antigravity, Windsurf]
+[codex-inline, Kilo, Antigravity, Windsurf]
 
 Skip this step. Context is loaded directly by the `trellis-before-dev` skill in Phase 2.
 
-[/Kilo, Antigravity, Windsurf]
+[/codex-inline, Kilo, Antigravity, Windsurf]
 
 #### 1.4 Activate task `[required · once]`
 
@@ -440,11 +440,11 @@ If `task.py start` errors with a session-identity message (no context key from h
 | `research/` has artifacts (complex tasks) | recommended |
 | `info.md` technical design (complex tasks) | optional |
 
-[Claude Code, Cursor, OpenCode, Codex, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
+[Claude Code, Cursor, OpenCode, codex-sub-agent, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
 
 | `implement.jsonl` has agent-curated entries (not just the seed row) | ✅ |
 
-[/Claude Code, Cursor, OpenCode, Codex, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
+[/Claude Code, Cursor, OpenCode, codex-sub-agent, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
 
 ---
 
@@ -468,7 +468,7 @@ The platform hook/plugin auto-handles:
 
 [/Claude Code, Cursor, OpenCode, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
 
-[Codex]
+[codex-sub-agent]
 
 Spawn the implement sub-agent:
 
@@ -480,7 +480,7 @@ The Codex sub-agent definition auto-handles the context load requirement:
 - Resolves the active task with `task.py current --source`, then reads `prd.md` and `info.md` if present
 - Reads `implement.jsonl` and requires the agent to load each referenced spec file before coding
 
-[/Codex]
+[/codex-sub-agent]
 
 [Kiro]
 
@@ -496,7 +496,7 @@ The platform prelude auto-handles the context load requirement:
 
 [/Kiro]
 
-[Kilo, Antigravity, Windsurf]
+[codex-inline, Kilo, Antigravity, Windsurf]
 
 1. Load the `trellis-before-dev` skill to read project guidelines
 2. Read `{TASK_DIR}/prd.md` for requirements
@@ -504,11 +504,11 @@ The platform prelude auto-handles the context load requirement:
 4. Implement the code per requirements
 5. Run project lint and type-check
 
-[/Kilo, Antigravity, Windsurf]
+[/codex-inline, Kilo, Antigravity, Windsurf]
 
 #### 2.2 Quality check `[required · repeatable]`
 
-[Claude Code, Cursor, OpenCode, Codex, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
+[Claude Code, Cursor, OpenCode, codex-sub-agent, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
 
 Spawn the check sub-agent:
 
@@ -521,9 +521,9 @@ The check agent's job:
 - Auto-fix issues it finds
 - Run lint and typecheck to verify
 
-[/Claude Code, Cursor, OpenCode, Codex, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
+[/Claude Code, Cursor, OpenCode, codex-sub-agent, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
 
-[Kilo, Antigravity, Windsurf]
+[codex-inline, Kilo, Antigravity, Windsurf]
 
 Load the `trellis-check` skill and verify the code per its guidance:
 - Spec compliance
@@ -532,7 +532,7 @@ Load the `trellis-check` skill and verify the code per its guidance:
 
 If issues are found → fix → re-check, until green.
 
-[/Kilo, Antigravity, Windsurf]
+[/codex-inline, Kilo, Antigravity, Windsurf]
 
 #### 2.3 Rollback `[on demand]`
 

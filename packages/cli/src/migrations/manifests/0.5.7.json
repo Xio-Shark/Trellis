@@ -9,7 +9,7 @@
     {
       "file": ".trellis/config.yaml",
       "sentinel": "codex:",
-      "sectionHeading": "Codex (sub-agent dispatch behavior)"
+      "sectionHeading": "Codex (dispatch behavior)"
     }
   ],
   "notes": "Patch on top of 0.5.6. Run `trellis update` (no `--migrate` needed). Codex users get the new `dispatch_mode` knob (default unchanged), hardened sub-agent role files, plus the previously-init-only `trellis-start` skill on the update path. Kiro users get an agent JSON that Kiro CLI no longer rejects. Codex 0.129+ users should run `/hooks` once after upgrading Codex to approve the Trellis `UserPromptSubmit` hook."
