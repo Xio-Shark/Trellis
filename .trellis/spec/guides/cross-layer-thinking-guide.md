@@ -114,10 +114,13 @@ When a CLI auto-detects a mode by probing a remote resource (e.g., checking if `
 ### After implementing:
 - [ ] Trace every path from probe result to the mode-decision branch — no fallthrough
 - [ ] External format contracts (giget URI, raw URLs) are tested or at least documented as comments
+- [ ] Metadata reads consume a complete response or use a streaming parser — never parse a fixed-size prefix as full JSON
 - [ ] When reconstructing a composite identifier from parsed parts, verify **all** fields are included and in the **correct position** (e.g., `provider:repo/path#ref` not `provider:repo#ref/path`)
 - [ ] Verify that **action functions** called after a shortcut don't internally use the old catch-all fetch — they must use the probe-quality variant when error distinction matters
 
 **Real-world example**: Custom registry flow had 8 bugs across 3 review rounds: (1) probe only ran in interactive mode, (2) transient errors fell through to wrong mode, (3) giget URI had `#ref` in wrong position, (4) prefetched templates leaked across source switches, (5) `--template` shortcut bypassed probe but `downloadTemplateById` internally used catch-all `fetchTemplateIndex`, turning timeouts into "Template not found".
+
+**Real-world example**: Agent-session update hints fetched npm `latest` metadata with `response.read(4096)` and then parsed it as complete JSON. The `@mindfoldhq/trellis` package metadata exceeded 4 KB, so the JSON was truncated, parse failed silently, and the first session injection showed no update hint. Fix: read the complete response before parsing, and add a regression where `version` is followed by an 8 KB metadata tail.
 
 ---
 

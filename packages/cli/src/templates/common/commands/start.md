@@ -11,6 +11,8 @@ Identity, git status, current task, active tasks, journal location.
 {{PYTHON_CMD}} ./.trellis/scripts/get_context.py
 ```
 
+If this output includes a line beginning `Trellis update available:`, copy the full line verbatim when summarizing session context. Do not shorten operational command hints.
+
 ## Step 2: Workflow overview
 Phase Index + skill routing table + DO-NOT-skip rules.
 

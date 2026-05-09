@@ -178,6 +178,81 @@ def run_command(
     return result.returncode, result.stdout, result.stderr
 ```
 
+### Optional Advisory Checks in Session Scripts
+
+#### 1. Scope / Trigger
+
+Use this contract when a generated `.trellis/scripts/` module performs an
+advisory check during hook/session context generation, such as checking whether
+a Trellis update is available. These checks must never block context output.
+
+#### 2. Signatures
+
+```python
+def _fetch_tool_output() -> str | None: ...
+def _extract_advisory_value(output: str) -> str | None: ...
+def _resolve_advisory_value() -> str | None: ...
+def _marker_path(repo_root: Path) -> Path: ...
+def _mark_attempted(repo_root: Path) -> bool: ...
+```
+
+#### 3. Contracts
+
+- Prefer reusing existing local CLI behavior over duplicating registry/API logic.
+- Local advisory commands use `subprocess.run(..., capture_output=True,
+  text=True, encoding="utf-8", errors="replace",
+  timeout=<short timeout>)`.
+- Marker files live under `.trellis/.runtime/` and are keyed by the current
+  Trellis session identity when available.
+- Marker writes are best-effort: failure to write must not fail context output.
+
+#### 4. Validation & Error Matrix
+
+| Condition | Behavior |
+|-----------|----------|
+| Local command returns valid value | Compare/use value and write marker |
+| Local command fails | Print nothing and do not write marker |
+| Value parses as invalid | Print nothing; marker may be written to avoid repeat noisy work |
+| Marker already exists | Skip all probes and print nothing |
+
+#### 5. Good / Base / Bad Cases
+
+- Good: `trellis --version` prints an existing CLI update hint or final version,
+  project `.version` is `0.5.0`, so context prints the update hint once.
+- Base: `trellis --version` returns `0.5.9`; no registry parsing is needed.
+- Bad: a failed local command writes the marker before any usable value is
+  resolved, hiding a later successful check in the same session.
+
+#### 6. Tests Required
+
+- Newer value prints the hint and includes the generated context body.
+- Equal/newer current project version prints no hint.
+- Failed lookup prints no hint and does not burn the once-per-session marker.
+- Existing `trellis --version` update output is parsed and normalized.
+- Non-default modes (`--json`, record, packages, phase) do not call the
+  advisory check.
+
+#### 7. Wrong vs Correct
+
+```python
+# Wrong: burns the marker before knowing whether the check produced a value.
+if not _mark_attempted(repo_root):
+    return None
+latest = _fetch_primary_value()
+if not latest:
+    return None
+```
+
+```python
+# Correct: skip only if a previous successful/decisive attempt wrote a marker.
+if _marker_path(repo_root).exists():
+    return None
+latest = _resolve_advisory_value()
+if not latest:
+    return None
+_mark_attempted(repo_root)
+```
+
 ---
 
 ## Shared Module API Reference

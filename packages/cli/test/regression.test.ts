@@ -47,6 +47,8 @@ import {
   commonTaskUtils,
   commonDeveloper,
   commonConfig,
+  commonGitContext,
+  commonSessionContext,
   getAllScripts,
 } from "../src/templates/trellis/index.js";
 import {
@@ -848,6 +850,170 @@ describe("regression: SessionStart reinject on clear/compact (MIN-231)", () => {
         `claude ${entry.matcher} should invoke session-start.py`,
       ).toContain("session-start.py");
     }
+  });
+});
+
+describe("regression: agent-session Trellis update hint", () => {
+  let tmpDir: string;
+  const pythonCmd = process.platform === "win32" ? "python" : "python3";
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-update-hint-"));
+    const scriptsDir = path.join(tmpDir, ".trellis", "scripts");
+    for (const [relativePath, content] of getAllScripts()) {
+      const absPath = path.join(scriptsDir, relativePath);
+      fs.mkdirSync(path.dirname(absPath), { recursive: true });
+      fs.writeFileSync(absPath, content, "utf-8");
+    }
+    fs.mkdirSync(path.join(tmpDir, ".trellis", "tasks"), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, ".trellis", ".developer"),
+      "name=test-dev\ninitialized_at=2026-05-09T00:00:00Z\n",
+      "utf-8",
+    );
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function runContextWithTrellisOutput(
+    currentVersion: string,
+    trellisVersionOutput: string | null,
+  ): string {
+    fs.writeFileSync(
+      path.join(tmpDir, ".trellis", ".version"),
+      `${currentVersion}\n`,
+      "utf-8",
+    );
+    const runnerPath = path.join(tmpDir, "run-context.py");
+    fs.writeFileSync(
+      runnerPath,
+      [
+        "import os",
+        "import sys",
+        "from pathlib import Path",
+        "sys.path.insert(0, str(Path.cwd() / '.trellis' / 'scripts'))",
+        "from common import session_context",
+        "output = os.environ.get('TRELLIS_VERSION_OUTPUT')",
+        "session_context._fetch_trellis_version_output = lambda: None if output == '__NONE__' else output",
+        "session_context.output_text(Path.cwd())",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    return execSync(`${pythonCmd} ${JSON.stringify(runnerPath)}`, {
+      cwd: tmpDir,
+      encoding: "utf-8",
+      env: {
+        ...process.env,
+        TRELLIS_VERSION_OUTPUT: trellisVersionOutput ?? "__NONE__",
+        TRELLIS_CONTEXT_ID: "test-update-session",
+      },
+    });
+  }
+
+  function pythonFunctionBody(source: string, name: string): string {
+    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = source.match(
+      new RegExp(`def ${escapedName}\\([\\s\\S]*?\\n(?=def |# =|$)`),
+    );
+    return match?.[0] ?? "";
+  }
+
+  it("shows a concise update hint when trellis --version reports a newer version", () => {
+    const output = runContextWithTrellisOutput(
+      "0.5.0",
+      "Trellis update available: 0.5.0 → 0.5.9\nRun: trellis update\n0.5.9",
+    );
+
+    expect(output).toContain("Trellis update available: 0.5.0 -> 0.5.9");
+    expect(output).toContain(
+      "run npm install -g @mindfoldhq/trellis@latest",
+    );
+    expect(output).toContain("SESSION CONTEXT");
+  });
+
+  it("does not show a hint when installed version is equal or newer", () => {
+    expect(runContextWithTrellisOutput("0.5.9", "0.5.9")).not.toContain(
+      "Trellis update available",
+    );
+    fs.rmSync(path.join(tmpDir, ".trellis", ".runtime"), {
+      recursive: true,
+      force: true,
+    });
+    expect(runContextWithTrellisOutput("0.6.0", "0.5.9")).not.toContain(
+      "Trellis update available",
+    );
+  });
+
+  it("silently skips the hint when trellis --version fails or version parsing fails", () => {
+    expect(runContextWithTrellisOutput("0.5.0", null)).not.toContain(
+      "Trellis update available",
+    );
+    fs.rmSync(path.join(tmpDir, ".trellis", ".runtime"), {
+      recursive: true,
+      force: true,
+    });
+    expect(runContextWithTrellisOutput("not-a-version", "0.5.9")).not.toContain(
+      "Trellis update available",
+    );
+  });
+
+  it("does not burn the once-per-session marker when version lookup fails", () => {
+    expect(runContextWithTrellisOutput("0.5.0", null)).not.toContain(
+      "Trellis update available",
+    );
+
+    const output = runContextWithTrellisOutput("0.5.0", "0.5.9");
+
+    expect(output).toContain("Trellis update available: 0.5.0 -> 0.5.9");
+  });
+
+  it("uses the final trellis --version token when no update line is present", () => {
+    const output = runContextWithTrellisOutput("0.5.0", "0.5.9");
+
+    expect(output).toContain("Trellis update available: 0.5.0 -> 0.5.9");
+  });
+
+  it("only attempts the default text update hint once per session", () => {
+    const first = runContextWithTrellisOutput("0.5.0", "0.5.9");
+    const second = runContextWithTrellisOutput("0.5.0", "0.5.9");
+
+    expect(first).toContain("Trellis update available: 0.5.0 -> 0.5.9");
+    expect(second).not.toContain("Trellis update available");
+    expect(
+      fs.existsSync(
+        path.join(
+          tmpDir,
+          ".trellis",
+          ".runtime",
+          "update-check-test-update-session.marker",
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps the update hint out of JSON, record, packages, and phase paths", () => {
+    expect(pythonFunctionBody(commonSessionContext, "output_text")).toContain(
+      "_get_update_hint",
+    );
+    for (const functionName of [
+      "get_context_json",
+      "output_json",
+      "get_context_record_json",
+      "get_context_text_record",
+    ]) {
+      expect(
+        pythonFunctionBody(commonSessionContext, functionName),
+        `${functionName} should not check Trellis updates`,
+      ).not.toContain("_get_update_hint");
+    }
+    expect(commonGitContext).toContain("if args.mode == \"record\":");
+    expect(commonGitContext).toContain("elif args.mode == \"packages\":");
+    expect(commonGitContext).toContain("elif args.mode == \"phase\":");
+    expect(commonGitContext).toContain("else:");
+    expect(commonGitContext).toContain("output_text()");
   });
 });
 
