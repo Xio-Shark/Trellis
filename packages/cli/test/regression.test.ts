@@ -5432,3 +5432,261 @@ describe("regression: configSectionsAdded (issue-codex-dispatch-mode)", () => {
     expect(tmpl).toContain("dispatch_mode");
   });
 });
+
+// =============================================================================
+// safe-commit: gitignored .trellis/ recovery (0.5.10)
+// =============================================================================
+//
+// Real user incident: project .gitignore listed `.trellis/`. add_session.py's
+// auto-commit ran `git add .trellis/workspace .trellis/tasks`, got `ignored
+// by .gitignore`, fell back to a hint suggesting `git add .trellis &&
+// commit`. The AI agent driving the workflow extrapolated that to
+// `git add -f .trellis/`, which forced in `.trellis/.backup-*/`,
+// `.trellis/worktrees/`, `.trellis/.template-hashes.json`, etc. — 548 files
+// / 83474 lines of caches/backups committed.
+//
+// Fix:
+//   - Scripts only stage SPECIFIC product paths (journal files, index.md,
+//     active task dirs, the archive subtree).
+//   - On `ignored by` the scripts retry with `git add -f <specific paths>`,
+//     which is safe because the path list is narrow.
+//   - The fallback warning explicitly says ``Do NOT use `git add -f
+//     .trellis/```` so an AI re-reading the log doesn't reinvent the bug.
+//
+// These tests synthesize a tmp git repo with `.trellis/` gitignored and
+// verify (a) the commit still happens, (b) ignored subpaths are NOT
+// committed, (c) the negative-rule warning is reachable.
+// =============================================================================
+
+describe("regression: safe auto-commit when .trellis/ is gitignored (0.5.10)", () => {
+  let tmpDir: string;
+  const pyCmd = process.platform === "win32" ? "python" : "python3";
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-safe-commit-"));
+    execSync("git init -q -b main", { cwd: tmpDir });
+    // Configure user so git commit succeeds in CI sandboxes.
+    execSync('git config user.email "test@trellis.local"', { cwd: tmpDir });
+    execSync('git config user.name "Trellis Test"', { cwd: tmpDir });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function writeFile(rel: string, content: string): void {
+    const abs = path.join(tmpDir, rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, content, "utf-8");
+  }
+
+  function writeTrellisScripts(): void {
+    const scriptsDir = path.join(tmpDir, ".trellis", "scripts");
+    for (const [rel, content] of getAllScripts()) {
+      const abs = path.join(scriptsDir, rel);
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      fs.writeFileSync(abs, content, "utf-8");
+    }
+  }
+
+  function writeWorkspaceIndex(): void {
+    writeFile(
+      ".trellis/workspace/test-dev/index.md",
+      [
+        "# Workspace Index - test-dev",
+        "",
+        "## Current Status",
+        "",
+        "<!-- @@@auto:current-status -->",
+        "- **Active File**: `journal-1.md`",
+        "- **Total Sessions**: 0",
+        "- **Last Active**: -",
+        "<!-- @@@/auto:current-status -->",
+        "",
+        "## Active Documents",
+        "",
+        "<!-- @@@auto:active-documents -->",
+        "| File | Lines | Status |",
+        "|------|-------|--------|",
+        "| `journal-1.md` | ~0 | Active |",
+        "<!-- @@@/auto:active-documents -->",
+        "",
+        "## Session History",
+        "",
+        "<!-- @@@auto:session-history -->",
+        "| # | Date | Title | Commits | Branch |",
+        "|---|------|-------|---------|--------|",
+        "<!-- @@@/auto:session-history -->",
+        "",
+      ].join("\n"),
+    );
+  }
+
+  function setupRepo(options?: { gitignoreTrellis?: boolean }): void {
+    writeTrellisScripts();
+    writeFile(
+      ".trellis/.developer",
+      "name=test-dev\ninitialized_at=2026-05-09T00:00:00\n",
+    );
+    writeFile(".trellis/workspace/test-dev/journal-1.md",
+      "# Journal - test-dev (Part 1)\n\n---\n",
+    );
+    writeWorkspaceIndex();
+    // Ignored caches/backups must exist on disk to prove they don't get
+    // staged when -f is forced on specific paths.
+    writeFile(".trellis/.backup-2026-05-09/should-not-be-committed.txt",
+      "secret-backup\n",
+    );
+    writeFile(".trellis/worktrees/wt-a/should-not-be-committed.txt",
+      "secret-worktree\n",
+    );
+    writeFile(".trellis/.template-hashes.json", '{"_": "should-not-be-committed"}\n');
+    writeFile(".trellis/.runtime/sessions/should-not-be-committed.json", "{}\n");
+
+    if (options?.gitignoreTrellis) {
+      writeFile(".gitignore", ".trellis/\n");
+    }
+    // Seed an initial commit so HEAD exists.
+    writeFile("README.md", "test\n");
+    execSync("git add README.md", { cwd: tmpDir });
+    if (options?.gitignoreTrellis) {
+      execSync("git add .gitignore", { cwd: tmpDir });
+    }
+    execSync('git commit -q -m "init"', { cwd: tmpDir });
+  }
+
+  function runAddSession(): { stdout: string; stderr: string } {
+    const scriptPath = path.join(
+      tmpDir,
+      ".trellis",
+      "scripts",
+      "add_session.py",
+    );
+    const result = spawnSync(
+      pyCmd,
+      [scriptPath, "--title", "Test", "--summary", "Test"],
+      {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        env: { ...process.env, TRELLIS_CONTEXT_ID: "session-a" },
+      },
+    );
+    return {
+      stdout: result.stdout ?? "",
+      stderr: result.stderr ?? "",
+    };
+  }
+
+  function listCommittedFiles(): string[] {
+    const out = execSync("git ls-tree -r --name-only HEAD", {
+      cwd: tmpDir,
+      encoding: "utf-8",
+    });
+    return out.split("\n").filter((l) => l.length > 0);
+  }
+
+  it("[gitignore-trellis] add_session auto-commits via -f when .trellis/ is ignored", () => {
+    setupRepo({ gitignoreTrellis: true });
+    const { stderr } = runAddSession();
+
+    // Plain add fails with "ignored by", scripts retry with -f on specific
+    // paths. The auto-commit message in stderr proves the recovery path ran.
+    expect(stderr).toContain("Auto-committed");
+
+    const tracked = listCommittedFiles();
+    expect(tracked).toContain(".trellis/workspace/test-dev/journal-1.md");
+    expect(tracked).toContain(".trellis/workspace/test-dev/index.md");
+
+    // The whole point: ignored caches/backups MUST NOT have been staged
+    // by the -f retry.
+    for (const tracked_path of tracked) {
+      expect(
+        tracked_path.startsWith(".trellis/.backup-"),
+        `should not commit backup: ${tracked_path}`,
+      ).toBe(false);
+      expect(
+        tracked_path.startsWith(".trellis/worktrees/"),
+        `should not commit worktree: ${tracked_path}`,
+      ).toBe(false);
+      expect(
+        tracked_path === ".trellis/.template-hashes.json",
+        `should not commit template-hashes: ${tracked_path}`,
+      ).toBe(false);
+      expect(
+        tracked_path.startsWith(".trellis/.runtime/"),
+        `should not commit runtime: ${tracked_path}`,
+      ).toBe(false);
+    }
+  });
+
+  it("[gitignore-trellis] add_session works normally when .trellis/ is NOT ignored", () => {
+    // Regression guard: pre-existing behavior must not change for users
+    // whose .gitignore does not exclude .trellis/.
+    setupRepo({ gitignoreTrellis: false });
+    const { stderr } = runAddSession();
+    expect(stderr).toContain("Auto-committed");
+
+    const tracked = listCommittedFiles();
+    expect(tracked).toContain(".trellis/workspace/test-dev/journal-1.md");
+  });
+
+  it("[gitignore-trellis] safe_commit module ships and contains the negative warning", () => {
+    // The warning's exact text matters because AI agents read it.
+    // Specifically the negative example must appear verbatim so any future
+    // refactor that removes it will fail this test.
+    const safeCommit = getAllScripts().get("common/safe_commit.py");
+    expect(safeCommit).toBeTruthy();
+    expect(safeCommit).toContain("Do NOT use `git add -f .trellis/`");
+    expect(safeCommit).toContain("safe_trellis_paths_to_add");
+    expect(safeCommit).toContain("safe_archive_paths_to_add");
+    expect(safeCommit).toContain("safe_git_add");
+  });
+
+  it("[gitignore-trellis] task.py archive auto-commits via -f when .trellis/ is ignored", () => {
+    setupRepo({ gitignoreTrellis: true });
+    // Create a task to archive.
+    writeFile(
+      ".trellis/tasks/issue-500/task.json",
+      JSON.stringify(
+        { title: "Test archive", status: "in_progress", package: null },
+        null,
+        2,
+      ),
+    );
+    writeFile(".trellis/tasks/issue-500/prd.md", "# PRD\n");
+
+    const taskScriptPath = path.join(
+      tmpDir,
+      ".trellis",
+      "scripts",
+      "task.py",
+    );
+    const result = spawnSync(
+      pyCmd,
+      [taskScriptPath, "archive", "issue-500"],
+      {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        env: { ...process.env, TRELLIS_CONTEXT_ID: "session-arch" },
+      },
+    );
+    const stderr = result.stderr ?? "";
+    expect(stderr).toContain("Auto-committed");
+
+    const tracked = listCommittedFiles();
+    // Archive copy should be tracked.
+    const hasArchive = tracked.some((f) =>
+      f.startsWith(".trellis/tasks/archive/") &&
+      f.includes("issue-500"),
+    );
+    expect(hasArchive).toBe(true);
+
+    // No ignored subtrees leaked in.
+    for (const t of tracked) {
+      expect(t.startsWith(".trellis/.backup-")).toBe(false);
+      expect(t.startsWith(".trellis/worktrees/")).toBe(false);
+      expect(t).not.toBe(".trellis/.template-hashes.json");
+      expect(t.startsWith(".trellis/.runtime/")).toBe(false);
+    }
+  });
+});
