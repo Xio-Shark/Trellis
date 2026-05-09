@@ -341,9 +341,66 @@ fallbackModels:
     expect(extension).toContain("ctx?.ui?.notify?.(");
     expect(extension).toContain("systemPrompt:");
     expect(extension).toContain('pi.on?.("input", (event, ctx) => {');
-    expect(extension).toContain('return { action: "continue" };');
+    expect(extension).toContain('action: "continue"');
     expect(extension).not.toContain("message: buildTrellisContext");
     expect(extension).not.toContain('message:\n      "Trellis project context');
     expect(extension).not.toContain("persistent: true");
+  });
+
+  it("extension injects per-turn workflow-state breadcrumb from workflow.md tags", () => {
+    const extension = getExtensionTemplate();
+
+    // TS port of shared-hooks/inject-workflow-state.py — Pi is extension-backed
+    // and must not receive Python hook files, so the parser lives inline.
+    expect(extension).toContain("WORKFLOW_STATE_TAG_RE");
+    expect(extension).toContain("workflow-state:([A-Za-z0-9_-]+)");
+    expect(extension).toContain("function loadWorkflowBreadcrumbs");
+    expect(extension).toContain("function buildWorkflowStateBreadcrumb");
+    expect(extension).toContain("<workflow-state>");
+    expect(extension).toContain("Refer to workflow.md for current step.");
+    expect(extension).toContain("no_task");
+  });
+
+  it("extension injects per-turn session-overview via get_context.py", () => {
+    const extension = getExtensionTemplate();
+
+    expect(extension).toContain("function buildSessionOverview");
+    expect(extension).toContain('"get_context.py"');
+    expect(extension).toContain("<session-overview>");
+    expect(extension).toContain("spawnSync");
+    expect(extension).toContain("class TurnContextCache");
+    expect(extension).toContain("buildPerTurnInjection");
+    expect(extension).toContain("turnContextCache.get");
+  });
+
+  it("input and before_agent_start hooks both surface workflow-state breadcrumb", () => {
+    const extension = getExtensionTemplate();
+
+    // before_agent_start: workflow-state appended to systemPrompt alongside
+    // the existing PRD / jsonl context (must not replace, must not skip).
+    expect(extension).toContain(
+      "[current, context, perTurn].filter(Boolean).join",
+    );
+    // input hook must inject the same per-turn block (UserPromptSubmit equivalent).
+    expect(extension).toContain(
+      "additionalContext, systemPrompt: additionalContext",
+    );
+    // Existing PRD + jsonl injection must still happen.
+    expect(extension).toContain('buildTrellisContext(\n      projectRoot,\n      "trellis-implement"');
+  });
+
+  it("subagent tool registration carries dispatch protocol prompt snippet", () => {
+    const extension = getExtensionTemplate();
+
+    expect(extension).toContain("SUBAGENT_DISPATCH_PROTOCOL");
+    expect(extension).toContain("promptSnippet: SUBAGENT_DISPATCH_PROTOCOL");
+    expect(extension).toContain("promptGuidelines: SUBAGENT_DISPATCH_PROTOCOL");
+    // The protocol body must instruct the AI to start dispatch with the
+    // canonical "Active task: <path>" line — same wording as
+    // `[workflow-state:in_progress]` in trellis/workflow.md.
+    expect(extension).toContain("Active task:");
+    expect(extension).toContain("class-1");
+    expect(extension).toContain("class-2");
+    expect(extension).toContain("trellis-research");
   });
 });
