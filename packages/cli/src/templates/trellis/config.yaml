@@ -14,6 +14,10 @@ session_commit_message: "chore: record journal"
 # Maximum lines per journal file before rotating to a new one
 max_journal_lines: 2000
 
+#-------------------------------------------------------------------------------
+# Session Auto-Commit
+#-------------------------------------------------------------------------------
+
 # Auto-commit behavior for session journal + task archive operations.
 # - true (default): scripts auto-stage and auto-commit journal / task changes
 #   after add_session.py / task.py archive runs.
