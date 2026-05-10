@@ -145,6 +145,27 @@ Every released version must have:
 
 Migration manifests in `packages/cli/src/migrations/manifests/` need matching changelog entries. The manifest's `changelog` + `aiInstructions` fields are the authoritative text; changelog MDX should link to or paraphrase them.
 
+## Trigger 7: `.trellis/config.yaml` Template or Reader Changes
+
+Scope: any edit to `packages/cli/src/templates/trellis/config.yaml`, config readers under `packages/cli/src/templates/trellis/scripts/common/`, or `configSectionsAdded` behavior in update manifests.
+
+| File (en + zh, release + beta) | What to sync |
+|---|---|
+| `advanced/configuration.mdx` | Add/remove/rename config keys, defaults, accepted values, and update behavior |
+| `advanced/appendix-a.mdx` | Update the `.trellis/config.yaml` one-line purpose if the file's responsibility changes |
+| `start/everyday-use.mdx` | Update only if the key affects day-to-day task/session operations |
+| `changelog/v<version>.mdx` | Document user-visible config behavior or migration delivery |
+
+### Grep command
+
+```bash
+cd docs-site && grep -rln "config.yaml\|session_auto_commit\|codex.dispatch_mode\|update.skip" \
+  --include="*.mdx" --include="docs.json" \
+  | grep -v "node_modules/"
+```
+
+**Rule**: The template is the source of truth for shipped examples, but `advanced/configuration.mdx` is the user-facing reference. If a key is supported by code but intentionally absent from the current template (for example, legacy compatibility), the configuration page should say so explicitly instead of silently omitting it.
+
 ---
 
 ## Bilingual Discipline
