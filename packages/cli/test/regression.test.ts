@@ -4582,7 +4582,13 @@ describe("regression: parse_simple_yaml uses _unquote not greedy strip (0.3.8)",
   });
 
   it("config.py uses _unquote for key-value, not .strip('\"')", () => {
-    expect(commonConfig).toContain("_unquote(value.strip())");
+    // 0.5.11: parse path now strips inline comments first, then unquotes —
+    // mirrors trellis_config.py so YAML `key: false  # comment` parses
+    // correctly. The forbidden `.strip('"').strip("'")` greedy chain still
+    // must not appear.
+    expect(commonConfig).not.toContain(".strip('\"').strip(\"'\")");
+    expect(commonConfig).toContain("_unquote(value)");
+    expect(commonConfig).toContain("_strip_inline_comment(value)");
   });
 });
 
@@ -5600,7 +5606,7 @@ describe("regression: configSectionsAdded (issue-codex-dispatch-mode)", () => {
 });
 
 // =============================================================================
-// safe-commit: gitignored .trellis/ recovery (0.5.10)
+// safe-commit: gitignored .trellis/ recovery (0.5.10 → 0.5.11)
 // =============================================================================
 //
 // Real user incident: project .gitignore listed `.trellis/`. add_session.py's
@@ -5611,20 +5617,31 @@ describe("regression: configSectionsAdded (issue-codex-dispatch-mode)", () => {
 // `.trellis/worktrees/`, `.trellis/.template-hashes.json`, etc. — 548 files
 // / 83474 lines of caches/backups committed.
 //
-// Fix:
-//   - Scripts only stage SPECIFIC product paths (journal files, index.md,
-//     active task dirs, the archive subtree).
-//   - On `ignored by` the scripts retry with `git add -f <specific paths>`,
-//     which is safe because the path list is narrow.
-//   - The fallback warning explicitly says ``Do NOT use `git add -f
-//     .trellis/```` so an AI re-reading the log doesn't reinvent the bug.
+// 0.5.10 fix (since reverted):
+//   - Scripts only stage SPECIFIC product paths.
+//   - On `ignored by` the scripts retried with `git add -f <specific paths>`.
+// That auto-`-f` was an over-fix — when a user gitignores `.trellis/` they
+// mean "keep .trellis/ local-only", and forcing the commit through (even on
+// narrow paths) violates user intent. Group-chat report: a finish-work auto
+// committed `.trellis/workspace/` straight into a repo whose .gitignore
+// excluded `.trellis/`.
+//
+// 0.5.11 fix (current):
+//   - Plain `git add <specific>` is tried once. On `ignored by`, the script
+//     warns and skips the auto-commit — never `-f`.
+//   - New `session_auto_commit: false` config opts the user out of auto-stage
+//     and auto-commit entirely (issue #245).
+//   - The warning explicitly says ``Do NOT use `git add -f .trellis/```` so
+//     AI re-reading the log doesn't reinvent the bug, and points at the new
+//     `session_auto_commit: false` knob.
 //
 // These tests synthesize a tmp git repo with `.trellis/` gitignored and
-// verify (a) the commit still happens, (b) ignored subpaths are NOT
-// committed, (c) the negative-rule warning is reachable.
+// verify (a) on `ignored by` the script warns + skips (no commit, no -f),
+// (b) `session_auto_commit: false` skips git entirely in any state, and
+// (c) the negative-rule warning + new config hint are reachable.
 // =============================================================================
 
-describe("regression: safe auto-commit when .trellis/ is gitignored (0.5.10)", () => {
+describe("regression: safe auto-commit when .trellis/ is gitignored (0.5.10 → 0.5.11)", () => {
   let tmpDir: string;
   const pyCmd = process.platform === "win32" ? "python" : "python3";
 
@@ -5751,38 +5768,40 @@ describe("regression: safe auto-commit when .trellis/ is gitignored (0.5.10)", (
     return out.split("\n").filter((l) => l.length > 0);
   }
 
-  it("[gitignore-trellis] add_session auto-commits via -f when .trellis/ is ignored", () => {
+  it("[gitignore-trellis] add_session warns and skips when .trellis/ is ignored (default mode)", () => {
     setupRepo({ gitignoreTrellis: true });
     const { stderr } = runAddSession();
 
-    // Plain add fails with "ignored by", scripts retry with -f on specific
-    // paths. The auto-commit message in stderr proves the recovery path ran.
-    expect(stderr).toContain("Auto-committed");
+    // Plain add fails with "ignored by". 0.5.11 must NOT retry with -f.
+    // Instead the script warns and skips the entire auto-commit. So no
+    // "Auto-committed" line, and the warning fires.
+    expect(stderr).not.toContain("Auto-committed");
+    expect(stderr).toContain("ignored by your .gitignore");
+    expect(stderr).toContain("Do NOT use `git add -f .trellis/`");
+    expect(stderr).toContain("session_auto_commit: false");
 
+    // Nothing under .trellis/ should be tracked: the user's .gitignore
+    // intent is preserved.
     const tracked = listCommittedFiles();
-    expect(tracked).toContain(".trellis/workspace/test-dev/journal-1.md");
-    expect(tracked).toContain(".trellis/workspace/test-dev/index.md");
-
-    // The whole point: ignored caches/backups MUST NOT have been staged
-    // by the -f retry.
     for (const tracked_path of tracked) {
       expect(
-        tracked_path.startsWith(".trellis/.backup-"),
-        `should not commit backup: ${tracked_path}`,
-      ).toBe(false);
-      expect(
-        tracked_path.startsWith(".trellis/worktrees/"),
-        `should not commit worktree: ${tracked_path}`,
-      ).toBe(false);
-      expect(
-        tracked_path === ".trellis/.template-hashes.json",
-        `should not commit template-hashes: ${tracked_path}`,
-      ).toBe(false);
-      expect(
-        tracked_path.startsWith(".trellis/.runtime/"),
-        `should not commit runtime: ${tracked_path}`,
+        tracked_path.startsWith(".trellis/"),
+        `should not commit anything under .trellis/ (got: ${tracked_path})`,
       ).toBe(false);
     }
+
+    // The journal + index files are still on disk (the script wrote them
+    // before attempting auto-commit) — only git was untouched.
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".trellis/workspace/test-dev/journal-1.md"),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".trellis/workspace/test-dev/index.md"),
+      ),
+    ).toBe(true);
   });
 
   it("[gitignore-trellis] add_session works normally when .trellis/ is NOT ignored", () => {
@@ -5796,19 +5815,25 @@ describe("regression: safe auto-commit when .trellis/ is gitignored (0.5.10)", (
     expect(tracked).toContain(".trellis/workspace/test-dev/journal-1.md");
   });
 
-  it("[gitignore-trellis] safe_commit module ships and contains the negative warning", () => {
+  it("[gitignore-trellis] safe_commit module ships and contains the negative warning + new config hint", () => {
     // The warning's exact text matters because AI agents read it.
     // Specifically the negative example must appear verbatim so any future
-    // refactor that removes it will fail this test.
+    // refactor that removes it will fail this test. 0.5.11 also adds the
+    // new session_auto_commit hint.
     const safeCommit = getAllScripts().get("common/safe_commit.py");
     expect(safeCommit).toBeTruthy();
     expect(safeCommit).toContain("Do NOT use `git add -f .trellis/`");
     expect(safeCommit).toContain("safe_trellis_paths_to_add");
     expect(safeCommit).toContain("safe_archive_paths_to_add");
     expect(safeCommit).toContain("safe_git_add");
+    // 0.5.11: new hint pointing users at the config knob.
+    expect(safeCommit).toContain("session_auto_commit: false");
+    // 0.5.11: auto -f retry must be gone. The function body should no
+    // longer issue `git add -f`.
+    expect(safeCommit).not.toMatch(/\["add", "-f", "--",/);
   });
 
-  it("[gitignore-trellis] task.py archive auto-commits via -f when .trellis/ is ignored", () => {
+  it("[gitignore-trellis] task.py archive warns and skips when .trellis/ is ignored (default mode)", () => {
     setupRepo({ gitignoreTrellis: true });
     // Create a task to archive.
     writeFile(
@@ -5837,22 +5862,187 @@ describe("regression: safe auto-commit when .trellis/ is gitignored (0.5.10)", (
       },
     );
     const stderr = result.stderr ?? "";
-    expect(stderr).toContain("Auto-committed");
+    // 0.5.11: must NOT retry with -f, must NOT auto-commit. Warning must
+    // surface so the user knows their .gitignore won.
+    expect(stderr).not.toContain("Auto-committed");
+    expect(stderr).toContain("ignored by your .gitignore");
+    expect(stderr).toContain("Do NOT use `git add -f .trellis/`");
 
     const tracked = listCommittedFiles();
-    // Archive copy should be tracked.
-    const hasArchive = tracked.some((f) =>
-      f.startsWith(".trellis/tasks/archive/") &&
-      f.includes("issue-500"),
-    );
-    expect(hasArchive).toBe(true);
-
-    // No ignored subtrees leaked in.
+    // Nothing under .trellis/ should be tracked.
     for (const t of tracked) {
-      expect(t.startsWith(".trellis/.backup-")).toBe(false);
-      expect(t.startsWith(".trellis/worktrees/")).toBe(false);
-      expect(t).not.toBe(".trellis/.template-hashes.json");
-      expect(t.startsWith(".trellis/.runtime/")).toBe(false);
+      expect(
+        t.startsWith(".trellis/"),
+        `should not commit anything under .trellis/ (got: ${t})`,
+      ).toBe(false);
     }
+
+    // The archive directory move on disk still happened — only git was
+    // untouched.
+    const archiveExists = fs
+      .readdirSync(path.join(tmpDir, ".trellis/tasks/archive"))
+      .some((monthDir) => {
+        const monthPath = path.join(
+          tmpDir,
+          ".trellis/tasks/archive",
+          monthDir,
+        );
+        return (
+          fs.statSync(monthPath).isDirectory() &&
+          fs.existsSync(path.join(monthPath, "issue-500"))
+        );
+      });
+    expect(archiveExists).toBe(true);
+  });
+
+  // ===========================================================================
+  // 0.5.11: session_auto_commit config (issue #245 + screenshot user)
+  // ===========================================================================
+
+  function writeConfigYaml(content: string): void {
+    writeFile(".trellis/config.yaml", content);
+  }
+
+  it("[session_auto_commit=false] add_session skips git entirely (no add, no commit)", () => {
+    // User wants journal/task files written to disk but no auto-staging
+    // and no auto-commit. Issue #245 + screenshot user use case.
+    setupRepo({ gitignoreTrellis: false });
+    writeConfigYaml("session_auto_commit: false\n");
+
+    const { stderr } = runAddSession();
+    expect(stderr).not.toContain("Auto-committed");
+    expect(stderr).toContain("session_auto_commit: false");
+
+    // No new commits beyond the initial "init" commit.
+    const log = execSync("git log --oneline", {
+      cwd: tmpDir,
+      encoding: "utf-8",
+    });
+    expect(log.trim().split("\n").length).toBe(1);
+
+    // No staged changes either — `git add` was never called.
+    const staged = execSync("git diff --cached --name-only", {
+      cwd: tmpDir,
+      encoding: "utf-8",
+    });
+    expect(staged.trim()).toBe("");
+
+    // Files were still written to disk.
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".trellis/workspace/test-dev/journal-1.md"),
+      ),
+    ).toBe(true);
+  });
+
+  it("[session_auto_commit=false] task.py archive skips git entirely", () => {
+    setupRepo({ gitignoreTrellis: false });
+    writeConfigYaml("session_auto_commit: false\n");
+
+    writeFile(
+      ".trellis/tasks/issue-600/task.json",
+      JSON.stringify(
+        { title: "Test archive", status: "in_progress", package: null },
+        null,
+        2,
+      ),
+    );
+    writeFile(".trellis/tasks/issue-600/prd.md", "# PRD\n");
+
+    const taskScriptPath = path.join(
+      tmpDir,
+      ".trellis",
+      "scripts",
+      "task.py",
+    );
+    const result = spawnSync(
+      pyCmd,
+      [taskScriptPath, "archive", "issue-600"],
+      {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        env: { ...process.env, TRELLIS_CONTEXT_ID: "session-arch-2" },
+      },
+    );
+    const stderr = result.stderr ?? "";
+    expect(stderr).not.toContain("Auto-committed");
+    expect(stderr).toContain("session_auto_commit: false");
+
+    const log = execSync("git log --oneline", {
+      cwd: tmpDir,
+      encoding: "utf-8",
+    });
+    expect(log.trim().split("\n").length).toBe(1);
+
+    // Archive directory move still happened on disk.
+    const archiveExists = fs
+      .readdirSync(path.join(tmpDir, ".trellis/tasks/archive"))
+      .some((monthDir) => {
+        const monthPath = path.join(
+          tmpDir,
+          ".trellis/tasks/archive",
+          monthDir,
+        );
+        return (
+          fs.statSync(monthPath).isDirectory() &&
+          fs.existsSync(path.join(monthPath, "issue-600"))
+        );
+      });
+    expect(archiveExists).toBe(true);
+  });
+
+  it("[session_auto_commit] inline comment is stripped before parsing", () => {
+    // YAML inline-comment trap: `key: false  # comment` previously broke in
+    // common/config.py because parse_simple_yaml didn't strip ` #`. This
+    // verifies the helper is shared with trellis_config.py's parser.
+    setupRepo({ gitignoreTrellis: false });
+    writeConfigYaml(
+      "session_auto_commit: false  # disable for this project\n",
+    );
+
+    const { stderr } = runAddSession();
+    expect(stderr).toContain("session_auto_commit: false");
+    expect(stderr).not.toContain("Auto-committed");
+    expect(stderr).not.toContain("invalid session_auto_commit");
+
+    const log = execSync("git log --oneline", {
+      cwd: tmpDir,
+      encoding: "utf-8",
+    });
+    expect(log.trim().split("\n").length).toBe(1);
+  });
+
+  it("[session_auto_commit] string variants resolve to false", () => {
+    // The helper must accept lowercase / uppercase / synonym forms.
+    // Spot-check `FALSE` (uppercase) and `no` here; `0` and `off` follow
+    // the same code path (the lowercase set in get_session_auto_commit).
+    for (const variant of ["FALSE", "no", "off", "0"]) {
+      setupRepo({ gitignoreTrellis: false });
+      writeConfigYaml(`session_auto_commit: ${variant}\n`);
+
+      const { stderr } = runAddSession();
+      expect(
+        stderr.includes("session_auto_commit: false"),
+        `variant=${variant}`,
+      ).toBe(true);
+
+      // Reset for next iteration.
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-safe-commit-"));
+      execSync("git init -q -b main", { cwd: tmpDir });
+      execSync('git config user.email "test@trellis.local"', { cwd: tmpDir });
+      execSync('git config user.name "Trellis Test"', { cwd: tmpDir });
+    }
+  });
+
+  it("[session_auto_commit] invalid value falls back to true with stderr warn", () => {
+    setupRepo({ gitignoreTrellis: false });
+    writeConfigYaml("session_auto_commit: maybe\n");
+
+    const { stderr } = runAddSession();
+    // Warning fires.
+    expect(stderr).toContain("invalid session_auto_commit value");
+    // Falls back to true → auto-commit happens.
+    expect(stderr).toContain("Auto-committed");
   });
 });
