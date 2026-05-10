@@ -867,6 +867,100 @@ The first commit (`346003d`) added a `tasksEmpty` fallback only in `init()`'s ma
 
 ---
 
+## Native dependency policy
+
+### Cautionary tale — 0.6.0-beta.3 → 0.6.0-beta.4 emergency revert
+
+0.6.0-beta.3 added `better-sqlite3` (a native C++ binding) to read OpenCode 1.2+ session storage, which switched from JSONL to SQLite. On Windows + China network, the failure cascade was:
+
+1. `prebuild-install` tries to download a prebuilt binary from the GitHub releases CDN.
+2. CDN times out (China network reliability for `github.com/.../releases/download/...` is poor).
+3. `node-gyp` source-build fallback kicks in.
+4. Source build needs Visual Studio 2017+ Build Tools, which most Windows users don't have installed.
+5. Install fails — **`trellis` itself can no longer be installed at all**.
+
+Time to detect: ~4 hours after publish. Fix: emergency revert in 0.6.0-beta.4 (removed `better-sqlite3`, marked the OpenCode 1.2+ SQLite reader as degraded with a soft-degrade fallback). The OpenCode SQLite section in `commands-mem.md` is now a stub describing the degraded state.
+
+The lesson: **a native dep that fails to install fails the entire CLI**, not just one feature. For a productivity tool, that tradeoff is unacceptable unless the perf benefit is dramatic and unreplaceable.
+
+### Rules
+
+#### 1. Avoid native deps in the trellis CLI by default
+
+Trellis is a productivity / scaffolding tool. Install reliability across all OS / network conditions matters more than per-call perf. The default answer to "should we add this native dep?" is **no**.
+
+#### 2. If absolutely needed, use `optionalDependencies` + soft-degrade
+
+Place the dep under `optionalDependencies` (not `dependencies`) so install never hard-fails on it. Wrap every load site in a try/catch with a clear "feature unavailable" stderr hint:
+
+```typescript
+let nativeReader: NativeReader | null = null;
+try {
+  // Dynamic import keeps install-time failure away from the load barrel
+  nativeReader = (await import("better-sqlite3")).default as NativeReader;
+} catch {
+  process.stderr.write(
+    "[trellis] OpenCode 1.2+ SQLite session reader unavailable " +
+    "(better-sqlite3 not installed). Falling back to JSONL-only mode.\n"
+  );
+}
+
+if (nativeReader) {
+  // Use native path
+} else {
+  // Soft-degrade: degraded but functional output
+}
+```
+
+Cross-reference: future native-dep additions should mirror the soft-degrade pattern used by `commands/mem.ts:opencodeListSessions` (on the `feat/v0.6.0-beta` branch). When the native reader is unavailable, the function returns degraded but non-empty output rather than throwing.
+
+#### 3. Test on Windows + restricted network before shipping
+
+Even when a prebuild exists for the target platform, the GitHub releases CDN is unreliable from China and other constrained networks. The node-gyp source-build fallback then requires C compiler tooling that users typically don't have (MSVC on Windows, Xcode CLT on macOS, build-essential on Linux).
+
+Required pre-ship matrix for any native dep:
+
+| Environment | What to verify |
+|---|---|
+| Windows (clean VM, no VS Build Tools) + China-route network | `pnpm install` succeeds; CLI starts without the feature |
+| macOS (clean, no Xcode CLT) | Install succeeds; falls back gracefully |
+| Linux (Alpine / minimal Docker) | Install succeeds; musl vs glibc prebuild matches |
+
+#### 4. Decision framework
+
+A native dep is justified only when **both** are true:
+
+- The perf benefit is **dramatic** (orders of magnitude, not 2-3x) AND unreplaceable in pure JS / WASM.
+- Shell-out to a system tool (`sqlite3`, `ffmpeg`, etc.) is not viable — usually because the system tool isn't standard across target platforms or per-call dispatch overhead is prohibitive.
+
+If only one is true, pick a non-native alternative.
+
+#### 5. Alternative ladder (in preference order)
+
+| Option | Install risk | Perf | Notes |
+|---|---|---|---|
+| Pure JS | none | baseline | Always the first choice. Most CLI workloads are I/O-bound, not CPU-bound. |
+| WASM bundle | none (one-time bundle size cost ~1-2 MB) | ~1.5-3x slower than native, usually fine | E.g. `sql.js` for SQLite reads. Bundled at build time, no install-time fetch. |
+| Shell out to system CLI | low (Windows-PATH / "is it installed" risk) | per-call dispatch overhead | Zero install deps, but introduces "is sqlite3 / ffmpeg on PATH?" branching. Acceptable when the tool is broadly assumed present. |
+| `node:sqlite` etc. (Node built-ins) | none | native | Once these graduate from experimental in Node LTS, they become the preferred path. As of Node 22 LTS, `node:sqlite` is still experimental — track upstream. |
+| Native dep + `optionalDependencies` + soft-degrade | medium (still fails to install on a non-trivial fraction of Windows users) | native | Last resort. Only when steps 1-4 are ruled out and the soft-degrade path is genuinely usable. |
+
+#### 6. Audit checklist when adding any native dep
+
+Before merging a PR that adds a native dep:
+
+- [ ] Is it under `optionalDependencies` (not `dependencies`)?
+- [ ] Is every load site wrapped in try/catch with a stderr hint?
+- [ ] Does the soft-degrade path produce useful output, or does it just throw with a different message?
+- [ ] Has install been tested on a clean Windows VM without VS Build Tools, behind a China-route proxy?
+- [ ] Is the perf benefit measured (not assumed) and dramatic?
+- [ ] Has the WASM alternative been benchmarked and rejected with numbers?
+- [ ] Does the spec / PR description state which alternative ladder rungs were considered and why each was rejected?
+
+If any answer is "no", the dep doesn't ship.
+
+---
+
 ## DO / DON'T
 
 ### DO

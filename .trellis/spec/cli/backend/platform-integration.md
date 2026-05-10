@@ -510,11 +510,13 @@ For Pi Agent:
 
 | Trellis concept | Pi surface |
 |---|---|
-| Session start | `session_start` extension event |
-| User prompt submit | `input` extension event |
-| Per-turn context injection | `before_agent_start` or `context` extension event |
-| Pre-tool-use guard / mutation | `tool_call` extension event; mutate Bash `event.input.command` in place |
-| Sub-agent dispatch | custom `subagent` tool that resolves the Pi CLI JS entrypoint when possible, runs `--mode text -p --no-session`, sends the delegated prompt through stdin, and forwards `TRELLIS_CONTEXT_ID` |
+| Session start | `session_start` extension event (notify-only; context-key is established but no prompt mutation) |
+| Per-turn workflow-state breadcrumb | `input` extension event — emits `<workflow-state>` + `<session-overview>` via `buildPerTurnInjection()` |
+| Per-agent-invocation context | `before_agent_start` extension event — appends `buildTrellisContext()` (PRD + jsonl) **and** the same per-turn breadcrumb to `systemPrompt` so sub-agent first turns see workflow state |
+| Per-Bash-tool session identity | `tool_call` extension event; mutates `event.input.command` in place via `injectTrellisContextIntoBash()` to prefix `export TRELLIS_CONTEXT_ID=<context-key>;` |
+| Sub-agent dispatch | custom `subagent` tool with `promptSnippet`/`promptGuidelines = SUBAGENT_DISPATCH_PROTOCOL`; resolves the Pi CLI JS entrypoint when possible, runs `--mode text -p --no-session`, sends the delegated prompt through stdin, and forwards `TRELLIS_CONTEXT_ID` |
+
+The three injection points (`input` / `before_agent_start` / `tool_call`) are coordinated through `TurnContextCache` so the same turn doesn't re-spawn `get_context.py --mode session-overview`. See "Class-3 injection points (Pi extension)" below the modes table for the runtime contract.
 
 If `agentCapable` is true, `task.py create` must seed `implement.jsonl` / `check.jsonl`, and generated sub-agent definitions or extension code must consume those files.
 
@@ -558,11 +560,13 @@ Bad:
 Add or update tests that assert:
 
 - `AI_TOOLS.<platform>` has the expected `configDir`, `cliFlag`, `agentCapable`, `hasHooks`, and `hasPythonHooks`.
-- `configurePlatform("<platform>")` writes every generated file and writes no Python hook files for extension-backed platforms.
+- `configurePlatform("<platform>")` writes every generated file and writes no Python hook files for extension-backed platforms (canonical assertion: `expect(fs.existsSync(".pi/hooks")).toBe(false)` in `test/configurators/platforms.test.ts`).
 - `collectPlatformTemplates("<platform>")` matches init output paths.
 - `init({ <flag>: true })` creates platform assets and tracks hashes for all generated templates.
 - `get_context.py --mode phase --platform <platform>` routes to sub-agent-capable workflow blocks when `agentCapable` is true.
 - Runtime script copies (`src/templates/trellis/scripts/**` and live `.trellis/scripts/**`) both recognize the platform.
+- The generated extension registers handlers for the three injection points (`input`, `before_agent_start`, `tool_call`) plus the `subagent` custom tool with `promptSnippet`/`promptGuidelines` set to the dispatch protocol constant.
+- The TS-port workflow-state regex (`WORKFLOW_STATE_TAG_RE`) matches the same status names and body content as the Python `_TAG_RE` on a shared fixture from `templates/trellis/workflow.md`.
 
 ### 7. Wrong vs Correct
 
@@ -785,9 +789,15 @@ Commands emitted by `resolveCommands(ctx)` / `resolveAllAsSkills(ctx)` in `src/c
 
 ## Subagent Context Injection: Hook-based vs Pull-based vs Extension-backed
 
-Trellis sub-agents (implement / check / research) need task context (`prd.md` + spec files listed in `implement.jsonl` / `check.jsonl`) at startup. There are two delivery modes depending on the platform's hook capabilities:
+Trellis sub-agents (implement / check / research) need task context (`prd.md` + spec files listed in `implement.jsonl` / `check.jsonl`) at startup. There are **three** delivery classes depending on the platform's hook capabilities. The class-1 / class-2 / class-3 labels below are also used by the `[workflow-state:in_progress]` breadcrumb body and by the Pi `SUBAGENT_DISPATCH_PROTOCOL` constant — keep terminology stable across all three writers.
 
-### Mode A — Hook-inject (6 platforms)
+| Class | Mechanism | Platforms |
+|---|---|---|
+| **Class-1** — Hook-inject | Python hook (or JS plugin) under `.{platform}/hooks/` fires on the sub-agent spawn tool and rewrites the tool's prompt input | Claude Code, Cursor, OpenCode, Kiro, CodeBuddy, Factory Droid |
+| **Class-2** — Pull-based | Platform's hook can't reliably mutate sub-agent prompts; Trellis injects a "Required: Load Trellis Context First" prelude into each sub-agent definition file so the sub-agent reads context itself at startup | Codex, Gemini CLI, Qoder, Copilot |
+| **Class-3** — Extension-backed | Platform exposes hook-equivalent events and custom tools through a project-local TypeScript extension; Trellis owns the sub-agent tool and the context injection path | Pi Agent |
+
+### Class-1 — Hook-inject (6 platforms)
 
 Platform's PreToolUse-equivalent hook can fire on the sub-agent spawn tool AND modify the tool's prompt input. Trellis's `inject-subagent-context.py` (or OpenCode's plugin) reads `prd.md` + the JSONL-referenced spec files and rewrites the sub-agent's initial prompt.
 
@@ -800,7 +810,7 @@ Platform's PreToolUse-equivalent hook can fire on the sub-agent spawn tool AND m
 | Kiro | per-agent `agentSpawn` hook | direct stdout context |
 | OpenCode | JS plugin `tool.execute.before` | `args.prompt` mutation |
 
-### Mode B — Pull-based (4 platforms)
+### Class-2 — Pull-based (4 platforms)
 
 Platform's hook either doesn't expose a sub-agent spawn event or can't modify the prompt. Sub-agents must Read context themselves at startup. Trellis injects a "Required: Load Trellis Context First" prelude into each sub-agent definition file.
 
@@ -821,13 +831,95 @@ Sub-agents on class-2 platforms run as **separate sessions** with their own sess
 
 When changing the prelude, the dispatch protocol, or the `session-fallback` semantics, all three layers must stay aligned. `regression.test.ts > [issue-225]` and `regression.test.ts > [session-fallback]` are the contract tests; `templates/trellis.test.ts > [issue-225]` asserts the workflow.md breadcrumb still carries the protocol. Manual e2e runbook lives in the historical task `.trellis/tasks/<archive>/05-04-fix-codex-subagent-missing-active-task/manual-verify.md`.
 
-### Mode C — Extension-backed (1 platform)
+### Class-3 — Extension-backed (1 platform)
 
-Platform can expose hook-equivalent events and custom tools through a project-local extension. Trellis owns the sub-agent tool and/or context injection path.
+Platform can expose hook-equivalent events and custom tools through a project-local extension. Trellis owns the sub-agent tool and the context injection path. Unlike class-1 (which only handles sub-agent context) and class-2 (which only handles sub-agent prelude), class-3 owns **three** injection points: per-user-turn context, per-agent-invocation system prompt augmentation, and per-Bash-tool-call session-identity prefixing.
 
 | Platform | Extension surface | Context delivery |
 |---|---|---|
-| Pi Agent | `.pi/extensions/trellis/index.ts` events + `subagent` tool | extension builds prompt from `.pi/agents/*.md`, `prd.md`, `info.md`, and JSONL-referenced files; agent definitions also receive pull-based prelude as a fallback |
+| Pi Agent | `.pi/extensions/trellis/index.ts` events + `subagent` tool | extension builds prompt from `.pi/agents/*.md`, `prd.md`, `info.md`, and JSONL-referenced files via `buildTrellisContext()`; injects per-turn `<workflow-state>` + `<session-overview>` via `buildPerTurnInjection()`; agent definitions also receive the pull-based prelude as a fallback |
+
+See **"Class-3 injection points (Pi extension)"** and **"Cross-platform consistency invariant"** below for the runtime contract details.
+
+### Class-3 injection points (Pi extension)
+
+`templates/pi/extensions/trellis/index.ts.txt` registers handlers for three platform events plus one custom tool. Each injection point has a distinct lifecycle and a distinct failure mode if dropped.
+
+| Injection point | Handler | When it fires | What it injects |
+|---|---|---|---|
+| `input` | `pi.on?.("input", …)` | every user turn (pre-LLM) | per-turn `<workflow-state>` + `<session-overview>` via `buildPerTurnInjection()`; same content goes into both `additionalContext` and `systemPrompt` so the breadcrumb survives whichever the model surface honors |
+| `before_agent_start` | `pi.on?.("before_agent_start", …)` | every agent invocation (main + sub-agents) | full Trellis context via `buildTrellisContext()` (PRD + jsonl-referenced specs + agent definition) **appended to** the existing systemPrompt, plus the same per-turn breadcrumb so a sub-agent's first turn still sees workflow state |
+| `tool_call` (Bash) | `pi.on?.("tool_call", …)` | every Bash tool call | mutates `event.input.command` in place via `injectTrellisContextIntoBash()` to prefix `export TRELLIS_CONTEXT_ID=<context-key>;` so child Python scripts (e.g. `task.py current`) inherit session identity |
+| `subagent` tool | `pi.registerTool?.({ name: "subagent", … })` | extension load time (once) | `promptSnippet` and `promptGuidelines` carry `SUBAGENT_DISPATCH_PROTOCOL` so the model sees the dispatch contract before it ever calls the tool |
+
+`TurnContextCache` (in `index.ts.txt`) memoizes the per-turn context-key → `{workflowState, sessionOverview}` pair so the **same** turn's `input` and `before_agent_start` handlers don't double-spawn `get_context.py --mode session-overview`. The cache key is the resolved context key; entries are short-lived (one turn).
+
+### Cross-platform consistency invariant
+
+The body of the `<workflow-state>` breadcrumb MUST be byte-identical across class-1 (Python hook), class-2 (no breadcrumb — relies on session-start prelude), and class-3 (TS-port) writers. Agents reading workflow-state across platforms in the same conversation (e.g. user switching from Claude to Pi mid-task) must see the same content.
+
+Concrete rules:
+
+- **Regex parity**: `templates/pi/extensions/trellis/index.ts.txt:WORKFLOW_STATE_TAG_RE` MUST mirror `templates/shared-hooks/inject-workflow-state.py:_TAG_RE` byte-for-byte. Both use the closing-tag backreference `\1` (or its TS equivalent in `[\/workflow-state:\1\]`) so a tag block parses identically in Python and TypeScript.
+- **Breadcrumb body source**: `loadWorkflowBreadcrumbs()` in the Pi extension reads `.trellis/workflow.md` directly — same source as the Python hook. There is no separate TS-side template for breadcrumb bodies. If the regex drifts, the TS port silently falls back to hardcoded defaults and Pi loses parity.
+- **Status writer parity**: `task.json.status` is the sole input to "which `[workflow-state:STATUS]` block fires". Both the Python hook (`get_active_task` + status read) and the TS port (`readActiveTaskStatus()` in `index.ts.txt`) MUST agree on the status string. Custom statuses pass through both unchanged.
+- **`<session-overview>` parity**: Pi shells out to `python3 .trellis/scripts/get_context.py --mode session-overview` rather than re-implementing context generation in TS, so output stays canonical. Don't replace this with an inline TS implementation — that's a parity drift waiting to happen.
+
+#### Anti-pattern: bypassing the shared TS port
+
+```typescript
+// WRONG — re-implements parsing with a different regex
+const blocks = workflow.match(/\[workflow-state:(\w+)\][\s\S]+?\[\/workflow-state/g);
+```
+
+```typescript
+// WRONG — inline-formats <session-overview> differently than get_context.py
+const overview = `<session-overview>\n${gitStatus}\n${activeTasks}\n</session-overview>`;
+```
+
+```typescript
+// WRONG — skips the once-per-turn cache; every input + before_agent_start spawns a child python
+function onInput(event, ctx) {
+  const overview = spawnSync("python3", [".trellis/scripts/get_context.py", "--mode", "session-overview"]);
+  return { additionalContext: overview };
+}
+```
+
+#### Correct
+
+```typescript
+// Match Python regex byte-for-byte (TS uses [\s\S]*? for cross-line; Python uses re.DOTALL)
+const WORKFLOW_STATE_TAG_RE =
+  /\[workflow-state:([A-Za-z0-9_-]+)\]\s*\n([\s\S]*?)\n\s*\[\/workflow-state:\1\]/g;
+
+// Both events go through the same cached builder
+const buildPerTurnInjection = (contextKey) => {
+  const { workflowState, sessionOverview } = turnContextCache.get(projectRoot, contextKey);
+  return [workflowState, sessionOverview].filter(Boolean).join("\n\n");
+};
+```
+
+### Subagent dispatch protocol — single source of truth
+
+The dispatch protocol text (the `Active task: <path>` first-line rule plus the class-1 / class-2 / class-3 platform notes) appears in **two writers** and they MUST stay in sync:
+
+| Writer | Location | Consumed by |
+|---|---|---|
+| Workflow breadcrumb | `templates/trellis/workflow.md` `[workflow-state:in_progress]` block | Python `inject-workflow-state.py` and the Pi TS port — surfaced per-turn while a task is in progress |
+| Pi extension constant | `templates/pi/extensions/trellis/index.ts.txt:SUBAGENT_DISPATCH_PROTOCOL` | Pi `subagent` tool's `promptSnippet` / `promptGuidelines` — surfaced at extension load and on each tool description render |
+
+When you change one, change both. The two channels exist because:
+
+1. The breadcrumb is per-turn but only active when `task.json.status == in_progress`.
+2. The tool `promptSnippet` is always visible in the tool catalog, including before any task is started or in fresh windows where the breadcrumb hasn't fired yet.
+
+A drift between the two is silent: the model will still see *some* dispatch guidance, just inconsistent guidance, and the resulting class-1/class-2/class-3 fallback chain breaks in subtle ways (e.g. sub-agent skips the `Active task:` line because the breadcrumb mentions it but the tool snippet doesn't, or vice versa).
+
+#### Tests required
+
+- Regression test asserting the `Active task:` rule appears in `templates/trellis/workflow.md` (`templates/trellis.test.ts > [issue-225]`).
+- Configurator test asserting the Pi extension's `SUBAGENT_DISPATCH_PROTOCOL` constant contains the same `Active task:` rule and the same class-1/class-2/class-3 platform list.
+- Cross-source parity test: when the breadcrumb text in `workflow.md` changes, the Pi extension's `SUBAGENT_DISPATCH_PROTOCOL` constant must change in the same commit. Either co-locate the parity assertion in a single regression test, or rely on diff review — but document the rule here.
 
 ### Implementation
 

@@ -824,39 +824,179 @@ TEAM = CONFIG.get("linear", {}).get("team", "")
 
 ---
 
-## Auto-Commit Pattern
+## Git interaction in scripts
 
-Scripts that modify `.trellis/` tracked files should auto-commit their changes to keep the workspace clean. Use a `--no-commit` flag for opt-out.
+Scripts that auto-stage / auto-commit `.trellis/` paths must go through the
+canonical `common/safe_commit.py` helpers. Hand-rolled `git add -A` /
+`git add -f` calls have caused real-user data incidents and are forbidden.
 
-### Convention: Auto-Commit After Mutation
+### Canonical helpers
+
+| Helper | Source | Purpose |
+|---|---|---|
+| `safe_trellis_paths_to_add(repo_root)` | `templates/trellis/scripts/common/safe_commit.py:safe_trellis_paths_to_add` | Path whitelist for `add_session.py` — journal files, index.md, active task dirs, archive dir |
+| `safe_archive_paths_to_add(repo_root)` | `templates/trellis/scripts/common/safe_commit.py:safe_archive_paths_to_add` | Path whitelist for `task.py archive` — archive subtree + sibling task dirs (so deletions get recorded) |
+| `safe_git_add(paths, repo_root)` | `templates/trellis/scripts/common/safe_commit.py:safe_git_add` | Plain `git add -- <paths>`; never `-f`. Returns `(success, used_force=False, stderr)` |
+| `print_gitignore_warning(paths)` | `templates/trellis/scripts/common/safe_commit.py:print_gitignore_warning` | Single source of truth for the "ignored by .gitignore" warning, including the AI-defense negative example |
+| `get_session_auto_commit(repo_root)` | `templates/trellis/scripts/common/config.py:get_session_auto_commit` | Reads `session_auto_commit` from `.trellis/config.yaml` (default `True`) |
+
+Callers using this contract: `add_session.py:_auto_commit_workspace` and
+`task_store.py:_auto_commit_archive` (invoked from `task.py archive`).
+
+### Anti-pattern: AI-invented `git add -f .trellis/`
+
+A real user incident (pre-0.5.10): a project's `.gitignore` listed `.trellis/`
+as a company-wide template. When the auto-commit hit `ignored by .gitignore`,
+the AI agent driving the workflow "fixed" the failure by retrying with
+`git add -f .trellis/`. That fan-out included every ignored subtree
+(`.trellis/.backup-*/`, `.trellis/worktrees/`, `.trellis/.template-hashes.json`,
+`.trellis/.runtime/`), committing 548 files / 83474 lines of caches and
+backups before anyone noticed.
+
+The root cause is generic fallback hint text in scripts, e.g. "run
+`git add .trellis && git commit`" — AI agents see "ignored by" and reinvent
+`-f` to bypass `.gitignore`, even when no human author would do that.
+
+### Anti-pattern: scripts auto-`-f`-ing on narrow paths
+
+0.5.10's first attempt at fixing the AI-invented `-f` was to have scripts
+themselves run `git add -f` against a narrow whitelist (journal files, task
+dirs). That was reverted in 0.5.11 because it still violates user `.gitignore`
+intent — putting `.trellis/` in `.gitignore` is an explicit signal "do not
+track this." A script silently bypassing that with `-f`, even on a narrow
+path list, is unacceptable.
+
+The wider-grain `git add -f .trellis/` stays forbidden, AND the narrow-grain
+auto `-f` is gone. There is no `-f` retry anywhere in the auto-commit path.
+
+### Pattern: path whitelist + plain `git add` + warn-and-skip
 
 ```python
-def _auto_commit(scope: str, message: str, repo_root: Path) -> None:
-    """Stage and commit changes in a specific .trellis/ subdirectory."""
-    subprocess.run(["git", "add", "-A", scope], cwd=repo_root, capture_output=True)
-    # Check if there are staged changes
-    result = subprocess.run(
-        ["git", "diff", "--cached", "--quiet", "--", scope],
-        cwd=repo_root,
-    )
-    if result.returncode == 0:
-        print("[OK] No changes to commit.", file=sys.stderr)
+# add_session.py / task.py archive
+from common.safe_commit import (
+    safe_trellis_paths_to_add,
+    safe_git_add,
+    print_gitignore_warning,
+)
+from common.config import get_session_auto_commit
+
+def _auto_commit_workspace(repo_root: Path) -> None:
+    if not get_session_auto_commit(repo_root):
+        print("[OK] session_auto_commit: false — skipping git stage/commit.",
+              file=sys.stderr)
         return
-    commit_result = subprocess.run(
-        ["git", "commit", "-m", message],
-        cwd=repo_root, capture_output=True, text=True,
-    )
-    if commit_result.returncode == 0:
-        print(f"[OK] Auto-committed: {message}", file=sys.stderr)
-    else:
-        print(f"[WARN] Auto-commit failed: {commit_result.stderr.strip()}", file=sys.stderr)
+
+    paths = safe_trellis_paths_to_add(repo_root)  # canonical whitelist
+    if not paths:
+        return
+
+    success, _, err = safe_git_add(paths, repo_root)  # plain `git add --`, no -f
+    if not success:
+        if "ignored by" in err.lower():
+            print_gitignore_warning(paths)        # canonical warning text
+        else:
+            print(f"[WARN] git add failed: {err.strip()}", file=sys.stderr)
+        return
+
+    # ... `git diff --cached --quiet` then `git commit -m <message>`
 ```
 
-**Scripts using this pattern**:
-- `add_session.py` — commits `.trellis/workspace` + `.trellis/tasks` after recording a session
-- `task.py archive` — commits `.trellis/tasks` after archiving a task
+Behavior contract:
 
-**Always add `--no-commit` flag** for scripts that auto-commit, so users can opt out.
+- Whitelist is built only from paths that exist on disk; never pass
+  non-existent arguments to `git`.
+- `safe_git_add` runs `git add -- <paths>` exactly once. No retry, no `-f`.
+- On `ignored by` failure → call `print_gitignore_warning(paths)` and return.
+  The journal / archive files are still on disk; only the git step is skipped.
+- On any other failure → log the stderr and return. Do not re-attempt with
+  different flags.
+- `used_force` in `safe_git_add`'s return tuple is kept for signature
+  compatibility but is always `False`. Do not introduce a code path that
+  sets it to `True`.
+
+### Pattern: `session_auto_commit` config gate (added 0.5.11)
+
+```yaml
+# .trellis/config.yaml
+# session_auto_commit: true   # default — auto-stage + auto-commit
+session_auto_commit: false    # files written, git left untouched
+```
+
+- `true` (default) — `add_session.py` and `task.py archive` stage + commit
+  via the helpers above.
+- `false` — early-return before touching git. Files are still written; the
+  user runs `git status` / `git add` / `git commit` themselves.
+- Always read via `get_session_auto_commit(repo_root)`. Do not write a custom
+  YAML reader (see "Config helpers" below).
+
+`session_auto_commit: false` is the recommended escape hatch for users whose
+`.gitignore` intentionally excludes `.trellis/` and who want session data kept
+local-only.
+
+### Pattern: warning text as canonical AI-defense surface
+
+`print_gitignore_warning` in `templates/trellis/scripts/common/safe_commit.py`
+is the **single source of truth** for the "ignored by .gitignore" warning.
+Any script that hits this failure mode must call this helper rather than
+inlining a copy.
+
+The warning text MUST contain the literal forbidden command as a negative
+example so any AI rereading the log does not reinvent the bug:
+
+```
+[WARN] Do NOT use `git add -f .trellis/` — it pulls in backups, worktrees,
+[WARN] and runtime caches that should never be committed.
+```
+
+This is the AI-defense pattern: when a script prints a warning that an AI
+agent might misinterpret as "try the obvious bypass," put the bypass command
+in the warning as a labeled negative example. Centralize the text in one
+helper so future edits stay consistent.
+
+### Wrong vs Correct
+
+#### Wrong — hand-rolled `git add -A` on a directory
+
+```python
+# `-A` plus a tree path stages every untracked file under it, including
+# .trellis/.backup-*/, .trellis/worktrees/, etc.
+subprocess.run(["git", "add", "-A", ".trellis/"], cwd=repo_root)
+```
+
+#### Wrong — `-f` retry on `ignored by`
+
+```python
+rc, _, err = run_git(["add", "--", *paths], cwd=repo_root)
+if "ignored by" in err.lower():
+    run_git(["add", "-f", "--", *paths], cwd=repo_root)  # reverted in 0.5.11
+```
+
+#### Correct — whitelist + plain add + warn-and-skip
+
+```python
+paths = safe_trellis_paths_to_add(repo_root)
+success, _, err = safe_git_add(paths, repo_root)
+if not success:
+    if "ignored by" in err.lower():
+        print_gitignore_warning(paths)
+    else:
+        print(f"[WARN] git add failed: {err.strip()}", file=sys.stderr)
+    return
+```
+
+### Tests Required
+
+When changing `safe_commit.py`, `add_session.py:_auto_commit_workspace`, or
+`task_store.py:_auto_commit_archive`:
+
+- `safe_trellis_paths_to_add` excludes `.trellis/.backup-*`, `.trellis/worktrees`,
+  `.trellis/.template-hashes.json`, `.trellis/.runtime`, `.trellis/.cache`.
+- `safe_git_add` returns `(False, False, stderr)` when paths are gitignored;
+  `used_force` is never `True` in any returned tuple.
+- `print_gitignore_warning` output contains the literal substring
+  `Do NOT use \`git add -f .trellis/\``.
+- `_auto_commit_*` early-returns when `session_auto_commit: false`, with no
+  `git` subprocess invocations.
 
 ---
 
@@ -920,6 +1060,161 @@ commit_hash = rest.split()[0]
 - `git status --porcelain` — two-char status prefix (`XY`)
 - `git diff --name-status` — tab-separated with status prefix
 - `docker ps --format` — column-aligned output
+
+---
+
+## Config helpers
+
+All keys in `.trellis/config.yaml` MUST be read through `common/config.py`
+(or its hook-side mirror `common/trellis_config.py` for hooks that cannot
+import the full task helpers). Both modules share the same parser chain:
+
+```
+_load_config(repo_root)
+  -> parse_simple_yaml(content)
+    -> _strip_inline_comment(value)
+    -> _unquote(value)
+```
+
+This is a load-bearing chain. Any new key added to `.trellis/config.yaml`
+must flow through it — do not write a custom reader, even a "small" one.
+
+### Anti-pattern: custom YAML reader that bypasses `_strip_inline_comment`
+
+Symptom: a value like `key: value  # comment` parses as `value  # comment`
+or as `value` plus garbage, depending on the reader's `.split("#")` /
+`.strip()` strategy. Tests that don't use the inline-comment form pass; live
+configs with the `# explanation` annotation in `templates/trellis/config.yaml`
+break silently.
+
+Two near-misses worth remembering:
+
+- `codex.dispatch_mode` originally had its own ad-hoc YAML reader. A
+  `# default` comment on the user's config silently broke dispatch routing.
+- `session_auto_commit` (0.5.11) almost shipped with a one-line
+  `config.get(...).strip()` reader before being routed through
+  `get_session_auto_commit`.
+
+Both were fixed by deleting the custom reader and routing through
+`_load_config` + a typed accessor.
+
+### Pattern: typed accessor on top of `_load_config`
+
+```python
+# common/config.py
+DEFAULT_SESSION_AUTO_COMMIT = True
+
+def get_session_auto_commit(repo_root: Path | None = None) -> bool:
+    config = _load_config(repo_root)
+    raw = config.get("session_auto_commit", DEFAULT_SESSION_AUTO_COMMIT)
+    if isinstance(raw, bool):
+        return raw
+    s = str(raw).strip().lower()
+    if s in ("true", "yes", "1", "on"):
+        return True
+    if s in ("false", "no", "0", "off"):
+        return False
+    print(
+        f"[WARN] invalid session_auto_commit value: {raw!r}; using true (default)",
+        file=sys.stderr,
+    )
+    return DEFAULT_SESSION_AUTO_COMMIT
+```
+
+Each new key gets its own `get_<key>` accessor. The accessor owns:
+
+1. The default constant (named `DEFAULT_<KEY>`, exported alongside the
+   accessor).
+2. Type coercion (string → bool / int / list as appropriate).
+3. Fallback-with-stderr-warn on invalid values. Config errors must NOT
+   raise — a bad config line should not block scripts.
+
+### Pattern: boolean tolerance
+
+Boolean accessors must accept native YAML `true` / `false` plus the
+case-insensitive string aliases `true / false / yes / no / 1 / 0 / on / off`.
+Anything else falls back to the default with a stderr warning.
+
+This breadth matters because the simple YAML parser does not coerce
+`true`/`false` to native bool — values arrive as strings. A reader that only
+checks `raw is True` misses every quoted-or-unquoted string variant the user
+naturally writes.
+
+### Pattern: document every key in `templates/trellis/config.yaml`
+
+Every accessor in `common/config.py` must have a corresponding commented-out
+example in `packages/cli/src/templates/trellis/config.yaml`, with:
+
+- A short prose explanation of effects (default behavior + opt-in/opt-out
+  semantics).
+- The accepted values, including the boolean alias set when relevant.
+- The default value commented out (so the key is discoverable but the file
+  doesn't override the in-code default until the user uncuts it).
+
+```yaml
+# Auto-commit behavior for session journal + task archive operations.
+# - true (default): scripts auto-stage and auto-commit ...
+# - false: scripts do not touch git. Files are still written to disk; ...
+#
+# Accepts: true / false / yes / no / 1 / 0 / on / off (case-insensitive).
+#
+# session_auto_commit: true
+```
+
+If the key is undocumented in `config.yaml`, users discover it only by
+reading source — which guarantees they will instead invent a custom
+workaround (see "AI-invented `git add -f`" above for what custom
+workarounds look like in practice).
+
+### Pattern: fixture tests must include the inline-comment form
+
+Test fixtures for any config accessor MUST include at least one row of the
+form `key: value  # comment`. This is the form that breaks custom readers
+silently. Without this fixture, regressions in `_strip_inline_comment` go
+undetected.
+
+```python
+# test fixture
+config_yaml = """
+session_auto_commit: false  # opt out — gitignored .trellis/
+session_commit_message: "chore: record"  # custom message with quotes
+"""
+# Both must parse to the unquoted, comment-free value.
+```
+
+### Wrong vs Correct
+
+#### Wrong — custom reader, no inline-comment handling
+
+```python
+def _read_session_auto_commit(repo_root: Path) -> bool:
+    text = (repo_root / ".trellis/config.yaml").read_text(encoding="utf-8")
+    for line in text.splitlines():
+        if line.startswith("session_auto_commit:"):
+            return line.split(":", 1)[1].strip() == "true"
+    return True
+# Fails on `session_auto_commit: false  # opt out` — returns True.
+```
+
+#### Correct — typed accessor on `_load_config`
+
+```python
+from common.config import get_session_auto_commit
+
+if not get_session_auto_commit(repo_root):
+    return  # respects inline comments, quotes, and bool aliases
+```
+
+### Tests Required
+
+When adding a new accessor in `common/config.py`:
+
+- Default behavior when the key is absent from `config.yaml`.
+- Value with inline comment: `key: value  # comment`.
+- Value with surrounding quotes: `key: "value"` and `key: 'value'`.
+- For boolean accessors: each of `true / false / yes / no / 1 / 0 / on / off`
+  in both upper and lower case.
+- Invalid value → returns default, prints stderr warning, does not raise.
 
 ---
 
