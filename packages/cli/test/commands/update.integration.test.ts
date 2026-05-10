@@ -35,6 +35,8 @@ import { update } from "../../src/commands/update.js";
 import { VERSION } from "../../src/constants/version.js";
 import { DIR_NAMES, FILE_NAMES, PATHS } from "../../src/constants/paths.js";
 import { computeHash } from "../../src/utils/template-hash.js";
+import { workflowMdTemplate } from "../../src/templates/trellis/index.js";
+import { replacePythonCommandLiterals } from "../../src/configurators/shared.js";
 
 // A managed template file that update always handles (Python script)
 const MANAGED_FILE = `${PATHS.SCRIPTS}/get_context.py`;
@@ -82,6 +84,57 @@ describe("update() integration", () => {
   /** Initialize a fresh project in tmpDir */
   async function setupProject(): Promise<void> {
     await init({ yes: true, force: true });
+  }
+
+  function projectFile(relativePath: string): string {
+    return path.join(tmpDir, relativePath);
+  }
+
+  function hashFilePath(): string {
+    return projectFile(`${DIR_NAMES.WORKFLOW}/.template-hashes.json`);
+  }
+
+  function versionFilePath(): string {
+    return projectFile(`${DIR_NAMES.WORKFLOW}/.version`);
+  }
+
+  function readProjectFile(relativePath: string): string {
+    return fs.readFileSync(projectFile(relativePath), "utf-8");
+  }
+
+  function writeProjectFile(relativePath: string, content: string): void {
+    const fullPath = projectFile(relativePath);
+    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+    fs.writeFileSync(fullPath, content, "utf-8");
+  }
+
+  /**
+   * Stage a project as if an older Trellis version installed pristine template
+   * files, then the current CLI is about to update it. The hash file records
+   * the older pristine content so update() must treat those files as
+   * auto-update candidates.
+   */
+  function stageVersionedUpgradeProject(options: {
+    fromVersion: string;
+    pristineTemplates?: Record<string, string>;
+    userModifiedTemplates?: Record<string, string>;
+  }): void {
+    fs.writeFileSync(versionFilePath(), options.fromVersion);
+
+    const hashes = readHashesV2(hashFilePath());
+    for (const [relativePath, content] of Object.entries(
+      options.pristineTemplates ?? {},
+    )) {
+      writeProjectFile(relativePath, content);
+      hashes[relativePath] = computeHash(content);
+    }
+    writeHashesV2(hashFilePath(), hashes);
+
+    for (const [relativePath, content] of Object.entries(
+      options.userModifiedTemplates ?? {},
+    )) {
+      writeProjectFile(relativePath, content);
+    }
   }
 
   beforeEach(() => {
@@ -461,13 +514,85 @@ describe("update() integration", () => {
     await setupProject();
 
     // Simulate a project at rc.6 (identical templates, just different version stamp)
-    const versionPath = path.join(tmpDir, DIR_NAMES.WORKFLOW, ".version");
+    const versionPath = versionFilePath();
     fs.writeFileSync(versionPath, "0.3.0-rc.6");
 
     await update({});
 
     // .version must be updated to the current CLI version
     expect(fs.readFileSync(versionPath, "utf-8")).toBe(VERSION);
+  });
+
+  it("#12b versioned upgrade scenario applies auto-updates, additive config sections, and modified-file skips", async () => {
+    await setupProject();
+
+    const expectedWorkflow = replacePythonCommandLiterals(workflowMdTemplate);
+    const expectedGetContext = readProjectFile(MANAGED_FILE);
+    const userModifiedScript = `${PATHS.SCRIPTS}/add_session.py`;
+    const userModifiedScriptContent = "# user customized add_session.py\n";
+    const oldConfigWithoutSessionAutoCommit =
+      "max_journal_lines: 2000\n\n" +
+      "# Local 0.5.10 config customization that must survive update.\n";
+    const oldWorkflow =
+      "# Workflow\n\n" +
+      "## Phase Index\n\n" +
+      "[workflow-state:in_progress]\nlegacy body\n[/workflow-state:in_progress]\n\n" +
+      "#### 2.1 Implement `[required · repeatable]`\n\n" +
+      "[Codex]\nSpawn the implement sub-agent:\n[/Codex]\n\n" +
+      "[Kilo, Antigravity, Windsurf]\n" +
+      "1. Load the `trellis-before-dev` skill to read project guidelines\n" +
+      "[/Kilo, Antigravity, Windsurf]\n";
+
+    stageVersionedUpgradeProject({
+      fromVersion: "0.5.10",
+      pristineTemplates: {
+        [PATHS.WORKFLOW_GUIDE_FILE]: oldWorkflow,
+        [MANAGED_FILE]: "# old get_context.py from installed template\n",
+      },
+      userModifiedTemplates: {
+        [`${DIR_NAMES.WORKFLOW}/config.yaml`]:
+          oldConfigWithoutSessionAutoCommit,
+        [userModifiedScript]: userModifiedScriptContent,
+      },
+    });
+
+    await update({ skipAll: true });
+
+    expect(fs.readFileSync(versionFilePath(), "utf-8")).toBe(VERSION);
+
+    // Hash-tracked pristine templates from the older install are whole-file
+    // auto-updated to the current packaged template.
+    expect(readProjectFile(PATHS.WORKFLOW_GUIDE_FILE)).toBe(expectedWorkflow);
+    expect(readProjectFile(MANAGED_FILE)).toBe(expectedGetContext);
+    expect(readProjectFile(PATHS.WORKFLOW_GUIDE_FILE)).toContain(
+      "[codex-inline, Kilo, Antigravity, Windsurf]",
+    );
+    expect(readProjectFile(PATHS.WORKFLOW_GUIDE_FILE)).not.toContain(
+      "[Codex]",
+    );
+
+    // Version-specific additive config sections still apply to a user-modified
+    // config.yaml, while preserving the local content around the append.
+    const updatedConfig = readProjectFile(`${DIR_NAMES.WORKFLOW}/config.yaml`);
+    expect(updatedConfig).toContain(
+      "Local 0.5.10 config customization that must survive update.",
+    );
+    expect(updatedConfig).toContain("Session Auto-Commit");
+    expect(updatedConfig).toContain("session_auto_commit: true");
+
+    // User-modified template files are skipped under skipAll and their hashes
+    // are not rewritten to bless the local modification as a template.
+    expect(readProjectFile(userModifiedScript)).toBe(
+      userModifiedScriptContent,
+    );
+    const hashes = readHashesV2(hashFilePath());
+    expect(hashes[PATHS.WORKFLOW_GUIDE_FILE]).toBe(
+      computeHash(expectedWorkflow),
+    );
+    expect(hashes[MANAGED_FILE]).toBe(computeHash(expectedGetContext));
+    expect(hashes[userModifiedScript]).not.toBe(
+      computeHash(userModifiedScriptContent),
+    );
   });
 
   it("#13 user-edited spec/guides files are preserved after update with force", async () => {
@@ -899,94 +1024,46 @@ describe("update() integration", () => {
     ).toBe(false);
   });
 
-  it("#workflow-md-r4 buildWorkflowMdTemplate merges legacy workflow.md: appends missing tag blocks, replaces customized blocks, preserves user prose", async () => {
-    // Finding 2: end-to-end coverage of buildWorkflowMdTemplate's per-tag
-    // managed-block replacement (R4 of workflow-state-commit-gap task).
-    // Legacy fixture: heavy user customization outside tag blocks; only 2 of
-    // 4 [workflow-state:*] blocks present (planning, in_progress) with
-    // customized bodies; no_task and completed blocks absent entirely.
+  it("#workflow-md-r4 updates workflow.md as one runtime template when hash-tracked", async () => {
     await setupProject();
 
     const workflowPath = path.join(tmpDir, PATHS.WORKFLOW_GUIDE_FILE);
-    const userNarrative1 =
-      "## Local Notes\n\nThis project's workflow has been adjusted for our team.\n";
-    const userNarrative2 =
-      "## Team Conventions\n\n- We always pair on PRD reviews.\n- We use --no-pager for git logs.\n";
-    const customizedPlanning =
-      "[workflow-state:planning]\nCUSTOM BODY: my planning hint that's been heavily edited.\n[/workflow-state:planning]";
-    const customizedInProgress =
-      "[workflow-state:in_progress]\nCUSTOM BODY: my in_progress hint with notes.\n[/workflow-state:in_progress]";
-    const legacyContent =
+    const staleWorkflow =
       "# Workflow\n\n" +
-      userNarrative1 +
-      "\n" +
-      customizedPlanning +
-      "\n\n" +
-      userNarrative2 +
-      "\n" +
-      customizedInProgress +
-      "\n";
+      "## Phase Index\n\n" +
+      "[workflow-state:in_progress]\nlegacy body\n[/workflow-state:in_progress]\n\n" +
+      "#### 2.1 Implement `[required · repeatable]`\n\n" +
+      "[Codex]\nSpawn the implement sub-agent:\n[/Codex]\n\n" +
+      "[Kilo, Antigravity, Windsurf]\n" +
+      "1. Load the `trellis-before-dev` skill to read project guidelines\n" +
+      "[/Kilo, Antigravity, Windsurf]\n";
 
-    fs.writeFileSync(workflowPath, legacyContent, "utf-8");
+    fs.writeFileSync(workflowPath, staleWorkflow, "utf-8");
 
-    // Invalidate hash so update treats workflow.md as needing reconciliation.
+    // Simulate an older installed workflow.md that is still pristine relative
+    // to the version that installed it. Update must replace the whole file:
+    // platform markers outside [workflow-state:*] blocks are runtime-parsed too.
     const hashFile = path.join(
       tmpDir,
       DIR_NAMES.WORKFLOW,
       ".template-hashes.json",
     );
-    const hashes = removeHashEntry(
-      readHashesV2(hashFile),
-      PATHS.WORKFLOW_GUIDE_FILE,
-    ) as Record<string, string>;
+    const hashes = readHashesV2(hashFile);
+    hashes[PATHS.WORKFLOW_GUIDE_FILE] = computeHash(staleWorkflow);
     writeHashesV2(hashFile, hashes);
-
-    const consoleLogSpy = vi.spyOn(console, "log");
 
     await update({ force: true });
 
-    const merged = fs.readFileSync(workflowPath, "utf-8");
+    const updated = fs.readFileSync(workflowPath, "utf-8");
+    expect(updated).toBe(replacePythonCommandLiterals(workflowMdTemplate));
+    expect(updated).toContain("[codex-sub-agent]");
+    expect(updated).toContain("[codex-inline, Kilo, Antigravity, Windsurf]");
+    expect(updated).not.toContain("[Codex]");
+    expect(updated).not.toContain("[Kilo, Antigravity, Windsurf]");
+    expect(updated).not.toContain("legacy body");
 
-    // All 4 required blocks are present after merge.
-    for (const status of [
-      "planning",
-      "in_progress",
-      "no_task",
-      "completed",
-    ] as const) {
-      const re = new RegExp(
-        `\\[workflow-state:${status}\\]\\s*\\n[\\s\\S]+?\\n\\s*\\[/workflow-state:${status}\\]`,
-      );
-      expect(merged, `${status} block must be present after merge`).toMatch(re);
-    }
-
-    // User narrative outside the tag blocks is preserved verbatim.
-    expect(merged).toContain("## Local Notes");
-    expect(merged).toContain(
-      "This project's workflow has been adjusted for our team.",
+    expect(readHashesV2(hashFile)[PATHS.WORKFLOW_GUIDE_FILE]).toBe(
+      computeHash(updated),
     );
-    expect(merged).toContain("## Team Conventions");
-    expect(merged).toContain("- We always pair on PRD reviews.");
-    expect(merged).toContain("- We use --no-pager for git logs.");
-
-    // Customized blocks were REPLACED with canonical content (per the
-    // managed-block contract — customizations inside tag blocks are owned by
-    // the CLI, same trade-off as AGENTS.md TRELLIS:START/END).
-    expect(merged).not.toContain(
-      "CUSTOM BODY: my planning hint that's been heavily edited.",
-    );
-    expect(merged).not.toContain(
-      "CUSTOM BODY: my in_progress hint with notes.",
-    );
-
-    // The yellow warning was emitted listing the customized blocks that got
-    // overwritten (so the user knows to re-apply customization).
-    const warningCalls = consoleLogSpy.mock.calls.filter((args) =>
-      String(args[0] ?? "").includes("[workflow-state:"),
-    );
-    expect(warningCalls.length).toBeGreaterThan(0);
-    const warningText = warningCalls.map((c) => String(c[0])).join("\n");
-    expect(warningText).toMatch(/planning/);
-    expect(warningText).toMatch(/in_progress/);
   });
 });

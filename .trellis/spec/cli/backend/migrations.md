@@ -193,6 +193,34 @@ update:
 - 初始化：`trellis init` 时自动创建
 - 更新：`trellis update` 后自动更新被覆盖文件的哈希
 
+### `workflow.md` whole-file update contract
+
+`.trellis/workflow.md` is not only documentation. It is runtime input for
+`get_context.py`, `workflow_phase.py`, SessionStart strippers, and per-turn
+workflow-state hooks.
+
+`trellis update` must therefore keep `workflow.md` on the normal whole-file
+template path:
+
+- If the installed file's current hash matches the tracked hash, update the
+  entire file to the packaged template and refresh the tracked hash.
+- If the installed file was edited by the user, use the standard
+  modified-file decision path (`confirm`, `--force`, or `--skip`).
+- Do not partially merge only `[workflow-state:*]` tag blocks.
+
+Reason: runtime-significant routing markers and phase headings also live
+outside `[workflow-state:*]` blocks. A partial tag-block merge can update hook
+breadcrumbs while leaving stale platform blocks, for example `[Codex]` instead
+of `[codex-inline]` / `[codex-sub-agent]`, causing `get_context.py --mode phase
+--platform codex` to return empty or wrong step detail after upgrade.
+
+Regression coverage for this belongs in versioned update integration tests,
+not only fresh-init template tests: write the older `.trellis/.version`, stage
+older hash-tracked template files, run `trellis update`, then assert the
+installed files reach the current packaged shape and the version stamp advances.
+For runtime templates such as `workflow.md`, the scenario must also assert that
+runtime markers such as Codex virtual platform blocks are present after update.
+
 ## CLI 使用
 
 ```bash

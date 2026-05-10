@@ -100,6 +100,35 @@ In Trellis, command templates (e.g., `record-session.md`) exist in **multiple pl
 
 ---
 
+## Generated Runtime Template Upgrade Consistency
+
+Some generated files are both documentation and runtime input. In Trellis,
+`.trellis/workflow.md` is parsed by `get_context.py`, `workflow_phase.py`,
+SessionStart filters, and per-turn hooks. Template changes must be validated
+against both fresh init and upgrade paths.
+
+### Checklist: After Modifying A Runtime-Parsed Template
+
+- [ ] Identify every runtime parser that reads the template, not just the file
+  writer that installs it
+- [ ] Check whether relevant syntax lives outside obvious managed regions
+  such as tag blocks
+- [ ] Verify fresh `init` output and a versioned `update` scenario that writes
+  the older `.trellis/.version`
+- [ ] Add an upgrade regression using an older pristine template fixture, then
+  assert the installed file reaches the current packaged shape
+- [ ] Update the backend spec that owns the runtime contract
+
+**Real-world example**: Codex inline mode changed workflow platform markers from
+`[Codex]` / `[Kilo, Antigravity, Windsurf]` to `[codex-sub-agent]` /
+`[codex-inline, Kilo, Antigravity, Windsurf]`. Fresh init was correct, but
+`trellis update` only merged `[workflow-state:*]` blocks and preserved stale
+markers outside those blocks. Result: upgraded projects got new hook scripts
+but old workflow routing, so `get_context.py --mode phase --platform codex`
+could return empty Phase 2.1 detail.
+
+---
+
 ## Mode-Detection Probe Checklist
 
 When a CLI auto-detects a mode by probing a remote resource (e.g., checking if `index.json` exists to decide marketplace vs direct download):

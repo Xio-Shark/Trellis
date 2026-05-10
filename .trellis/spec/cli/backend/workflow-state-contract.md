@@ -123,6 +123,25 @@ an obvious bug they can fix, rather than being silently masked.
 To customize breadcrumb wording, edit the `[workflow-state:STATUS]` block in
 `.trellis/workflow.md`. No script change required.
 
+### Update boundary
+
+The `[workflow-state:STATUS]` blocks are not the only runtime-sensitive
+content in `workflow.md`. Phase headings, step headings, and platform marker
+blocks such as `[codex-inline, Kilo, Antigravity, Windsurf]` are parsed by
+`workflow_phase.py` / `get_context.py` when step-specific instructions are
+loaded.
+
+For that reason, `trellis update` must update `workflow.md` as one managed
+template file whenever the installed file still matches its tracked template
+hash. It must not partially merge only `[workflow-state:*]` blocks. User edits
+are protected by the normal hash-based modified-file flow, not by preserving
+arbitrary prose outside tag blocks during automatic updates.
+
+Regression invariant: an older hash-tracked workflow containing stale Codex
+markers (`[Codex]` plus `[Kilo, Antigravity, Windsurf]`) must be replaced by
+the current packaged template so `--platform codex` can resolve to
+`codex-inline` or `codex-sub-agent` and still load Phase 2.1 detail.
+
 ---
 
 ## Status writer table
@@ -234,6 +253,9 @@ directly instead of spawning nested Trellis sub-agents.
 
 - Edit `.trellis/workflow.md` `[workflow-state:STATUS]` blocks for breadcrumb
   body changes; never touch the parser scripts.
+- Keep `trellis update` whole-file behavior for hash-tracked `workflow.md`.
+  Breadcrumb tag updates alone are insufficient because platform routing
+  markers outside those tags are runtime input too.
 - Add a writer-table row to this spec when introducing a new status writer.
 - Run the regression tests after editing breadcrumb bodies.
 - When adding a `[required · once]` step to the workflow walkthrough, add a
@@ -244,6 +266,9 @@ directly instead of spawning nested Trellis sub-agents.
 
 - Don't add fallback breadcrumb dicts back to `inject-workflow-state.py` or
   `.js`. Drift is structurally guaranteed.
+- Don't implement special partial merging for `workflow.md` unless every
+  runtime parser that consumes headings, platform blocks, and breadcrumb tags
+  has an explicit compatibility strategy and upgrade test coverage.
 - Don't introduce a `task.json.status` writer without updating this spec.
 - Don't subscribe to `after_finish` to detect task completion — it doesn't
   mean what you think. Use `after_archive`.
@@ -261,6 +286,7 @@ directly instead of spawning nested Trellis sub-agents.
 - Marker syntax (regex / charset)
 - Hook script structural change (parser, output envelope, what reads
   `task.json.status`)
+- `workflow.md` update semantics in `trellis update`
 - New `task.json.status` writer (any path that mutates the field)
 - Breadcrumb body that changes the contract (e.g. removing a `[required ·
   once]` enforcement line — flag in PR description)
