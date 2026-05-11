@@ -822,6 +822,38 @@ Platform's PreToolUse-equivalent hook can fire on the sub-agent spawn tool AND m
 | Kiro | per-agent `agentSpawn` hook | direct stdout context |
 | OpenCode | JS plugin `tool.execute.before` | `args.prompt` mutation |
 
+#### OpenCode injection contract (issue #264)
+
+OpenCode is a hybrid class-1 platform: its main session uses `tool.execute.before` for sub-agent prompt mutation, but it also runs separate `chat.message` plugins (`session-start.js`, `inject-workflow-state.js`) that fire for **every** chat turn — including sub-agent child sessions. Without explicit filtering, those plugins inject 30-40KB of main-session SessionStart context into sub-agent turns and drown the parent's intended prompt injection.
+
+**Required contract** for any OpenCode `chat.message` plugin that mutates `output.parts`:
+
+```js
+import { isTrellisSubagent } from "../lib/trellis-context.js"
+
+"chat.message": async (input, output) => {
+  if (isTrellisSubagent(input)) {
+    // input.agent matched /^trellis-(implement|check|research)$/
+    // Sub-agent context is injected by inject-subagent-context.js on the
+    // parent's tool.execute.before — do not double-inject here.
+    return
+  }
+  // ... main-session injection ...
+}
+```
+
+`isTrellisSubagent()` lives in `lib/trellis-context.js`; the regex matches `trellis-implement` / `trellis-check` / `trellis-research` exactly.
+
+**Sub-agent task resolution order** in `inject-subagent-context.js` `tool.execute.before` (only later steps run when earlier ones miss):
+
+1. Exact session runtime context lookup for `input.sessionID` (writes a `session:<key>` source)
+2. `Active task: <path>` line parsed from `args.prompt` first non-empty line (source `prompt-hint`) — explicit per-dispatch override, beats single-session inference so multi-window users can disambiguate
+3. Single-session fallback in `TrellisContext._resolveSingleSessionFallback()` — only when exactly 1 file exists in `.trellis/.runtime/sessions/`; refuses to guess when 0 or ≥2 files exist (source `session-fallback:<context_key>`). Mirrors Python `_resolve_single_session_fallback` (`active_task.py:497-519`).
+
+`buildPrompt()` for implement / check / finish / research **must** prepend `<!-- trellis-hook-injected -->` so generated agent definitions in `.opencode/agents/*.md` can detect a successful injection (Trellis-internal contract; OpenCode itself ignores the marker).
+
+`getActiveTask()` in `lib/trellis-context.js` itself includes the single-session fallback so any caller (`workflow-state` breadcrumb, `session-start` task status) sees the same resolved task as the prompt injector. The fallback only activates when the explicit context-key lookup misses, so multi-window setups remain isolated.
+
 ### Class-2 — Pull-based (4 platforms)
 
 Platform's hook either doesn't expose a sub-agent spawn event or can't modify the prompt. Sub-agents must Read context themselves at startup. Trellis injects a "Required: Load Trellis Context First" prelude into each sub-agent definition file.

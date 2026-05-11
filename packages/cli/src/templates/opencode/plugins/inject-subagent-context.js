@@ -14,24 +14,39 @@ import { TrellisContext, debugLog } from "../lib/trellis-context.js"
 const AGENTS_ALL = ["implement", "check", "research"]
 const AGENTS_REQUIRE_TASK = ["implement", "check"]
 
+// Match `Active task: <path>` on the first non-empty line of the dispatch
+// prompt. Mirrors the contract in workflow.md's [workflow-state:in_progress]
+// breadcrumb so multi-window users can disambiguate which task is targeted.
+const ACTIVE_TASK_HINT_RE = /^\s*Active task:\s*(\S+)\s*$/m
+
+function extractActiveTaskHint(prompt) {
+  if (typeof prompt !== "string" || !prompt) return null
+  const match = prompt.match(ACTIVE_TASK_HINT_RE)
+  return match ? match[1].trim() : null
+}
+
 /**
- * Get context for implement agent
+ * Get context for implement agent. `taskDir` may be relative
+ * (`.trellis/tasks/foo`) or absolute; both are resolved via
+ * `ctx.resolveTaskDir`.
  */
 function getImplementContext(ctx, taskDir) {
   const parts = []
+  const taskDirFull = ctx.resolveTaskDir(taskDir)
+  if (!taskDirFull) return ""
 
-  const jsonlPath = join(ctx.directory, taskDir, "implement.jsonl")
+  const jsonlPath = join(taskDirFull, "implement.jsonl")
   const entries = ctx.readJsonlWithFiles(jsonlPath)
   if (entries.length > 0) {
     parts.push(ctx.buildContextFromEntries(entries))
   }
 
-  const prd = ctx.readProjectFile(join(taskDir, "prd.md"))
+  const prd = ctx.readFile(join(taskDirFull, "prd.md"))
   if (prd) {
     parts.push(`=== ${taskDir}/prd.md (Requirements) ===\n${prd}`)
   }
 
-  const info = ctx.readProjectFile(join(taskDir, "info.md"))
+  const info = ctx.readFile(join(taskDirFull, "info.md"))
   if (info) {
     parts.push(`=== ${taskDir}/info.md (Technical Design) ===\n${info}`)
   }
@@ -40,18 +55,20 @@ function getImplementContext(ctx, taskDir) {
 }
 
 /**
- * Get context for check agent
+ * Get context for check agent. `taskDir` may be relative or absolute.
  */
 function getCheckContext(ctx, taskDir) {
   const parts = []
+  const taskDirFull = ctx.resolveTaskDir(taskDir)
+  if (!taskDirFull) return ""
 
-  const jsonlPath = join(ctx.directory, taskDir, "check.jsonl")
+  const jsonlPath = join(taskDirFull, "check.jsonl")
   const entries = ctx.readJsonlWithFiles(jsonlPath)
   if (entries.length > 0) {
     parts.push(ctx.buildContextFromEntries(entries))
   }
 
-  const prd = ctx.readProjectFile(join(taskDir, "prd.md"))
+  const prd = ctx.readFile(join(taskDirFull, "prd.md"))
   if (prd) {
     parts.push(`=== ${taskDir}/prd.md (Requirements) ===\n${prd}`)
   }
@@ -128,7 +145,8 @@ function getResearchContext(ctx) {
  */
 function buildPrompt(agentType, originalPrompt, context, isFinish = false) {
   const templates = {
-    implement: `# Implement Agent Task
+    implement: `<!-- trellis-hook-injected -->
+# Implement Agent Task
 
 You are the Implement Agent in the Multi-Agent Pipeline.
 
@@ -157,7 +175,8 @@ ${originalPrompt}
 - Follow all dev specs injected above
 - Report list of modified/created files when done`,
 
-    check: isFinish ? `# Finish Agent Task
+    check: isFinish ? `<!-- trellis-hook-injected -->
+# Finish Agent Task
 
 You are performing the final check before creating a PR.
 
@@ -191,7 +210,8 @@ ${originalPrompt}
 - Do NOT update specs for trivial changes (typos, formatting, obvious fixes)
 - If critical CODE issues found, report them clearly (fix specs, not code)
 - Verify all acceptance criteria in prd.md are met` :
-      `# Check Agent Task
+      `<!-- trellis-hook-injected -->
+# Check Agent Task
 
 You are the Check Agent in the Multi-Agent Pipeline.
 
@@ -219,7 +239,8 @@ ${originalPrompt}
 - Fix issues yourself, don't just report
 - Must execute complete checklist`,
 
-    research: `# Research Agent Task
+    research: `<!-- trellis-hook-injected -->
+# Research Agent Task
 
 You are the Research Agent in the Multi-Agent Pipeline.
 
@@ -374,8 +395,53 @@ export default async ({ directory, platform: hostPlatform = process.platform, en
             return
           }
 
-          // Resolve active task through session runtime context.
-          const taskDir = ctx.getCurrentTask(input)
+          // Resolve active task in this priority order (only later steps
+          // run when earlier ones miss):
+          //   1. Exact session runtime context lookup for input.sessionID
+          //   2. `Active task: <path>` hint in the dispatch prompt
+          //      (explicit per-dispatch override — beats single-session
+          //      inference so multi-window users can disambiguate)
+          //   3. Single-session fallback — only when exactly 1 session
+          //      runtime file exists locally
+          let taskDir = null
+          let taskSource = null
+
+          const contextKey = ctx.getContextKey(input)
+          if (contextKey) {
+            const context = ctx.readContext(contextKey)
+            const exactRef = ctx.normalizeTaskRef(context?.current_task || "")
+            if (exactRef) {
+              taskDir = exactRef
+              taskSource = `session:${contextKey}`
+            }
+          }
+
+          if (!taskDir) {
+            const hintRef = extractActiveTaskHint(originalPrompt)
+            if (hintRef) {
+              const hintNormalized = ctx.normalizeTaskRef(hintRef)
+              if (hintNormalized) {
+                const hintDir = ctx.resolveTaskDir(hintNormalized)
+                if (hintDir && existsSync(hintDir)) {
+                  taskDir = hintNormalized
+                  taskSource = "prompt-hint"
+                  debugLog("inject", "Resolved task from Active task: hint:", hintNormalized)
+                }
+              }
+            }
+          }
+
+          if (!taskDir) {
+            const fallback = ctx._resolveSingleSessionFallback()
+            if (fallback?.taskPath) {
+              const fallbackDir = ctx.resolveTaskDir(fallback.taskPath)
+              if (fallbackDir && existsSync(fallbackDir)) {
+                taskDir = fallback.taskPath
+                taskSource = fallback.source
+                debugLog("inject", "Resolved task via single-session fallback:", taskDir, "source:", taskSource)
+              }
+            }
+          }
 
           // Agents requiring task directory
           if (AGENTS_REQUIRE_TASK.includes(subagentType)) {
@@ -384,8 +450,8 @@ export default async ({ directory, platform: hostPlatform = process.platform, en
               debugLog("inject", "Skipping - no current task")
               return
             }
-            const taskDirFull = join(directory, taskDir)
-            if (!existsSync(taskDirFull)) {
+            const taskDirFull = ctx.resolveTaskDir(taskDir)
+            if (!taskDirFull || !existsSync(taskDirFull)) {
               debugLog("inject", "Skipping - task directory not found")
               return
             }

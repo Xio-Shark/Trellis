@@ -2236,9 +2236,14 @@ describe("regression: current-task path normalization", () => {
     );
 
     const ctx = new TrellisContext(tmpDir);
+    // With no input, legacy `.current-task` MUST still be ignored. Issue #264
+    // adds a single-session fallback that mirrors Python's
+    // `_resolve_single_session_fallback` — with exactly one session file
+    // present, the resolver picks it up (NOT the legacy file).
     const none = ctx.getActiveTask();
-    expect(none.taskPath).toBeNull();
-    expect(none.source).toBe("none");
+    expect(none.taskPath).toBe(".trellis/tasks/opencode-task");
+    expect(none.source).toBe("session-fallback:opencode_oc-a");
+    expect(none.stale).toBe(false);
 
     const active = ctx.getActiveTask({
       sessionID: "oc-a",
