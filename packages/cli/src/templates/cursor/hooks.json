@@ -11,13 +11,13 @@
     "sessionStart": [
       {
         "command": "{{PYTHON_CMD}} .cursor/hooks/session-start.py",
-        "timeout": 10
+        "timeout": 30
       }
     ],
     "beforeSubmitPrompt": [
       {
         "command": "{{PYTHON_CMD}} .cursor/hooks/inject-workflow-state.py",
-        "timeout": 5
+        "timeout": 15
       }
     ],
     "beforeShellExecution": [

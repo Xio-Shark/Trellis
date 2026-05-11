@@ -7,7 +7,7 @@
           {
             "type": "command",
             "command": "{{PYTHON_CMD}} .gemini/hooks/session-start.py",
-            "timeout": 10000
+            "timeout": 30000
           }
         ]
       }
@@ -19,7 +19,7 @@
           {
             "type": "command",
             "command": "{{PYTHON_CMD}} .gemini/hooks/inject-workflow-state.py",
-            "timeout": 5000
+            "timeout": 15000
           }
         ]
       }

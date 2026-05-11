@@ -941,4 +941,32 @@ describe("init() integration", () => {
     const matches = configContent.match(/^packages\s*:/gm);
     expect(matches).toHaveLength(1);
   });
+
+  // GitHub issue #267 — Windows users silently lose SessionStart injection
+  // because Python cold start exceeds the historical 10s timeout. Defaults
+  // were bumped to 30s (SessionStart) / 15s (UserPromptSubmit). This guards
+  // against future drift on the most common install path.
+  it("#19 init writes bumped hook timeouts (issue #267)", async () => {
+    await init({ yes: true, claude: true });
+
+    const settings = JSON.parse(
+      fs.readFileSync(path.join(tmpDir, ".claude", "settings.json"), "utf-8"),
+    ) as {
+      hooks: {
+        SessionStart: { hooks: { timeout: number }[] }[];
+        UserPromptSubmit: { hooks: { timeout: number }[] }[];
+      };
+    };
+
+    for (const entry of settings.hooks.SessionStart) {
+      for (const hook of entry.hooks) {
+        expect(hook.timeout).toBeGreaterThanOrEqual(30);
+      }
+    }
+    for (const entry of settings.hooks.UserPromptSubmit) {
+      for (const hook of entry.hooks) {
+        expect(hook.timeout).toBeGreaterThanOrEqual(15);
+      }
+    }
+  });
 });

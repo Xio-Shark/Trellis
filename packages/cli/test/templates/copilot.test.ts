@@ -52,9 +52,9 @@ describe("copilot getHooksConfig", () => {
 			"userPromptSubmitted",
 		]);
 		expect(parsed.hooks?.SessionStart?.[0]?.type).toBe("command");
-		expect(parsed.hooks?.SessionStart?.[0]?.timeout).toBe(10);
+		expect(parsed.hooks?.SessionStart?.[0]?.timeout).toBe(30);
 		expect(parsed.hooks?.userPromptSubmitted?.[0]?.type).toBe("command");
-		expect(parsed.hooks?.userPromptSubmitted?.[0]?.timeoutSec).toBe(5);
+		expect(parsed.hooks?.userPromptSubmitted?.[0]?.timeoutSec).toBe(15);
 	});
 });
 
