@@ -1024,6 +1024,105 @@ parser.add_argument(
 )
 ```
 
+### Session Context Git Contract
+
+#### 1. Scope / Trigger
+
+`common/session_context.py` must probe the Trellis root with
+`git rev-parse --is-inside-work-tree` before rendering root Git status.
+This applies to default text, default JSON, record text, and record JSON.
+
+#### 2. Signatures
+
+```python
+def _collect_root_git_info(repo_root: Path) -> dict
+def _collect_package_git_info(
+    repo_root: Path,
+    discover_unconfigured: bool = False,
+) -> list[dict]
+```
+
+#### 3. Contracts
+
+Root Git JSON includes `isRepo`, `branch`, `isClean`, `uncommittedChanges`,
+and `recentCommits`.
+
+When the root is a Git worktree, default and record text modes render:
+
+```text
+## GIT STATUS
+Branch: <branch>
+Working directory: <state>
+
+## RECENT COMMITS
+...
+```
+
+When the root is not a Git worktree, context must not render synthetic root
+values such as `Branch: unknown`, `Working directory: Clean`, or `(no commits)`.
+It must render:
+
+```text
+## GIT STATUS
+Root is not a Git repository.
+Run Git commands from the package repository paths listed below.
+
+## RECENT COMMITS
+Root has no Git commit history because it is not a Git repository.
+```
+
+For non-Git roots, JSON must set `isRepo: false`, `branch: ""`, and
+`isClean: false` so consumers do not interpret the root as a clean repository.
+
+Package repository sections are appended after root context. Configured
+`packages.<name>.git: true` entries are authoritative. If the root is not a Git
+repo and no configured package repos are available, runtime may fall back to the
+bounded child-repository scan documented in `directory-structure.md`.
+
+#### 4. Validation & Error Matrix
+
+| Condition | Behavior |
+|---|---|
+| Root `rev-parse --is-inside-work-tree` succeeds | Render root branch/status/log |
+| Root probe fails | Render explicit non-Git-root note; skip root status/log commands |
+| Configured `git: true` package has `.git` | Render package status/log |
+| Configured package path lacks `.git` | Skip that package |
+| Root is not Git and configured package repos are empty | Run bounded child repo discovery |
+| Fewer than two child repos are discovered | Do not infer polyrepo layout |
+
+#### 5. Good/Base/Bad Cases
+
+- Good: root is Git; output is unchanged from the normal root Git status.
+- Base: root is not Git but `packages.*.git: true` is configured; output gives
+  the root note, then package repo sections.
+- Bad: root is not Git and output says `Branch: unknown` or
+  `Working directory: Clean`.
+
+#### 6. Tests Required
+
+- Text context: root non-Git with configured `git: true` package.
+- Record context: same non-Git-root rendering as default text mode.
+- Runtime fallback: root non-Git with multiple unconfigured child repos.
+- JSON context: root non-Git has `isRepo: false` and `isClean: false`.
+
+#### 7. Wrong vs Correct
+
+Wrong:
+
+```text
+## GIT STATUS
+Branch: unknown
+Working directory: Clean
+```
+
+Correct:
+
+```text
+## GIT STATUS
+Root is not a Git repository.
+Run Git commands from the package repository paths listed below.
+```
+
 **When to add a new mode** (not a new script):
 - Output is a subset/reordering of the same data
 - The underlying data sources are shared

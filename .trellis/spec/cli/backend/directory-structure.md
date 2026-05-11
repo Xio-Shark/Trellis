@@ -378,6 +378,29 @@ The TS `DetectedPackage` interface and the Python runtime config schema are coup
 
 The Python helper `_is_true_config_value()` accepts `true` (case-insensitive string). YAML literals are emitted unquoted by `writeMonorepoConfig`. End-to-end round-trip is covered by `test/commands/init.integration.test.ts` polyrepo case.
 
+### Runtime Session Context Fallback
+
+`common/session_context.py` consumes the `git: true` runtime schema when
+injecting package Git status. The configured package list remains the primary
+source of truth.
+
+For backward compatibility with projects initialized before polyrepo detection
+or hand-created Trellis roots, session context has a bounded fallback: when the
+Trellis root is not a Git worktree and no configured package Git repositories
+are available, it may scan immediate child and grandchild directories for
+independent `.git` entries and inject those repositories' status. This fallback
+must mirror `parsePolyrepo()`:
+
+- maximum depth: two levels
+- skip dot-prefixed and generated/vendor directories
+- accept `.git` as a directory or file
+- stop descending once a child repository is found
+- require at least two discovered repositories before treating the layout as a
+  polyrepo
+
+Do not use the fallback to rewrite `config.yaml`; it is context-only. Users with
+non-standard layouts should still configure `packages:` explicitly.
+
 ### Per-Package Spec Directory Creation
 
 For each detected package, `createWorkflowStructure()` creates spec directories based on the package's detected `ProjectType`:

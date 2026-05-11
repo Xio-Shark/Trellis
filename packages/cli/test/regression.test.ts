@@ -1017,6 +1017,178 @@ describe("regression: agent-session Trellis update hint", () => {
   });
 });
 
+describe("regression: issue #252 polyrepo Git context", () => {
+  let tmpDir: string;
+  const pythonCmd = process.platform === "win32" ? "python" : "python3";
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-polyrepo-git-"));
+    const scriptsDir = path.join(tmpDir, ".trellis", "scripts");
+    for (const [relativePath, content] of getAllScripts()) {
+      const absPath = path.join(scriptsDir, relativePath);
+      fs.mkdirSync(path.dirname(absPath), { recursive: true });
+      fs.writeFileSync(absPath, content, "utf-8");
+    }
+    fs.mkdirSync(path.join(tmpDir, ".trellis", "tasks"), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, ".trellis", "workspace", "test-dev"), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      path.join(tmpDir, ".trellis", ".developer"),
+      "name=test-dev\n",
+      "utf-8",
+    );
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function writeConfigYaml(content: string): void {
+    fs.writeFileSync(
+      path.join(tmpDir, ".trellis", "config.yaml"),
+      content,
+      "utf-8",
+    );
+  }
+
+  function initChildRepo(relativePath: string, commitMessage: string): void {
+    const repoPath = path.join(tmpDir, relativePath);
+    fs.mkdirSync(repoPath, { recursive: true });
+    execSync("git init -q", { cwd: repoPath });
+    execSync("git config user.email test@example.com", { cwd: repoPath });
+    execSync("git config user.name Test", { cwd: repoPath });
+    fs.writeFileSync(path.join(repoPath, "README.md"), `${commitMessage}\n`);
+    execSync("git add README.md", { cwd: repoPath });
+    execSync(`git commit -q -m ${JSON.stringify(commitMessage)}`, {
+      cwd: repoPath,
+    });
+  }
+
+  function runSessionContext(kind: "text" | "record" | "json"): string {
+    const runnerPath = path.join(tmpDir, "run-context.py");
+    let expression = "print(session_context.get_context_text(Path.cwd()))";
+    if (kind === "record") {
+      expression = "print(session_context.get_context_text_record(Path.cwd()))";
+    } else if (kind === "json") {
+      expression = "print(json.dumps(session_context.get_context_json(Path.cwd())))";
+    }
+    fs.writeFileSync(
+      runnerPath,
+      [
+        "import json",
+        "import sys",
+        "from pathlib import Path",
+        "sys.path.insert(0, str(Path.cwd() / '.trellis' / 'scripts'))",
+        "from common import session_context",
+        expression,
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    return execSync(`${pythonCmd} ${JSON.stringify(runnerPath)}`, {
+      cwd: tmpDir,
+      encoding: "utf-8",
+    });
+  }
+
+  it("does not render root as unknown/clean when configured package repos exist", () => {
+    writeConfigYaml(
+      [
+        "packages:",
+        "  module_a:",
+        "    path: module-a",
+        "    git: true",
+        "",
+      ].join("\n"),
+    );
+    initChildRepo("module-a", "init module a");
+
+    const output = runSessionContext("text");
+    const rootBlock = output.slice(
+      output.indexOf("## GIT STATUS"),
+      output.indexOf("## GIT STATUS (module_a: module-a)"),
+    );
+
+    expect(rootBlock).toContain("Root is not a Git repository.");
+    expect(rootBlock).toContain(
+      "Run Git commands from the package repository paths listed below.",
+    );
+    expect(rootBlock).not.toContain("Branch: unknown");
+    expect(rootBlock).not.toContain("Working directory: Clean");
+    expect(output).toContain("## GIT STATUS (module_a: module-a)");
+    expect(output).toContain("init module a");
+  });
+
+  it("uses the same non-Git root rendering in record mode", () => {
+    writeConfigYaml(
+      [
+        "packages:",
+        "  module_a:",
+        "    path: module-a",
+        "    git: true",
+        "",
+      ].join("\n"),
+    );
+    initChildRepo("module-a", "init module a");
+
+    const output = runSessionContext("record");
+    const rootBlock = output.slice(
+      output.indexOf("## GIT STATUS"),
+      output.indexOf("## GIT STATUS (module_a: module-a)"),
+    );
+
+    expect(rootBlock).toContain("Root is not a Git repository.");
+    expect(rootBlock).not.toContain("Branch: unknown");
+    expect(rootBlock).not.toContain("Working directory: Clean");
+  });
+
+  it("discovers unconfigured child Git repos when root is not a Git repo", () => {
+    writeConfigYaml("# no packages configured\n");
+    initChildRepo("module-a", "init module a");
+    initChildRepo(path.join("services", "module-b"), "init module b");
+
+    const output = runSessionContext("text");
+
+    expect(output).toContain("Root is not a Git repository.");
+    expect(output).toContain("## GIT STATUS (module-a: module-a)");
+    expect(output).toContain(
+      "## GIT STATUS (services_module-b: services/module-b)",
+    );
+    expect(output).toContain("init module a");
+    expect(output).toContain("init module b");
+  });
+
+  it("marks JSON root Git state as non-repo instead of clean", () => {
+    writeConfigYaml(
+      [
+        "packages:",
+        "  module_a:",
+        "    path: module-a",
+        "    git: true",
+        "",
+      ].join("\n"),
+    );
+    initChildRepo("module-a", "init module a");
+
+    const context = JSON.parse(runSessionContext("json")) as {
+      git: { isRepo: boolean; branch: string; isClean: boolean };
+      packageGit: { name: string; path: string }[];
+    };
+
+    expect(context.git).toEqual(
+      expect.objectContaining({
+        isRepo: false,
+        branch: "",
+        isClean: false,
+      }),
+    );
+    expect(context.packageGit).toEqual([
+      expect.objectContaining({ name: "module_a", path: "module-a" }),
+    ]);
+  });
+});
+
 describe("regression: current-task path normalization", () => {
   let tmpDir: string;
   const pythonCmd = process.platform === "win32" ? "python" : "python3";
