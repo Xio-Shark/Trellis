@@ -333,6 +333,11 @@ Bash. The prefix must match the host shell: use
 assignment before the user's command so compound commands like
 `task.py start && task.py current` keep the same context for every command in
 the Bash invocation.
+Do not choose this prefix from OS alone. On Windows, Git Bash / MSYS2 still
+parse POSIX syntax, so OpenCode must treat `MSYSTEM`, `MINGW_PREFIX`,
+`OSTYPE=msys|mingw|cygwin`, `SHELL=...bash`, or `OPENCODE_GIT_BASH_PATH` as
+POSIX-shell signals and use the PowerShell prefix only when no such signal is
+present.
 For Cursor, `session-start.py` is not a reliable shell environment bridge.
 Instead, `inject-shell-session-context.py` must run on `beforeShellExecution`
 and write a short-lived `.trellis/.runtime/cursor-shell/*.json` ticket for

@@ -215,19 +215,25 @@ home = Path.home()
 ```
 
 **Rule 2**: When injecting environment variables into shell commands, generate
-the prefix for the actual host shell. Do not assume `export` works everywhere.
-AI tool "Bash" surfaces on Windows may execute through PowerShell.
+the prefix for the actual shell that will parse the command. Do not choose
+syntax from OS alone. AI tool "Bash" surfaces on Windows may execute through
+PowerShell, Git Bash, MSYS2, or another POSIX-like shell.
 
 ```javascript
 // BAD - breaks when the host shell is PowerShell
 command = `export TRELLIS_CONTEXT_ID=${shellQuote(contextKey)}; ${command}`;
 
-// GOOD - shell-aware command prefix
-const prefix = process.platform === "win32"
+// GOOD - shell-dialect-aware command prefix
+const prefix = process.platform === "win32" && !isWindowsPosixShell(process.env)
   ? `$env:TRELLIS_CONTEXT_ID = ${powershellQuote(contextKey)}; `
   : `export TRELLIS_CONTEXT_ID=${shellQuote(contextKey)}; `;
 command = `${prefix}${command}`;
 ```
+
+On Windows, treat `MSYSTEM`, `MINGW_PREFIX`, `OSTYPE=msys|mingw|cygwin`,
+`SHELL=...bash`, or a platform-specific Git Bash setting as POSIX-shell
+signals. Keep PowerShell as the Windows default when there is no POSIX-shell
+signal.
 
 Also make duplicate-injection detection shell-aware. A guard that only matches
 `export VAR=` will miss PowerShell's `$env:VAR = ...` form and can wrap an

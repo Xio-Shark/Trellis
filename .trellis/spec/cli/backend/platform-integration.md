@@ -361,7 +361,17 @@ to the Bash tool even though plugin events include `sessionID`; the OpenCode
 plugin must therefore inject a shell-aware `TRELLIS_CONTEXT_ID` prefix into Bash
 tool commands in `tool.execute.before` when the command does not already set
 it: POSIX shells use `export TRELLIS_CONTEXT_ID=<context-key>;`, while Windows
-PowerShell uses `$env:TRELLIS_CONTEXT_ID = '<context-key>';`.
+PowerShell uses `$env:TRELLIS_CONTEXT_ID = '<context-key>';`. Do not infer the
+shell dialect from `process.platform` alone: on Windows, Git Bash / MSYS2 still
+parse POSIX syntax. OpenCode must treat `MSYSTEM`, `MINGW_PREFIX`,
+`OSTYPE=msys|mingw|cygwin`, `SHELL=...bash`, or `OPENCODE_GIT_BASH_PATH` as
+POSIX-shell signals and keep PowerShell as the Windows default only when no
+POSIX-shell signal is present.
+Regression tests must cover both families: `win32` with no POSIX-shell signal
+emits the PowerShell prefix, while `win32` with each supported POSIX-shell
+signal emits the `export` prefix. Existing explicit-assignment dedupe tests
+must continue to cover POSIX, `env ... TRELLIS_CONTEXT_ID=...`, and PowerShell
+forms.
 Cursor must use `beforeShellExecution` as the shell bridge. The hook writes a
 short-lived `.trellis/.runtime/cursor-shell/*.json` ticket containing the
 `conversation_id`-derived context key for matching `task.py start/current/finish`
@@ -387,10 +397,12 @@ so the shared hook must persist `export TRELLIS_CONTEXT_ID=<context-key>` there
 for later Bash tool calls in the same conversation. OpenCode is also special:
 there is no env-file bridge, so the JS plugin must prefix Bash tool commands
 with a shell-aware `TRELLIS_CONTEXT_ID` assignment using plugin session identity
-before execution. Cursor has no reliable command-env bridge, so `beforeShellExecution`
-must create the short-lived shell ticket described above. Without one of these
-session signals, `task.py start` must fail with a clear session identity hint
-and must not write `.trellis/.current-task`.
+before execution; on Windows, this must be shell-dialect-aware rather than a
+plain `process.platform === "win32"` check. Cursor has no reliable command-env
+bridge, so `beforeShellExecution` must create the short-lived shell ticket
+described above. Without one of these session signals, `task.py start` must
+fail with a clear session identity hint and must not write
+`.trellis/.current-task`.
 Pi is extension-backed rather than Python-hook-backed: `tool_call` must mutate
 `event.input.command` before Bash execution, and the custom `subagent` tool must
 spawn child `pi` processes with `TRELLIS_CONTEXT_ID` in `env`.
