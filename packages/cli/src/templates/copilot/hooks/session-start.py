@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Copilot Session Start Hook - Emit Trellis session-start diagnostics.
+Copilot Session Start Hook - Emit Trellis session-start context.
 
-GitHub Copilot's documented SessionStart behavior ignores hook output, so this
-script must not be treated as proof that model-visible context was injected.
-The JSON shape is kept for parity with other Trellis hooks and future host
-support, but current Copilot users should rely on UserPromptSubmit breadcrumbs
-and hook logs instead.
+Microsoft VS Code Agent hooks are in preview and have been documented since
+VS Code 1.110 (February 2026). The official documentation
+(https://code.visualstudio.com/docs/copilot/customization/hooks) defines
+`SessionStart.hookSpecificOutput.additionalContext` as the field used to inject
+additional context into the agent's conversation.
+
+This script emits the spec-compliant SessionStart payload. Whether Copilot
+actually consumes `additionalContext` depends on the user's installed VS Code
+and Copilot versions, which is outside Trellis's control. UserPromptSubmit
+breadcrumbs remain available as a per-turn complement.
 """
 
 from __future__ import annotations
@@ -412,10 +417,6 @@ If a task is READY, execute its Next required action without asking whether to c
     context = output.getvalue()
     result = {
         "suppressOutput": True,
-        "systemMessage": (
-            f"Trellis SessionStart diagnostics emitted ({len(context)} chars); "
-            "Copilot currently ignores sessionStart hook output."
-        ),
         "hookSpecificOutput": {
             "hookEventName": "SessionStart",
             "additionalContext": context,

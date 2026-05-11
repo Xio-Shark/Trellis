@@ -2378,23 +2378,30 @@ describe("regression: current-task path normalization", () => {
     );
   });
 
-  it("[session-start-proof] Copilot template does not promise model-visible SessionStart injection", () => {
+  it("[#248] Copilot template does not assert Copilot ignores SessionStart hook output", () => {
+    // GitHub #248: Microsoft's VS Code Agent hooks docs (preview, since VS
+    // Code 1.110, Feb 2026) document SessionStart additionalContext as the
+    // injection mechanism. The previous Trellis hook hardcoded a misleading
+    // "currently ignores" claim in both the docstring and the runtime
+    // systemMessage. Both must stay removed; Trellis should not re-introduce
+    // a pessimistic absolute claim about Copilot's consumption behavior.
     const content = expectTemplateContent(
       copilotSessionStart,
       "copilot session-start",
     );
 
-    expect(content).toContain(
+    expect(content).not.toContain(
       "documented SessionStart behavior ignores hook output",
     );
-    expect(content).toContain(
+    expect(content).not.toContain(
       "Copilot currently ignores sessionStart hook output",
     );
+    expect(content).not.toContain("systemMessage");
     expect(content).not.toContain("Trellis context injected");
     expect(content).not.toContain(firstReplyNoticeSentence);
   });
 
-  it("[session-start-proof] Copilot SessionStart payload is diagnostic-only", () => {
+  it("[#248] Copilot SessionStart payload omits systemMessage and emits spec-compliant additionalContext", () => {
     setupTaskRepo();
 
     writeProjectFile(
@@ -2408,16 +2415,19 @@ describe("regression: current-task path normalization", () => {
         JSON.stringify({ cwd: tmpDir }),
       ),
     ) as {
-      systemMessage: string;
+      systemMessage?: string;
+      suppressOutput?: boolean;
       hookSpecificOutput: { hookEventName: string; additionalContext: string };
     };
 
-    expect(payload.systemMessage).toContain("SessionStart diagnostics emitted");
-    expect(payload.systemMessage).toContain(
-      "Copilot currently ignores sessionStart hook output",
-    );
-    expect(payload.systemMessage).not.toContain("Trellis context injected");
+    // systemMessage must be absent — the old "currently ignores" diagnostic
+    // was surfacing to users as a perceived Copilot bug (GitHub #248).
+    expect(payload.systemMessage).toBeUndefined();
+    expect(payload.suppressOutput).toBe(true);
     expect(payload.hookSpecificOutput.hookEventName).toBe("SessionStart");
+    expect(payload.hookSpecificOutput.additionalContext.length).toBeGreaterThan(
+      0,
+    );
     expect(payload.hookSpecificOutput.additionalContext).not.toContain(
       "<first-reply-notice>",
     );
