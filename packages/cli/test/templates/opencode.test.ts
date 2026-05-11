@@ -22,10 +22,12 @@ interface OpenCodeInjectHooks {
 
 async function createOpenCodeInjectHooks(
   platform: NodeJS.Platform = "linux",
+  env: NodeJS.ProcessEnv = {},
 ): Promise<OpenCodeInjectHooks> {
   return (await injectSubagentContextPlugin({
     directory: "/tmp/trellis-opencode-test",
     platform,
+    env,
   })) as OpenCodeInjectHooks;
 }
 
@@ -158,6 +160,106 @@ describe("opencode bash session context", () => {
     );
   });
 
+  it("uses POSIX environment syntax on Windows Git Bash", async () => {
+    const hooks = await createOpenCodeInjectHooks("win32", {
+      MSYSTEM: "MINGW64",
+    });
+    const output = {
+      args: {
+        command: "git diff --name-only",
+      },
+    };
+
+    await hooks["tool.execute.before"](
+      { tool: "bash", sessionID: "oc-a" },
+      output,
+    );
+
+    expect(output.args.command).toBe(
+      "export TRELLIS_CONTEXT_ID='opencode_oc-a'; git diff --name-only",
+    );
+  });
+
+  it("uses POSIX environment syntax when Windows OSTYPE indicates MSYS", async () => {
+    const hooks = await createOpenCodeInjectHooks("win32", {
+      OSTYPE: "msys",
+    });
+    const output = {
+      args: {
+        command: "git status --short",
+      },
+    };
+
+    await hooks["tool.execute.before"](
+      { tool: "bash", sessionID: "oc-a" },
+      output,
+    );
+
+    expect(output.args.command).toBe(
+      "export TRELLIS_CONTEXT_ID='opencode_oc-a'; git status --short",
+    );
+  });
+
+  it("uses POSIX environment syntax when Windows MINGW_PREFIX is set", async () => {
+    const hooks = await createOpenCodeInjectHooks("win32", {
+      MINGW_PREFIX: "/mingw64",
+    });
+    const output = {
+      args: {
+        command: "git log --oneline -1",
+      },
+    };
+
+    await hooks["tool.execute.before"](
+      { tool: "bash", sessionID: "oc-a" },
+      output,
+    );
+
+    expect(output.args.command).toBe(
+      "export TRELLIS_CONTEXT_ID='opencode_oc-a'; git log --oneline -1",
+    );
+  });
+
+  it("uses POSIX environment syntax when Windows SHELL is bash", async () => {
+    const hooks = await createOpenCodeInjectHooks("win32", {
+      SHELL: "/usr/bin/bash",
+    });
+    const output = {
+      args: {
+        command: "git branch --show-current",
+      },
+    };
+
+    await hooks["tool.execute.before"](
+      { tool: "bash", sessionID: "oc-a" },
+      output,
+    );
+
+    expect(output.args.command).toBe(
+      "export TRELLIS_CONTEXT_ID='opencode_oc-a'; git branch --show-current",
+    );
+  });
+
+  it("uses POSIX environment syntax when OpenCode Git Bash path is configured", async () => {
+    const hooks = await createOpenCodeInjectHooks("win32", {
+      OPENCODE_GIT_BASH_PATH: "C:\\Program Files\\Git\\bin\\bash.exe",
+    });
+    const output = {
+      args: {
+        command: "git rev-parse --show-toplevel",
+      },
+    };
+
+    await hooks["tool.execute.before"](
+      { tool: "bash", sessionID: "oc-a" },
+      output,
+    );
+
+    expect(output.args.command).toBe(
+      "export TRELLIS_CONTEXT_ID='opencode_oc-a'; git rev-parse --show-toplevel",
+    );
+  });
+
   it("does not duplicate an explicit TRELLIS_CONTEXT_ID assignment", async () => {
     const hooks = await createOpenCodeInjectHooks();
     const output = {
@@ -193,6 +295,25 @@ describe("opencode bash session context", () => {
 
     expect(output.args.command).toBe(
       "export TRELLIS_CONTEXT_ID=manual; python3 ./.trellis/scripts/task.py current",
+    );
+  });
+
+  it("does not duplicate an explicit env TRELLIS_CONTEXT_ID assignment", async () => {
+    const hooks = await createOpenCodeInjectHooks();
+    const output = {
+      args: {
+        command:
+          "env FOO=bar TRELLIS_CONTEXT_ID=manual python3 ./.trellis/scripts/task.py current",
+      },
+    };
+
+    await hooks["tool.execute.before"](
+      { tool: "bash", sessionID: "oc-a" },
+      output,
+    );
+
+    expect(output.args.command).toBe(
+      "env FOO=bar TRELLIS_CONTEXT_ID=manual python3 ./.trellis/scripts/task.py current",
     );
   });
 
