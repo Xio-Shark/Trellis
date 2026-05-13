@@ -193,6 +193,84 @@ update:
 - 初始化：`trellis init` 时自动创建
 - 更新：`trellis update` 后自动更新被覆盖文件的哈希
 
+### Manifest ownership contract (CRITICAL — data loss prevention)
+
+`.template-hashes.json` is the **single source of truth** for `trellis uninstall`. Every key listed there gets `fs.unlinkSync`'d at uninstall time. Therefore the manifest must contain **only files trellis actually wrote during init / update — never files that merely happen to exist under a managed directory**.
+
+#### Why this matters
+
+`.codex/`, `.claude/`, `.opencode/` etc. contain platform-specific user data:
+- `.codex/sessions/*.jsonl` — Codex chat history
+- `.codex/history` — Codex prompt history
+- `.claude/projects/<sanitized-cwd>/*.jsonl` — Claude Code conversation history
+- User-added `.codex/skills/<name>/`, `.claude/agents/<name>/`
+
+If `initializeHashes` walks these dirs and hashes everything, uninstall faithfully deletes user data. Real reported incidents: GitHub Issue #221 (`.codex/sessions/` wiped), PR #271 (pre-existing `AGENTS.md` wiped).
+
+#### Required contract
+
+**`initializeHashes(cwd, opts)`** must derive the manifest set from `opts.trackedPaths` (a `Set<string>` of paths trellis **actually wrote this run**), NOT from `fs.readdirSync` walks of platform dirs.
+
+The set is produced by `startRecordingWrites()` / `stopRecordingWrites()` instrumentation inside `utils/file-writer.ts`. `writeFile()` records `recordWrite(absPath)` ONLY when:
+
+- The file did not exist → wrote (recorded)
+- The file existed and content differed → overwrote (recorded)
+
+And **does NOT record** when:
+
+- The file existed and content was byte-identical (no disk write)
+- `writeMode` was `skip-existing` and the file existed (skipped)
+- The call was append-mode (`appendFile`)
+
+Every configurator that wants its writes tracked must funnel through `writeFile()` — direct `fs.writeFileSync` bypasses the recorder.
+
+#### `.trellis/` walk exemption
+
+`.trellis/` files are still hashed via recursive walk (existing `collectFiles` behavior + `EXCLUDE_FROM_HASH` filters). Rationale: `trellis uninstall` step 3 does `fs.rmSync('.trellis/', { recursive: true, force: true })` regardless of manifest content, so the walk's blast radius is contained. Over-hashing inside `.trellis/` only affects `trellis update` 3-way-merge accuracy, not uninstall safety.
+
+#### Self-heal contract: `pruneOrphanManifestKeys`
+
+Existing users may have poisoned manifests from older trellis versions. `pruneOrphanManifestKeys(cwd, configuredPlatforms, hashes, opts)` runs at the top of both `trellis update` AND `trellis uninstall` (before plan classification) and prunes orphan keys.
+
+**Preserve set** (a key is kept iff one of):
+
+1. Starts with `.trellis/` (walk-managed)
+2. Path appears in `PLATFORM_FUNCTIONS[id].collectTemplates()` output for ANY configured platform
+3. Path appears in `from` or `to` of ANY migration manifest entry (across all `migrations/manifests/*.json`, not just pending) — must preserve so rename/delete migration logic still has a hash to compare against
+4. Path is `AGENTS.md` AND the file on disk contains `TRELLIS_BLOCK_START` + `TRELLIS_BLOCK_END` markers, OR the file is missing. Files lacking markers are treated as user-owned and pruned.
+
+`options.persist: false` for dry-run paths (e.g. `uninstall --dry-run`).
+
+#### Wrong vs Correct
+
+```typescript
+// Wrong — walk-based hashing pollutes manifest with user data
+for (const dir of ALL_MANAGED_DIRS) {
+  for (const f of collectFiles(cwd, dir)) {
+    hashes[f] = sha256(read(f));   // includes .codex/sessions/foo.jsonl
+  }
+}
+
+// Correct — manifest reflects exactly what trellis wrote this run
+startRecordingWrites();
+await runConfigurators(cwd);       // each writeFile() calls recordWrite()
+const written = stopRecordingWrites();
+initializeHashes(cwd, { trackedPaths: written });
+```
+
+#### Homedir guard (R2 — defense in depth)
+
+Even with the manifest contract above, `trellis init` and `trellis uninstall` refuse to run when `process.cwd()` is exactly the user's home directory. Use `isCwdHomedir()` from `utils/cwd-guard.ts` — it compares via `fs.realpathSync.native()` on both sides, Windows-lowercases for case-insensitivity, try/catch defaults permissive on lookup failure. Override via `TRELLIS_ALLOW_HOMEDIR=1` only; `--force` does NOT bypass.
+
+#### Tests required for any change in this area
+
+- Integration: pre-populate user files under `.codex/`, `.claude/`, `.opencode/`, run init+uninstall, assert user data preserved.
+- Integration: pre-existing `AGENTS.md` (skip-existing path), uninstall preserves it.
+- Integration: poisoned manifest (manually injected key) → update OR uninstall prunes it, user file survives.
+- Unit: `recordWrite` instrumentation — new/overwrite recorded, identical/skip/append NOT recorded.
+- Unit: `pruneOrphanManifestKeys` — preserves all four classes above; rewrites manifest only when pruned.length > 0.
+- Unit: `isCwdHomedir` — symlinked home matches; subdirectory does NOT match; Windows case-insensitive.
+
 ### `workflow.md` whole-file update contract
 
 `.trellis/workflow.md` is not only documentation. It is runtime input for

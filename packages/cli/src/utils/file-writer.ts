@@ -3,6 +3,8 @@ import path from "node:path";
 import chalk from "chalk";
 import inquirer from "inquirer";
 
+import { toPosix } from "./posix.js";
+
 export type WriteMode = "ask" | "force" | "skip" | "append";
 
 export interface WriteOptions {
@@ -22,6 +24,54 @@ export function setWriteMode(mode: WriteMode): void {
 
 export function getWriteMode(): WriteMode {
   return globalWriteMode;
+}
+
+// ---------------------------------------------------------------------------
+// Write recording
+//
+// `trellis init` uses recording to capture exactly which files were actually
+// written this run (vs skipped because they already existed). The captured
+// set is what `.template-hashes.json` should contain — NOT a blind directory
+// walk of `.codex/` / `.claude/` / etc, which would include user-owned files
+// that pre-dated init. See `pruneOrphanManifestKeys` for the self-heal side
+// of the same contract.
+// ---------------------------------------------------------------------------
+
+/** When recording is active, every actual `writeFile` disk write appends here. */
+let writeRecorder: Set<string> | null = null;
+/** Project root used to convert absolute write paths to POSIX-relative keys. */
+let writeRecorderRoot: string | null = null;
+
+/**
+ * Begin recording every write into the returned Set. Calls accumulate into the
+ * same set until `stopRecordingWrites` runs. POSIX relative paths (relative to
+ * `cwd`) are stored, matching `.template-hashes.json` keys.
+ *
+ * Nested recording sessions are NOT supported — the caller must ensure
+ * `stopRecordingWrites` runs before the next `startRecordingWrites`. Failure
+ * is silent (the second `start` replaces the first set), so callers should
+ * always pair start/stop in try/finally.
+ */
+export function startRecordingWrites(cwd: string): Set<string> {
+  const sink = new Set<string>();
+  writeRecorder = sink;
+  writeRecorderRoot = cwd;
+  return sink;
+}
+
+/** End recording. Subsequent writes are not captured until `start` is called again. */
+export function stopRecordingWrites(): void {
+  writeRecorder = null;
+  writeRecorderRoot = null;
+}
+
+/** Record a successful write. Called internally by `writeFile`. */
+function recordWrite(absPath: string): void {
+  if (!writeRecorder || !writeRecorderRoot) return;
+  const rel = path.relative(writeRecorderRoot, absPath);
+  // Defensive: skip writes outside cwd (no meaningful manifest key).
+  if (rel.startsWith("..") || path.isAbsolute(rel)) return;
+  writeRecorder.add(toPosix(rel));
 }
 
 /**
@@ -74,13 +124,16 @@ export async function writeFile(
     if (options?.executable) {
       fs.chmodSync(filePath, "755");
     }
+    recordWrite(filePath);
     return true;
   }
 
   // File exists, check if content is identical
   const existingContent = fs.readFileSync(filePath, "utf-8");
   if (existingContent === content) {
-    // Content identical, skip silently (no output)
+    // Content identical, but no disk write happened. Do not record it for
+    // init-time manifests: pre-existing user files can legitimately be
+    // byte-identical to a Trellis template and still not be Trellis-owned.
     return false;
   }
 
@@ -99,17 +152,24 @@ export async function writeFile(
       fs.chmodSync(filePath, "755");
     }
     console.log(chalk.yellow(`  ↻ Overwritten: ${displayPath}`));
+    recordWrite(filePath);
     return true;
   }
 
   if (mode === "skip") {
     console.log(chalk.gray(`  ○ Skipped: ${displayPath} (already exists)`));
+    // Skipped: trellis did NOT write this file — caller should not track it
+    // in the manifest. This is the AGENTS.md skip-existing case.
     return false;
   }
 
   if (mode === "append") {
     appendToFile(filePath, content, options);
     console.log(chalk.blue(`  + Appended: ${displayPath}`));
+    // Append: trellis added trellis content to a user-owned file. Tracking
+    // is risky here (uninstall would unlink the whole file), so we do NOT
+    // record appended files. Users on `--append` get a fresh manifest miss
+    // on next update; that's the safer default.
     return true;
   }
 
@@ -141,6 +201,7 @@ export async function writeFile(
       fs.chmodSync(filePath, "755");
     }
     console.log(chalk.yellow(`  ↻ Overwritten: ${displayPath}`));
+    recordWrite(filePath);
     return true;
   }
 
@@ -163,6 +224,7 @@ export async function writeFile(
       fs.chmodSync(filePath, "755");
     }
     console.log(chalk.yellow(`  ↻ Overwritten: ${displayPath}`));
+    recordWrite(filePath);
     return true;
   }
 

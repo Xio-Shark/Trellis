@@ -52,6 +52,7 @@ import {
   isManagedRootDir,
 } from "../configurators/index.js";
 import { replacePythonCommandLiterals } from "../configurators/shared.js";
+import { pruneOrphanManifestKeys } from "../utils/manifest-prune.js";
 
 export interface UpdateOptions {
   dryRun?: boolean;
@@ -1754,7 +1755,7 @@ export async function update(options: UpdateOptions): Promise<void> {
   // Migration metadata is displayed at the end to prevent scrolling off screen
 
   // Load template hashes for modification detection
-  const hashes = loadHashes(cwd);
+  let hashes = loadHashes(cwd);
   const isFirstHashTracking = Object.keys(hashes).length === 0;
 
   // Handle unknown version - skip regular migrations but safe-file-delete still runs
@@ -1772,6 +1773,10 @@ export async function update(options: UpdateOptions): Promise<void> {
   }
 
   // Detect legacy Codex (has .agents/skills/ tracked by Trellis but no .codex/)
+  // NOTE: this MUST happen before pruneOrphanManifestKeys below, since the
+  // detector reads the raw manifest looking for .agents/skills/ markers that
+  // the prune step would otherwise consider orphans (codex hasn't been added
+  // to configuredPlatforms yet at this point).
   const codexUpgradeNeeded = needsCodexUpgrade(cwd);
   if (codexUpgradeNeeded) {
     console.log(
@@ -1779,6 +1784,29 @@ export async function update(options: UpdateOptions): Promise<void> {
         "  Legacy Codex detected: .agents/skills/ tracked without .codex/ — will create .codex/ directory",
       ),
     );
+  }
+
+  // Self-heal poisoned manifests: prune entries that no current platform
+  // configurator owns. This silently removes user-owned paths that early
+  // buggy versions of `trellis init` over-hashed (e.g. .codex/sessions/*).
+  // Include codex in known-platforms when codexUpgradeNeeded so legacy Codex
+  // markers under .agents/skills/ survive into the upgrade flow.
+  {
+    const configuredPlatforms = new Set<AITool>(getConfiguredPlatforms(cwd));
+    if (codexUpgradeNeeded) configuredPlatforms.add("codex");
+    const prune = pruneOrphanManifestKeys(
+      cwd,
+      [...configuredPlatforms],
+      hashes,
+    );
+    if (prune.pruned.length > 0) {
+      console.log(
+        chalk.gray(
+          `   Pruned ${prune.pruned.length} orphan manifest entries from .template-hashes.json`,
+        ),
+      );
+      hashes = prune.hashes;
+    }
   }
 
   // For breaking releases with recommendMigrate + --migrate, bypass update.skip

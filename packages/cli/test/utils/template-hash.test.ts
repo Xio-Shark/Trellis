@@ -402,20 +402,59 @@ describe("initializeHashes", () => {
     expect(count).toBe(0);
   });
 
-  it("hashes files in managed directories", () => {
-    // Create .trellis with a script and .claude with a command
+  it("hashes files in .trellis/ and tracked platform paths", () => {
+    // .trellis/ is always walked recursively. Platform paths (.claude/, etc.)
+    // are hashed only when explicitly listed in `trackedPaths` — the source-
+    // of-truth set captured by `startRecordingWrites` during init.
     fs.mkdirSync(path.join(tmpDir, ".trellis", "scripts"), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, ".trellis", "scripts", "task.py"), "print('hello')");
+    fs.writeFileSync(
+      path.join(tmpDir, ".trellis", "scripts", "task.py"),
+      "print('hello')",
+    );
 
     fs.mkdirSync(path.join(tmpDir, ".claude", "commands"), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, ".claude", "commands", "start.md"), "# Start");
+    fs.writeFileSync(
+      path.join(tmpDir, ".claude", "commands", "start.md"),
+      "# Start",
+    );
 
-    const count = initializeHashes(tmpDir);
+    const count = initializeHashes(tmpDir, {
+      trackedPaths: new Set([".claude/commands/start.md"]),
+    });
     expect(count).toBeGreaterThanOrEqual(2);
 
     const hashes = loadHashes(tmpDir);
     expect(hashes).toHaveProperty(".trellis/scripts/task.py");
     expect(hashes).toHaveProperty(".claude/commands/start.md");
+  });
+
+  it("does NOT hash platform-dir files that are not in trackedPaths", () => {
+    // Regression: blind directory walks swept user-owned runtime data
+    // (.codex/sessions/*, .claude/projects/*, user-added skills, pre-existing
+    // AGENTS.md) into the manifest, so uninstall later unlinked them.
+    // Now: only paths trellis actually wrote (recorded via writeFile) make
+    // it into the platform/root section of the manifest.
+    fs.mkdirSync(path.join(tmpDir, ".trellis"), { recursive: true });
+
+    const userSession = path.join(
+      tmpDir,
+      ".codex",
+      "sessions",
+      "2026",
+      "x.jsonl",
+    );
+    fs.mkdirSync(path.dirname(userSession), { recursive: true });
+    fs.writeFileSync(userSession, "user chat data\n");
+
+    const userAgents = path.join(tmpDir, "AGENTS.md");
+    fs.writeFileSync(userAgents, "user's own AGENTS.md\n");
+
+    // No trackedPaths -> no platform/root coverage.
+    initializeHashes(tmpDir, { trackedPaths: new Set() });
+    const hashes = loadHashes(tmpDir);
+
+    expect(hashes).not.toHaveProperty(".codex/sessions/2026/x.jsonl");
+    expect(hashes).not.toHaveProperty("AGENTS.md");
   });
 
   it("excludes workspace and tasks directories", () => {
@@ -484,7 +523,14 @@ describe("initializeHashes", () => {
     fs.mkdirSync(path.dirname(skillPath), { recursive: true });
     fs.writeFileSync(skillPath, "# Update Spec");
 
-    const count = initializeHashes(tmpDir);
+    // Old EXCLUDE_FROM_HASH had a "spec/" pattern that incorrectly matched
+    // `.pi/skills/trellis-update-spec/`. The new model doesn't use that
+    // exclusion at all for platform dirs (they're driven by trackedPaths),
+    // so as long as the path is tracked it lands in the manifest regardless
+    // of whether its name contains "spec".
+    const count = initializeHashes(tmpDir, {
+      trackedPaths: new Set([".pi/skills/trellis-update-spec/SKILL.md"]),
+    });
     const hashes = loadHashes(tmpDir);
 
     expect(hashes).toHaveProperty(

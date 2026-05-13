@@ -26,7 +26,16 @@ import inquirer from "inquirer";
 import { DIR_NAMES } from "../constants/paths.js";
 import { loadHashes } from "../utils/template-hash.js";
 import { cleanupEmptyDirs } from "./update.js";
-import { ALL_MANAGED_DIRS } from "../configurators/index.js";
+import {
+  ALL_MANAGED_DIRS,
+  getConfiguredPlatforms,
+} from "../configurators/index.js";
+import { pruneOrphanManifestKeys } from "../utils/manifest-prune.js";
+import {
+  isCwdHomedir,
+  homedirGuardMessage,
+  homedirBypassEnabled,
+} from "../utils/cwd-guard.js";
 import {
   scrubHooksJson,
   scrubOpencodePackageJson,
@@ -362,6 +371,14 @@ function executePlan(
  * Entry point.
  */
 export async function uninstall(options: UninstallOptions = {}): Promise<void> {
+  // Refuse to run in $HOME — same reasoning as init. A manifest poisoned by
+  // a prior buggy init would otherwise unlink global platform runtime data
+  // (chat history, session JSONLs).
+  if (isCwdHomedir() && !homedirBypassEnabled()) {
+    console.error(chalk.red(homedirGuardMessage("uninstall")));
+    process.exit(1);
+  }
+
   const cwd = process.cwd();
   const trellisDir = path.join(cwd, DIR_NAMES.WORKFLOW);
 
@@ -388,7 +405,34 @@ export async function uninstall(options: UninstallOptions = {}): Promise<void> {
     process.exit(1);
   }
 
-  const plan = buildPlan(cwd, hashes);
+  // Self-heal poisoned manifests from buggy init versions: prune any manifest
+  // entry that no current configurator owns. Runs BEFORE buildPlan so the
+  // user-owned paths (.codex/sessions/, .claude/projects/, pre-existing
+  // AGENTS.md, etc.) never reach the deletion list. See PRD R3.
+  //
+  // Dry-run: still compute the pruned hashes (so the plan reflects post-prune
+  // reality) but pass `persist: false` so no disk write happens. The actual
+  // disk write defers to executePlan time, where we'd be rewriting the
+  // manifest only to delete the whole .trellis/ dir anyway — but the
+  // computation must remain to keep the rendered plan honest.
+  const configuredPlatforms = getConfiguredPlatforms(cwd);
+  const { pruned, hashes: prunedHashes } = pruneOrphanManifestKeys(
+    cwd,
+    [...configuredPlatforms],
+    hashes,
+    { persist: !options.dryRun },
+  );
+  if (pruned.length > 0) {
+    // Surface counts only — listing every poisoned entry would alarm users
+    // without giving them an actionable signal.
+    console.log(
+      chalk.gray(
+        `   Pruned ${pruned.length} orphan manifest entries (user-owned files trellis did not write).`,
+      ),
+    );
+  }
+
+  const plan = buildPlan(cwd, prunedHashes);
   renderPlan(cwd, plan);
 
   if (options.dryRun) {

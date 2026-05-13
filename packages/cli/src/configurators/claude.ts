@@ -18,6 +18,7 @@ const EXCLUDE_PATTERNS = [
   ".d.ts.map",
   ".js",
   ".js.map",
+  ".ts", // TypeScript source — dev-only; not part of user-shipped templates
   "__pycache__",
 ];
 

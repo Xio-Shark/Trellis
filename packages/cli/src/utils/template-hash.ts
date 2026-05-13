@@ -18,7 +18,6 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { DIR_NAMES, FILE_NAMES } from "../constants/paths.js";
-import { ALL_MANAGED_DIRS } from "../configurators/index.js";
 import type { TemplateHashes } from "../types/migration.js";
 import { toPosix } from "./posix.js";
 
@@ -259,15 +258,7 @@ export function getModificationStatus(
 }
 
 /**
- * Directories to scan for template files during init (derived from platform registry)
- */
-const TEMPLATE_DIRS = ALL_MANAGED_DIRS;
-
-/** Root-level template files written by init and managed by update. */
-const TEMPLATE_FILES = [FILE_NAMES.AGENTS] as const;
-
-/**
- * Patterns to exclude from hash tracking
+ * Patterns to exclude from hash tracking (only applied to the .trellis/ walk).
  */
 const EXCLUDE_FROM_HASH = [
   ".template-hashes.json", // Hash file itself
@@ -300,11 +291,7 @@ function shouldExcludeFromHash(relativePath: string): boolean {
  * Returned paths are POSIX-normalized so they can be used directly as
  * hash dictionary keys regardless of host OS.
  */
-function collectFiles(
-  cwd: string,
-  dir: string,
-  relativeTo: string = "",
-): string[] {
+function collectFiles(cwd: string, dir: string): string[] {
   const fullDir = path.join(cwd, dir);
   if (!fs.existsSync(fullDir)) {
     return [];
@@ -321,7 +308,7 @@ function collectFiles(
     }
 
     if (entry.isDirectory()) {
-      files.push(...collectFiles(cwd, relativePath, relativeTo));
+      files.push(...collectFiles(cwd, relativePath));
     } else if (entry.isFile()) {
       files.push(toPosix(relativePath));
     }
@@ -330,29 +317,75 @@ function collectFiles(
   return files;
 }
 
+/** Options accepted by {@link initializeHashes}. */
+export interface InitializeHashesOptions {
+  /**
+   * POSIX-style relative paths trellis actually wrote during the init run
+   * (captured via `startRecordingWrites` in `file-writer.ts`). Only these
+   * paths are hashed for the platform/root-level coverage; anything else
+   * under `.codex/` / `.claude/` / etc. is left alone, even if it exists
+   * on disk. Setting this to `undefined` or an empty set means "no
+   * platform/root coverage this run" — historical hashes from earlier
+   * runs are preserved via `merge`.
+   */
+  trackedPaths?: ReadonlySet<string>;
+  /**
+   * When true, merge `trackedPaths`-derived hashes into the EXISTING manifest
+   * instead of replacing it. Used by `handleReinit` "add platform" flow so
+   * previously-tracked platforms aren't wiped from the manifest when only
+   * a new platform's writes are recorded. Defaults to false (replace).
+   */
+  merge?: boolean;
+}
+
 /**
  * Initialize template hashes after init
  *
- * Scans all template directories and computes hashes for files.
- * This should be called at the end of `trellis init` to enable
- * modification detection on subsequent updates.
+ * The platform/root section of the manifest comes from `trackedPaths` —
+ * the set of POSIX paths that `writeFile` actually wrote (or owned with
+ * byte-identical content) during this init run. Avoids the historical bug
+ * where a blind directory walk of `.codex/` / `.claude/` swept up
+ * user-owned runtime data (chat history, session JSONLs).
  *
- * @param cwd - Working directory
- * @returns Number of files hashed
+ * `.trellis/` is still walked recursively (with `EXCLUDE_FROM_HASH`) because
+ * uninstall removes `.trellis/` wholesale via `rm -rf` regardless of manifest
+ * content — accuracy there doesn't affect data-loss, only `trellis update`
+ * 3-way-merge fidelity (preserved by the existing walk).
+ *
+ * @returns Number of files hashed in the final manifest.
  */
-export function initializeHashes(cwd: string): number {
-  const hashes: TemplateHashes = {};
+export function initializeHashes(
+  cwd: string,
+  options: InitializeHashesOptions = {},
+): number {
+  const { trackedPaths, merge = false } = options;
+  const hashes: TemplateHashes = merge ? loadHashes(cwd) : {};
 
-  for (const relativePath of TEMPLATE_FILES) {
-    if (shouldExcludeFromHash(relativePath)) {
-      continue;
+  // Platform + root files: hash only paths actually written this run.
+  if (trackedPaths) {
+    for (const relativePath of trackedPaths) {
+      // `.trellis/` paths are handled by the walk below — don't double-track.
+      if (relativePath.startsWith(".trellis/") || relativePath === ".trellis") {
+        continue;
+      }
+      const fullPath = path.join(cwd, ...relativePath.split("/"));
+      if (!fs.existsSync(fullPath)) continue;
+      try {
+        const content = fs.readFileSync(fullPath, "utf-8");
+        hashes[toPosix(relativePath)] = computeHash(content);
+      } catch {
+        // Skip files that can't be read (binary, etc.)
+      }
     }
+  }
 
+  // .trellis/ workflow tree: still walked recursively. Accuracy here is for
+  // `trellis update`'s 3-way merge of workflow.md / config.yaml / scripts;
+  // uninstall removes .trellis/ wholesale so it does not matter for the
+  // data-loss bug this contract addresses.
+  const files = collectFiles(cwd, ".trellis");
+  for (const relativePath of files) {
     const fullPath = path.join(cwd, relativePath);
-    if (!fs.existsSync(fullPath)) {
-      continue;
-    }
-
     try {
       const content = fs.readFileSync(fullPath, "utf-8");
       hashes[relativePath] = computeHash(content);
@@ -361,19 +394,20 @@ export function initializeHashes(cwd: string): number {
     }
   }
 
-  // Collect all template files
-  for (const dir of TEMPLATE_DIRS) {
-    const files = collectFiles(cwd, dir);
-
-    for (const relativePath of files) {
-      // `relativePath` is POSIX (collectFiles normalizes); reconstruct an
-      // OS-native path for the actual fs read.
+  // Backwards-compat path: when `trackedPaths` is not supplied (callers that
+  // haven't been updated yet), keep tracking root-level files that exist on
+  // disk. This preserves the legacy behavior for tests / scripts that don't
+  // go through the new recording flow.
+  if (!trackedPaths) {
+    for (const relativePath of [FILE_NAMES.AGENTS]) {
+      if (shouldExcludeFromHash(relativePath)) continue;
       const fullPath = path.join(cwd, relativePath);
+      if (!fs.existsSync(fullPath)) continue;
       try {
         const content = fs.readFileSync(fullPath, "utf-8");
-        hashes[relativePath] = computeHash(content);
+        hashes[toPosix(relativePath)] = computeHash(content);
       } catch {
-        // Skip files that can't be read (binary, etc.)
+        // Skip
       }
     }
   }

@@ -7,6 +7,8 @@ import {
   getWriteMode,
   writeFile,
   ensureDir,
+  startRecordingWrites,
+  stopRecordingWrites,
 } from "../../src/utils/file-writer.js";
 
 // =============================================================================
@@ -161,5 +163,47 @@ describe("writeFile", () => {
     const result = await writeFile(filePath, "new content");
     expect(result).toBe(false);
     expect(fs.readFileSync(filePath, "utf-8")).toBe("original");
+  });
+});
+
+describe("write recording", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-record-"));
+    setWriteMode("force");
+  });
+
+  afterEach(() => {
+    stopRecordingWrites();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    setWriteMode("ask");
+  });
+
+  it("records new and overwritten files, but not identical, skipped, or appended files", async () => {
+    const recorded = startRecordingWrites(tmpDir);
+
+    await writeFile(path.join(tmpDir, "new.txt"), "content");
+
+    const samePath = path.join(tmpDir, "same.txt");
+    fs.writeFileSync(samePath, "same");
+    await writeFile(samePath, "same");
+
+    const overwritePath = path.join(tmpDir, "overwrite.txt");
+    fs.writeFileSync(overwritePath, "old");
+    setWriteMode("force");
+    await writeFile(overwritePath, "new");
+
+    const skipPath = path.join(tmpDir, "skip.txt");
+    fs.writeFileSync(skipPath, "old");
+    setWriteMode("skip");
+    await writeFile(skipPath, "new");
+
+    const appendPath = path.join(tmpDir, "append.txt");
+    fs.writeFileSync(appendPath, "old");
+    setWriteMode("append");
+    await writeFile(appendPath, "new");
+
+    expect([...recorded].sort()).toEqual(["new.txt", "overwrite.txt"]);
   });
 });
