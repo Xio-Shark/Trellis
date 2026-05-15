@@ -1209,6 +1209,24 @@ conversation:
 Keep hook payload shapes unchanged. Add this as text inside the existing
 context string, not as a new JSON key.
 
+### Per-Platform Output Schema
+
+`shared-hooks/session-start.py` is consumed by hosts with **different sessionStart output schemas**. It must emit both shapes so every host reads the context it expects:
+
+```python
+{
+    # Claude / Gemini / Qoder / CodeBuddy / Droid / Copilot — nested camelCase
+    "hookSpecificOutput": {
+        "hookEventName": "SessionStart",
+        "additionalContext": context_text,
+    },
+    # Cursor — top-level snake_case per cursor.com/docs/agent/hooks
+    "additional_context": context_text,
+}
+```
+
+Each host ignores keys it does not recognize, so dual emission is safe. **Do not refactor to single-format output** — dropping the Cursor key breaks Cursor's auto-context injection for all models (not just GPT). The same multi-format convention exists in `inject-subagent-context.py` (Cursor's `permission` + `updated_input` alongside Claude's `hookSpecificOutput`).
+
 ### Constraint
 
 Claude Code truncates `hookSpecificOutput.additionalContext` at **~20 KB**. When exceeded, only a ~2 KB preview is shown and the full payload is written to a fallback file (`tool-results/hook-*-additionalContext.txt`). AI agents do **not** proactively read the fallback file, so any content past the preview is effectively invisible.
@@ -1317,7 +1335,7 @@ The same rule applies to every other hook that's positioned as "repeated reminde
 | Platform | Event | Config File | Notes |
 |---|---|---|---|
 | Claude Code | `UserPromptSubmit` | `.claude/settings.json` | Auto-distributes via `writeSharedHooks()` |
-| Cursor | `beforeSubmitPrompt` | `.cursor/hooks.json` | Auto |
+| Cursor | ⚠️ Not supported | n/a | Cursor's `beforeSubmitPrompt` schema accepts only `{continue, user_message}` — no context-injection field exists. Per-turn reminders rely on `sessionStart` only (one-shot at session begin). `inject-workflow-state.py` is not distributed to Cursor; see `SHARED_HOOKS_BY_PLATFORM.cursor` in `shared-hooks/index.ts`. |
 | Qoder | `UserPromptSubmit` | `.qoder/settings.json` | Auto |
 | CodeBuddy | `UserPromptSubmit` | `.codebuddy/settings.json` | Auto |
 | Droid (Factory) | `UserPromptSubmit` | `.factory/settings.json` | Auto |
