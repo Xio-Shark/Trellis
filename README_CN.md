@@ -142,6 +142,14 @@ Trellis 内部运行一个 4 阶段循环，skill 与子代理均由系统自动
 - [Discord](https://discord.com/invite/tWcCZ3aRHc)
 - [技术博客](https://docs.trytrellis.app/zh/blog)
 
+### 联系我们
+
+<p align="center">
+<img src="assets/wx_link6.jpg" alt="微信群" width="260" />
+&nbsp;&nbsp;&nbsp;&nbsp;
+<img src="assets/feishu-group-qr.jpg" alt="飞书话题群" width="260" />
+</p>
+
 <p align="center">
 <a href="https://github.com/mindfold-ai/Trellis">官方仓库</a> •
 <a href="https://github.com/mindfold-ai/Trellis/blob/main/LICENSE">AGPL-3.0 License</a> •
