@@ -91,10 +91,21 @@ describe("init() integration", () => {
     // Root files
     expect(fs.existsSync(path.join(tmpDir, "AGENTS.md"))).toBe(true);
 
-    // Built-in multi-file skill is installed for default platforms.
+    // Built-in multi-file skills are installed for default platforms.
     expect(
       fs.existsSync(
         path.join(tmpDir, ".claude", "skills", "trellis-meta", "SKILL.md"),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(
+          tmpDir,
+          ".claude",
+          "skills",
+          "trellis-spec-bootstarp",
+          "SKILL.md",
+        ),
       ),
     ).toBe(true);
     expect(
@@ -254,6 +265,12 @@ describe("init() integration", () => {
     expect(trackedPaths).toContain(".agents/skills/trellis-meta/SKILL.md");
     expect(trackedPaths).toContain(
       ".agents/skills/trellis-meta/references/local-architecture/overview.md",
+    );
+    expect(trackedPaths).toContain(
+      ".agents/skills/trellis-spec-bootstarp/SKILL.md",
+    );
+    expect(trackedPaths).toContain(
+      ".agents/skills/trellis-spec-bootstarp/references/spec-writing.md",
     );
   });
 

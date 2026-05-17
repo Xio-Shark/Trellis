@@ -36,12 +36,18 @@ import {
   replacePythonCommandLiterals,
 } from "../../src/configurators/shared.js";
 
-const BUNDLED_SKILL_NAME = "trellis-meta";
+const BUNDLED_SKILL_NAMES = ["trellis-meta", "trellis-spec-bootstarp"];
+const BUNDLED_SKILL_NAME = BUNDLED_SKILL_NAMES[0];
 const BUNDLED_REFERENCE = path.join(
   BUNDLED_SKILL_NAME,
   "references",
   "local-architecture",
   "overview.md",
+);
+const SPEC_BOOTSTARP_REFERENCE = path.join(
+  "trellis-spec-bootstarp",
+  "references",
+  "spec-writing.md",
 );
 
 function readConfiguredFile(root: string, relativePath: string): string {
@@ -268,7 +274,7 @@ describe("configurePlatform", () => {
     expect(actualNames).toEqual(
       [
         ...expected.map((s) => s.name),
-        BUNDLED_SKILL_NAME,
+        ...BUNDLED_SKILL_NAMES,
         "trellis-start",
       ].sort(),
     );
@@ -364,7 +370,7 @@ describe("configurePlatform", () => {
       .sort();
 
     expect(actualNames).toEqual(
-      [...expected.map((s) => s.name), BUNDLED_SKILL_NAME].sort(),
+      [...expected.map((s) => s.name), ...BUNDLED_SKILL_NAMES].sort(),
     );
 
     for (const skill of expected) {
@@ -533,7 +539,7 @@ describe("configurePlatform", () => {
       .map((e) => e.name)
       .sort();
     expect(actualSkillDirs).toEqual(
-      [...expectedSkills.map((s) => s.name), BUNDLED_SKILL_NAME].sort(),
+      [...expectedSkills.map((s) => s.name), ...BUNDLED_SKILL_NAMES].sort(),
     );
     for (const skill of expectedSkills) {
       const filePath = path.join(skillsDir, skill.name, "SKILL.md");
@@ -778,6 +784,11 @@ describe("configurePlatform", () => {
       fs.existsSync(path.join(tmpDir, ".pi", "skills", BUNDLED_REFERENCE)),
     ).toBe(true);
     expect(
+      fs.existsSync(
+        path.join(tmpDir, ".pi", "skills", SPEC_BOOTSTARP_REFERENCE),
+      ),
+    ).toBe(true);
+    expect(
       fs.existsSync(path.join(tmpDir, ".pi", "agents", "trellis-implement.md")),
     ).toBe(true);
     expect(
@@ -904,6 +915,11 @@ describe("configurePlatform", () => {
     expect(
       templates?.get(
         ".pi/skills/trellis-meta/references/local-architecture/overview.md",
+      ),
+    ).toBeDefined();
+    expect(
+      templates?.get(
+        ".pi/skills/trellis-spec-bootstarp/references/spec-writing.md",
       ),
     ).toBeDefined();
     expect(templates?.get(".pi/agents/trellis-implement.md")).toContain(

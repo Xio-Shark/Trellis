@@ -360,7 +360,7 @@ describe("collectPlatformTemplates", () => {
     }
   });
 
-  it("tracks bundled trellis-meta files for every skill-writing platform", () => {
+  it("tracks bundled built-in skill files for every skill-writing platform", () => {
     for (const [id, skillRoot] of Object.entries(SKILL_ROOTS)) {
       const result = collectPlatformTemplates(id as AITool);
       expect(result, `${id} should have template tracking`).toBeInstanceOf(Map);
@@ -368,6 +368,14 @@ describe("collectPlatformTemplates", () => {
       expect(
         result?.has(
           `${skillRoot}/trellis-meta/references/local-architecture/overview.md`,
+        ),
+      ).toBe(true);
+      expect(
+        result?.has(`${skillRoot}/trellis-spec-bootstarp/SKILL.md`),
+      ).toBe(true);
+      expect(
+        result?.has(
+          `${skillRoot}/trellis-spec-bootstarp/references/spec-writing.md`,
         ),
       ).toBe(true);
     }
