@@ -73,26 +73,14 @@ describe("codex getConfigTemplate", () => {
     expect(config.content).toContain("AGENTS.md");
   });
 
-  it("keeps multi_agent_v2 wait timeout bounds valid for Codex 0.131+", () => {
+  // The structured [features.multi_agent_v2] table form is only accepted by
+  // Codex CLI 0.131+. On 0.130 and earlier — including the codex CLI bundled
+  // in the Codex desktop app — it aborts the whole config load with
+  // `data did not match any variant of untagged enum FeatureToml`. Trellis
+  // no longer writes the block; this test guards against reintroducing it.
+  it("does not write a [features.multi_agent_v2] block (Codex 0.130 compat)", () => {
     const config = getConfigTemplate();
-    const multiAgentV2BlockMatch = config.content.match(
-      /\[features\.multi_agent_v2\]([\s\S]*)/,
-    );
-    expect(multiAgentV2BlockMatch).not.toBeNull();
-
-    const multiAgentV2Block = multiAgentV2BlockMatch?.[1] ?? "";
-    const timeoutValue = (key: string): number => {
-      const match = multiAgentV2Block.match(new RegExp(`^${key}\\s*=\\s*(\\d+)$`, "m"));
-      expect(match, `${key} should be present`).not.toBeNull();
-      return Number(match?.[1] ?? Number.NaN);
-    };
-
-    const minWaitTimeoutMs = timeoutValue("min_wait_timeout_ms");
-    const defaultWaitTimeoutMs = timeoutValue("default_wait_timeout_ms");
-    const maxWaitTimeoutMs = timeoutValue("max_wait_timeout_ms");
-
-    expect(minWaitTimeoutMs).toBeLessThanOrEqual(defaultWaitTimeoutMs);
-    expect(defaultWaitTimeoutMs).toBeLessThanOrEqual(maxWaitTimeoutMs);
+    expect(config.content).not.toMatch(/^\[features\.multi_agent_v2\]/m);
   });
 });
 
