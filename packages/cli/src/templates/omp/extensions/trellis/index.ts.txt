@@ -172,8 +172,8 @@ function buildTaskContext(projectRoot: string, taskDir: string, agentType?: Agen
 }
 
 // ---------------------------------------------------------------------------
-// Per-turn cache — prevents double-spawn when input + before_agent_start
-// fire in the same turn
+// Per-turn cache — prevents redundant workflow-state resolution within a
+// single event cascade (input, before_agent_start, and context fire closely)
 // ---------------------------------------------------------------------------
 
 const SESSION_OVERVIEW_TEXT =
@@ -269,6 +269,11 @@ export default function(pi: ExtensionAPI): void {
    const agentType = detectAgentType();
    const isSubAgent = agentType !== null;
 
+   // Tracks compaction boundaries — context handler skips scanning when no
+   // compaction has occurred since last injection.
+   let lastCompactionTs = 0;
+   let lastInjectionTs = 0;
+
    pi.on("session_start", async (_event, ctx) => {
       projectRoot = findProjectRoot(ctx.cwd);
       if (!projectRoot) return;
@@ -313,14 +318,19 @@ export default function(pi: ExtensionAPI): void {
       }
    });
 
+   pi.on("session_before_compact", async () => {
+      lastCompactionTs = Date.now();
+   });
+
    pi.on("before_agent_start", async (_event, ctx) => {
       if (!projectRoot) {
          projectRoot = findProjectRoot(ctx.cwd);
       }
       if (!projectRoot) return;
 
-      // Lightweight: workflow state only (no task context — already injected in session_start)
+      // Persistent injection: workflow state for this turn
       const cached = turnCache.get(projectRoot);
+      lastInjectionTs = Date.now();
 
       return {
          message: {
@@ -331,22 +341,49 @@ export default function(pi: ExtensionAPI): void {
       };
    });
 
+   // context fires before EVERY LLM API call (including tool-use continuations
+   // and post-compaction agent.continue() paths). Acts as a safety net when
+   // before_agent_start's persisted message was removed by compaction.
+   pi.on("context", async (event) => {
+      if (!projectRoot) return;
+
+      // Fast path: no compaction since last injection — message is still present
+      if (lastInjectionTs > lastCompactionTs) return;
+
+      const cached = turnCache.get(projectRoot);
+      if (!cached.workflowMsg) return;
+
+      // Post-compaction: reverse-scan to confirm absence before injecting
+      const messages = event.messages as { role?: string; customType?: string }[];
+      for (let i = messages.length - 1; i >= 0; i--) {
+         if (messages[i].role === "custom" && messages[i].customType === "trellis-workflow-state") {
+            lastInjectionTs = Date.now();
+            return;
+         }
+      }
+
+      lastInjectionTs = Date.now();
+      return {
+         messages: [
+            ...event.messages,
+            {
+               role: "custom",
+               customType: "trellis-workflow-state",
+               content: cached.workflowMsg,
+               timestamp: Date.now(),
+            },
+         ],
+      };
+   });
+
    pi.on("input", async (_event, ctx) => {
       if (!projectRoot) {
          projectRoot = findProjectRoot(ctx.cwd);
       }
+      // Resolve projectRoot on first input if session_start missed it
       if (!projectRoot) return { action: "continue" };
-      const cached = turnCache.get(projectRoot);
-      if (cached.workflowMsg) {
-         return {
-            action: "continue",
-            message: {
-               customType: "trellis-workflow-state",
-               content: cached.workflowMsg,
-               display: false,
-            },
-         };
-      }
+      // Pre-warm the cache so before_agent_start and context can use it
+      turnCache.get(projectRoot);
       return { action: "continue" };
    });
 }
