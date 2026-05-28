@@ -4,6 +4,7 @@ description: |
   Code and technical research expert. Finds relevant files, patterns, docs,
   and persists findings to the current task's research/ directory.
 tools: read, write, bash, find, search, web_search
+model: pi/task
 ---
 
 # Research Agent
