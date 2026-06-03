@@ -7,6 +7,7 @@ import {
   resolveCommands,
   resolveBundledSkills,
   resolveSkills,
+  wrapWithOmpFrontmatter,
   writeAgents,
   writeSkills,
 } from "./shared.js";
@@ -23,7 +24,10 @@ export function collectOmpTemplates(): Map<string, string> {
 
   // Commands → .omp/commands/
   for (const command of resolveCommands(ctx)) {
-    files.set(`.omp/commands/trellis-${command.name}.md`, command.content);
+    files.set(
+      `.omp/commands/trellis-${command.name}.md`,
+      wrapWithOmpFrontmatter(command.name, command.content),
+    );
   }
 
   // Skills → .omp/skills/
@@ -63,7 +67,7 @@ export async function configureOmp(cwd: string): Promise<void> {
   for (const command of resolveCommands(ctx)) {
     await writeFile(
       path.join(configRoot, "commands", `trellis-${command.name}.md`),
-      command.content,
+      wrapWithOmpFrontmatter(command.name, command.content),
     );
   }
 

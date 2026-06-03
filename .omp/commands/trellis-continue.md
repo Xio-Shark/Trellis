@@ -1,8 +1,8 @@
-# Continue Current Task
+---
+description: Resume work on the current task at the right workflow phase
+---
 
 Resume work on the current task — pick up at the right phase/step in `.trellis/workflow.md`.
-
----
 
 ## Step 1: Load Current Context
 
