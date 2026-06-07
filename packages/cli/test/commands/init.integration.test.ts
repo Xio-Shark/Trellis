@@ -124,7 +124,7 @@ describe("init() integration", () => {
           tmpDir,
           ".claude",
           "skills",
-          "trellis-spec-bootstarp",
+          "trellis-spec-bootstrap",
           "SKILL.md",
         ),
       ),
@@ -288,10 +288,10 @@ describe("init() integration", () => {
       ".agents/skills/trellis-meta/references/local-architecture/overview.md",
     );
     expect(trackedPaths).toContain(
-      ".agents/skills/trellis-spec-bootstarp/SKILL.md",
+      ".agents/skills/trellis-spec-bootstrap/SKILL.md",
     );
     expect(trackedPaths).toContain(
-      ".agents/skills/trellis-spec-bootstarp/references/spec-writing.md",
+      ".agents/skills/trellis-spec-bootstrap/references/spec-writing.md",
     );
   });
 
