@@ -972,6 +972,7 @@ interface InitOptions {
   droid?: boolean;
   pi?: boolean;
   reasonix?: boolean;
+  zcode?: boolean;
   yes?: boolean;
   user?: string;
   force?: boolean;
