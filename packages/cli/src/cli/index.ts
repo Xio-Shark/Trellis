@@ -76,6 +76,10 @@ program
   .option("--droid", "Include Factory Droid commands")
   .option("--pi", "Include Pi Agent extension assets")
   .option("--reasonix", "Include Reasonix skills")
+  .option(
+    "--with-statusline",
+    "Install the Trellis statusLine for Claude Code (off by default)",
+  )
   .option("-y, --yes", "Skip prompts and use defaults")
   .option(
     "-u, --user <name>",

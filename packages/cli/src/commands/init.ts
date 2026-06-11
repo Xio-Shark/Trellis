@@ -858,6 +858,16 @@ async function handleReinit(
       }
     }
 
+    // Opt-in Claude Code statusLine: only for platforms actually being added
+    // (already-configured ones are skipped in the loop below)
+    await maybePromptStatuslineOptIn(
+      options,
+      platformsToAdd.filter((tool) => {
+        const pid = resolveCliFlag(tool as CliFlag);
+        return !!pid && !configuredPlatforms.has(pid);
+      }),
+    );
+
     const reinitWritten = startRecordingWrites(cwd);
     try {
       for (const tool of platformsToAdd) {
@@ -873,7 +883,16 @@ async function handleReinit(
             console.log(
               chalk.blue(`📝 Configuring ${AI_TOOLS[platformId].name}...`),
             );
-            await configurePlatform(platformId, cwd);
+            await configurePlatform(platformId, cwd, {
+              withStatusline: options.withStatusline,
+            });
+            if (platformId === "claude-code" && options.withStatusline) {
+              console.log(
+                chalk.gray(
+                  "   ↳ Trellis statusLine installed (--with-statusline)",
+                ),
+              );
+            }
           }
         }
       }
@@ -952,6 +971,32 @@ async function handleReinit(
   return true;
 }
 
+/**
+ * Interactive opt-in for the Claude Code statusLine when `--with-statusline`
+ * was not passed. Fires only when Claude Code is among the platforms about to
+ * be configured and never in -y mode. Mutates `options.withStatusline` so the
+ * configurePlatform call sites and the install hint read the same answer; the
+ * `!== undefined` gate doubles as the asked-once-per-run guard.
+ */
+async function maybePromptStatuslineOptIn(
+  options: InitOptions,
+  toolKeys: string[],
+): Promise<void> {
+  if (options.yes || options.withStatusline !== undefined) return;
+  if (!toolKeys.includes(AI_TOOLS["claude-code"].cliFlag)) return;
+
+  const answer = await inquirer.prompt<{ withStatusline: boolean }>([
+    {
+      type: "confirm",
+      name: "withStatusline",
+      message:
+        "Install Trellis statusLine for Claude Code? (status bar: model, context, branch, rate limits)",
+      default: false,
+    },
+  ]);
+  options.withStatusline = answer.withStatusline;
+}
+
 interface InitOptions {
   cursor?: boolean;
   claude?: boolean;
@@ -977,6 +1022,8 @@ interface InitOptions {
   append?: boolean;
   registry?: string;
   monorepo?: boolean;
+  /** Claude Code only: install the opt-in Trellis statusLine (--with-statusline) */
+  withStatusline?: boolean;
 }
 
 // Compile-time check: every CliFlag must be a key of InitOptions.
@@ -1402,6 +1449,9 @@ export async function init(options: InitOptions): Promise<void> {
     );
     return;
   }
+
+  // Opt-in Claude Code statusLine: confirm interactively when the flag wasn't passed
+  await maybePromptStatuslineOptIn(options, tools);
 
   // ==========================================================================
   // Template Selection (single-repo only; monorepo handles templates above)
@@ -1843,7 +1893,14 @@ export async function init(options: InitOptions): Promise<void> {
         console.log(
           chalk.blue(`📝 Configuring ${AI_TOOLS[platformId].name}...`),
         );
-        await configurePlatform(platformId, cwd);
+        await configurePlatform(platformId, cwd, {
+          withStatusline: options.withStatusline,
+        });
+        if (platformId === "claude-code" && options.withStatusline) {
+          console.log(
+            chalk.gray("   ↳ Trellis statusLine installed (--with-statusline)"),
+          );
+        }
       }
     }
 

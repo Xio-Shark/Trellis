@@ -8,6 +8,20 @@
 import type { TemplateContext } from "../types/ai-tools.js";
 
 /**
+ * Per-platform configure options threaded from `trellis init` flags.
+ * Defined here (not in index.ts) so configurators can reference it without
+ * a circular import.
+ */
+export interface PlatformConfigureOptions {
+  /**
+   * Claude Code only: install the opt-in Trellis statusLine
+   * (`trellis init --with-statusline`). Off by default — see
+   * `configureClaude` in `claude.ts`.
+   */
+  withStatusline?: boolean;
+}
+
+/**
  * Module-level resolved Python command, set by the init flow after probing.
  *
  * Windows commonly has Python under one of: `python`, `python3`, `py -3` —
