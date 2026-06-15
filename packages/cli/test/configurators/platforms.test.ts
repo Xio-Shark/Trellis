@@ -36,7 +36,11 @@ import {
   replacePythonCommandLiterals,
 } from "../../src/configurators/shared.js";
 
-const BUNDLED_SKILL_NAMES = ["trellis-meta", "trellis-spec-bootstrap"];
+const BUNDLED_SKILL_NAMES = [
+  "trellis-meta",
+  "trellis-session-insight",
+  "trellis-spec-bootstrap",
+];
 const BUNDLED_SKILL_NAME = BUNDLED_SKILL_NAMES[0];
 const BUNDLED_REFERENCE = path.join(
   BUNDLED_SKILL_NAME,
@@ -808,31 +812,17 @@ describe("configurePlatform", () => {
       path.join(tmpDir, ".pi", "extensions", "trellis", "index.ts"),
       "utf-8",
     );
-    expect(extension).toContain('registerTool?.({');
-    expect(extension).toContain('name: "subagent"');
+    expect(extension).toContain("registerTool?.({");
+    expect(extension).toContain('name: "trellis_subagent"');
     expect(extension).toContain('pi.on?.("session_start"');
     expect(extension).toContain('pi.on?.("tool_call"');
-    expect(extension).toContain("function injectTrellisContextIntoBash");
     expect(extension).toContain("ctx?.sessionManager?.getSessionId");
-    expect(extension).toContain("TRELLIS_CONTEXT_ID: contextKey");
-    expect(extension).toContain("function stripMarkdownFrontmatter");
-    expect(extension).toContain("function parseAgentConfig");
-    expect(extension).toContain("function resolveSubagentRunConfig");
-    expect(extension).toContain("function buildPiModelArgs");
-    expect(extension).toContain(
-      'return thinking ? ["--thinking", thinking] : []',
-    );
-    expect(extension).toContain("function resolvePiInvocation");
     expect(extension).toContain("TRELLIS_PI_CLI_JS");
-    expect(extension).toContain("...modelArgs");
-    expect(extension).toContain("child.stdin?.end(prompt)");
-    expect(extension).toContain("class BoundedBufferCollector");
-    expect(extension).toContain("function extractFinalAssistantText");
     expect(extension).toContain("function formatPiOutput");
     expect(extension).toContain('"## Trellis Agent Definition"');
-    expect(extension).toContain('content: [{ type: "text", text: output }]');
     expect(extension).toContain("ctx?.ui?.notify?.(");
     expect(extension).toContain("systemPrompt:");
+    expect(extension).toContain("isTrellisAgent(root, agentName)");
     expect(extension).not.toContain("message: buildTrellisContext");
     expect(extension).not.toContain('message:\n      "Trellis project context');
     expect(extension).not.toContain("persistent: true");
@@ -865,16 +855,6 @@ describe("configurePlatform", () => {
       )[];
     };
     expect(settings.skills).toEqual(["./skills"]);
-    const subagentsPkg = settings.packages?.find(
-      (p) => typeof p === "object" && p.source === "npm:pi-subagents",
-    );
-    expect(subagentsPkg).toEqual({
-      source: "npm:pi-subagents",
-      extensions: [],
-      skills: [],
-      prompts: [],
-      themes: [],
-    });
   });
 
   it("configurePlatform('pi') writes tracked templates exactly", async () => {

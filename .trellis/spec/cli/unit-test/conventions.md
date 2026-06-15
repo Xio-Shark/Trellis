@@ -341,8 +341,8 @@ Before writing a test, ask:
 it("#2b issue #204: empty tasks/ → bootstrap", async () => {
   await init({ yes: true, user: "alice", force: true });
   // ↑ `force: true` skips the `if (!options.force) handleReinit(...)` guard
-  //   in init.ts:931. Test green even though the user's `--yes` alone hits
-  //   handleReinit and mis-routes to joiner.
+  //   in init.ts:1081 (handleReinit defined at init.ts:740). Test green even
+  //   though the user's `--yes` alone hits handleReinit and mis-routes to joiner.
   expect(fs.existsSync(bootstrapPath)).toBe(true);
 });
 

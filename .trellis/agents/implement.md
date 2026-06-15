@@ -2,8 +2,7 @@
 name: implement
 description: |
   Code implementation expert. Understands specs and requirements, then implements features. No git commit allowed.
-tools: read, bash, edit, write, grep, find, ls, web_search
-model: openrouter/minimax/minimax-m2.7
+provider: claude
 ---
 
 # Implement Agent
@@ -11,7 +10,7 @@ model: openrouter/minimax/minimax-m2.7
 ## Core Responsibilities
 
 1. **Understand specs** — read relevant spec files in `.trellis/spec/`
-2. **Understand requirements** — read prd.md and info.md
+2. **Understand task artifacts** — read prd.md, design.md if present, and implement.md if present
 3. **Implement features** — write code following specs and design
 4. **Self-check** — run lint and typecheck
 
@@ -22,7 +21,7 @@ model: openrouter/minimax/minimax-m2.7
 ## Workflow
 
 1. Read relevant specs based on task type
-2. Read the task's prd.md and info.md
+2. Read the task's prd.md, design.md if present, and implement.md if present
 3. Implement features following specs and existing patterns
 4. Run lint and typecheck to verify
 

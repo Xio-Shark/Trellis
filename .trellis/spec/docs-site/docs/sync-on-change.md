@@ -10,18 +10,46 @@ Docs-site is a submodule that lags behind template code. Missing a doc-update on
 
 Rule of thumb: **if the change touches `packages/cli/src/templates/` or `packages/cli/src/migrations/`, grep the matrix below before merging.**
 
+## Version Scope Gate
+
+Before applying any trigger below, decide whether the changed behavior belongs
+to stable, beta, or RC docs. The file path must match that decision:
+
+- Stable / GA content: root versioned paths such as `start/**`, `advanced/**`,
+  and their `zh/**` mirrors.
+- Beta content: `beta/**` and `zh/beta/**` only.
+- RC content: `rc/**` and `zh/rc/**` only.
+
+Never copy a beta workflow, artifact model, platform contract, or install
+instruction into the root versioned paths before GA promotion. Root is what the
+Release selector serves.
+
+### Required opposite-tree grep
+
+For version-specific changes, grep the tree that should **not** contain the new
+behavior before committing. For example, after a beta-only workflow change:
+
+```bash
+cd docs-site
+rg -n "task-creation consent|codex-mode|<trellis-workflow>|planning artifact|`design\\.md`|`implement\\.md`" \
+  start advanced guides zh/start zh/advanced zh/guides -g "*.mdx"
+```
+
+If this finds the new beta terms in root release docs, stop and move the change
+to `beta/**` / `zh/beta/**` instead.
+
 ---
 
 ## Trigger 1: Phase Structure Changes
 
 Scope: any edit to `packages/cli/src/templates/trellis/workflow.md` that adds/removes a step, renames a phase, or changes required/optional/once tags.
 
-| File (en + zh) | What to sync |
-|---|---|
-| `start/install-and-first-task.mdx` | Phase 1/2/3 walkthrough block (around line 215-240 in en) — keep step numbers + action verbs in sync with `workflow.md` phase index |
-| `start/everyday-use.mdx` | Task lifecycle ASCII diagram + any per-phase bash examples |
-| `advanced/architecture.mdx` | Phase overview diagrams (if present) |
-| `concepts/workflow.mdx` (if exists) | Phase definition sections |
+| File (en + zh)                      | What to sync                                                                                                                        |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `start/install-and-first-task.mdx`  | Phase 1/2/3 walkthrough block (around line 215-240 in en) — keep step numbers + action verbs in sync with `workflow.md` phase index |
+| `start/everyday-use.mdx`            | Task lifecycle ASCII diagram + any per-phase bash examples                                                                          |
+| `advanced/architecture.mdx`         | Phase overview diagrams (if present)                                                                                                |
+| `concepts/workflow.mdx` (if exists) | Phase definition sections                                                                                                           |
 
 ### Grep command
 
@@ -38,25 +66,25 @@ Scope: any edit to `AI_TOOLS` in `packages/cli/src/types/ai-tools.ts`, `_SUBAGEN
 
 ### Add a new platform
 
-| File (en + zh) | What to sync |
-|---|---|
-| `ai-tools/<platform>.mdx` | **NEW FILE** — platform-specific setup + quirks page |
-| `ai-tools/index.mdx` (if exists) | List entry for the new platform |
-| `docs.json` | Add navigation entry to **both** `languages[0]` (en) and `languages[1]` (zh) groups |
-| `start/install-and-first-task.mdx` | Platform table (hook-inject vs pull-based vs agent-less) |
-| `advanced/multi-platform.mdx` | Class-1 / Class-2 / agent-less grouping table |
-| `advanced/appendix-d.mdx` (platform quirks) | Add quirks row if any |
-| `release/` mirror copies | Release-frozen copies update on next release-cut, not immediately |
+| File (en + zh)                              | What to sync                                                                        |
+| ------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `ai-tools/<platform>.mdx`                   | **NEW FILE** — platform-specific setup + quirks page                                |
+| `ai-tools/index.mdx` (if exists)            | List entry for the new platform                                                     |
+| `docs.json`                                 | Add navigation entry to **both** `languages[0]` (en) and `languages[1]` (zh) groups |
+| `start/install-and-first-task.mdx`          | Platform table (hook-inject vs pull-based vs agent-less)                            |
+| `advanced/multi-platform.mdx`               | Class-1 / Class-2 / agent-less grouping table                                       |
+| `advanced/appendix-d.mdx` (platform quirks) | Add quirks row if any                                                               |
+| `release/` mirror copies                    | Release-frozen copies update on next release-cut, not immediately                   |
 
 ### Remove a platform
 
-| File | What to sync |
-|---|---|
-| `ai-tools/<platform>.mdx` | Delete the page |
-| `ai-tools/index.mdx` | Remove list entry |
-| `docs.json` | Delete navigation entries (both languages) |
-| `start/install-and-first-task.mdx`, `advanced/multi-platform.mdx`, `advanced/appendix-d.mdx` | Remove references |
-| `changelog/<version>.mdx` | Changelog entry documenting the removal |
+| File                                                                                         | What to sync                               |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `ai-tools/<platform>.mdx`                                                                    | Delete the page                            |
+| `ai-tools/index.mdx`                                                                         | Remove list entry                          |
+| `docs.json`                                                                                  | Delete navigation entries (both languages) |
+| `start/install-and-first-task.mdx`, `advanced/multi-platform.mdx`, `advanced/appendix-d.mdx` | Remove references                          |
+| `changelog/<version>.mdx`                                                                    | Changelog entry documenting the removal    |
 
 ### Rename (e.g. "iFlow" removed) — same as remove + migration note in changelog.
 
@@ -72,10 +100,10 @@ cd docs-site && grep -rln "<platform-name>" --include="*.mdx" --include="*.json"
 
 Scope: any edit to `task.py` subparser registrations or the split modules it dispatches to (`task_store.py`, `task_context.py`).
 
-| File (en + zh) | What to sync |
-|---|---|
-| `advanced/appendix-b.mdx` | **`task.py` subcommand reference table** — add/remove row |
-| `start/everyday-use.mdx` | Task lifecycle flow arrow + per-step bash examples |
+| File (en + zh)            | What to sync                                                     |
+| ------------------------- | ---------------------------------------------------------------- |
+| `advanced/appendix-b.mdx` | **`task.py` subcommand reference table** — add/remove row        |
+| `start/everyday-use.mdx`  | Task lifecycle flow arrow + per-step bash examples               |
 | `advanced/appendix-c.mdx` | If the change affects `task.json` fields, update schema comments |
 
 ### Evidence of past drift
@@ -95,12 +123,12 @@ cd docs-site && grep -rln "task\.py <subcommand-name>\|`<subcommand-name>`" --in
 
 Scope: any edit to `packages/cli/src/templates/common/skills/` or `packages/cli/src/templates/{platform}/skills/`.
 
-| File (en + zh) | What to sync |
-|---|---|
-| `start/everyday-use.mdx` | Skill table at top (around line 15-18) + individual skill description sections |
-| `advanced/appendix-b.mdx` | Skill reference table (if present) |
-| `start/install-and-first-task.mdx` | Phase walkthrough skill names |
-| Skill Routing table across workflow docs | Must match `workflow.md` Skill Routing per-platform splits |
+| File (en + zh)                           | What to sync                                                                   |
+| ---------------------------------------- | ------------------------------------------------------------------------------ |
+| `start/everyday-use.mdx`                 | Skill table at top (around line 15-18) + individual skill description sections |
+| `advanced/appendix-b.mdx`                | Skill reference table (if present)                                             |
+| `start/install-and-first-task.mdx`       | Phase walkthrough skill names                                                  |
+| Skill Routing table across workflow docs | Must match `workflow.md` Skill Routing per-platform splits                     |
 
 ### Grep command
 
@@ -115,12 +143,12 @@ cd docs-site && grep -rln "trellis-<skill-name>" --include="*.mdx" \
 
 Scope: any edit to `implement.jsonl` / `check.jsonl` seed format, `task.json` schema, or consumer contracts (hook / prelude / `read_jsonl_entries`).
 
-| File (en + zh) | What to sync |
-|---|---|
-| `advanced/appendix-c.mdx` | `task.json` schema block — every field has a comment; keep in sync with `task_store.py` |
-| `start/everyday-use.mdx` | "Seeded on Create, AI Curates in Phase 1.3" section (or whatever replaces it) + sample JSONL blocks |
-| `advanced/architecture.mdx` | Context injection diagrams if present |
-| `concepts/*.mdx` | Seed vs curated row distinction if any conceptual page explains jsonl |
+| File (en + zh)              | What to sync                                                                                        |
+| --------------------------- | --------------------------------------------------------------------------------------------------- |
+| `advanced/appendix-c.mdx`   | `task.json` schema block — every field has a comment; keep in sync with `task_store.py`             |
+| `start/everyday-use.mdx`    | "Seeded on Create, AI Curates in Phase 1.3" section (or whatever replaces it) + sample JSONL blocks |
+| `advanced/architecture.mdx` | Context injection diagrams if present                                                               |
+| `concepts/*.mdx`            | Seed vs curated row distinction if any conceptual page explains jsonl                               |
 
 ### Contract to keep in sync
 
@@ -137,11 +165,11 @@ See `.trellis/spec/cli/backend/platform-integration.md` → "Agent-Curated JSONL
 
 Every released version must have:
 
-| File (en + zh) | What to sync |
-|---|---|
+| File (en + zh)             | What to sync                                                                       |
+| -------------------------- | ---------------------------------------------------------------------------------- |
 | `changelog/v<version>.mdx` | Release notes — list user-visible changes, breaking-change warnings, upgrade steps |
-| `docs.json` | Navigation entry for the new changelog page (both languages) |
-| `release/` tree | Release-frozen copy — only updated on release-cut, not during develop |
+| `docs.json`                | Navigation entry for the new changelog page (both languages)                       |
+| `release/` tree            | Release-frozen copy — only updated on release-cut, not during develop              |
 
 Migration manifests in `packages/cli/src/migrations/manifests/` need matching changelog entries. The manifest's `changelog` + `aiInstructions` fields are the authoritative text; changelog MDX should link to or paraphrase them.
 
@@ -193,12 +221,12 @@ Non-zero output = orphan pages. Triage before merge.
 
 ## Non-Triggers (Don't Update Docs)
 
-| Change | Why no doc update |
-|---|---|
-| Internal refactor with no user-visible behavior change | No user-facing contract changed |
-| Bug fix that restores documented behavior | Docs already describe correct behavior |
-| Test additions | Tests aren't user-facing |
-| Migration manifest content changes | Already captured by `changelog/v<version>.mdx` |
+| Change                                                 | Why no doc update                              |
+| ------------------------------------------------------ | ---------------------------------------------- |
+| Internal refactor with no user-visible behavior change | No user-facing contract changed                |
+| Bug fix that restores documented behavior              | Docs already describe correct behavior         |
+| Test additions                                         | Tests aren't user-facing                       |
+| Migration manifest content changes                     | Already captured by `changelog/v<version>.mdx` |
 
 ---
 

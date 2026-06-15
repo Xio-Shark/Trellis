@@ -20,9 +20,18 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | Done |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | Done |
 | [Migrations](./migrations.md) | Version migration system for template files | Done |
-| [Release Process](./release-process.md) | Cross-branch + submodule release flow, manifest continuity, submodule ordering | Done |
+| [Release Process](./release-process.md) | CI-only publishing, package versioning, release tracks, manifest continuity, submodule ordering | Done |
+| [Trellis Core SDK](./trellis-core-sdk.md) | `@mindfoldhq/trellis-core` / CLI package boundary, public exports, build and versioning contracts | Done |
 | [Platform Integration](./platform-integration.md) | How to add support for new AI CLI platforms | Done |
 | [Workflow-State Contract](./workflow-state-contract.md) | Per-turn breadcrumb subsystem: marker syntax, status writers, lifecycle events, reachability | Done |
+| [Configurator Shared Helpers](./configurator-shared.md) | `configurators/shared.ts` public surface: placeholder substitution, write helpers, pull-based prelude, cross-configurator invariants | Done |
+| [`tl mem` Command](./commands-mem.md) | Cross-platform AI session memory: subcommands, schemas, indexing, cleaning pipeline, search relevance | Done |
+| [`trellis upgrade` Command](./commands-upgrade.md) | Global CLI self-upgrade wrapper: channel inference, npm invocation, failure behavior | Done |
+| [`trellis update` Command](./commands-update.md) | Update pipeline: flags, plan composition, migration trigger semantics, apply phase, idempotency, boundaries with `migrations.md` | Done |
+| [`trellis workflow` Command](./commands-workflow.md) | Workflow marketplace templates, project-local workflow switching, hash ownership contract, and parser compatibility | Done |
+| [`trellis uninstall` Command](./commands-uninstall.md) | Uninstall orchestration: plan composition, structured-file dispatch, execute phases, `.trellis/` removal | Done |
+| [Uninstall Scrubbers](./uninstall-scrubbers.md) | Pure scrubber contract for structured config files (`settings.json`, `hooks.json`, `package.json`, `config.toml`) | Done |
+| [`trellis channel` Command](./commands-channel.md) | Multi-agent collaboration runtime: events.jsonl protocol, per-worker supervisor, provider adapters (claude / codex), project buckets, ephemeral / run lifecycle, ShutdownController state machine | Done |
 ---
 
 ## Pre-Development Checklist
@@ -35,9 +44,17 @@ Before writing backend code, read the relevant guidelines based on your task:
 - Modifying `init.ts` flow (new triggers, dispatch branches, bootstrap/joiner) → [platform-integration.md "Bootstrap & Joiner Task Auto-Generation"](./platform-integration.md) — two-point wiring + `.developer` signal
 - Script work → [script-conventions.md](./script-conventions.md)
 - Migration system → [migrations.md](./migrations.md)
-- Cutting a release / cross-branch submodule coordination / manifest continuity → [release-process.md](./release-process.md)
+- Cutting a release / cross-branch submodule coordination / manifest continuity / npm publishing → [release-process.md](./release-process.md)
+- Editing `packages/core/**`, moving reusable CLI logic into core, or changing CLI imports from `@mindfoldhq/trellis-core` → [trellis-core-sdk.md](./trellis-core-sdk.md)
 - Adding any native (`.node` / C++ / `node-gyp`) dependency → [quality-guidelines.md "Native dependency policy"](./quality-guidelines.md)
 - Editing `[workflow-state:STATUS]` breadcrumb blocks / `task.json.status` writers / lifecycle hooks → [workflow-state-contract.md](./workflow-state-contract.md)
+- Editing `configurators/shared.ts` (placeholder substitution, write helpers, prelude injection) → [configurator-shared.md](./configurator-shared.md)
+- Editing `commands/mem.ts` (subcommands, platform indexers, search/cleaning pipeline) → [commands-mem.md](./commands-mem.md)
+- Editing `commands/upgrade.ts` (global CLI self-upgrade behavior) → [commands-upgrade.md](./commands-upgrade.md)
+- Editing `commands/update.ts` (flags, plan, apply phases, idempotency) → [commands-update.md](./commands-update.md) — manifest mechanics still in [migrations.md](./migrations.md)
+- Editing `commands/workflow.ts`, `utils/workflow-resolver.ts`, workflow marketplace entries, or `init --workflow` behavior → [commands-workflow.md](./commands-workflow.md)
+- Editing `commands/uninstall.ts` or `utils/uninstall-scrubbers.ts` → [commands-uninstall.md](./commands-uninstall.md) + [uninstall-scrubbers.md](./uninstall-scrubbers.md)
+- Editing `commands/channel/**` (events.jsonl protocol, supervisors, adapters, project buckets, channel-lifecycle commands) → [commands-channel.md](./commands-channel.md)
 
 Also read [unit-test/conventions.md](../unit-test/conventions.md) — specifically the "When to Write Tests" section.
 

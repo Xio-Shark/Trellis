@@ -1,7 +1,11 @@
 # `tl mem` — Cross-Platform AI Session Memory
 
-How `packages/cli/src/commands/mem.ts` indexes, searches, and extracts dialogue
-from on-disk session files written by Claude Code, Codex, and OpenCode.
+How Trellis indexes, searches, and extracts dialogue from on-disk session files
+written by Claude Code, Codex, and OpenCode.
+
+The retrieval engine lives in `@mindfoldhq/trellis-core/mem` (`packages/core/src/mem/`);
+`packages/cli/src/commands/mem.ts` is a thin CLI wrapper over it. See "Package
+boundary" below before "Subcommand surface".
 
 ---
 
@@ -23,24 +27,65 @@ context window around hits, or dump full cleaned dialogue. The cleaned form
 strips Trellis / platform injection tags so search hits aren't dominated by
 session-start preamble.
 
-The module is one self-contained TypeScript file plus four sibling test files;
-it does **not** depend on the rest of the Trellis runtime (no
-`configurators/`, no Python scripts). It re-exports a single
-`runMem(args)` entry point invoked from the `tl` Commander wire.
+The retrieval domain does **not** depend on the rest of the Trellis runtime (no
+`configurators/`, no Python scripts) and does **not** depend on the CLI: it uses
+only `node:fs / node:path / node:os` and is free of `zod`, `console.*`, and
+`process.exit`. The CLI exposes it through a single `runMem(args)` entry point
+invoked from the `tl` Commander wire.
 
-> **Audience for this spec**: contributors extending `mem.ts` — adding new
+> **Audience for this spec**: contributors extending `mem` — adding new
 > platforms, new subcommands, or new flags. The goal is to keep the cleaning
 > pipeline, filtering semantics, and ranking heuristics consistent across
 > platforms when changes are made.
 
 ---
 
+## Package boundary
+
+`mem` is split between `@mindfoldhq/trellis-core` and the CLI. See
+`trellis-core-sdk.md` for the general rule; the `mem`-specific split:
+
+**Core owns** (`packages/core/src/mem/`, public surface at the
+`@mindfoldhq/trellis-core/mem` subpath — **not** the root barrel):
+
+- persisted-session readers / adapters for Claude Code, Codex, OpenCode
+  (`adapters/{claude,codex,opencode}.ts`)
+- search, relevance scoring, excerpt selection (`search.ts`)
+- dialogue cleaning (`dialogue.ts`), filtering (`filter.ts`)
+- dialogue-context extraction (`context.ts`), brainstorm-phase slicing
+  (`phase.ts`), project aggregation (`projects.ts`)
+- the orchestration API: `listMemSessions`, `searchMemSessions`,
+  `readMemContext`, `extractMemDialogue`, `listMemProjects`, plus their
+  input/output types and `MemSessionNotFoundError`
+- low-level JSONL / path helpers under `packages/core/src/mem/internal/`
+  (private — the CLI must not deep-import them)
+
+**CLI owns** (`packages/cli/src/commands/mem.ts`):
+
+- `runMem`, argv parsing (`parseArgv`), and CLI flag → `MemFilter` translation
+- terminal rendering: `printSessions`, `shortDate`, `shortPath`, row formatting
+- `--json` output shaping (preserving the stable JSON field names)
+- the OpenCode-unavailable stderr notice (`warnOpencodeUnavailable`)
+- `process.exit` codes and `die`
+
+The CLI imports core through the public subpath only:
+
+```ts
+import { searchMemSessions } from "@mindfoldhq/trellis-core/mem";
+```
+
+Core returns structured results carrying a `warnings` array; the CLI decides
+how to print warnings and what exit code to use. Core never prints or exits.
+
+---
+
 ## Subcommand surface
 
 Entry point: `commands/mem.ts:runMem` dispatches on `argv.cmd` after
-`commands/mem.ts:parseArgv`. All subcommands share `commands/mem.ts:buildFilter`
-for the cross-cutting `--platform / --since / --until / --cwd / --global /
---limit` flags.
+`commands/mem.ts:parseArgv`, then calls the matching core `@mindfoldhq/trellis-core/mem`
+API and renders the result. The cross-cutting `--platform / --since / --until /
+--cwd / --global / --limit` flags are parsed by the CLI and translated into a
+core `MemFilter`.
 
 | Subcommand | Function | Purpose |
 |------------|----------|---------|
@@ -57,7 +102,7 @@ Cross-cutting (`buildFilter`):
 
 | Flag | Default | Notes |
 |------|---------|-------|
-| `--platform claude\|codex\|opencode\|all` | `all` | Validated via `PlatformSchema` Zod union. Unknown value → exit 2. |
+| `--platform claude\|codex\|opencode\|all` | `all` | Validated by the CLI against the `MemSourceFilter` union (hand-written guard, no zod). Unknown value → exit 2. |
 | `--since YYYY-MM-DD` | none | Inclusive lower bound. Parsed by `new Date(value)`; invalid → exit 2. |
 | `--until YYYY-MM-DD` | none | Inclusive upper bound; parser appends `T23:59:59.999Z` so a date string covers the whole UTC day. |
 | `--cwd <path>` | `process.cwd()` | Project scope. Resolved with `path.resolve`. Combined with `--global` → `--global` wins. |
@@ -79,31 +124,30 @@ Subcommand-specific:
 
 ## Platform indexing
 
-Each platform has three exported functions:
+Each platform adapter lives in `packages/core/src/mem/adapters/` and exports
+three functions:
 
 | Platform | `*ListSessions(f)` | `*ExtractDialogue(s)` | `*Search(s, kw)` |
 |----------|--------------------|-----------------------|------------------|
-| Claude | `commands/mem.ts:claudeListSessions` | `commands/mem.ts:claudeExtractDialogue` | `commands/mem.ts:claudeSearch` |
-| Codex | `commands/mem.ts:codexListSessions` | `commands/mem.ts:codexExtractDialogue` | `commands/mem.ts:codexSearch` |
-| OpenCode | `commands/mem.ts:opencodeListSessions` | `commands/mem.ts:opencodeExtractDialogue` | `opencodeSearch` (file-private; stubbed in 0.6.0-beta.4) |
+| Claude | `core/mem/adapters/claude.ts:claudeListSessions` | `claudeExtractDialogue` | `claudeSearch` |
+| Codex | `core/mem/adapters/codex.ts:codexListSessions` | `codexExtractDialogue` | `codexSearch` |
+| OpenCode | `core/mem/adapters/opencode.ts:opencodeListSessions` | `opencodeExtractDialogue` | `opencodeSearch` (degraded no-op in 0.6.0-beta.4) |
 
-`commands/mem.ts:listAll` fans out to the three list functions and merges
-results sorted by `updated ?? created` descending. `commands/mem.ts:extractDialogue`
-and `commands/mem.ts:searchSession` dispatch on `s.platform`.
+`core/mem/sessions.ts:listAll` fans out to the three list functions and merges
+results sorted by `updated ?? created` descending; the same module's
+`extractDialogue` / `searchSession` helpers dispatch on `s.platform`.
 
 ### Claude Code
 
 - **Layout**: `~/.claude/projects/<sanitized-cwd>/<sessionId>.jsonl`. The cwd is
-  sanitized as `cwd.replace(/[/_]/g, "-")` — see
-  `commands/mem.ts:claudeProjectDirFromCwd`. When `--cwd` is set, `mem` resolves
+  sanitized as `cwd.replace(/[/_]/g, "-")`. When `--cwd` is set, `mem` resolves
   the single project directory directly; otherwise it walks every project dir.
-- **Index**: when present, `<projectDir>/sessions-index.json`
-  (`ClaudeIndexSchema`) provides `cwd / created / title` per session id, saving
-  a JSONL scan. Missing fields fall back to scanning the first 100 events
-  (`commands/mem.ts:findInJsonl`) for a `cwd`, then the very first event
-  (`commands/mem.ts:readJsonlFirst`) for a creation timestamp.
+- **Index**: when present, `<projectDir>/sessions-index.json` provides
+  `cwd / created / title` per session id, saving a JSONL scan. Missing fields
+  fall back to scanning the first 100 events (`findInJsonl`) for a `cwd`, then
+  the very first event (`readJsonlFirst`) for a creation timestamp.
 - **Updated**: `fs.statSync(filePath).mtime`.
-- **Cleaning** (`commands/mem.ts:claudeExtractDialogue`):
+- **Cleaning** (`core/mem/adapters/claude.ts:claudeExtractDialogue`):
   - User turns: `type === "user"` AND `message.role === "user"` AND
     `content` is a string (Array content = tool_result, dropped).
   - Assistant turns: `type === "assistant"` AND `message.role === "assistant"`
@@ -116,13 +160,13 @@ and `commands/mem.ts:searchSession` dispatch on `s.platform`.
 ### Codex
 
 - **Layout**: `~/.codex/sessions/**/rollout-<YYYY-MM-DDTHH-MM-SS>-<id>.jsonl`.
-  `commands/mem.ts:walkDir` recurses lazily via a stack-based generator.
+  `core/mem/internal/paths.ts:walkDir` recurses lazily via a stack-based generator.
 - **Filename timestamp**: parsed by regex
   `/^rollout-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})-(.+)$/` and converted to ISO
   by replacing `T??-??-??` with `T??:??:??Z`. Used as fallback `created` if the
   first event lacks `timestamp`.
 - **Metadata**: read from the first JSONL event's `payload` (id, cwd).
-- **Cleaning** (`commands/mem.ts:codexExtractDialogue`):
+- **Cleaning** (`core/mem/adapters/codex.ts:codexExtractDialogue`):
   - Real turns: top-level event with `payload.type === "message"` and
     `payload.role` parseable to `user` / `assistant` (drops `developer` /
     `system`).
@@ -171,7 +215,8 @@ See follow-up task notes.
 
 ### `SessionInfo` contract
 
-Every list function emits items conforming to `commands/mem.ts:SessionInfoSchema`:
+Every list function emits items conforming to the `MemSessionInfo` type
+(`core/mem/types.ts`):
 
 | Field | Required | Source |
 |-------|----------|--------|
@@ -196,8 +241,8 @@ The single most important invariant in `mem.ts`:
 
 | Helper | Semantics | Use site |
 |--------|-----------|----------|
-| `commands/mem.ts:inRange` | Single-point: `f.since ≤ t ≤ f.until`. Pass-through if `iso` undefined or unparseable. | Internal-only; **not used for session list filtering** |
-| `commands/mem.ts:inRangeOverlap` | Interval: keep iff session lifetime `[start, end]` overlaps query window `[f.since, f.until]`. | Used by **all three** `*ListSessions` functions |
+| `core/mem/filter.ts:inRange` | Single-point: `f.since ≤ t ≤ f.until`. Pass-through if `iso` undefined or unparseable. | Internal-only; **not used for session list filtering** |
+| `core/mem/filter.ts:inRangeOverlap` | Interval: keep iff session lifetime `[start, end]` overlaps query window `[f.since, f.until]`. | Used by **all three** `*ListSessions` functions |
 
 ### Why overlap is mandatory
 
@@ -223,7 +268,7 @@ defined to handle that degenerate case.
 
 ### `sameProject` semantics
 
-`commands/mem.ts:sameProject` returns true iff target is undefined (no scope),
+`core/mem/filter.ts:sameProject` returns true iff target is undefined (no scope),
 or if `path.resolve(sessionCwd) === path.resolve(target)`, or if the session
 cwd is a descendant directory (`startsWith(target + sep)`). Sessions whose cwd
 is unknown are dropped under cwd scoping but kept under `--global`.
@@ -234,12 +279,12 @@ is unknown are dropped under cwd scoping but kept under `--global`.
 
 Before any search or display, raw turn text passes through:
 
-1. **`commands/mem.ts:stripInjectionTags`** — case-insensitive removal of
+1. **`core/mem/dialogue.ts:stripInjectionTags`** — case-insensitive removal of
    `<tag>...</tag>` blocks for every entry in `INJECTION_TAGS`. Also strips
    AGENTS.md preamble (`^# AGENTS\.md instructions for...` until the next
    blank-line + capital/CJK boundary). Collapses runs of `\n` to `\n\n` and
    trims.
-2. **`commands/mem.ts:isBootstrapTurn`** — applied AFTER tag stripping. Drops
+2. **`core/mem/dialogue.ts:isBootstrapTurn`** — applied AFTER tag stripping. Drops
    the entire turn (returns `null` from the per-platform builder) when:
    - `cleaned.startsWith("# AGENTS.md instructions for")`, OR
    - `originalLength > 4000` AND `cleaned` begins with `<INSTRUCTIONS>` (case
@@ -277,8 +322,8 @@ exactly that way.
 
 ## Search relevance scoring
 
-`commands/mem.ts:searchInDialogue` returns a `SearchHit` with per-role hit
-counts and excerpts. `commands/mem.ts:relevanceScore` is the ranker:
+`core/mem/search.ts:searchInDialogue` returns a `SearchHit` with per-role hit
+counts and excerpts. `core/mem/search.ts:relevanceScore` is the ranker:
 
 ```
 score(hit) = (3 * user_count + asst_count) / total_turns
@@ -313,7 +358,7 @@ Within a turn, hit positions are scored by:
    "the") are mostly noise.
 3. **Earliest start** — final stable tie-break.
 
-Chunks come from `commands/mem.ts:chunkAround` — paragraph-aligned by `\n\n`
+Chunks come from `core/mem/search.ts:chunkAround` — paragraph-aligned by `\n\n`
 on either side of the hit, falling back to a centered char window if the
 natural paragraph exceeds `maxChars` (default `400`). Truncation is reported
 via the `truncated` flag and surfaces as leading / trailing `…` in the snippet.
@@ -337,10 +382,10 @@ OpenCode is the only platform with a native parent-child link
 (the `parent_id` column on the SQLite `session` table). When
 `--include-children` is set:
 
-1. `commands/mem.ts:buildChildIndex` walks the candidate list and builds a
+1. `core/mem/sessions.ts:buildChildIndex` walks the candidate list and builds a
    `Map<parent_id, descendants[]>` with **transitive flattening** — a parent
    maps to all descendants, not just direct children.
-2. **Search**: `commands/mem.ts:searchSessionWithChildren` concatenates the
+2. **Search**: `core/mem/sessions.ts:searchSessionWithChildren` concatenates the
    parent's cleaned dialogue with every descendant's cleaned dialogue and runs
    `searchInDialogue` once over the merged turn list. Scores reflect topic
    density across the entire sub-agent tree.
@@ -369,10 +414,12 @@ never absorb children.
 - **No remote/cloud sync**: OpenCode's optional cloud sync is invisible here.
   Local OpenCode reading is also unavailable in 0.6.0-beta.4 (reverted — see
   the OpenCode section above).
-- **No transitive dependency on Trellis runtime**: `mem.ts` does not import
-  from `configurators/`, `migrations/`, `templates/`, or `.trellis/scripts`.
-  It uses `node:fs / node:path / node:os / zod`. The OpenCode native-dep
-  path (`better-sqlite3`) was removed in 0.6.0-beta.4.
+- **No transitive dependency on Trellis runtime**: `core/mem/` does not import
+  from `configurators/`, `migrations/`, `templates/`, or `.trellis/scripts`,
+  and does not depend on the CLI package. It uses only
+  `node:fs / node:path / node:os` — no `zod`, no `console.*`, no
+  `process.exit`. The OpenCode native-dep path (`better-sqlite3`) was removed
+  in 0.6.0-beta.4.
 - **No OpenCode-style sub-agent linkage outside OpenCode**: even if a future
   Codex / Claude release exposes parent-child IDs, the current
   `buildChildIndex` only consults `s.parent_id`, which only OpenCode emits.
@@ -462,12 +509,15 @@ platform-native shell-call events (which the dialogue cleaners discard):
   - Claude: assistant `tool_use` block with `name === "Bash"`,
     `input.command` is the command string.
   - Codex: top-level `function_call` event with `name` ∈ `{"exec_command",
-    "shell"}`, command is read from `arguments.command` /
-    `arguments.cmd` (string or `argv[]` joined with spaces).
+    "shell"}`. The command string is recovered by
+    `core/mem/adapters/codex.ts:commandFromCodexArguments`, which accepts every
+    shape Codex versions emit: a raw shell string, a stringified JSON object,
+    or a raw object — with the command under `cmd`, `command`, or `argv[]`
+    (joined with spaces).
 - **Window end**: the next `task.py start` shell call in the same session.
 
-The detection is performed by `commands/mem.ts:collectClaudeTurnsAndEvents`
-(Claude) and `commands/mem.ts:collectCodexTurnsAndEvents` (Codex) — each is a
+The detection is performed by `core/mem/adapters/claude.ts:collectClaudeTurnsAndEvents`
+(Claude) and `core/mem/adapters/codex.ts:collectCodexTurnsAndEvents` (Codex) — each is a
 single pass that produces both the cleaned `DialogueTurn[]` (semantically
 identical to the platform's `*ExtractDialogue`) AND a list of `task.py`
 events with their `turnIndex` (the cleaned-turn index AT THE TIME the shell
@@ -475,7 +525,7 @@ call was seen).
 
 ### Regex compatibility
 
-`commands/mem.ts:parseTaskPyCommand` parses individual Bash commands. It must
+`core/mem/phase.ts:parseTaskPyCommand` parses individual Bash commands. It must
 cover every shape Trellis users actually write:
 
 ```
@@ -501,7 +551,7 @@ separator — never embedded inside a flag value like `--slug=task.py-create-x`.
 
 Boundary detection runs against real Bash command strings copy-pasted by the
 AI from a shell prompt, not against a synthesized argv. The parser stack —
-`commands/mem.ts:parseTaskPyCommandsAll` → `parseTaskPyCommand` →
+`core/mem/phase.ts:parseTaskPyCommandsAll` → `parseTaskPyCommand` →
 `splitShellArgs` → `slugFromTaskDir` — has to absorb several real-world
 Bash idioms that surface in dogfood JSONL streams.
 
@@ -538,7 +588,7 @@ When extending the parser:
 
 A single Claude session often contains N `[create, start)` pairs as the user
 moves through several tasks. Pairing in
-`commands/mem.ts:buildBrainstormWindows`:
+`core/mem/phase.ts:buildBrainstormWindows`:
 
 1. **Slug match wins**: any create with an explicit `--slug` is paired with
    the first unmatched start whose `taskDir`'s last segment equals that slug,
@@ -601,7 +651,7 @@ machine-readable stdout used by `--json` consumers.
 | Codex | Native — boundary detection on `function_call` events whose `name` is `exec_command` or `shell` (Codex's Bash twin) |
 | OpenCode | Reader unavailable in 0.6.0-beta.4+ (returns empty + warning) |
 
-`commands/mem.ts:collectCodexTurnsAndEvents` is the Codex twin of
+`core/mem/adapters/codex.ts:collectCodexTurnsAndEvents` is the Codex twin of
 `collectClaudeTurnsAndEvents`. Same single-pass shape: it produces both the
 cleaned `DialogueTurn[]` (semantically identical to `codexExtractDialogue`)
 AND the list of `task.py` events with `turnIndex`, with the boundary signal
@@ -658,7 +708,7 @@ When extending or refactoring `mem.ts`:
 ### Single-point `inRange` for session list filtering
 **Wrong**: `if (!inRange(created, f)) continue;` — drops cross-day sessions.
 **Correct**: `if (!inRangeOverlap(created, updated, f)) continue;` — see
-`commands/mem.ts:codexListSessions` for the canonical pattern.
+`core/mem/adapters/codex.ts:codexListSessions` for the canonical pattern.
 
 ### Short-circuiting on filename timestamp
 **Wrong**: skip Codex sessions where `tsFromName < f.since` without reading the
@@ -687,8 +737,8 @@ dropped before this loop.
 
 ### `readJsonl` chunked streaming + `0x7b` fast-reject
 
-`commands/mem.ts:readJsonl` is the canonical JSONL reader for every platform
-adapter. It is **not** `fs.readFileSync` + `data.split("\n")` — that pattern
+`core/mem/internal/jsonl.ts:readJsonl` is the canonical JSONL reader for every
+platform adapter. It is **not** `fs.readFileSync` + `data.split("\n")` — that pattern
 allocated the entire file (tens of MB on long Claude sessions) as one string
 and could not honor the `"stop"` short-circuit until the whole file was
 already in memory.
@@ -702,7 +752,7 @@ Current implementation:
    any line whose first byte is not `0x7b` (`{`). A JSONL event line begins
    with `{` virtually always; blank lines, occasional preambles, partial
    writes from a still-running CLI, etc. all get rejected without paying the
-   `JSON.parse` + Zod `safeParse` cost. The check is `line.charCodeAt(0)
+   `JSON.parse` + runtime-guard cost. The check is `line.charCodeAt(0)
    !== OPEN_BRACE`.
 3. **`"stop"` short-circuit** — the visitor closure can return `"stop"` to
    signal "I have what I need" (used by `readJsonlFirst` and
@@ -726,23 +776,24 @@ Rules for extending:
   read loop into `for await`, which on `fs.openSync` handles is more
   expensive than a sync chunk read and breaks the `"stop"` short-circuit.
 
-### Mock `node:os` BEFORE importing `mem.ts`
-Module-load constants `HOME`, `CLAUDE_PROJECTS`, `CODEX_SESSIONS`, `OC_DB_PATH`
-capture `os.homedir()` once. Tests must mock `node:os` via `vi.hoisted` and
-`vi.mock("node:os", ...)` *before* `await import("../../src/commands/mem.js")`.
-See `test/commands/mem-platforms.test.ts` for the canonical pattern.
+### Mock `node:os` BEFORE importing the adapters
+Module-load constants in `core/mem/internal/paths.ts` (`CLAUDE_PROJECTS`,
+`CODEX_SESSIONS`, …) capture `os.homedir()` once. Core tests must mock
+`node:os` via `vi.hoisted` and `vi.mock("node:os", ...)` *before*
+`await import("../../src/mem/adapters/...")`. See
+`packages/core/test/mem/adapters.test.ts` for the canonical pattern.
 
 ### Adding a new platform without updating all dispatchers
 A new platform requires updates in:
 
 | Site | What |
 |------|------|
-| `PlatformSchema` | enum entry |
-| `commands/mem.ts:listAll` | call to new `*ListSessions` |
-| `commands/mem.ts:extractDialogue` | switch case |
-| `commands/mem.ts:searchSession` | switch case |
-| `commands/mem.ts:cmdProjects` `Agg.by_platform` | new key with default `0` |
-| `cmdHelp` | mention in `--platform` line |
+| `MemSourceKind` (`core/mem/types.ts`) | union member |
+| `core/mem/sessions.ts:listAll` | call to new `*ListSessions` |
+| `core/mem/sessions.ts:extractDialogue` | switch case |
+| `core/mem/sessions.ts:searchSession` | switch case |
+| `core/mem/projects.ts` `by_platform` aggregation | new key with default `0` |
+| CLI `cmdHelp` | mention in `--platform` line |
 
 There is no exhaustiveness check — TypeScript's `switch` over `s.platform`
 will warn for unhandled cases only if every dispatcher uses an explicit
@@ -750,49 +801,54 @@ discriminated union, which they do; trust the compiler here.
 
 ---
 
-## Schemas (Zod)
+## Runtime validation (no zod)
 
-All declared in `commands/mem.ts`. They guard against silent shape drift in
-upstream platform formats — when Claude / Codex / OpenCode change their on-disk
-format, `safeParse` returns `false` for the affected lines and they are skipped
-rather than crashing the run.
+`core/mem/` does **not** use `zod` — `@mindfoldhq/trellis-core` keeps a
+zero-dependency surface (see `trellis-core-sdk.md`). External platform shapes
+are modeled as loose TypeScript `interface`s with every field optional, and
+the adapters guard fields at the point of use with plain `typeof` / `Array.isArray`
+checks. The public domain types live in `core/mem/types.ts`:
 
-| Schema | Domain |
-|--------|--------|
-| `commands/mem.ts:PlatformSchema` | `"claude" \| "codex" \| "opencode"` |
-| `commands/mem.ts:SessionInfoSchema` | unified session metadata across platforms |
-| `commands/mem.ts:DialogueRoleSchema` | `"user" \| "assistant"` |
-| `commands/mem.ts:SearchExcerptSchema` / `SearchHitSchema` | search output shape |
-| `commands/mem.ts:FilterSchema` | parsed cross-cutting flags |
-| `commands/mem.ts:ArgvSchema` | parsed CLI arguments |
-| `commands/mem.ts:ClaudeBlockSchema` / `ClaudeMessageSchema` / `ClaudeEventSchema` | Claude JSONL events |
-| `commands/mem.ts:ClaudeIndexEntrySchema` / `ClaudeIndexSchema` | Claude `sessions-index.json` |
-| `commands/mem.ts:CodexContentPartSchema` / `CodexCompactedItemSchema` / `CodexPayloadSchema` / `CodexEventSchema` | Codex rollout JSONL |
-<!-- OpenCodeMessageDataSchema / OpenCodePartDataSchema removed in 0.6.0-beta.4 with the SQLite reader revert -->
+| Type | Domain |
+|------|--------|
+| `MemSourceKind` / `MemSourceFilter` | `"claude" \| "codex" \| "opencode"` (+ `"all"` for filters) |
+| `MemSessionInfo` | unified session metadata across platforms |
+| `DialogueRole` / `DialogueTurn` | `"user" \| "assistant"` and a cleaned turn |
+| `SearchExcerpt` / `SearchHit` / `MemSearchMatch` / `MemSearchResult` | search output |
+| `MemFilter` | normalized cross-cutting filter (CLI flags translate into this) |
+| `MemContextTurn` / `MemContextResult` | dialogue-context window output |
+| `BrainstormWindow` / `MemDialogueGroup` / `MemExtractResult` | phase-slicing output |
+| `MemProjectSummary` | project aggregation output |
+| `MemWarning` | structured warning returned to the CLI |
 
+The loose per-platform event interfaces (`CodexEvent`, `CodexPayload`,
+`ClaudeEvent`, …) stay local to their adapter file.
 
-### Schema evolution rules
+### Validation rules
 
-- **Stay loose**: every external schema uses `.loose()` (Zod v4) so unknown
-  fields survive parse without errors. Never tighten with `.strict()` — upstream
-  format additions would silently break parsing.
-- **Optional everything**: every field on external schemas is `.optional()`.
-  Required fields are reserved for the unified `SessionInfoSchema` (`id`,
-  `platform`, `filePath`).
+- **Stay loose**: external event interfaces keep every field optional, so an
+  upstream format addition never breaks parsing — unknown fields are simply
+  ignored.
+- **Guard at use**: check `typeof x === "string"` / `Array.isArray(x)` before
+  consuming a field; never assume shape.
 - **Keep schema-mismatch silent**: `readJsonl` skips lines that fail
-  `safeParse`. Don't log per-line warnings — production session files contain
+  `JSON.parse`. Don't log per-line warnings — production session files contain
   legitimately diverse event shapes (tool_result, errors, telemetry) that we
-  don't care about.
+  don't care about. Surface a structured `MemWarning` only for whole-operation
+  conditions the caller should know about.
 
-When extending `SessionInfoSchema` (e.g. adding a `conversation_id` field for a
+When extending `MemSessionInfo` (e.g. adding a `conversation_id` field for a
 new platform), every `*ListSessions` function must populate the field (or
 explicitly leave it undefined for platforms that don't have it). Forgetting to
-populate it on platform A while platform B does will cause schema-validated
-output to be inconsistent across platforms.
+populate it on platform A while platform B does will cause inconsistent output
+across platforms.
 
 ---
 
 ## Output formatting
+
+Formatting is CLI-only — these helpers live in `packages/cli/src/commands/mem.ts`,
+never in core:
 
 | Helper | Purpose |
 |--------|---------|
@@ -801,110 +857,132 @@ output to be inconsistent across platforms.
 | `commands/mem.ts:printSessions` | tabular human-readable dump shared by `cmdList` |
 
 Every subcommand supports `--json`. JSON output is structurally stable and is
-the contract for AI agents consuming `mem` output. If you change a field name
-in JSON output (e.g. rename `hit_count` → `total_hits`), assume an AI somewhere
-is parsing it and version the change.
+the contract for AI agents consuming `mem` output. The CLI maps core's
+camelCase result fields to the stable user-visible JSON names (`platform`,
+`by_platform`, `parent_id`, `is_hit`, `total_turns`, …). If you change a field
+name in JSON output (e.g. rename `hit_count` → `total_hits`), assume an AI
+somewhere is parsing it and version the change.
 
 ---
 
 ## Test conventions
 
-Existing test files (under `packages/cli/test/commands/`):
+Tests follow the package boundary: pure retrieval logic is tested in core,
+CLI-wrapper behavior is tested in the CLI.
 
-| File | Tier | What it covers |
-|------|------|----------------|
-| `mem-helpers.test.ts` | Tier-1 (pure-function) | `parseArgv`, `buildFilter`, `inRange`, `inRangeOverlap`, `sameProject`, `stripInjectionTags`, `isBootstrapTurn`, `chunkAround`, `searchInDialogue`, `relevanceScore`, `shortDate`, `shortPath` |
-| `mem-platforms.test.ts` | Tier-2 (fixture-based) | Per-platform `*ListSessions` and `*ExtractDialogue` against synthetic JSONL / JSON fixtures with mocked `os.homedir()` |
-| `mem-since-cross-day.test.ts` | Regression | Cross-day session must survive `--since` later than `created`; pins the `inRangeOverlap` contract |
-| `mem-integration.test.ts` | Tier-3 | End-to-end `runMem` with stdout capture |
+Core tests (`packages/core/test/mem/`):
 
-### Fixture pattern (Tier-2)
+| File | What it covers |
+|------|----------------|
+| `helpers.test.ts` | filtering / cleaning / search primitives: `inRange`, `inRangeOverlap`, `sameProject`, `stripInjectionTags`, `isBootstrapTurn`, `chunkAround`, `searchInDialogue`, `relevanceScore` |
+| `adapters.test.ts` | per-platform `*ListSessions` / `*ExtractDialogue` / `*Search` against synthetic JSONL / JSON fixtures with mocked `os.homedir()` |
+| `phase.test.ts` | `parseTaskPyCommand(sAll)`, `commandFromCodexArguments`, `collectClaudeTurnsAndEvents`, `collectCodexTurnsAndEvents`, `buildBrainstormWindows` |
+| `cross-day.test.ts` | cross-day session must survive `--since` later than `created`; pins the `inRangeOverlap` contract |
+| `api.test.ts` | the public orchestration API (`listMemSessions`, `searchMemSessions`, `readMemContext`, `extractMemDialogue`, `listMemProjects`) returning structured results + warnings |
 
-The `mem-platforms.test.ts` pattern is mandatory for any new platform parser
-test:
+CLI tests (`packages/cli/test/commands/`):
+
+| File | What it covers |
+|------|----------------|
+| `mem-helpers.test.ts` | CLI-only helpers: `parseArgv`, CLI flag → `MemFilter` translation, `shortDate`, `shortPath` |
+| `mem-integration.test.ts` | end-to-end `runMem` with stdout capture, `--json` output shape, exit behavior, the OpenCode-unavailable stderr notice |
+
+### Fixture pattern (core adapter tests)
+
+Mandatory for any new platform-parser test in `packages/core/test/mem/`:
 
 1. **`vi.hoisted` block** mints a tmpdir for `fakeHome`. This runs *before*
-   module resolution so `mem.ts`'s top-level `const HOME = os.homedir()`
-   captures the fake value.
+   module resolution so `core/mem/internal/paths.ts`'s `os.homedir()`-derived
+   constants capture the fake value.
 2. **`vi.mock("node:os", ...)`** preserves the rest of the `os` API
    (`tmpdir`, `EOL`, etc.) — Vitest itself uses them. Spread `actual` and only
    override `homedir`.
-3. **`await import("../../src/commands/mem.js")`** *after* the mock is set up.
+3. **`await import("../../src/mem/adapters/...")`** *after* the mock is set up.
 4. **Per-test fixture seeding**: write minimal JSONL / JSON files into
    `<fakeHome>/.claude/projects/...` or `<fakeHome>/.codex/sessions/...`.
    OpenCode fixture seeding is not applicable in 0.6.0-beta.4 — the reader
-   is stubbed and tests assert "returns empty" rather than parsing a database.
+   is a degraded no-op and tests assert "returns empty".
 5. **`utimesSync`** is the canonical way to anchor `mtime` for `updated`
-   assertions — `fs.statSync(file).mtime` is what `mem.ts` reads.
+   assertions — `fs.statSync(file).mtime` is what the adapters read.
 6. **`afterEach`** cleans up its own fixture files; tests must be isolated
    from each other within the suite.
 
 ### What new tests must cover
 
-When adding a feature to `mem.ts`:
+When adding a feature to `mem`:
 
-- A new flag → `mem-helpers.test.ts` for `buildFilter` parsing + a
-  `mem-integration.test.ts` for end-to-end behavior.
-- A new injection tag → `mem-helpers.test.ts` `stripInjectionTags` test asserting
+- A new core filter / cleaning / search primitive → `core/test/mem/helpers.test.ts`.
+- A new injection tag → `helpers.test.ts` `stripInjectionTags` test asserting
   the tag is removed AND a paragraph adjacent to the tag survives intact.
 - A new platform → new `*ListSessions` / `*ExtractDialogue` block in
-  `mem-platforms.test.ts` mirroring the existing per-platform test groups.
-- A bug fix touching filtering → `mem-since-cross-day.test.ts` style
+  `core/test/mem/adapters.test.ts` mirroring the existing per-platform groups.
+- A bug fix touching filtering → `core/test/mem/cross-day.test.ts` style
   regression: a fixture with a known boundary case + the assertion that pins
   the fix.
-- A new shell-arg form picked up by `parseTaskPyCommand` /
-  `parseTaskPyCommandsAll` → `mem-phase-slice.test.ts` fixture with the exact
-  literal Bash string the AI emitted (`SMOKE=$(...)`, heredoc-embedded prose,
-  etc.) plus an assertion on the resulting window count and slug labels.
-  The dogfood case studies live under `.trellis/tasks/05-08-mem-phase-slice/`
-  and `.trellis/tasks/05-09-mem-phase-multi/`.
+- A new shell-arg / Codex-argument form picked up by the phase parsers →
+  `core/test/mem/phase.test.ts` fixture with the exact literal the AI emitted
+  (`SMOKE=$(...)`, heredoc-embedded prose, `argv[]` arrays, etc.) plus an
+  assertion on the resulting window count and slug labels. The dogfood case
+  studies live under `.trellis/tasks/05-08-mem-phase-slice/` and
+  `.trellis/tasks/05-09-mem-phase-multi/`.
+- A new CLI flag or output change → `mem-helpers.test.ts` for parsing +
+  `mem-integration.test.ts` for end-to-end behavior.
 
 ### What tests must NOT do
 
 - Don't assert on whole stdout block in human-readable mode — the format
   changes (line spacing, padding). Assert on `--json` output instead.
-- Don't write fixtures outside `fakeHome`. `mem.ts`'s constants only know
-  about `HOME`-derived paths; tests using `os.tmpdir()` directly will not be
-  exercised by the parsers.
-- Don't `mem.ts`-import without the `node:os` mock in place — the constants
-  would lock onto the real `~/.claude` etc. and your test would either pass by
-  accident or pollute the developer's actual session store.
+- Don't write fixtures outside `fakeHome`. The adapters' path constants only
+  know about `HOME`-derived paths; tests using `os.tmpdir()` directly will not
+  be exercised by the parsers.
+- Don't import a core adapter without the `node:os` mock in place — the
+  constants would lock onto the real `~/.claude` etc. and your test would
+  either pass by accident or pollute the developer's actual session store.
+- Don't move pure retrieval assertions into the CLI suite. If a CLI test would
+  only exercise core logic, write it in `packages/core/test/mem/` instead.
 
 ---
 
-## Public API surface (exported)
+## Public API surface
 
-For consumers (currently only `tl` Commander wire and tests):
+### Core — `@mindfoldhq/trellis-core/mem`
+
+The reusable retrieval API, importable by the CLI, daemons, and future SDK
+consumers. Exposed only on the `/mem` subpath — **not** the root barrel.
+
+| Export | Use |
+|--------|-----|
+| `listMemSessions`, `searchMemSessions`, `readMemContext`, `extractMemDialogue`, `listMemProjects` | the five orchestration entry points; all return structured results with a `warnings` array |
+| `MemSessionNotFoundError` | typed error for `context` / `extract` against an unknown session id |
+| `MemSessionInfo`, `MemFilter`, `DialogueTurn`, `SearchHit`, `MemSearchResult`, `MemContextResult`, `MemExtractResult`, `MemProjectSummary`, `MemWarning`, … | input/output types (see `core/mem/types.ts`) |
+
+Internal core modules (`filter.ts`, `search.ts`, `dialogue.ts`, `context.ts`,
+`phase.ts`, the adapters, and everything under `internal/`) are exercised
+directly by `packages/core/test/mem/**` but are **not** part of the published
+subpath surface — the CLI must not deep-import them.
+
+### CLI — `packages/cli/src/commands/mem.ts`
 
 | Export | Use |
 |--------|-----|
 | `runMem(args)` | Entry point — `tl mem ...` calls into this |
-| `parseArgv(argv)`, `buildFilter(flags)` | Argument parsing — used by tests |
-| `inRange`, `inRangeOverlap`, `sameProject` | Filtering primitives — tested directly |
-| `stripInjectionTags`, `isBootstrapTurn` | Cleaning primitives — tested directly |
-| `chunkAround`, `searchInDialogue`, `relevanceScore` | Search primitives — tested directly |
-| `shortDate`, `shortPath` | Formatting — tested directly |
-| `claudeListSessions`, `claudeExtractDialogue`, `claudeSearch` | Claude adapter — tested via `mem-platforms.test.ts` |
-| `codexListSessions`, `codexExtractDialogue`, `codexSearch` | Codex adapter — same |
-| `opencodeListSessions`, `opencodeExtractDialogue` | OpenCode adapter — same |
-| `parseTaskPyCommand`, `parseTaskPyCommandsAll`, `splitShellArgs`, `slugFromTaskDir`, `buildBrainstormWindows`, `collectClaudeTurnsAndEvents`, `collectCodexTurnsAndEvents` | Phase slicing — tested via `mem-phase-slice.test.ts` |
+| `parseArgv(argv)` and the CLI flag → `MemFilter` translation | argv parsing — used by `mem-helpers.test.ts` |
+| `shortDate`, `shortPath` | terminal formatting — tested directly |
 
-`opencodeSearch` is intentionally file-private; the dispatcher
-`commands/mem.ts:searchSession` is what tests should use to exercise OpenCode
-search end-to-end. If you need to test it directly, prefer testing the
-exposed `extract` + `searchInDialogue` composition rather than reaching into
-the unexported function.
+The CLI wrapper composes the core API, renders results, maps warnings to
+stderr, emits the OpenCode-unavailable notice, and owns exit codes.
 
 ---
 
 ## Reference
 
-- `packages/cli/src/commands/mem.ts` — implementation
-- `packages/cli/test/commands/mem-helpers.test.ts` — pure-function tests
-- `packages/cli/test/commands/mem-platforms.test.ts` — per-platform fixture tests
-- `packages/cli/test/commands/mem-since-cross-day.test.ts` — cross-day regression
-- `packages/cli/test/commands/mem-integration.test.ts` — end-to-end
-- `packages/cli/test/commands/mem-phase-slice.test.ts` — phase slicing tests
+- `packages/core/src/mem/` — retrieval engine (adapters, search, context, phase, projects)
+- `packages/core/src/mem/index.ts` — `@mindfoldhq/trellis-core/mem` public surface
+- `packages/cli/src/commands/mem.ts` — CLI wrapper (`runMem`, argv parsing, rendering)
+- `packages/core/test/mem/` — core retrieval tests (helpers, adapters, phase, cross-day, api)
+- `packages/cli/test/commands/mem-helpers.test.ts` — CLI argv / formatting tests
+- `packages/cli/test/commands/mem-integration.test.ts` — end-to-end `runMem`
+- `.trellis/tasks/05-14-mem-core-channel-reuse/` — the mem-core extraction task
 - `.trellis/tasks/05-08-mem-since-cross-day-filter/` — historical context for
   the `inRangeOverlap` switch
 - `.trellis/tasks/05-08-mem-phase-slice/` — historical context for the

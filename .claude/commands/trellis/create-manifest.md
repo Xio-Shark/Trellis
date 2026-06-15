@@ -1,106 +1,125 @@
 # Create Migration Manifest
 
-Create a migration manifest for a new patch/minor release based on commits since the last release.
+Create a migration manifest for a new patch, beta, rc, or minor release based on commits since the previous release.
 
 ## Arguments
 
-- `$ARGUMENTS` — Target version (e.g., `0.3.1`). If omitted, ask the user.
+- `$ARGUMENTS` - Target version, for example `0.5.15` or `0.6.0-beta.14`. If omitted, ask the user.
 
-## Steps
+## Package release model
 
-### Step 1: Identify Last Release
+Trellis currently publishes two npm packages from the same git tag:
+
+- `@mindfoldhq/trellis`
+- `@mindfoldhq/trellis-core`
+
+Both packages must always share the exact same version and npm dist-tag. Source uses `workspace:*`; the packed CLI must depend on the exact published core version.
+
+Official npm publishing is CI-only. Never use local `npm publish` or `pnpm publish` to compensate for a failed or partial release. Local verification may use `pnpm pack`, `release-preflight`, tests, lint, typecheck, and `npm view`.
+
+## Step 1: Identify Last Release
 
 ```bash
-# Find the last release tag and its commit
 git tag --sort=-v:refname | head -5
 ```
 
-Pick the most recent release tag (e.g., `v0.3.0`).
+Pick the most recent release tag on the current release line, for example `v0.5.14` or `v0.6.0-beta.13`.
 
-### Step 2: Gather Changes
+## Step 2: Gather Changes
 
 ```bash
-# Show all commits since last release
 git log <last-release-tag>..HEAD --oneline
-
-# Show src/ changes only (skip .trellis/, docs, chore)
-git log <last-release-tag>..HEAD --oneline -- src/
+git log <last-release-tag>..HEAD --oneline -- packages/cli/src/ packages/core/src/
+git log <last-release-tag>..HEAD --oneline -- packages/cli/scripts/ .github/workflows/ package.json packages/*/package.json pnpm-lock.yaml
 ```
 
-### Step 3: Analyze Each Commit
+User-facing changelog coverage should focus on source behavior under `packages/cli/src/` and `packages/core/src/`. Release wiring, workflow, or package dependency changes belong in `Internal` only when users can observe the behavior, for example install/update reliability or multi-package availability.
 
-For each commit that touches `src/`:
-1. Read the diff: `git diff <parent>...<commit> -- src/ --stat`
-2. Classify: `feat` / `fix` / `refactor` / `chore`
-3. Write a one-line changelog entry in conventional commit style
+## Step 3: Analyze Each Relevant Commit
 
-### Step 4: Draft Changelog
+For each commit that touches relevant source or release behavior:
 
-**Voice**: technical reference doc. Short, clear, plain. Not a story, not a sales pitch. Style guide: `.trellis/spec/docs-site/docs/style-guide.md` → "Changelog / Release Notes Voice".
+1. Read the diff:
+   ```bash
+   git diff <parent>...<commit> -- packages/cli/src/ packages/core/src/ --stat
+   git diff <parent>...<commit> -- packages/cli/scripts/ .github/workflows/ package.json packages/*/package.json pnpm-lock.yaml --stat
+   ```
+2. Classify as `feat`, `fix`, `refactor`, or `chore`.
+3. Write a one-line changelog entry in conventional commit style.
 
-**DO**
+Drop pure spec edits, mechanical refactors, and internal-only cleanup unless they materially change what users observe.
 
-- Lead each `###` section with **one** sentence stating what changed. Then table / code / bullets. Done.
-- Use feature names as headings (`### Joiner onboarding task`), not outcomes (`### New devs no longer stuck`).
+## Step 4: Draft Changelog
+
+Voice: technical reference doc. Short, clear, plain. Not a story, not a sales pitch. Follow `.trellis/spec/docs-site/docs/style-guide.md` -> "Changelog / Release Notes Voice".
+
+Do:
+
+- Lead each `###` section with one sentence stating what changed. Then table, code, or bullets. Done.
+- Use feature names as headings, for example `### Joiner onboarding task`.
 - Include grep-able identifiers: file paths, function names, flag names, migration entries.
-- Mirror English and Chinese 1:1 — same sections, same tables, same code blocks; only prose translated.
+- Mirror English and Chinese 1:1 in docs-site changelogs: same sections, same tables, same code blocks; only prose translated.
 
-**DON'T**
+Do not:
 
-- **No "Why X" / "Background" / "Rationale" paragraphs.** If the change isn't self-explanatory from the diff + one-sentence opener, the entry is too vague — split it or trim it. Multi-sentence justification belongs in the task PRD or commit body.
-- **No Tests section, no test counts.** "847/847 pass" / "5 new regression tests" is commit-message material, not user-facing changelog.
-- **No "Internal" section bloat.** Only include internal entries if they materially change behavior the user can observe (e.g. byte-identity affecting multi-platform setups). Function-rename refactors, internal flag flips, spec-file edits → drop unless directly relevant.
-- No rhetorical questions ("然后呢？然后就没然后了" / "but then what?").
-- No emotional framing ("一脸懵", "吐槽", "devs were stuck").
-- No filler adverbs ("simply", "easily", "just").
-- No outcome-phrased headings that age badly or aren't greppable.
-- No marketing voice. Don't sell the change. State it.
+- Add "Why", "Background", or "Rationale" paragraphs.
+- Add a Tests section or test counts.
+- Add Internal entries unless users can observe the behavior.
+- Use rhetorical questions, emotional framing, filler adverbs, or marketing voice.
+- Use outcome-phrased headings that age badly or are not grep-able.
 
-**Length cap**: each `###` section ≤ ~120 words. Going over means you're explaining instead of describing — trim.
+Length cap: each `###` section should stay under about 120 words.
 
-**Allowed top-level sections** (ordered): `Enhancements` (feat), `Bug Fixes` (fix), `Internal` (only if user-observable), `Upgrade`. Skip any section with no entries — don't ship an empty heading.
+Allowed top-level sections, ordered:
 
-**Manifest `changelog` field** (terminal display during `trellis update`): same rules, single string with `\n` separators, group with `**Enhancements:**` / `**Bug Fixes:**` / `**Internal:**` bold prefixes.
+1. `Enhancements`
+2. `Bug Fixes`
+3. `Internal` only if user-observable
+4. `Upgrade`
 
-### Step 5: Determine Manifest Fields
+Skip empty sections.
+
+Manifest `changelog` field:
+
+- Use one string with real `\n` separators.
+- Group with bold prefixes: `**Enhancements:**`, `**Bug Fixes:**`, `**Internal:**`.
+- Keep it shorter than the MDX changelog because it prints in terminal during `trellis update`.
+
+## Step 5: Determine Manifest Fields
 
 | Field | How to decide |
-|-------|---------------|
-| `breaking` | Any breaking API/behavior change? Default `false` for patch |
-| `recommendMigrate` | Any file rename/delete migrations? Default `false` for patch. **When `breaking=true` + `recommendMigrate=true`, `trellis update` exits 1 without `--migrate` — this is the safety gate, set deliberately.** |
-| `migrations` | List of `rename`/`rename-dir`/`delete`/`safe-file-delete` actions. Usually `[]` for patch |
-| `migrationGuide` | **MANDATORY when `breaking=true` + `recommendMigrate=true`.** Narrative doc explaining to the user what changed and how to migrate. Gets templated into the generated `04-MM-DD-migrate-to-<version>` task PRD when user runs `trellis update --migrate`. Without this field, `getMigrationMetadata` has no 0.5-specific content to include — the user's migration task PRD silently falls back to older manifests' guides (or no task at all). **`create-manifest.js` enforces this via `--stdin` validation.** |
-| `aiInstructions` | Strongly recommended alongside `migrationGuide` on breaking releases. Tells AI how to help the user migrate: what to grep for, what to check, common pitfalls. Separate field so prose-for-humans and instructions-for-AI don't tangle. |
-| `notes` | Brief guidance for users (e.g., "run `trellis update --migrate` to sync"). Shown inline in terminal during update. |
+|---|---|
+| `breaking` | Any breaking API or behavior change. Default `false` for patch/prerelease fixes. |
+| `recommendMigrate` | Any rename/delete migration the user should run. Default `false` for patch fixes. When `breaking=true` and `recommendMigrate=true`, `trellis update` exits 1 without `--migrate`. |
+| `migrations` | List of `rename`, `rename-dir`, `delete`, or `safe-file-delete` actions. Usually `[]` for patch fixes. |
+| `migrationGuide` | Mandatory when `breaking=true` and `recommendMigrate=true`. Human migration guide inserted into the generated migration task PRD. |
+| `aiInstructions` | Strongly recommended with `migrationGuide`. Instructions for AI migration assistance. |
+| `notes` | Brief terminal guidance shown during update. |
 
-**Why `migrationGuide` is mandatory on breaking**: a breaking release without a guide ships a broken upgrade experience. Users who stayed on an older version (≤ N-2 releases old) get a migration task PRD filled with unrelated guides from intermediate hop versions, with nothing describing the actual current breaking change. They migrate blind. The validation in `packages/cli/scripts/create-manifest.js` fails fast rather than let this ship.
+Breaking releases without `migrationGuide` produce a broken upgrade experience. `packages/cli/scripts/create-manifest.js` validates this.
 
-### Step 5a: Per-Migration Entry Fields
+## Step 5a: Per-Migration Entry Fields
 
-For each entry inside `migrations`:
+| Field | Purpose | Required |
+|---|---|---|
+| `type` | `rename`, `rename-dir`, `delete`, or `safe-file-delete` | yes |
+| `from` | Source path relative to project root | yes |
+| `to` | Target path | yes for renames |
+| `description` | What the migration does, shown in the confirm prompt | recommended |
+| `reason` | Version-specific context for modified-file prompts | optional |
+| `allowed_hashes` | Known-pristine SHA256 hashes for safe deletion | required for `safe-file-delete` |
 
-| Field | Purpose | Required? |
-|-------|---------|-----------|
-| `type` | `rename` / `rename-dir` / `delete` / `safe-file-delete` | yes |
-| `from` | Source path (relative to project root) | yes |
-| `to` | Target path (rename / rename-dir only) | yes for renames |
-| `description` | **What** this migration does — one sentence, shown in the confirm prompt | recommended |
-| `reason` | **Why** the user might see this entry flagged as modified. Version-specific context (e.g. "Trellis 0.4.0 skipped hashing this path — pristine copies show as modified. [r] is safe."). Keeps version-specific hints out of `update.ts`. | optional |
-| `allowed_hashes` | **Only for `safe-file-delete`.** SHA256 hashes of known-pristine content — if file hash matches, delete; otherwise skip with a warning (preserves user customizations). | required for `safe-file-delete` |
+`rename` uses the project-local `.trellis/.template-hashes.json`; it does not use manifest `allowed_hashes`.
 
-**How `rename` classification works** (subtle, common gotcha):
-- `rename` uses the **project-local** `.trellis/.template-hashes.json` (auto-maintained by Trellis), NOT the manifest's `allowed_hashes` field.
-- Classification outcomes: `auto` (pristine hash match → rename silently) / `confirm` (hash mismatch → interactive prompt) / `conflict` (target already exists) / `skip` (source missing).
-- So you do **NOT** need to collect historical template hashes for `rename` entries — only `safe-file-delete` needs `allowed_hashes`.
+Use:
 
-**When to use `rename` vs `safe-file-delete`:**
-- File relocated / renamed in new version, old path has a new target → **`rename`** (preserves user edits via mv, confirm prompt lets them pick)
-- File fully removed in new version, no replacement → **`safe-file-delete`** (requires `allowed_hashes` for hash-verified deletion)
-- File semantically folded into another command (e.g. `record-session` → `finish-work` Step 3) → **`safe-file-delete`** + mention in `notes` for alias migration guidance
+- `rename` when a file moved and has a replacement path.
+- `safe-file-delete` when a file was removed and has no replacement.
+- `safe-file-delete` plus `notes` when a removed file was folded into another command.
 
-### Step 6: Create Manifest
+## Step 6: Create Manifest
 
-Pipe JSON via heredoc (auto-detected when stdin is not a TTY):
+Pipe JSON through stdin:
 
 ```bash
 cat <<'EOF' | node packages/cli/scripts/create-manifest.js
@@ -111,131 +130,108 @@ cat <<'EOF' | node packages/cli/scripts/create-manifest.js
   "recommendMigrate": false,
   "changelog": "<changelog text with real newlines>",
   "notes": "<notes>",
-  "migrations": [
-    {
-      "type": "rename",
-      "from": ".claude/commands/old-path.md",
-      "to": ".claude/skills/trellis-new-path/SKILL.md",
-      "description": "v<version>: repurposed as auto-triggered skill",
-      "reason": "Why prompted: <version-specific nuance shown to user in confirm prompt>"
-    },
-    {
-      "type": "safe-file-delete",
-      "from": ".claude/commands/removed.md",
-      "description": "Removed in v<version> — <replacement>",
-      "allowed_hashes": ["<sha256 of known-pristine content>"]
-    }
-  ]
+  "migrations": []
 }
 EOF
 ```
 
-**Tip for breaking releases with many rename entries**: write a small Node generator script (see `/tmp/gen-rename-entries.mjs` pattern from 0.5.0-beta.0) that enumerates platform × command combinations, then injects them into the manifest. Easier to review than hand-writing 60+ entries.
+For breaking releases with many rename entries, generate the entries with a small temporary Node script and pipe the final JSON into `create-manifest.js`.
 
-### Step 7: Create Docs-Site Changelogs
+## Step 7: Create Docs-Site Changelogs
 
-**IMPORTANT**: This step is mandatory for every release.
+This step is mandatory for every release.
 
-Create changelog files for both English and Chinese:
+Create both files:
 
-1. `docs-site/changelog/v<version>.mdx` — English changelog
-2. `docs-site/zh/changelog/v<version>.mdx` — Chinese changelog
+1. `docs-site/changelog/v<version>.mdx`
+2. `docs-site/zh/changelog/v<version>.mdx`
 
-Use the format from previous changelog files (frontmatter with title + description date, then content). Structure and section ordering must match between English and Chinese 1:1.
+Use the format from recent changelog files. English and Chinese structure must match 1:1.
 
-**Voice**: same rules as Step 4 — apply them. MDX is what users actually read; if the manifest's `changelog` field is sharp but the MDX expands into prose, you've broken the contract. Skim the most recent `docs-site/changelog/v*.mdx` for sectioning and footer style before writing.
+Update `docs-site/docs.json`:
 
-3. Update `docs-site/docs.json`:
-   - Add `"changelog/v<version>"` to the English changelog pages list (at the top)
-   - Add `"zh/changelog/v<version>"` to the Chinese changelog pages list (at the top)
-   - Update the navbar changelog link `href` to point to the new version
+- Add `"changelog/v<version>"` to the English changelog pages list at the top.
+- Add `"zh/changelog/v<version>"` to the Chinese changelog pages list at the top.
+- Update navbar changelog links to the new version.
 
-#### MDX gotcha — `<Note>` / `<Warning>` with markdown lists
-
-When a `<Note>` or `<Warning>` block contains a bullet list, the closing tag MUST be at column 0:
+When a `<Note>` or `<Warning>` block contains a markdown list, the closing tag must start at column 0:
 
 ```mdx
 <Note>
 - bullet
-  </Note>   ← BREAKS Mintlify parser: "Expected closing tag </Note> after end of listItem"
-</Note>     ← correct
+</Note>
 ```
 
-prettier in `lint-staged` will auto-indent the closing tag — re-fix manually after each commit attempt and re-run `pnpm dev` (mintlify) before pushing.
+## Step 8: Docs Lifecycle
 
-#### Lifecycle scripts (only at version transitions, not per-patch)
+The docs-site root path is stable. Development cycles live under `beta/` or `rc/`.
 
-The docs-site root path holds the current stable; dev cycles live under `beta/` or `rc/`. Three scripts in `docs-site/scripts/` handle structural transitions:
+| Transition | Script | When |
+|---|---|---|
+| Start a new beta | `docs-site/scripts/docs-beta-start.sh` | Before the first beta of a new minor/major, for example `0.6.0-beta.0`. |
+| Beta to RC | `docs-site/scripts/docs-beta-to-rc.sh` | Before the first rc, for example `0.6.0-rc.0`. |
+| RC to GA | `docs-site/scripts/docs-promote.sh` | Before `pnpm release:promote`. |
 
-| Transition         | Script                | When to run                                                                                            |
-| ------------------ | --------------------- | ------------------------------------------------------------------------------------------------------ |
-| start a new beta   | `docs-beta-start.sh`  | Before `pnpm release:beta` for the **first** beta of a new minor/major (e.g. `0.6.0-beta.0`)           |
-| beta → rc          | `docs-beta-to-rc.sh`  | Before `pnpm release:rc` for the **first** rc (e.g. `0.6.0-rc.0`); renames `beta/` → `rc/` and scrubs `@beta` → `@rc` content |
-| rc → release (GA)  | `docs-promote.sh`     | Before `pnpm release:promote`; folds `rc/*` content into root, removes `rc/` tree                       |
-
-**Per-patch releases** (`-beta.1` / `-rc.1` / patch GA `0.5.1`): no script run. Just write the changelog mdx, update `docs.json` page list and navbar href, commit, push.
-
-Each script's stdout prints a manual followup checklist (banner edit, version block add/remove, install command scrub) — apply those before committing the docs-site change.
+Per-patch releases (`-beta.1`, `-rc.1`, `0.5.1`) do not run lifecycle scripts. Write changelog MDX, update `docs.json`, commit/push docs-site, then bump the main repo submodule pointer.
 
 Full reference: `.trellis/spec/docs-site/docs/release-lifecycle.md`.
 
-#### Stash workflow when RC and GA prep overlap
+## Step 9: Preflight Before Release
 
-If you're staging GA content (`changelog/v<X.Y.0>.mdx` + scripts run) while still needing to ship one more rc.X:
+Run local verification only; do not publish locally.
 
 ```bash
-cd docs-site
-git stash push -u -m "GA promote prep"   # park GA changes
-# ... write rc.X changelog mdx + docs.json bump for rc.X ...
-git commit && git push
-git stash pop                              # restore GA prep
+node packages/cli/scripts/check-docs-changelog.js --type <beta|rc|promote>
+node packages/cli/scripts/release-preflight.js check-versions
+node packages/cli/scripts/release-preflight.js verify-packed-cli
+node packages/cli/scripts/release-preflight.js publish-plan
+pnpm lint
+pnpm typecheck
+pnpm test
 ```
 
-The `docs.json` conflict on `pop` is expected: rc.X commit added `v<X.Y.0>-rc.<N>` at the top of pages list, while the stash had `v<X.Y.0>` (GA) at the top. Resolve by keeping BOTH, with the GA entry first (`v<X.Y.0>`), then the new rc (`v<X.Y.0>-rc.<N>`), then older entries.
+Skip `check-docs-changelog` only for stable patch releases where that command is not required by the release type.
 
-### Step 8: Review and Confirm
+## Step 10: Review and Confirm
 
-1. Read the generated manifest: `packages/cli/src/migrations/manifests/<version>.json`
-2. Verify the JSON is valid and `\n` renders as actual newlines
-3. Verify both changelog MDX files exist and look correct
-4. Show the final manifest and changelog to the user for confirmation
+Verify:
 
-## Notes
+1. `packages/cli/src/migrations/manifests/<version>.json` exists and has valid JSON.
+2. Manifest `changelog` renders as real newlines.
+3. Both docs-site changelog MDX files exist and match 1:1.
+4. Docs-site submodule commit is pushed before the main repo pointer commit.
+5. `@mindfoldhq/trellis` and `@mindfoldhq/trellis-core` versions still match.
 
-- Patch versions (`X.Y.Z`) typically have `migrations: []` and `breaking: false`
-- Only add `migrationGuide` and `aiInstructions` for breaking changes
-- Changelog should cover ALL `src/` changes, not just the latest commit
-- Do NOT manually bump `package.json` version — `pnpm release` handles that automatically
+## Step 11: Publish Through CI
 
-### Field Quick Reference
-
-Added/clarified during 0.5.0-beta.0:
-
-- **`breaking` + `recommendMigrate`** (manifest-level) — together form the safety gate: `update` exits 1 without `--migrate` when both are true. Set `recommendMigrate: true` whenever there are rename/delete entries whose absence would leave a half-migrated project.
-- **`reason`** (per-entry) — shown in the confirm prompt when a file trips the modified-hash check. Put version-specific nuance here (e.g. "0.4.0 skipped hashing this path"), not in code.
-- **`description`** (per-entry) — one sentence answering "what is this migration doing", also shown in the prompt.
-- **`allowed_hashes`** — required ONLY for `safe-file-delete`. `rename` classification uses project-local `.trellis/.template-hashes.json`; you do NOT need to collect historical hashes for rename entries.
-
-### Dogfooding (mandatory for breaking releases)
-
-Before shipping, run end-to-end migration in a throwaway tmp dir:
+Use the project release script so the tag starts CI:
 
 ```bash
-# 1. Init the previous GA version in tmp
+pnpm release
+pnpm release:beta
+pnpm release:rc
+pnpm release:promote
+```
+
+After CI succeeds, verify public npm:
+
+```bash
+npm view @mindfoldhq/trellis@<version> version dist-tags --json --registry=https://registry.npmjs.org/
+npm view @mindfoldhq/trellis-core@<version> version dist-tags --json --registry=https://registry.npmjs.org/
+```
+
+If CI fails or npm visibility is wrong, fix the workflow/scripts and re-run the CI path. Do not use local publish to fill the gap.
+
+## Dogfooding
+
+Breaking releases must run end-to-end migration in a throwaway directory:
+
+```bash
 mkdir /tmp/migrate-test && cd /tmp/migrate-test && git init -q .
-npx -y @mindfoldhq/trellis@<last-ga> init -y -u test --claude --cursor --<all-platforms-you-care-about>
-
-# 2. Dry-run against local build
+npx -y @mindfoldhq/trellis@<last-ga> init -y -u test --claude --cursor --<platforms>
 node <repo>/packages/cli/dist/cli/index.js update --migrate --dry-run
-
-# 3. Real migrate
 yes | node <repo>/packages/cli/dist/cli/index.js update --migrate --force
-
-# 4. Verify idempotency — second run must say "Already up to date!"
 yes | node <repo>/packages/cli/dist/cli/index.js update
 ```
 
-Watch for:
-- **Orphan files** — stale paths written by the old version that don't match any rename/safe-file-delete. Grep `find . -path "*/skills/*" -not -path "*/trellis-*"` to catch plain-name skill dirs.
-- **Idempotency churn** — if second run adds/cleans files, something is either missing from the manifest or `dist/templates/` has stale copies from a broken build.
-- **Backup bloat** — confirm `.trellis/.backup-*/` doesn't contain `/worktrees/` or `/workspace/` paths.
+Watch for orphan files, idempotency churn, and backup bloat.

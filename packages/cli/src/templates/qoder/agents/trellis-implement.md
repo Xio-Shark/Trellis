@@ -2,7 +2,7 @@
 name: trellis-implement
 description: |
   Code implementation expert. Understands specs and requirements, then implements features. No git commit allowed.
-tools: Read, Write, Edit, Bash, Glob, Grep, mcp__exa__web_search_exa, mcp__exa__get_code_context_exa
+tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 # Implement Agent
 
@@ -22,13 +22,14 @@ Before implementing, read:
 - `.trellis/workflow.md` - Project workflow
 - `.trellis/spec/` - Development guidelines
 - Task `prd.md` - Requirements document
-- Task `info.md` - Technical design (if exists)
+- Task `design.md` - Technical design (if exists)
+- Task `implement.md` - Execution plan (if exists)
 
 ## Core Responsibilities
 
 1. **Understand specs** - Read relevant spec files in `.trellis/spec/`
-2. **Understand requirements** - Read prd.md and info.md
-3. **Implement features** - Write code following specs and design
+2. **Understand task artifacts** - Read prd.md, design.md if present, and implement.md if present
+3. **Implement features** - Write code following specs and task artifacts
 4. **Self-check** - Ensure code quality
 5. **Report results** - Report completion status
 
@@ -53,15 +54,15 @@ Read relevant specs based on task type:
 
 ### 2. Understand Requirements
 
-Read the task's prd.md and info.md:
+Read the task's prd.md, design.md if present, and implement.md if present:
 
 - What are the core requirements
 - Key points of technical design
-- Which files to modify/create
+- Implementation order, validation commands, and rollback points
 
 ### 3. Implement Features
 
-- Write code following specs and technical design
+- Write code following specs and task artifacts
 - Follow existing code patterns
 - Only do what's required, no over-engineering
 

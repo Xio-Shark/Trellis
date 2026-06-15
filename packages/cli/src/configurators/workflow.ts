@@ -8,6 +8,7 @@ import {
   workflowMdTemplate,
   configYamlTemplate,
   gitignoreTemplate,
+  getAllAgents,
 } from "../templates/trellis/index.js";
 
 // Import markdown templates
@@ -59,6 +60,14 @@ export interface WorkflowOptions {
   packages?: DetectedPackage[];
   /** Package names that use remote templates (skip blank spec for these) */
   remoteSpecPackages?: Set<string>;
+  /**
+   * Optional override for `.trellis/workflow.md` content. When omitted the
+   * bundled native template is written. Set by `init --workflow` (or
+   * `--workflow-source`) after the resolver has fetched marketplace content.
+   * Caller is still responsible for removing the `.trellis/workflow.md` hash
+   * entry for non-native workflows so update.ts treats them as user-managed.
+   */
+  workflowMdOverride?: string;
 }
 
 /**
@@ -82,6 +91,7 @@ export async function createWorkflowStructure(
   const skipSpecTemplates = options?.skipSpecTemplates ?? false;
   const packages = options?.packages;
   const remoteSpecPackages = options?.remoteSpecPackages;
+  const workflowMd = options?.workflowMdOverride ?? workflowMdTemplate;
 
   // Create base .trellis directory
   ensureDir(path.join(cwd, DIR_NAMES.WORKFLOW));
@@ -91,10 +101,10 @@ export async function createWorkflowStructure(
     executable: true,
   });
 
-  // Copy workflow.md from templates
+  // Copy workflow.md (native bundled template or selected marketplace variant)
   await writeFile(
     path.join(cwd, PATHS.WORKFLOW_GUIDE_FILE),
-    replacePythonCommandLiterals(workflowMdTemplate),
+    replacePythonCommandLiterals(workflowMd),
   );
 
   // Copy .gitignore from templates
@@ -108,6 +118,17 @@ export async function createWorkflowStructure(
     path.join(cwd, DIR_NAMES.WORKFLOW, "config.yaml"),
     configYamlTemplate,
   );
+
+  // Dispatch channel runtime agent definitions. These are platform-agnostic
+  // Trellis runtime files consumed by `trellis channel spawn --agent <name>`
+  // through `packages/cli/src/commands/channel/agent-loader.ts`. They are
+  // dispatched on every init regardless of selected workflow because the user
+  // can switch to a channel-driven workflow at any time via `trellis workflow
+  // --template`.
+  ensureDir(path.join(cwd, PATHS.AGENTS));
+  for (const [agentFile, content] of getAllAgents()) {
+    await writeFile(path.join(cwd, PATHS.AGENTS, agentFile), content);
+  }
 
   // Create workspace/ with index.md
   ensureDir(path.join(cwd, PATHS.WORKSPACE));
