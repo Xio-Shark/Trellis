@@ -37,11 +37,12 @@ import {
 } from "../../src/configurators/shared.js";
 
 const BUNDLED_SKILL_NAMES = [
+  "trellis-channel",
   "trellis-meta",
   "trellis-session-insight",
   "trellis-spec-bootstrap",
 ];
-const BUNDLED_SKILL_NAME = BUNDLED_SKILL_NAMES[0];
+const BUNDLED_SKILL_NAME = "trellis-meta";
 const BUNDLED_REFERENCE = path.join(
   BUNDLED_SKILL_NAME,
   "references",
