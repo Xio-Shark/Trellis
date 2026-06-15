@@ -194,7 +194,7 @@ diffing against `<worker>.inbox-cursor` while debugging the supervisor.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `trellis: command not found` | CLI not installed globally | `npm install -g @mindfoldhq/trellis@beta` |
+| `trellis: command not found` | CLI not installed globally | `npm install -g @mindfoldhq/trellis` |
 | `wait` exits immediately | wrong filter or identity collision | use distinct `--as`, inspect raw messages |
 | zsh errors on message text | shell interpreted punctuation | use `--stdin` or `--text-file` |
 | progress line is cut off | pretty output truncation | use `messages --raw --kind progress` |
