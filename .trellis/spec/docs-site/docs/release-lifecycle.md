@@ -142,6 +142,44 @@ After this flip, every future cycle uses the scripts; no further manual restruct
 
 ---
 
+## First real-cycle run: 0.6.0 GA (2026-06-15)
+
+The 0.5.0 flip created the scripts; **0.6.0 GA was the first cycle that actually exercised the full T0→T1→T2→T3 chain end-to-end with `docs-promote.sh`**. Notes captured below to disambiguate the 0.5.0 precedent (which itself diverges from the standard flow because it was a one-time historical flip).
+
+### `docs.json` transformation differs from 0.5.0
+
+| Cycle | Pre-flip state | Right edit pattern |
+|---|---|---|
+| 0.5.0 (historical flip) | `RC` block had **root** paths, `Release` block had `release/*` paths (old GA archive) | Rename `RC` → `Release` label, **drop** the old `Release` block, `git rm -r release/` |
+| 0.6.0 (standard flow) | `RC` block has `rc/*` paths, `Release` block has **root** paths (current GA) | **Drop** the `RC` block (its `rc/*` paths die when `docs-promote.sh` deletes the rc/ directory), keep `Release` as-is (its root paths now serve promoted v0.6 content), set `Release.default = true` |
+
+Concrete edit list for the standard flow (post-`docs-promote.sh`, both languages):
+
+1. `delete d['banner']`
+2. Drop the `RC` version block from `versions[]` entirely
+3. Set `Release.default = true` (the flag was on `RC`)
+4. Insert `changelog/v<NEW_GA>` and `zh/changelog/v<NEW_GA>` at the top of each `Release` block's `Changelog` pages list
+5. Update `navbar.links[label=Changelog].href` to `/changelog/v<NEW_GA>`
+
+### First dual-package GA promote
+
+0.6.0 was the first GA where both `@mindfoldhq/trellis` (CLI) and `@mindfoldhq/trellis-core` (SDK) ship in lockstep. `bump-versions.js promote` rewrites both `package.json` files and the CLI's `dependencies["@mindfoldhq/trellis-core"]` from `workspace:*` to the exact version at release time. `release-preflight verify-packed-cli` exists specifically to catch a divergence here — always run it before `pnpm release:promote`.
+
+### Stale navbar Changelog `href` gotcha
+
+The 0.6.0 cycle shipped 24 betas + 1 RC, and the navbar `Changelog` href in `docs.json` was never updated through any of them — it sat at `/changelog/v0.6.0-beta.22` at GA prep time. Per-patch beta/rc commits add the new mdx to the nav pages list, but they routinely forget the navbar href. Decision rule: **the GA promote PR is the last chance to fix the navbar href**, since GA is when readers actually start clicking the top-bar Changelog link.
+
+### Pre-ship adversarial verify is load-bearing
+
+The 0.6.0 GA prep flow ran a 10-agent pre-ship verify before `pnpm release:promote` and it caught 2 RED blockers that would have shipped:
+
+1. `@mindfoldhq/trellis@beta` left in a bundled-skill markdown table after the lifecycle flip
+2. Manifest's `**Bundled skills**` section listed 3 of the 4 actually-shipping bundled skills
+
+Both blockers were prose-only (no code defect); both would have only embarrassed-not-broken users. Still, the adversarial verify earned its keep — recommend running an equivalent check on every future GA. The 10 angles (bundled skills + manifest + changelogs en/zh + docs.json + root content + preflight + tests + dogfood + npm-ready) generalize to any subsequent minor.
+
+---
+
 ## Gotchas
 
 ### `docs.json` doesn't auto-update
