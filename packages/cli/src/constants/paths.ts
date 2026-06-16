@@ -19,6 +19,8 @@ export const DIR_NAMES = {
   SPEC: "spec",
   /** Scripts directory (under .trellis/) */
   SCRIPTS: "scripts",
+  /** Channel runtime agent definitions (under .trellis/) */
+  AGENTS: "agents",
 } as const;
 
 // File names
@@ -51,6 +53,8 @@ export const PATHS = {
   SPEC: `${DIR_NAMES.WORKFLOW}/${DIR_NAMES.SPEC}`,
   /** .trellis/scripts/ */
   SCRIPTS: `${DIR_NAMES.WORKFLOW}/${DIR_NAMES.SCRIPTS}`,
+  /** .trellis/agents/ */
+  AGENTS: `${DIR_NAMES.WORKFLOW}/${DIR_NAMES.AGENTS}`,
   /** .trellis/.developer */
   DEVELOPER_FILE: `${DIR_NAMES.WORKFLOW}/${FILE_NAMES.DEVELOPER}`,
   /** .trellis/.current-task */

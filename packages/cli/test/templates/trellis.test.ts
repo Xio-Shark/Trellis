@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
 import {
   scriptsInit,
   commonInit,
@@ -17,6 +19,9 @@ import {
   workflowMdTemplate,
   gitignoreTemplate,
   getAllScripts,
+  getAllAgents,
+  implementAgentTemplate,
+  checkAgentTemplate,
 } from "../../src/templates/trellis/index.js";
 
 // =============================================================================
@@ -53,6 +58,27 @@ describe("trellis template constants", () => {
     return inProgressMatch[1];
   }
 
+  function workflowStateBreadcrumb(status: string): string {
+    const match = new RegExp(
+      `\\[workflow-state:${status}\\]([\\s\\S]*?)\\[/workflow-state:${status}\\]`,
+    ).exec(workflowMdTemplate);
+    if (!match) {
+      throw new Error(`${status} breadcrumb block must exist in workflow.md`);
+    }
+    return match[1];
+  }
+
+  function stepSection(step: string): string {
+    const pattern = new RegExp(
+      `#### ${step.replace(".", "\\.")}[^\\n]*\\n([\\s\\S]*?)(?=\\n#### |\\n### |$)`,
+    );
+    const match = pattern.exec(workflowMdTemplate);
+    if (!match) {
+      throw new Error(`workflow.md step ${step} must exist`);
+    }
+    return match[1];
+  }
+
   it("all templates are non-empty strings", () => {
     for (const [name, content] of Object.entries(allTemplates)) {
       expect(content.length, `${name} should be non-empty`).toBeGreaterThan(0);
@@ -84,6 +110,39 @@ describe("trellis template constants", () => {
 
   it("workflowMdTemplate is markdown", () => {
     expect(workflowMdTemplate).toContain("#");
+  });
+
+  it("marketplace native workflow mirror matches the bundled workflow", () => {
+    const repoRoot = fs.existsSync(path.join(process.cwd(), "marketplace"))
+      ? process.cwd()
+      : path.resolve(process.cwd(), "../..");
+    const marketplaceNative = fs.readFileSync(
+      path.join(repoRoot, "marketplace/workflows/native/workflow.md"),
+      "utf-8",
+    );
+    expect(marketplaceNative).toBe(workflowMdTemplate);
+  });
+
+  it("marketplace TDD workflow planning breadcrumbs include behavior gates", () => {
+    const repoRoot = fs.existsSync(path.join(process.cwd(), "marketplace"))
+      ? process.cwd()
+      : path.resolve(process.cwd(), "../..");
+    const tddWorkflow = fs.readFileSync(
+      path.join(repoRoot, "marketplace/workflows/tdd/workflow.md"),
+      "utf-8",
+    );
+    const planning = /\[workflow-state:planning\]([\s\S]*?)\[\/workflow-state:planning\]/.exec(
+      tddWorkflow,
+    )?.[1];
+    const planningInline = /\[workflow-state:planning-inline\]([\s\S]*?)\[\/workflow-state:planning-inline\]/.exec(
+      tddWorkflow,
+    )?.[1];
+
+    for (const block of [planning, planningInline]) {
+      expect(block).toContain("observable behavior slices");
+      expect(block).toContain("public interface under test");
+      expect(block).toContain("mock boundaries");
+    }
   });
 
   it("[issue-225] workflow.md in_progress breadcrumb has class-2 sub-agent dispatch protocol", () => {
@@ -125,6 +184,42 @@ describe("trellis template constants", () => {
     expect(workflowMdTemplate).toContain(
       "not spawn another `trellis-check` / `trellis-implement`",
     );
+  });
+
+  it("workflow.md documents parent child task tree responsibilities", () => {
+    expect(workflowMdTemplate).toContain("### Parent / Child Task Trees");
+    expect(workflowMdTemplate).toContain(
+      "several independently verifiable deliverables",
+    );
+    expect(workflowMdTemplate).toContain(
+      "Parent/child structure is not a dependency system",
+    );
+    expect(workflowMdTemplate).toContain("--parent <parent-dir>");
+    expect(workflowMdTemplate).toContain("task.py add-subtask <parent> <child>");
+    expect(workflowMdTemplate).toContain(
+      "start the child that owns the next independently verifiable deliverable",
+    );
+  });
+
+  it("workflow.md step 1.1 includes parent child split guidance", () => {
+    const step = stepSection("1.1");
+    expect(step).toContain("When considering a parent/child split");
+    expect(step).toContain("Parent tasks own source requirements");
+    expect(step).toContain("Child tasks own actual deliverables");
+    expect(step).toContain(
+      "Parent/child structure is not a dependency system",
+    );
+    expect(step).toContain("Do not start the parent unless");
+  });
+
+  it("workflow.md planning breadcrumbs mention parent child split guidance", () => {
+    const planning = workflowStateBreadcrumb("planning");
+    const planningInline = workflowStateBreadcrumb("planning-inline");
+    for (const block of [planning, planningInline]) {
+      expect(block).toContain("Multi-deliverable scope");
+      expect(block).toContain("parent task plus independently verifiable child tasks");
+      expect(block).toContain("not implied by tree position");
+    }
   });
 
   it("gitignoreTemplate contains ignore patterns", () => {
@@ -176,6 +271,49 @@ describe("getAllScripts", () => {
     const scripts = getAllScripts();
     for (const [key] of scripts) {
       expect(key, `${key} should not be a multi_agent script`).not.toContain("multi_agent");
+    }
+  });
+});
+
+// =============================================================================
+// getAllAgents — channel runtime agent definitions dispatched at init/update.
+// agent-loader.ts loads `.trellis/agents/<name>.md` and requires `---` YAML
+// frontmatter at the top with a flat `name: <name>` field. These tests pin the
+// contract so a future template edit can't silently break channel spawn.
+// =============================================================================
+
+describe("getAllAgents", () => {
+  it("ships implement and check agents", () => {
+    const agents = getAllAgents();
+    expect(agents.has("implement.md")).toBe(true);
+    expect(agents.has("check.md")).toBe(true);
+  });
+
+  it("values match exported constants", () => {
+    const agents = getAllAgents();
+    expect(agents.get("implement.md")).toBe(implementAgentTemplate);
+    expect(agents.get("check.md")).toBe(checkAgentTemplate);
+  });
+
+  it("each agent body starts with `---` frontmatter and a matching name field", () => {
+    const agents = getAllAgents();
+    for (const [file, content] of agents) {
+      expect(content.startsWith("---\n"), `${file} must start with --- frontmatter`).toBe(true);
+      // Frontmatter must close on a `---\n` line.
+      const frontmatterClose = content.indexOf("\n---\n", 4);
+      expect(frontmatterClose, `${file} must have a closing --- frontmatter line`).toBeGreaterThan(0);
+      const frontmatter = content.slice(4, frontmatterClose);
+      // The agent's `name:` field must match the file basename so
+      // `trellis channel spawn --agent <name>` resolves correctly.
+      const expectedName = file.replace(/\.md$/, "");
+      const nameLine = frontmatter
+        .split("\n")
+        .find((line) => /^name\s*:/.test(line));
+      expect(nameLine, `${file} must declare a name field`).toBeTruthy();
+      expect(
+        nameLine?.split(":")[1]?.trim(),
+        `${file} name field should equal "${expectedName}"`,
+      ).toBe(expectedName);
     }
   });
 });

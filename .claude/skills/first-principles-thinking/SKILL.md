@@ -251,8 +251,8 @@ During `/trellis:brainstorm`, when the task is classified as "Complex":
 2. **Execute**: Run Phases 0-3, saving output to `fp-analysis.md` in task directory
 3. **Feed into PRD**:
    - Ground Truths → PRD Requirements and Constraints
-   - Assumption Table → PRD Technical Notes / Trade-offs
-   - Reasoning Chain → PRD Technical Design or `info.md`
+   - Assumption Table → design.md Trade-offs
+   - Reasoning Chain → `design.md`
 4. **Continue**: Phases 4-5 inform implementation decisions
 
 ### Context Injection

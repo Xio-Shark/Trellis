@@ -23,6 +23,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { computeNext } from "./bump-versions.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "../../..");
@@ -33,31 +34,6 @@ function readPackageVersion() {
     fs.readFileSync(path.join(__dirname, "../package.json"), "utf-8"),
   );
   return pkg.version;
-}
-
-function nextVersion(current, type) {
-  if (type === "beta") {
-    const m = current.match(/^(\d+\.\d+\.\d+)-beta\.(\d+)$/);
-    if (m) return `${m[1]}-beta.${parseInt(m[2], 10) + 1}`;
-    const rcM = current.match(/^(\d+\.\d+\.\d+)-rc\.(\d+)$/);
-    if (rcM) return `${rcM[1]}-beta.0`; // switching track
-    const stableM = current.match(/^(\d+)\.(\d+)\.(\d+)$/);
-    if (stableM) {
-      const [, maj, min, patch] = stableM;
-      return `${maj}.${min}.${parseInt(patch, 10) + 1}-beta.0`;
-    }
-  } else if (type === "rc") {
-    const m = current.match(/^(\d+\.\d+\.\d+)-rc\.(\d+)$/);
-    if (m) return `${m[1]}-rc.${parseInt(m[2], 10) + 1}`;
-    const betaM = current.match(/^(\d+\.\d+\.\d+)-beta\.\d+$/);
-    if (betaM) return `${betaM[1]}-rc.0`;
-  } else if (type === "promote") {
-    // Strip prerelease suffix: 0.5.0-rc.1 → 0.5.0
-    return current.replace(/-.*/, "");
-  }
-  throw new Error(
-    `Cannot compute next ${type} version from current="${current}"`,
-  );
 }
 
 function main() {
@@ -74,7 +50,7 @@ function main() {
   }
 
   const current = readPackageVersion();
-  const target = nextVersion(current, type);
+  const target = computeNext(current, type);
 
   const missing = [];
   const enPath = path.join(DOCS_SITE, "changelog", `v${target}.mdx`);

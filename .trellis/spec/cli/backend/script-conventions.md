@@ -27,9 +27,11 @@ All workflow scripts target **Python 3.9+** for cross-platform compatibility (ma
 │   ├── active_task.py    # Session-scoped active task resolver
 │   ├── task_utils.py     # resolve_task_dir(), run_task_hooks()
 │   ├── task_store.py     # Task CRUD (create, archive, set-branch, etc.)
-│   ├── task_context.py   # JSONL context management (init-context, add-context)
+│   ├── task_context.py   # JSONL context management (add-context, validate, list-context)
 │   ├── task_queue.py     # Task queue CRUD
 │   ├── config.py         # Config reader (config.yaml, hooks)
+│   ├── trellis_config.py # Standalone .trellis/config.yaml reader (no task/repo deps)
+│   ├── workflow_phase.py # Extract Phase Index / step sections from .trellis/workflow.md (with platform filter)
 │   ├── cli_adapter.py    # Multi-platform CLI abstraction
 │   ├── git_context.py    # Entry shim → session_context + packages_context
 │   ├── session_context.py    # Session context generation (text/json/record)
@@ -911,10 +913,18 @@ Behavior contract:
 - Whitelist is built only from paths that exist on disk; never pass
   non-existent arguments to `git`.
 - `safe_git_add` runs `git add -- <paths>` exactly once. No retry, no `-f`.
-- On `ignored by` failure → call `print_gitignore_warning(paths)` and return.
-  The journal / archive files are still on disk; only the git step is skipped.
+- On `ignored by` failure → call `print_gitignore_warning(paths)`.
+  `add_session.py` returns after writing files to disk. `task.py archive`
+  returns success only when the archived source was not tracked; if tracked
+  task files were moved and the archive commit cannot be created, `archive`
+  exits non-zero so callers do not continue to journal over dirty deletes.
 - On any other failure → log the stderr and return. Do not re-attempt with
   different flags.
+- `task.py archive` is stricter than `add_session.py`: when `session_auto_commit`
+  is enabled and the source task had tracked files, the archive move must be
+  accompanied by a successful bookkeeping commit. A failed commit leaves the
+  move on disk but exits non-zero with a "Resolve `git status` before
+  continuing" message.
 - `used_force` in `safe_git_add`'s return tuple is kept for signature
   compatibility but is always `False`. Do not introduce a code path that
   sets it to `True`.

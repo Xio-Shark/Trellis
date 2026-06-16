@@ -92,7 +92,9 @@ export async function configureCodex(cwd: string): Promise<void> {
   const hooksDir = path.join(codexRoot, "hooks");
   ensureDir(hooksDir);
 
-  // Codex-specific hooks (e.g., session-start.py tailored for Codex)
+  // Codex-specific hook files. hooks.json currently registers only
+  // UserPromptSubmit; session-start.py is retained as a compact compatibility
+  // template and regression surface.
   for (const hook of getAllHooks()) {
     await writeFile(
       path.join(hooksDir, hook.name),
@@ -100,8 +102,8 @@ export async function configureCodex(cwd: string): Promise<void> {
     );
   }
 
-  // Shared hooks (inject-workflow-state.py only). Codex bundles its own
-  // session-start.py above; sub-agent context is pull-based (class-2).
+  // Shared hooks (inject-workflow-state.py only). Sub-agent context is
+  // pull-based (class-2).
   await writeSharedHooks(hooksDir, "codex");
 
   // Hooks config → .codex/hooks.json

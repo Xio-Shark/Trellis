@@ -113,24 +113,19 @@ describe("codex sub-agent recursion guard (issue #234)", () => {
   }
 });
 
-// A-soft: codex/hooks/session-start.py READY-state guidance and <guidelines>
-// block must include a sub-agent self-exemption clause so a Codex sub-agent
-// reading the same SessionStart context realizes the dispatch instruction
-// is for the main session, not for itself.
-describe("codex session-start.py sub-agent self-exemption (A-soft)", () => {
+describe("codex session-start.py compact SessionStart context", () => {
   const hookPath = path.join(
     repoRoot,
     "packages/cli/src/templates/codex/hooks/session-start.py",
   );
 
-  it("READY-state dispatch guidance includes a sub-agent self-exemption clause", () => {
+  it("uses compact task artifact guidance instead of sub-agent dispatch prose", () => {
     const content = fs.readFileSync(hookPath, "utf-8");
-    // Distinct exemption phrase (avoid colliding with the existing
-    // "User override" escape hatch).
-    expect(content).toContain("Sub-agent self-exemption");
-    // Calls out both sub-agent kinds
-    expect(content).toMatch(/trellis-implement.*trellis-check|trellis-check.*trellis-implement/s);
-    // Tells the sub-agent the dispatch does NOT apply to it
-    expect(content).toMatch(/does NOT apply|not apply/);
+    expect(content).toContain("Trellis compact SessionStart context");
+    expect(content).toContain("Task context order for implementation/check");
+    expect(content).toContain("design.md if present");
+    expect(content).not.toContain("<sub-agent-notice>");
+    expect(content).not.toContain("guides (inlined");
+    expect(content).not.toContain("Project spec indexes are listed by path below");
   });
 });

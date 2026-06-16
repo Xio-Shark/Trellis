@@ -11,7 +11,8 @@ Track work items with phase-based execution.
 ├── {MM-DD-slug}/               # Active task directories
 │   ├── task.json               # Metadata, phases, branch
 │   ├── prd.md                  # Requirements document
-│   ├── info.md                 # Additional context (optional)
+│   ├── design.md               # Technical design for complex tasks
+│   ├── implement.md            # Execution plan for complex tasks
 │   ├── implement.jsonl         # Context for implement phase
 │   ├── check.jsonl             # Context for check phase
 │   └── debug.jsonl             # Context for debug phase
@@ -123,9 +124,8 @@ Implement user authentication with email/password.
 - [ ] User can log in with valid credentials
 - [ ] Error shown for invalid credentials
 
-## Technical Notes
-- Use existing auth service pattern
-- Follow security guidelines in spec
+## Research References
+- Link to relevant research/spec notes
 ```
 
 ---
@@ -242,8 +242,9 @@ Removes the parent-child link between two tasks.
 python3 .trellis/scripts/task.py archive <task-dir>
 ```
 
-When archiving a child task, it is automatically removed from the parent's `children` list.
-When archiving a parent task, the `parent` field is cleared in all its children.
+When archiving a child task, the child name remains in the parent's `children` list. The list is historical so parent progress stays stable after completed children move to `archive/`.
+
+When archiving a parent task, active children remain in place and keep their own task data. Do not archive a parent as a substitute for finishing or reviewing its child deliverables.
 
 ### Other Commands
 
@@ -306,4 +307,4 @@ Modify `next_action` in task.json:
 2. **Clear PRDs** - Write specific, testable requirements
 3. **Relevant context** - Only include needed files in JSONL
 4. **Archive completed** - Keep task directory clean
-5. **Use subtasks** - Break complex tasks into children for parallel work
+5. **Use child tasks** - Break complex tasks into independently verifiable children; write dependency ordering in the child task artifacts, not just in the tree shape

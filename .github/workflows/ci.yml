@@ -5,13 +5,19 @@ on:
     branches: [main]
     paths:
       - 'packages/cli/**'
+      - 'packages/core/**'
       - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
       - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
     paths:
       - 'packages/cli/**'
+      - 'packages/core/**'
       - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
       - '.github/workflows/ci.yml'
 
 jobs:
@@ -20,6 +26,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -29,16 +37,30 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10.32.1
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build
-        run: pnpm --filter @mindfoldhq/trellis build
+      - name: Typecheck (core + cli)
+        run: pnpm typecheck
+
+      - name: Lint (core + cli)
+        run: pnpm lint
+
+      - name: Test (core + cli)
+        run: pnpm test
+
+      - name: Build (core then cli)
+        run: pnpm build
 
       - name: Verify build output
         run: |
+          set -euo pipefail
+          test -d packages/core/dist
+          test -f packages/core/dist/index.js
+          test -f packages/core/dist/channel/index.js
+          test -f packages/core/dist/task/index.js
           test -d packages/cli/dist
           test -f packages/cli/dist/index.js
           echo "Build verification passed"

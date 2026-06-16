@@ -163,7 +163,7 @@ task-dir/
 
 **Workflow**:
 1. Understand specs (from injected context)
-2. Understand requirements (prd.md, info.md)
+2. Understand task artifacts (prd.md, design.md if present, implement.md if present)
 3. Implement features
 4. Self-check (run lint/typecheck)
 
@@ -172,7 +172,7 @@ task-dir/
 - `git push`
 - `git merge`
 
-**Context Injection**: Hook injects `implement.jsonl` + `prd.md` + `info.md`
+**Context Injection**: Hook injects `implement.jsonl` entries + `prd.md` + `design.md` if present + `implement.md` if present
 
 ---
 

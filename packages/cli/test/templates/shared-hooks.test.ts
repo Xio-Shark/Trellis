@@ -125,26 +125,18 @@ describe("shared-hooks capability table", () => {
     }
   });
 
-  // A-soft (issue #234 mirror): shared session-start.py — used by Claude /
-  // Cursor / Gemini / Qoder / CodeBuddy / Droid / Kiro — must include the
-  // same sub-agent self-exemption clauses that codex/hooks/session-start.py
-  // carries, so a sub-agent reading inherited SessionStart guidance does not
-  // spawn another trellis-implement / trellis-check.
-  it("shared session-start.py includes sub-agent self-exemption (A-soft)", () => {
+  it("shared session-start.py injects compact task artifact guidance", () => {
     const sessionStart = getSharedHookScripts().find(
       (h) => h.name === "session-start.py",
     );
     expect(sessionStart, "session-start.py is missing from shared-hooks/").toBeDefined();
     const content = sessionStart ? sessionStart.content : "";
-    // Both READY-state status block AND <guidelines> block carry the
-    // exemption phrase (kept verbatim across both writers — see workflow-
-    // state-contract.md "Audit ALL Writers").
-    const matches = content.match(/Sub-agent self-exemption/g);
-    expect(matches, "expected at least 2 occurrences (status + guidelines)").not.toBeNull();
-    expect(matches ? matches.length : 0).toBeGreaterThanOrEqual(2);
-    // Anchor on the scope (does not apply / no spawn) so a future rewording
-    // still has to cover the actual contract.
-    expect(content).toMatch(/does NOT apply/);
-    expect(content).toMatch(/spawn another sub-agent|Do NOT spawn/i);
+    expect(content).toContain("<trellis-workflow>");
+    expect(content).toContain("Task context order");
+    expect(content).toContain("jsonl entries -> `prd.md`");
+    expect(content).toContain("Lightweight task can request start review with PRD-only");
+    expect(content).toContain("complex task must add");
+    expect(content).not.toContain("Status: READY");
+    expect(content).not.toContain("<workflow>");
   });
 });

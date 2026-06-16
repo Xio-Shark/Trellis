@@ -38,6 +38,7 @@ import { emptyTaskJson } from "../utils/task-json.js";
 // Import templates for comparison
 import {
   getAllScripts,
+  getAllAgents,
   // Configuration
   configYamlTemplate,
   gitignoreTemplate,
@@ -754,6 +755,14 @@ async function collectTemplateFiles(
   // Python scripts (single source of truth: getAllScripts())
   for (const [scriptPath, content] of getAllScripts()) {
     files.set(`${PATHS.SCRIPTS}/${scriptPath}`, content);
+  }
+
+  // Channel runtime agent definitions (single source of truth: getAllAgents()).
+  // Backfilled by `trellis update` if missing so users who installed before the
+  // bundled agents existed pick them up. Edited files take the standard
+  // modified-file prompt path.
+  for (const [agentFile, content] of getAllAgents()) {
+    files.set(`${PATHS.AGENTS}/${agentFile}`, content);
   }
 
   // Configuration
@@ -1852,7 +1861,7 @@ export async function update(options: UpdateOptions): Promise<void> {
         `⚠️  Your CLI (${cliVersion}) is behind npm (${latestNpmVersion}).`,
       ),
     );
-    console.log(chalk.yellow(`   Run: npm install -g ${PACKAGE_NAME}\n`));
+    console.log(chalk.yellow(`   Run: trellis upgrade\n`));
   }
 
   // Check for downgrade situation
@@ -1866,9 +1875,7 @@ export async function update(options: UpdateOptions): Promise<void> {
 
     if (!options.allowDowngrade) {
       console.log(chalk.gray("Solutions:"));
-      console.log(
-        chalk.gray(`  1. Update your CLI: npm install -g ${PACKAGE_NAME}`),
-      );
+      console.log(chalk.gray(`  1. Update your CLI: trellis upgrade`));
       console.log(
         chalk.gray(`  2. Force downgrade: trellis update --allow-downgrade\n`),
       );

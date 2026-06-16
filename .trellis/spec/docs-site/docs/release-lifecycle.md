@@ -8,13 +8,61 @@
 
 The directory layout pins one role per location:
 
-| Path                                      | Role                                     |
-| ----------------------------------------- | ---------------------------------------- |
-| `docs-site/{start,advanced,...}` (root)   | **Current stable** (latest GA). Default. |
-| `docs-site/beta/{start,advanced,...}`     | Active **beta** cycle (when one exists). |
-| `docs-site/rc/{start,advanced,...}`       | Active **RC** cycle (renamed from beta). |
+| Path                                    | Role                                     |
+| --------------------------------------- | ---------------------------------------- |
+| `docs-site/{start,advanced,...}` (root) | **Current stable** (latest GA). Default. |
+| `docs-site/beta/{start,advanced,...}`   | Active **beta** cycle (when one exists). |
+| `docs-site/rc/{start,advanced,...}`     | Active **RC** cycle (renamed from beta). |
 
 Non-versioned trees (`blog/`, `showcase/`, `contribute/`, `skills-market/`, `templates/`, `use-cases/`, `marketplace/`, `concepts/`, `essentials/`, `api-reference/`, `ai-tools/`, `guides/`, `snippets/`, `images/`, `logo/`) live only at root and are read by every version.
+
+## Version path invariant
+
+Before editing versioned docs, determine which release line the content belongs
+to and verify the file path matches that line:
+
+| Target line         | Edit path                                | Do not edit                          |
+| ------------------- | ---------------------------------------- | ------------------------------------ |
+| Current stable / GA | `docs-site/{start,advanced,...}`         | `docs-site/beta/**` or `rc/**`       |
+| Active beta         | `docs-site/beta/{start,advanced,...}`    | root `docs-site/{start,advanced}`    |
+| Active RC           | `docs-site/rc/{start,advanced,...}`      | root `docs-site/{start,advanced}`    |
+| Chinese stable      | `docs-site/zh/{start,advanced,...}`      | `docs-site/zh/beta/**` or `rc/**`    |
+| Chinese beta        | `docs-site/zh/beta/{start,advanced,...}` | root `docs-site/zh/{start,advanced}` |
+| Chinese RC          | `docs-site/zh/rc/{start,advanced,...}`   | root `docs-site/zh/{start,advanced}` |
+
+Do not use the version dropdown label in a rendered page as proof of source
+scope. Mintlify renders all versions from one repository and `docs.json`, so the
+only reliable source-of-truth is the MDX path plus the matching `docs.json`
+version block.
+
+When beta-only content accidentally lands in root, release users see beta
+behavior under the Release selector. Treat that as a release-docs incident, not
+as a rendering issue.
+
+### Pre-commit audit for versioned changes
+
+Run a path-scope audit before committing workflow, phase, artifact, install, or
+platform behavior changes:
+
+```bash
+cd docs-site
+git diff --name-only --cached
+
+# For beta-only behavior, changed files must be under beta/ or zh/beta/.
+# For stable behavior, changed files must be root versioned paths or zh/ root
+# versioned paths.
+```
+
+Then grep for version-specific markers in the opposite tree. Example for a beta
+workflow change:
+
+```bash
+rg -n "task-creation consent|codex-mode|<trellis-workflow>|planning artifact|`design\\.md`|`implement\\.md`" \
+  start advanced guides zh/start zh/advanced zh/guides -g "*.mdx"
+```
+
+The command should return no hits except unrelated filename mentions such as
+`trellis-implement.md`.
 
 ---
 
@@ -48,11 +96,11 @@ T3  release-only           ← back to T0; root is the new GA
 
 Three POSIX shell scripts in `docs-site/scripts/`:
 
-| Script                  | Transition  | What it does                                                       |
-| ----------------------- | ----------- | ------------------------------------------------------------------ |
-| `docs-beta-start.sh`    | T0 → T1     | Copy versioned content (`start/`, `advanced/`, `index.mdx`) from root → `beta/`. Mirrors `zh/`. |
-| `docs-beta-to-rc.sh`    | T1 → T2     | `git mv beta rc` (and `zh/beta` → `zh/rc`). Bulk text replace `@beta` → `@rc` inside `rc/*` content. |
-| `docs-promote.sh`       | T2 → T3     | Detect dev tree (`rc/` preferred over `beta/`), overwrite root versioned content with dev content, mirror in `zh/`, `git rm` dev tree. |
+| Script               | Transition | What it does                                                                                                                           |
+| -------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs-beta-start.sh` | T0 → T1    | Copy versioned content (`start/`, `advanced/`, `index.mdx`) from root → `beta/`. Mirrors `zh/`.                                        |
+| `docs-beta-to-rc.sh` | T1 → T2    | `git mv beta rc` (and `zh/beta` → `zh/rc`). Bulk text replace `@beta` → `@rc` inside `rc/*` content.                                   |
+| `docs-promote.sh`    | T2 → T3    | Detect dev tree (`rc/` preferred over `beta/`), overwrite root versioned content with dev content, mirror in `zh/`, `git rm` dev tree. |
 
 All three are **content-copy / rename only**. They never touch `docs.json` or the banner — those follow as manual edits because they're decision-driven.
 
@@ -60,22 +108,22 @@ All three are **content-copy / rename only**. They never touch `docs.json` or th
 
 Each script ends with a checklist of `docs.json` edits and content scrubs the maintainer must apply before committing. Always:
 
-| After                  | Edit `docs.json`                                                                              |
-| ---------------------- | --------------------------------------------------------------------------------------------- |
-| `docs-beta-start.sh`   | Add `"Beta"` version block to `versions[]`. Add banner. Bump beta install commands to `@beta`. |
-| `docs-beta-to-rc.sh`   | Rename `"Beta"` label → `"RC"`. Update each page entry `beta/* → rc/*`. Update banner.        |
-| `docs-promote.sh`      | Drop the `"Beta"` / `"RC"` version block from `versions[]`. Drop banner. Update navbar `href`. |
+| After                | Edit `docs.json`                                                                               |
+| -------------------- | ---------------------------------------------------------------------------------------------- |
+| `docs-beta-start.sh` | Add `"Beta"` version block to `versions[]`. Add banner. Bump beta install commands to `@beta`. |
+| `docs-beta-to-rc.sh` | Rename `"Beta"` label → `"RC"`. Update each page entry `beta/* → rc/*`. Update banner.         |
+| `docs-promote.sh`    | Drop the `"Beta"` / `"RC"` version block from `versions[]`. Drop banner. Update navbar `href`. |
 
 ---
 
 ## When to use each
 
-| Scenario                                                | Script                                | Trigger                                                |
-| ------------------------------------------------------- | ------------------------------------- | ------------------------------------------------------ |
-| First beta of a new minor / major (e.g. `0.6.0-beta.0`) | `docs-beta-start.sh`                  | Right before `pnpm release:beta` for the `.0`          |
-| Beta cycle stabilizing → first RC                       | `docs-beta-to-rc.sh`                  | Before `pnpm release:rc` for the `-rc.0`               |
-| RC stable → cut GA                                      | `docs-promote.sh`                     | Before `pnpm release:promote`                          |
-| Subsequent beta / rc patches (`-beta.1`, `-rc.1`, ...)  | (none — just write the changelog mdx) | Per-patch; no structural change needed                 |
+| Scenario                                                | Script                                | Trigger                                       |
+| ------------------------------------------------------- | ------------------------------------- | --------------------------------------------- |
+| First beta of a new minor / major (e.g. `0.6.0-beta.0`) | `docs-beta-start.sh`                  | Right before `pnpm release:beta` for the `.0` |
+| Beta cycle stabilizing → first RC                       | `docs-beta-to-rc.sh`                  | Before `pnpm release:rc` for the `-rc.0`      |
+| RC stable → cut GA                                      | `docs-promote.sh`                     | Before `pnpm release:promote`                 |
+| Subsequent beta / rc patches (`-beta.1`, `-rc.1`, ...)  | (none — just write the changelog mdx) | Per-patch; no structural change needed        |
 
 **Per-patch flow** (`-beta.1` → `-beta.2`, `-rc.1` → `-rc.2`, ...): just create `changelog/v<version>.mdx` (en + zh), add to top of pages list in `docs.json`, bump navbar href. No script invocation.
 
@@ -91,6 +139,44 @@ Before 0.5.0, the layout was inverted: `root/` held the **dev** content (RC), an
 - The 3 scripts were introduced to keep the lifecycle reproducible going forward
 
 After this flip, every future cycle uses the scripts; no further manual restructure should be needed.
+
+---
+
+## First real-cycle run: 0.6.0 GA (2026-06-15)
+
+The 0.5.0 flip created the scripts; **0.6.0 GA was the first cycle that actually exercised the full T0→T1→T2→T3 chain end-to-end with `docs-promote.sh`**. Notes captured below to disambiguate the 0.5.0 precedent (which itself diverges from the standard flow because it was a one-time historical flip).
+
+### `docs.json` transformation differs from 0.5.0
+
+| Cycle | Pre-flip state | Right edit pattern |
+|---|---|---|
+| 0.5.0 (historical flip) | `RC` block had **root** paths, `Release` block had `release/*` paths (old GA archive) | Rename `RC` → `Release` label, **drop** the old `Release` block, `git rm -r release/` |
+| 0.6.0 (standard flow) | `RC` block has `rc/*` paths, `Release` block has **root** paths (current GA) | **Drop** the `RC` block (its `rc/*` paths die when `docs-promote.sh` deletes the rc/ directory), keep `Release` as-is (its root paths now serve promoted v0.6 content), set `Release.default = true` |
+
+Concrete edit list for the standard flow (post-`docs-promote.sh`, both languages):
+
+1. `delete d['banner']`
+2. Drop the `RC` version block from `versions[]` entirely
+3. Set `Release.default = true` (the flag was on `RC`)
+4. Insert `changelog/v<NEW_GA>` and `zh/changelog/v<NEW_GA>` at the top of each `Release` block's `Changelog` pages list
+5. Update `navbar.links[label=Changelog].href` to `/changelog/v<NEW_GA>`
+
+### First dual-package GA promote
+
+0.6.0 was the first GA where both `@mindfoldhq/trellis` (CLI) and `@mindfoldhq/trellis-core` (SDK) ship in lockstep. `bump-versions.js promote` rewrites both `package.json` files and the CLI's `dependencies["@mindfoldhq/trellis-core"]` from `workspace:*` to the exact version at release time. `release-preflight verify-packed-cli` exists specifically to catch a divergence here — always run it before `pnpm release:promote`.
+
+### Stale navbar Changelog `href` gotcha
+
+The 0.6.0 cycle shipped 24 betas + 1 RC, and the navbar `Changelog` href in `docs.json` was never updated through any of them — it sat at `/changelog/v0.6.0-beta.22` at GA prep time. Per-patch beta/rc commits add the new mdx to the nav pages list, but they routinely forget the navbar href. Decision rule: **the GA promote PR is the last chance to fix the navbar href**, since GA is when readers actually start clicking the top-bar Changelog link.
+
+### Pre-ship adversarial verify is load-bearing
+
+The 0.6.0 GA prep flow ran a 10-agent pre-ship verify before `pnpm release:promote` and it caught 2 RED blockers that would have shipped:
+
+1. `@mindfoldhq/trellis@beta` left in a bundled-skill markdown table after the lifecycle flip
+2. Manifest's `**Bundled skills**` section listed 3 of the 4 actually-shipping bundled skills
+
+Both blockers were prose-only (no code defect); both would have only embarrassed-not-broken users. Still, the adversarial verify earned its keep — recommend running an equivalent check on every future GA. The 10 angles (bundled skills + manifest + changelogs en/zh + docs.json + root content + preflight + tests + dogfood + npm-ready) generalize to any subsequent minor.
 
 ---
 

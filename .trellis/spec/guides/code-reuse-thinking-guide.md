@@ -58,6 +58,29 @@ grep -r "keyword" .
 
 **Good**: Single source of truth, import everywhere
 
+### Pattern 4: Repeated Payload Field Extraction
+
+**Bad**: Multiple consumers cast the same JSON/event fields locally:
+
+```typescript
+const description = (ev as { description?: string }).description;
+const context = (ev as { context?: ContextEntry[] }).context;
+```
+
+This is duplicated contract logic even when the code is only two lines. Each
+consumer now has its own definition of what a valid payload means.
+
+**Good**: Put the decoder, type guard, or projection next to the data owner:
+
+```typescript
+if (isThreadEvent(ev)) {
+  renderThreadEvent(ev);
+}
+```
+
+**Rule**: If the same untyped payload field is read in 2+ places, create a
+shared type guard / normalizer / projection before adding a third reader.
+
 ---
 
 ## When to Abstract
@@ -82,14 +105,42 @@ When you've made similar changes to multiple files:
 2. **Search**: Run grep to find any missed
 3. **Consider**: Should this be abstracted?
 
+### Reducers Should Use Exhaustive Structure
+
+When state is derived from action-like values (`action`, `kind`, `status`,
+`phase`), prefer a reducer with one `switch` over scattered `if/else` updates.
+
+```typescript
+// BAD - action-specific state transitions are hard to audit
+if (action === "opened") { ... }
+else if (action === "comment") { ... }
+else if (action === "status") { ... }
+
+// GOOD - one reducer owns the transition table
+switch (event.action) {
+  case "opened":
+    ...
+    return;
+  case "comment":
+    ...
+    return;
+}
+```
+
+This matters when the event log is the source of truth. A reducer is the
+documented replay model; display code and commands should not duplicate pieces
+of that replay model.
+
 ---
 
 ## Checklist Before Commit
 
 - [ ] Searched for existing similar code
 - [ ] No copy-pasted logic that should be shared
+- [ ] No repeated untyped payload field extraction outside a shared decoder
 - [ ] Constants defined in one place
 - [ ] Similar patterns follow same structure
+- [ ] Reducer/action transitions live in one reducer or command dispatcher
 
 ---
 
