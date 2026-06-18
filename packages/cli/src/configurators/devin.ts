@@ -9,14 +9,14 @@ import {
 } from "./shared.js";
 
 /**
- * Configure Windsurf:
+ * Configure Devin (formerly Windsurf):
  * - workflows/ — start + finish-work as slash commands
  * - skills/trellis-{name}/SKILL.md — other 5 as auto-triggered skills
  */
-export async function configureWindsurf(cwd: string): Promise<void> {
-  const ctx = AI_TOOLS.windsurf.templateContext;
+export async function configureDevin(cwd: string): Promise<void> {
+  const ctx = AI_TOOLS.devin.templateContext;
 
-  const workflowsDir = path.join(cwd, ".windsurf", "workflows");
+  const workflowsDir = path.join(cwd, ".devin", "workflows");
   ensureDir(workflowsDir);
   for (const cmd of resolveCommands(ctx)) {
     await writeFile(
@@ -26,7 +26,7 @@ export async function configureWindsurf(cwd: string): Promise<void> {
   }
 
   await writeSkills(
-    path.join(cwd, ".windsurf", "skills"),
+    path.join(cwd, ".devin", "skills"),
     resolveSkills(ctx),
     resolveBundledSkills(ctx),
   );

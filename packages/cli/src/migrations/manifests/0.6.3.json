@@ -1,0 +1,24 @@
+{
+  "version": "0.6.3",
+  "description": "Rename the Windsurf platform to Devin (Cognition renamed Windsurf to Devin Desktop on 2026-06-02). The registry entry, CLI flag, configurator, and config directory move from .windsurf/ to .devin/; --windsurf stays as a deprecated alias for one version.",
+  "breaking": false,
+  "recommendMigrate": true,
+  "changelog": "**Platform Rename:**\n- feat(platform): **Windsurf is now Devin.** Cognition renamed Windsurf to Devin Desktop (2026-06-02 OTA update) and moved the config directory from `.windsurf/` to `.devin/` (identical subpaths: `workflows/`, `skills/`). Trellis follows the rename: `trellis init --devin` writes `.devin/workflows/` + `.devin/skills/`, the platform shows as **Devin**, and `--platform devin` is what rendered workflows/skills pass to scripts (#325).\n- feat(cli): `--windsurf` remains a **deprecated alias** for `--devin` for one version. Passing it prints a deprecation notice and behaves like `--devin`. `TRELLIS_PLATFORM=windsurf` and a leftover `.windsurf/workflows/` directory are still detected as Devin for back-compat.\n- fix(migrate): `trellis update --migrate` ships `rename-dir` migrations that move an installed `.windsurf/workflows/` → `.devin/workflows/` and `.windsurf/skills/` → `.devin/skills/`. Missing source directories are silently skipped, so the migration is idempotent.",
+  "migrations": [
+    {
+      "type": "rename-dir",
+      "from": ".windsurf/workflows",
+      "to": ".devin/workflows",
+      "description": "Devin (formerly Windsurf): move installed workflows from the old .windsurf/ config dir to .devin/ (Windsurf was renamed to Devin Desktop).",
+      "reason": "Cognition renamed Windsurf to Devin Desktop and moved its config dir from .windsurf/ to .devin/. Trellis renamed the platform to match."
+    },
+    {
+      "type": "rename-dir",
+      "from": ".windsurf/skills",
+      "to": ".devin/skills",
+      "description": "Devin (formerly Windsurf): move installed skills from the old .windsurf/ config dir to .devin/ (Windsurf was renamed to Devin Desktop).",
+      "reason": "Cognition renamed Windsurf to Devin Desktop and moved its config dir from .windsurf/ to .devin/. Trellis renamed the platform to match."
+    }
+  ],
+  "notes": "Windsurf → Devin rename (#325). If you initialized Trellis with `--windsurf`, run `trellis update --migrate` to move your installed `.windsurf/workflows/` and `.windsurf/skills/` directories to `.devin/`. Projects without a `.windsurf/` directory are unaffected (the migration silently skips). `--windsurf` still works as a deprecated alias for `--devin` this release.\n\nInstall: `npm install -g @mindfoldhq/trellis`"
+}

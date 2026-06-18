@@ -330,7 +330,7 @@ export interface ResolvedSkillFile {
  * Filter command templates based on platform capabilities.
  *
  * `start.md` is only emitted for agent-less platforms (kilo, antigravity,
- * windsurf). On agent-capable platforms, the session-start hook / plugin
+ * devin). On agent-capable platforms, the session-start hook / plugin
  * already injects the workflow overview, so a user-facing `start` command
  * would be redundant.
  */

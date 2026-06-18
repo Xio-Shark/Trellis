@@ -102,9 +102,7 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".gemini"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".qoder"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".codebuddy"))).toBe(false);
-    expect(fs.existsSync(path.join(tmpDir, ".windsurf", "workflows"))).toBe(
-      false,
-    );
+    expect(fs.existsSync(path.join(tmpDir, ".devin", "workflows"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".github", "copilot"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".factory"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".pi"))).toBe(false);
@@ -171,9 +169,7 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".gemini"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".qoder"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".codebuddy"))).toBe(false);
-    expect(fs.existsSync(path.join(tmpDir, ".windsurf", "workflows"))).toBe(
-      false,
-    );
+    expect(fs.existsSync(path.join(tmpDir, ".devin", "workflows"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".github", "copilot"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".factory"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".pi"))).toBe(false);
@@ -197,9 +193,7 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".gemini"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".qoder"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".codebuddy"))).toBe(false);
-    expect(fs.existsSync(path.join(tmpDir, ".windsurf", "workflows"))).toBe(
-      false,
-    );
+    expect(fs.existsSync(path.join(tmpDir, ".devin", "workflows"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".github", "copilot"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".pi"))).toBe(false);
   });
@@ -336,19 +330,33 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".gemini"))).toBe(false);
   });
 
-  it("#3f windsurf platform creates .windsurf/workflows", async () => {
-    await init({ yes: true, windsurf: true });
+  it("#3f devin platform creates .devin/workflows", async () => {
+    await init({ yes: true, devin: true });
 
-    expect(fs.existsSync(path.join(tmpDir, ".windsurf", "workflows"))).toBe(
-      true,
-    );
+    expect(fs.existsSync(path.join(tmpDir, ".devin", "workflows"))).toBe(true);
     expect(
       fs.existsSync(
-        path.join(tmpDir, ".windsurf", "workflows", "trellis-start.md"),
+        path.join(tmpDir, ".devin", "workflows", "trellis-start.md"),
       ),
     ).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(false);
+  });
+
+  it("#3f-alias deprecated --windsurf still configures Devin (.devin/workflows)", async () => {
+    // Windsurf was renamed to Devin; --windsurf remains a deprecated alias.
+    await init({ yes: true, windsurf: true });
+
+    expect(fs.existsSync(path.join(tmpDir, ".devin", "workflows"))).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".devin", "workflows", "trellis-start.md"),
+      ),
+    ).toBe(true);
+    // Should NOT write the old .windsurf/ directory.
+    expect(fs.existsSync(path.join(tmpDir, ".windsurf", "workflows"))).toBe(
+      false,
+    );
   });
 
   it("#3g qoder platform creates .qoder/commands + .qoder/skills", async () => {

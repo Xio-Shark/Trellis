@@ -76,7 +76,8 @@ program
   .option("--kiro", "Include Kiro Code skills")
   .option("--gemini", "Include Gemini CLI commands")
   .option("--antigravity", "Include Antigravity workflows")
-  .option("--windsurf", "Include Windsurf workflows")
+  .option("--devin", "Include Devin workflows")
+  .option("--windsurf", "Deprecated alias for --devin (Windsurf was renamed)")
   .option("--qoder", "Include Qoder commands")
   .option("--codebuddy", "Include CodeBuddy commands")
   .option("--copilot", "Include GitHub Copilot hooks")
@@ -120,6 +121,16 @@ program
   )
   .action(async (options: Record<string, unknown>) => {
     try {
+      // Deprecated alias: --windsurf → --devin (Windsurf was renamed to Devin).
+      if (options.windsurf) {
+        console.log(
+          chalk.yellow(
+            "⚠ --windsurf is deprecated (Windsurf was renamed to Devin). Use --devin instead.",
+          ),
+        );
+        options.devin = true;
+        delete options.windsurf;
+      }
       await init(options);
     } catch (error) {
       console.error(

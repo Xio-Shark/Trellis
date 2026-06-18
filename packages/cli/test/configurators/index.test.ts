@@ -70,7 +70,7 @@ describe("isManagedPath", () => {
     expect(isManagedPath(".codex/agents/check.toml")).toBe(true);
     expect(isManagedPath(".agent/workflows/start.md")).toBe(true);
     expect(isManagedPath(".kiro/skills/start/SKILL.md")).toBe(true);
-    expect(isManagedPath(".windsurf/workflows/trellis-start.md")).toBe(true);
+    expect(isManagedPath(".devin/workflows/trellis-start.md")).toBe(true);
     expect(isManagedPath(".github/prompts/start.prompt.md")).toBe(true);
     expect(isManagedPath(".github/copilot/hooks/session-start.py")).toBe(true);
     expect(isManagedPath(".github/hooks/trellis.json")).toBe(true);
@@ -87,7 +87,7 @@ describe("isManagedPath", () => {
     expect(isManagedPath(".codex")).toBe(true);
     expect(isManagedPath(".agent/workflows")).toBe(true);
     expect(isManagedPath(".kiro/skills")).toBe(true);
-    expect(isManagedPath(".windsurf/workflows")).toBe(true);
+    expect(isManagedPath(".devin/workflows")).toBe(true);
     expect(isManagedPath(".github/prompts")).toBe(true);
     expect(isManagedPath(".github/hooks")).toBe(true);
     expect(isManagedPath(".trellis")).toBe(true);
@@ -109,7 +109,7 @@ describe("isManagedPath", () => {
     expect(isManagedPath(".codex-backup")).toBe(false);
     expect(isManagedPath(".agent/workflows-backup")).toBe(false);
     expect(isManagedPath(".kiro/skills-backup")).toBe(false);
-    expect(isManagedPath(".windsurf/workflows-backup")).toBe(false);
+    expect(isManagedPath(".devin/workflows-backup")).toBe(false);
     expect(isManagedPath(".github/prompts-backup")).toBe(false);
     expect(isManagedPath(".github/copilot-backup")).toBe(false);
     expect(isManagedPath(".github/hooks-backup")).toBe(false);
@@ -142,7 +142,7 @@ describe("isManagedPath", () => {
     expect(isManagedPath(".codex\\agents\\check.toml")).toBe(true);
     expect(isManagedPath(".agent\\workflows\\start.md")).toBe(true);
     expect(isManagedPath(".kiro\\skills\\start\\SKILL.md")).toBe(true);
-    expect(isManagedPath(".windsurf\\workflows\\trellis-start.md")).toBe(true);
+    expect(isManagedPath(".devin\\workflows\\trellis-start.md")).toBe(true);
     expect(isManagedPath(".github\\prompts\\start.prompt.md")).toBe(true);
     expect(isManagedPath(".github\\copilot\\hooks\\session-start.py")).toBe(
       true,
@@ -312,7 +312,7 @@ describe("collectPlatformTemplates", () => {
     // both platforms — eliminates duplicate-skill warnings (issue #224).
     gemini: ".agents/skills",
     antigravity: ".agent/skills",
-    windsurf: ".windsurf/skills",
+    devin: ".devin/skills",
     qoder: ".qoder/skills",
     codebuddy: ".codebuddy/skills",
     copilot: ".github/skills",

@@ -121,12 +121,20 @@ describe("getConfiguredPlatforms", () => {
     expect(result.has("antigravity")).toBe(true);
   });
 
-  it("detects .windsurf/workflows directory as windsurf", () => {
+  it("detects .devin/workflows directory as devin", () => {
+    fs.mkdirSync(path.join(tmpDir, ".devin", "workflows"), {
+      recursive: true,
+    });
+    const result = getConfiguredPlatforms(tmpDir);
+    expect(result.has("devin")).toBe(true);
+  });
+
+  it("detects legacy .windsurf/workflows directory as devin (back-compat)", () => {
     fs.mkdirSync(path.join(tmpDir, ".windsurf", "workflows"), {
       recursive: true,
     });
     const result = getConfiguredPlatforms(tmpDir);
-    expect(result.has("windsurf")).toBe(true);
+    expect(result.has("devin")).toBe(true);
   });
 
   it("detects .kiro/skills directory as kiro", () => {
@@ -479,35 +487,33 @@ describe("configurePlatform", () => {
     }
   });
 
-  it("configurePlatform('windsurf') creates .windsurf/workflows directory", async () => {
-    await configurePlatform("windsurf", tmpDir);
-    expect(fs.existsSync(path.join(tmpDir, ".windsurf", "workflows"))).toBe(
-      true,
-    );
+  it("configurePlatform('devin') creates .devin/workflows directory", async () => {
+    await configurePlatform("devin", tmpDir);
+    expect(fs.existsSync(path.join(tmpDir, ".devin", "workflows"))).toBe(true);
   });
 
-  it("configurePlatform('windsurf') writes workflows + skills", async () => {
-    await configurePlatform("windsurf", tmpDir);
+  it("configurePlatform('devin') writes workflows + skills", async () => {
+    await configurePlatform("devin", tmpDir);
 
     // Commands as workflows
-    const workflowsRoot = path.join(tmpDir, ".windsurf", "workflows");
+    const workflowsRoot = path.join(tmpDir, ".devin", "workflows");
     expect(fs.existsSync(workflowsRoot)).toBe(true);
     const wfFiles = fs
       .readdirSync(workflowsRoot)
       .filter((f) => f.endsWith(".md"));
     expect(wfFiles.length).toBe(
-      resolveCommands(AI_TOOLS.windsurf.templateContext).length,
+      resolveCommands(AI_TOOLS.devin.templateContext).length,
     );
 
     // Skills
-    const skillsDir = path.join(tmpDir, ".windsurf", "skills");
+    const skillsDir = path.join(tmpDir, ".devin", "skills");
     expect(fs.existsSync(skillsDir)).toBe(true);
     const skillDirs = fs
       .readdirSync(skillsDir, { withFileTypes: true })
       .filter((e) => e.isDirectory());
     expect(skillDirs.length).toBe(
-      resolveSkills(AI_TOOLS.windsurf.templateContext).length +
-        resolveBundledSkills(AI_TOOLS.windsurf.templateContext).filter((file) =>
+      resolveSkills(AI_TOOLS.devin.templateContext).length +
+        resolveBundledSkills(AI_TOOLS.devin.templateContext).filter((file) =>
           file.relativePath.endsWith("/SKILL.md"),
         ).length,
     );

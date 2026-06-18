@@ -26,7 +26,7 @@ import { configureKilo } from "./kilo.js";
 import { configureKiro } from "./kiro.js";
 import { configureGemini } from "./gemini.js";
 import { configureAntigravity } from "./antigravity.js";
-import { configureWindsurf } from "./windsurf.js";
+import { configureDevin } from "./devin.js";
 import { configureQoder } from "./qoder.js";
 import { configureCodebuddy } from "./codebuddy.js";
 import { configureCopilot } from "./copilot.js";
@@ -324,13 +324,13 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
         ".agent/skills",
       ),
   },
-  windsurf: {
-    configure: configureWindsurf,
+  devin: {
+    configure: configureDevin,
     collectTemplates: () =>
       collectBothTemplates(
-        AI_TOOLS.windsurf.templateContext,
-        (n) => `.windsurf/workflows/trellis-${n}.md`,
-        ".windsurf/skills",
+        AI_TOOLS.devin.templateContext,
+        (n) => `.devin/workflows/trellis-${n}.md`,
+        ".devin/skills",
       ),
   },
   qoder: {
@@ -491,6 +491,12 @@ export function getConfiguredPlatforms(cwd: string): Set<AITool> {
     if (fs.existsSync(path.join(cwd, AI_TOOLS[id].configDir))) {
       platforms.add(id);
     }
+  }
+  // Back-compat: Windsurf was renamed to Devin (config dir .windsurf → .devin).
+  // A pre-rename install with only `.windsurf/workflows/` still counts as Devin
+  // so re-init / update recognize it (and `--migrate` can move it to `.devin/`).
+  if (fs.existsSync(path.join(cwd, ".windsurf", "workflows"))) {
+    platforms.add("devin");
   }
   return platforms;
 }
