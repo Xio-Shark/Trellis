@@ -33,6 +33,7 @@ import { configureCopilot } from "./copilot.js";
 import { configureDroid } from "./droid.js";
 import { configurePi, collectPiTemplates } from "./pi.js";
 import { configureReasonix, collectReasonixTemplates } from "./reasonix.js";
+import { configureZcode, collectZcodeTemplates } from "./zcode.js";
 
 // Shared utilities
 import {
@@ -50,6 +51,7 @@ import {
   applyPullBasedPreludeMarkdown,
   applyPullBasedPreludeToml,
   normalizeCopilotMarkdownAgents,
+  type PlatformConfigureOptions,
 } from "./shared.js";
 
 // Platform-specific template content (hooks, agents, settings — NOT commands/skills)
@@ -100,7 +102,7 @@ import {
 
 interface PlatformFunctions {
   /** Configure platform during init (copy templates to project) */
-  configure: (cwd: string) => Promise<void>;
+  configure: (cwd: string, options?: PlatformConfigureOptions) => Promise<void>;
   /** Collect template files for update tracking. Undefined = platform skipped during update. */
   collectTemplates?: () => Map<string, string>;
 }
@@ -452,6 +454,10 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
     configure: configureReasonix,
     collectTemplates: () => collectReasonixTemplates(),
   },
+  zcode: {
+    configure: configureZcode,
+    collectTemplates: () => collectZcodeTemplates(),
+  },
 };
 
 // =============================================================================
@@ -527,8 +533,9 @@ export function getPlatformManagedPaths(platformId: AITool): string[] {
 export function configurePlatform(
   platformId: AITool,
   cwd: string,
+  options?: PlatformConfigureOptions,
 ): Promise<void> {
-  return PLATFORM_FUNCTIONS[platformId].configure(cwd);
+  return PLATFORM_FUNCTIONS[platformId].configure(cwd, options);
 }
 
 /**

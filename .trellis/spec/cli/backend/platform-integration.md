@@ -341,19 +341,19 @@ built-binary `trellis init` -> `.trellis/.template-hashes.json` -> built-binary
 
 ### Active Task Resolution
 
-Current-task state is session/window scoped. New hook, plugin, extension, and
-sub-agent consumers must call the shared resolver path:
+Current-task state is session/window scoped. New hook, statusline, plugin,
+extension, and sub-agent consumers must call the shared resolver path:
 
 | Runtime | Resolver surface |
 |---------|------------------|
-| Python hooks/scripts | `.trellis/scripts/common/active_task.py` |
+| Python hooks/statusline/scripts | `.trellis/scripts/common/active_task.py` |
 | Existing Python callers | `common.paths.get_current_task()` / `get_current_task_abs()` / `get_current_task_source()` |
 | OpenCode plugin | JS resolver in `lib/trellis-context.js`, mirroring `active_task.py` |
 | Pi extension | Extension-local resolver using `ctx.sessionManager.getSessionId()` and Bash `tool_call` env injection |
 
-Do not add direct `.trellis/.current-task` reads in hooks, sub-agent context
-injection, or platform plugins. Direct reads reintroduce multi-window task
-pollution.
+Do not add direct `.trellis/.current-task` reads in hooks, statusline scripts,
+sub-agent context injection, or platform plugins. Direct reads reintroduce
+multi-window task pollution.
 
 Context-key precedence for hook-capable platforms:
 
@@ -421,9 +421,9 @@ Pi is extension-backed rather than Python-hook-backed: `tool_call` must mutate
 `event.input.command` before Bash execution, and the custom `trellis_subagent` tool must
 spawn child `pi` processes with `TRELLIS_CONTEXT_ID` in `env`.
 
-Hook or plugin output that mentions an active task should include the source
-(`session` or `session:<key>`) so cross-window mistakes are visible while
-debugging.
+Hook, statusline, or plugin output that mentions an active task should include
+the source (`session` or `session:<key>`) so cross-window mistakes are visible
+while debugging. Statuslines may shorten this to `[session]` to avoid noisy UI.
 
 **Also update `task_store.py` when adding a sub-agent-capable platform**:
 
@@ -1541,6 +1541,16 @@ if (!hadDeveloperFileBefore) {
 **Cause**: `configurePlatform()` resolves `{{PYTHON_CMD}}` to `python3`/`python` when writing files during init, but `collectPlatformTemplates()` returns raw templates with `{{PYTHON_CMD}}` unresolved. The hash comparison sees them as different.
 
 **Fix**: Apply `resolvePlaceholders()` (from `configurators/shared.ts`) in the `collectTemplates` lambda in `PLATFORM_FUNCTIONS`. Any new placeholder added to templates must be resolved in **both** `configure()` and `collectTemplates()`.
+
+### Init-time settings.json key injection serialized differently from update's preservation
+
+**Symptom**: On a freshly initialized project that used an opt-in feature (e.g., `--with-statusline`), the very first `trellis update` reports `.claude/settings.json` as "Template updated (will auto-update)", rewrites it, and leaves a spurious backup — with zero actual changes.
+
+**Cause**: Init injected the key at a hand-picked position in the template (e.g., `statusLine` "between `env` and `hooks`"), but update's preservation step (`preserveExistingClaudeStatusLine()` in `update.ts`) re-adds preserved keys via plain `parse → assign → stringify`, which appends at the end. The two serializations differ byte-wise, so the content comparison flags a false change.
+
+**Fix**: The init-time injection must mirror the update-time preservation routine byte-for-byte (same parse → assign → stringify, same indent). Pinned by a regression test asserting `settings.json` byte-identity across `update --force` on a fresh opted-in project.
+
+**Rule**: A feature that both (a) injects a key into a generated JSON file at init and (b) preserves that key during update must produce identical serialization on both paths — key order is part of the contract. Assert byte-identity (not deep-equality) in tests; deep-equal comparisons cannot catch key-order drift.
 
 ### Template listed in update but not created by init
 

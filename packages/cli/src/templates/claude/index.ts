@@ -4,9 +4,10 @@
  * Directory structure:
  *   claude/
  *   ├── agents/         # Sub-agent definitions
+ *   ├── hooks/          # Claude-only opt-in hooks (statusline.py)
  *   └── settings.json   # Settings configuration
  *
- * Hooks come from shared-hooks/ (unified with other platforms).
+ * Default hooks come from shared-hooks/ (unified with other platforms).
  */
 
 import { readdirSync, readFileSync } from "node:fs";
@@ -60,4 +61,15 @@ export function getSettingsTemplate(): SettingsTemplate {
     targetPath: "settings.json",
     content: settingsTemplate,
   };
+}
+
+/**
+ * Opt-in statusLine hook, installed only via `trellis init --with-statusline`.
+ *
+ * Lives under claude/hooks/ (not shared-hooks/) because `statusLine` is a
+ * Claude-only event, and is intentionally NOT part of `collectTemplates` —
+ * `trellis update` must never force-install it on opted-out projects.
+ */
+export function getStatuslineHook(): string {
+  return readTemplate("hooks/statusline.py");
 }
