@@ -767,11 +767,13 @@ function parseAgentFM(c: string): AgentConfig {
         i--;
       }
     } else if (k === "tools") {
+      // Pi tool names are lowercase (read, bash, edit, write, grep, find, ls).
+      // Normalize to lowercase so mixed-case frontmatter still matches.
       if (v.trim()) {
         cfg.tools = v
           .trim()
           .split(",")
-          .map((s) => s.trim().replace(/^["']|["']$/g, ""))
+          .map((s) => s.trim().replace(/^["']|["']$/g, "").toLowerCase())
           .filter(Boolean);
       }
     }
@@ -1110,9 +1112,6 @@ function runPi(
       ...process.env,
       TRELLIS_SUBAGENT_CHILD: "1",
       ...(key ? { TRELLIS_CONTEXT_ID: key } : {}),
-      ...(cfg.tools && cfg.tools.length > 0
-        ? { PI_TOOL_ALLOWLIST: cfg.tools.join(",") }
-        : {}),
     };
     const cli = spawn(inv.command, [...inv.args, ...buildPiArgs(cfg)], {
       cwd: root,

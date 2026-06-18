@@ -184,6 +184,10 @@ describe("pi templates", () => {
   it("parseAgentFM reads model/thinking/fallbackModels/tools from agent frontmatter", () => {
     const { parseAgentFM } = loadExtensionInternals();
 
+    // Mixed-case tool names in frontmatter must be normalized to lowercase:
+    // Pi's built-in tools are lowercase (read, bash, edit, write, grep, find, ls)
+    // and pi applies the allowlist without case normalization, so uppercase names
+    // would silently fail to enable any tool.
     const cfg = parseAgentFM(`---
 name: reviewer
 model: anthropic/claude-sonnet-4
@@ -199,9 +203,11 @@ fallbackModels:
     expect(cfg).toEqual({
       model: "anthropic/claude-sonnet-4",
       thinking: "high",
-      tools: ["Read", "Write", "Bash", "find", "Grep"],
+      tools: ["read", "write", "bash", "find", "grep"],
       fallbackModels: ["openai/gpt-5-mini", "google/gemini-2.5-pro"],
     });
+    // Belt-and-suspenders: no tool name survives with uppercase letters.
+    expect(cfg.tools?.every((t) => t === t.toLowerCase())).toBe(true);
   });
 
   it("buildPiArgs maps PiRunConfig onto Pi CLI args", () => {
