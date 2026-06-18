@@ -15,12 +15,14 @@ import {
 interface AgentConfig {
   model?: string;
   thinking?: string;
+  tools?: string[];
   fallbackModels: string[];
 }
 
 interface PiRunConfig {
   model?: string;
   thinking?: string;
+  tools?: string[];
 }
 
 interface PiExtensionInternals {
@@ -179,13 +181,14 @@ describe("pi templates", () => {
     expect(existsSync(root)).toBe(true);
   });
 
-  it("parseAgentFM reads model/thinking/fallbackModels from agent frontmatter", () => {
+  it("parseAgentFM reads model/thinking/fallbackModels/tools from agent frontmatter", () => {
     const { parseAgentFM } = loadExtensionInternals();
 
     const cfg = parseAgentFM(`---
 name: reviewer
 model: anthropic/claude-sonnet-4
 thinking: high
+tools: Read, Write, Bash, find, Grep
 fallbackModels:
   - openai/gpt-5-mini
   - "google/gemini-2.5-pro"
@@ -196,6 +199,7 @@ fallbackModels:
     expect(cfg).toEqual({
       model: "anthropic/claude-sonnet-4",
       thinking: "high",
+      tools: ["Read", "Write", "Bash", "find", "Grep"],
       fallbackModels: ["openai/gpt-5-mini", "google/gemini-2.5-pro"],
     });
   });
@@ -244,6 +248,18 @@ fallbackModels:
       "--model",
       "gpt-5",
     ]);
+
+    // tools → --tools flag
+    expect(
+      buildPiArgs({ tools: ["Read", "Write", "Bash", "find", "Grep"] }),
+    ).toEqual([
+      "--mode",
+      "json",
+      "-p",
+      "--no-session",
+      "--tools",
+      "Read,Write,Bash,find,Grep",
+    ]);
   });
 
   it("resolveRunCfg lets per-call input override agent frontmatter defaults", () => {
@@ -252,6 +268,7 @@ fallbackModels:
     const agentCfg: AgentConfig = {
       model: "anthropic/claude-sonnet-4",
       thinking: "high",
+      tools: ["Read", "Write", "Edit", "Bash", "find", "Grep"],
       fallbackModels: [],
     };
 
@@ -261,12 +278,13 @@ fallbackModels:
         { model: "openai/gpt-5", thinking: "xhigh" },
         agentCfg,
       ),
-    ).toEqual({ model: "openai/gpt-5:xhigh", thinking: "xhigh" });
+    ).toEqual({ model: "openai/gpt-5:xhigh", thinking: "xhigh", tools: agentCfg.tools });
 
     // No overrides → fall back to agent config
     expect(resolveRunCfg({}, agentCfg)).toEqual({
       model: "anthropic/claude-sonnet-4:high",
       thinking: "high",
+      tools: agentCfg.tools,
     });
 
     // Inherited thinking is the last fallback
