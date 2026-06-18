@@ -79,7 +79,11 @@ function main() {
   run("pnpm --filter @mindfoldhq/trellis-core test");
   run("pnpm test");
 
-  run("git add -A -- ':!docs-site' ':!marketplace'");
+  // Exclude .trellis/ from the pre-release sweep: dirty task/workspace files
+  // (parallel in-progress work, runtime artifacts) must never be swept into
+  // "chore: pre-release updates" (#303). Staging .trellis/ only ever goes
+  // through safe_commit.py's precise allowlist, never a blanket `git add -A`.
+  run("git add -A -- ':!docs-site' ':!marketplace' ':!.trellis'");
   if (hasGitDiff()) {
     run("git commit -m 'chore: pre-release updates'");
   }

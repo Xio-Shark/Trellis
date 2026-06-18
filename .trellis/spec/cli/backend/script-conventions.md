@@ -837,12 +837,61 @@ Scripts that auto-stage / auto-commit `.trellis/` paths must go through the
 canonical `common/safe_commit.py` helpers. Hand-rolled `git add -A` /
 `git add -f` calls have caused real-user data incidents and are forbidden.
 
+### Absolute prohibition: never blanket-stage (`git add -A` / `git add .` / `git add .trellis/`)
+
+> **In this repository, NEVER run `git add -A`, `git add .`, or `git add .trellis/`
+> — in any language, any script, any person, any AI. Always stage by precise path.**
+
+Staging `.trellis/` is only ever allowed via one of two precise routes:
+
+1. **`common/safe_commit.py`'s precise allowlist** — for all Python auto-commits
+   (`add_session.py`, `task.py archive`).
+2. **`release.js`'s precise pathspec** — for release commits. The pre-release
+   sweep MUST exclude `.trellis/` (see `release-process.md`).
+
+For a human/AI assembling an ad-hoc commit: `git status` first, then
+`git add <path>` per file. Never blanket-stage.
+
+#### Why: "unscoped `.trellis` staging" is a bug CLASS, not one bug (#303)
+
+The same defect — auto-staging more of `.trellis/` than the current scope —
+recurs across **three independent triggers**, and a fix to one does not
+propagate to the others:
+
+| Trigger | Site | Staging route |
+|---|---|---|
+| Session auto-commit | `add_session.py:_auto_commit_workspace` | `safe_trellis_paths_to_add` (Python) |
+| Release pre-commit | `release.js` "chore: pre-release updates" | `git add -A` pathspec (Node) |
+| Ad-hoc human/AI commit | manual `git add -A` / `git add .` | none — pure behavior |
+
+v0.5.14 fixed only the `task.py archive` symptom (`safe_archive_paths_to_add`).
+The session helper kept the wide `tasks_dir.iterdir()` scan, and the release
+script + ad-hoc human/AI commits never went through the Python layer at all —
+so the class re-surfaced (#303 plus 3 live recurrences in one session). Two of
+the three triggers (release, ad-hoc) bypass `safe_commit.py` entirely; the
+prohibition above is what closes those two escape hatches.
+
+#### Parity invariant (enforced by code + tests)
+
+> **Any staging helper, when given a `task_name`, MUST NOT do a
+> `tasks_dir.iterdir()` full scan over all task dirs.** It stages ONLY the
+> named task dir (active or archived) plus explicitly-passed children.
+
+This holds for both `safe_trellis_paths_to_add(..., task_name=...)` and
+`safe_archive_paths_to_add(..., task_name=...)`. The legacy no-`task_name`
+wide branches exist only for backwards-compat and are dormant: every live
+caller passes `task_name`. When the current task cannot be resolved (0 or ≥2
+parallel sessions), `add_session.py:_auto_commit_workspace` does NOT fall back
+to the wide scan — it stages only the developer's journal/index and skips
+every task dir, so the parallel-window case can never silently re-open the
+wide scope.
+
 ### Canonical helpers
 
 | Helper | Source | Purpose |
 |---|---|---|
-| `safe_trellis_paths_to_add(repo_root)` | `templates/trellis/scripts/common/safe_commit.py:safe_trellis_paths_to_add` | Path whitelist for `add_session.py` — journal files, index.md, active task dirs, archive dir |
-| `safe_archive_paths_to_add(repo_root)` | `templates/trellis/scripts/common/safe_commit.py:safe_archive_paths_to_add` | Path whitelist for `task.py archive` — archive subtree + sibling task dirs (so deletions get recorded) |
+| `safe_trellis_paths_to_add(repo_root, task_name=None)` | `templates/trellis/scripts/common/safe_commit.py:safe_trellis_paths_to_add` | Path whitelist for `add_session.py` — current developer's journal files + index.md, and (when `task_name` is passed) ONLY the current task dir. Callers MUST pass `task_name` so parallel-window dirty task dirs never leak into the session commit (#303). |
+| `safe_archive_paths_to_add(repo_root, task_name=None, modified_children=None)` | `templates/trellis/scripts/common/safe_commit.py:safe_archive_paths_to_add` | Path whitelist for `task.py archive` — archive subtree + explicitly-passed `modified_children` task dirs (parent/child relationship updates). Callers MUST pass `task_name`. |
 | `safe_git_add(paths, repo_root)` | `templates/trellis/scripts/common/safe_commit.py:safe_git_add` | Plain `git add -- <paths>`; never `-f`. Returns `(success, used_force=False, stderr)` |
 | `print_gitignore_warning(paths)` | `templates/trellis/scripts/common/safe_commit.py:print_gitignore_warning` | Single source of truth for the "ignored by .gitignore" warning, including the AI-defense negative example |
 | `get_session_auto_commit(repo_root)` | `templates/trellis/scripts/common/config.py:get_session_auto_commit` | Reads `session_auto_commit` from `.trellis/config.yaml` (default `True`) |
@@ -893,7 +942,17 @@ def _auto_commit_workspace(repo_root: Path) -> None:
               file=sys.stderr)
         return
 
-    paths = safe_trellis_paths_to_add(repo_root)  # canonical whitelist
+    # Scope staging to the CURRENT task only (#303) — never iterdir all tasks.
+    current = get_current_task(repo_root)
+    if current:
+        paths = safe_trellis_paths_to_add(repo_root, task_name=Path(current).name)
+    else:
+        # Task unknown (0 / >=2 parallel sessions): stage journal/index only,
+        # drop every task dir — do NOT re-open the wide scan.
+        paths = [
+            p for p in safe_trellis_paths_to_add(repo_root, task_name=None)
+            if not p.startswith(".trellis/tasks/")
+        ]
     if not paths:
         return
 
@@ -970,12 +1029,24 @@ helper so future edits stay consistent.
 
 ### Wrong vs Correct
 
-#### Wrong — hand-rolled `git add -A` on a directory
+#### Wrong — any blanket stage (`git add -A` / `git add .` / `git add .trellis/`)
 
 ```python
-# `-A` plus a tree path stages every untracked file under it, including
-# .trellis/.backup-*/, .trellis/worktrees/, etc.
+# All three blanket the working tree and sweep in untracked files under
+# .trellis/ — parallel-window task dirs, .trellis/.backup-*/,
+# .trellis/worktrees/, runtime caches. Forbidden everywhere (#303).
+subprocess.run(["git", "add", "-A"], cwd=repo_root)
+subprocess.run(["git", "add", "."], cwd=repo_root)
 subprocess.run(["git", "add", "-A", ".trellis/"], cwd=repo_root)
+```
+
+#### Wrong — wide `iterdir()` scope despite knowing the current task
+
+```python
+# Stages EVERY active task dir, leaking dirty parallel-window tasks into an
+# unrelated commit (the original #303 body in safe_trellis_paths_to_add).
+for child in sorted(tasks_dir.iterdir()):
+    paths.append(f".trellis/tasks/{child.name}")
 ```
 
 #### Wrong — `-f` retry on `ignored by`
@@ -986,10 +1057,12 @@ if "ignored by" in err.lower():
     run_git(["add", "-f", "--", *paths], cwd=repo_root)  # reverted in 0.5.11
 ```
 
-#### Correct — whitelist + plain add + warn-and-skip
+#### Correct — current-task-scoped whitelist + plain add + warn-and-skip
 
 ```python
-paths = safe_trellis_paths_to_add(repo_root)
+current = get_current_task(repo_root)
+task_name = Path(current).name if current else None
+paths = safe_trellis_paths_to_add(repo_root, task_name=task_name)
 success, _, err = safe_git_add(paths, repo_root)
 if not success:
     if "ignored by" in err.lower():
@@ -1012,6 +1085,15 @@ When changing `safe_commit.py`, `add_session.py:_auto_commit_workspace`, or
   `Do NOT use \`git add -f .trellis/\``.
 - `_auto_commit_*` early-returns when `session_auto_commit: false`, with no
   `git` subprocess invocations.
+- **Scope-creep guard (required for both staging routes):** with two parallel
+  task dirs both dirty, running the auto-commit in task-a's context must NOT
+  stage or commit any `task-b` path, and `task-b` stays dirty. Mirror
+  `task-archive.integration.test.ts` ("does not bundle dirty changes from
+  other task dirs") for the session route in
+  `add-session.integration.test.ts`.
+- **Parity invariant:** `safe_trellis_paths_to_add(repo_root, task_name=...)`
+  returns only the named task dir (active or archived), never the whole task
+  list.
 
 ---
 
