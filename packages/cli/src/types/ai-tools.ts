@@ -22,7 +22,8 @@ export type AITool =
   | "copilot"
   | "droid"
   | "pi"
-  | "reasonix";
+  | "reasonix"
+  | "zcode";
 
 /**
  * Template directory categories
@@ -43,7 +44,8 @@ export type TemplateDir =
   | "copilot"
   | "droid"
   | "pi"
-  | "reasonix";
+  | "reasonix"
+  | "zcode";
 
 /**
  * CLI flag names for platform selection (e.g., --claude, --cursor, --kilo, --kiro, --gemini, --antigravity)
@@ -64,7 +66,8 @@ export type CliFlag =
   | "copilot"
   | "droid"
   | "pi"
-  | "reasonix";
+  | "reasonix"
+  | "zcode";
 
 /**
  * Template context for placeholder resolution.
@@ -77,6 +80,7 @@ export interface TemplateContext {
   executorAI:
     | "Bash scripts or Task calls"
     | "Bash scripts or tool calls"
+    | "Bash scripts or Agent calls"
     | "Bash scripts or file reads";
   /** Label for user-invocable actions */
   userActionLabel: "Slash commands" | "Skills" | "Workflows" | "Prompts";
@@ -384,6 +388,24 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
       agentCapable: true,
       hasHooks: false,
       cliFlag: "reasonix",
+    },
+  },
+  zcode: {
+    name: "ZCode",
+    templateDirs: ["common", "zcode"],
+    configDir: ".zcode",
+    supportsAgentSkills: true,
+    extraManagedPaths: [".zcode/cli/agents", ".zcode/commands"],
+    cliFlag: "zcode",
+    defaultChecked: false,
+    hasPythonHooks: false,
+    templateContext: {
+      cmdRefPrefix: "/trellis:",
+      executorAI: "Bash scripts or Agent calls",
+      userActionLabel: "Skills",
+      agentCapable: true,
+      hasHooks: false,
+      cliFlag: "zcode",
     },
   },
 };
