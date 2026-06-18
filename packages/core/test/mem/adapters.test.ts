@@ -39,6 +39,8 @@ vi.mock("node:os", async () => {
 
 const { claudeListSessions, claudeExtractDialogue, claudeSearch } =
   await import("../../src/mem/adapters/claude.js");
+const { claudeProjectDirFromCwd } =
+  await import("../../src/mem/internal/paths.js");
 const { codexListSessions, codexExtractDialogue, codexSearch } =
   await import("../../src/mem/adapters/codex.js");
 const { opencodeListSessions, opencodeExtractDialogue, opencodeSearch } =
@@ -83,12 +85,52 @@ afterAll(() => {
 });
 
 // =============================================================================
+// claudeProjectDirFromCwd — cwd → on-disk dir-name sanitization
+//
+// Claude replaces every path separator (`/` and Windows `\`), drive colon
+// (`:`), `_`, and `.` with `-`. Confirmed empirically against a real
+// `~/.claude/projects/` (e.g. `/Users/x/.codex/...` → `-Users-x--codex-...`,
+// `snap_note` → `snap-note`). Regression guard for #300: the old `/[/_]/g`
+// regex missed `\` and `:`, so Windows cwds resolved to a non-existent dir and
+// `mem list --cwd` silently returned 0.
+// =============================================================================
+
+describe("claudeProjectDirFromCwd", () => {
+  const dirName = (cwd: string): string =>
+    nodePath.basename(claudeProjectDirFromCwd(cwd));
+
+  it("sanitizes a POSIX cwd (separators + underscore)", () => {
+    expect(dirName("/Users/me/workspace/snap_note")).toBe(
+      "-Users-me-workspace-snap-note",
+    );
+  });
+
+  it("sanitizes a Windows backslash path", () => {
+    expect(dirName("D:\\code\\2026\\myapp")).toBe("D--code-2026-myapp");
+  });
+
+  it("sanitizes a drive-letter colon", () => {
+    expect(dirName("C:\\Users\\me\\repo")).toBe("C--Users-me-repo");
+  });
+
+  it("sanitizes underscore and dot in a Windows path", () => {
+    expect(dirName("D:\\code\\my_app\\.trellis")).toBe(
+      "D--code-my-app--trellis",
+    );
+  });
+
+  it("sanitizes mixed forward/back separators", () => {
+    expect(dirName("D:/code\\2026/my_app")).toBe("D--code-2026-my-app");
+  });
+});
+
+// =============================================================================
 // Claude Code adapter
 // =============================================================================
 
 describe("claudeListSessions / claudeExtractDialogue", () => {
   const projectCwd = "/tmp/test-project";
-  const encodedCwd = projectCwd.replace(/[/_]/g, "-");
+  const encodedCwd = projectCwd.replace(/[/\\:_.]/g, "-");
   const projectDir = nodePath.join(CLAUDE_PROJECTS, encodedCwd);
   const sessionId = "11111111-1111-1111-1111-111111111111";
   const sessionFile = nodePath.join(projectDir, `${sessionId}.jsonl`);
@@ -169,7 +211,7 @@ describe("claudeListSessions / claudeExtractDialogue", () => {
         message: { role: "user", content: "x" },
       },
     ]);
-    const otherEncoded = "/tmp/other".replace(/[/_]/g, "-");
+    const otherEncoded = "/tmp/other".replace(/[/\\:_.]/g, "-");
     const otherFile = nodePath.join(
       CLAUDE_PROJECTS,
       otherEncoded,
@@ -188,6 +230,50 @@ describe("claudeListSessions / claudeExtractDialogue", () => {
     );
     expect(ids).toContain(sessionId);
     expect(ids).not.toContain("22222222-2222-2222-2222-222222222222");
+  });
+
+  it("falls back to scanning all project dirs when the derived dir name doesn't exist (#300)", () => {
+    // Simulate a future Claude naming scheme the derive fn can't reproduce: the
+    // on-disk dir name is unrelated to `claudeProjectDirFromCwd(scopedCwd)`, so
+    // the fast-path existsSync miss must NOT silently return 0 — the all-dirs
+    // scan + per-session `sameProject(cwd, f.cwd)` filter still finds it.
+    const scopedCwd = "/srv/projects/some-app";
+    const mismatchedDir = nodePath.join(CLAUDE_PROJECTS, "opaque-hash-9f8e7d");
+    const scopedFile = nodePath.join(
+      mismatchedDir,
+      "33333333-3333-3333-3333-333333333333.jsonl",
+    );
+    writeJsonl(scopedFile, [
+      {
+        type: "user",
+        cwd: scopedCwd,
+        timestamp: "2026-04-15T10:00:00Z",
+        message: { role: "user", content: "scoped session" },
+      },
+    ]);
+    // a session in a different project must still be excluded by the scope
+    const otherFile = nodePath.join(
+      CLAUDE_PROJECTS,
+      "another-opaque-hash",
+      "44444444-4444-4444-4444-444444444444.jsonl",
+    );
+    writeJsonl(otherFile, [
+      {
+        type: "user",
+        cwd: "/srv/projects/other-app",
+        timestamp: "2026-04-15T10:00:00Z",
+        message: { role: "user", content: "other session" },
+      },
+    ]);
+
+    // sanity: the derived dir really does not exist on disk
+    expect(nodeFs.existsSync(claudeProjectDirFromCwd(scopedCwd))).toBe(false);
+
+    const ids = claudeListSessions(mkFilter({ cwd: scopedCwd })).map(
+      (s) => s.id,
+    );
+    expect(ids).toContain("33333333-3333-3333-3333-333333333333");
+    expect(ids).not.toContain("44444444-4444-4444-4444-444444444444");
   });
 
   it("extractDialogue keeps user/assistant text turns and strips injection tags", () => {

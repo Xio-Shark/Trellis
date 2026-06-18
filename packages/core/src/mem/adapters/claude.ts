@@ -65,9 +65,19 @@ interface ClaudeIndex {
 export function claudeListSessions(f: MemFilter): MemSessionInfo[] {
   if (!fs.existsSync(CLAUDE_PROJECTS)) return [];
   const out: MemSessionInfo[] = [];
+  const allDirs = (): string[] =>
+    fs.readdirSync(CLAUDE_PROJECTS).map((d) => path.join(CLAUDE_PROJECTS, d));
+  // --cwd fast path: derive the single project dir from the cwd. If the
+  // derived name does not exist on disk (e.g. Claude changed its sanitization
+  // scheme), fall back to scanning every project dir — the per-session
+  // `sameProject(cwd, f.cwd)` check below still scopes the results, so we never
+  // silently return 0.
   const projectDirs: string[] = f.cwd
-    ? [claudeProjectDirFromCwd(f.cwd)].filter((d) => fs.existsSync(d))
-    : fs.readdirSync(CLAUDE_PROJECTS).map((d) => path.join(CLAUDE_PROJECTS, d));
+    ? (() => {
+        const derived = claudeProjectDirFromCwd(f.cwd);
+        return fs.existsSync(derived) ? [derived] : allDirs();
+      })()
+    : allDirs();
 
   for (const dir of projectDirs) {
     let entries: fs.Dirent[];

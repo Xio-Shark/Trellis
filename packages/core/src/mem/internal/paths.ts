@@ -44,9 +44,11 @@ function readPiSettingsSessionDir(): string | undefined {
 }
 
 /** Claude sanitizes a cwd into its on-disk project dir name by replacing
- * every `/` and `_` with `-`. */
+ * every path separator (`/` and Windows `\`), drive colon (`:`), `_`, and `.`
+ * with `-`. Confirmed empirically against `~/.claude/projects/`:
+ * `/Users/x/.codex/...` → `-Users-x--codex-...`, `snap_note` → `snap-note`. */
 export function claudeProjectDirFromCwd(cwd: string): string {
-  return path.join(CLAUDE_PROJECTS, cwd.replace(/[/_]/g, "-"));
+  return path.join(CLAUDE_PROJECTS, cwd.replace(/[/\\:_.]/g, "-"));
 }
 
 /** Pi encodes a cwd as `--<resolved-cwd-with-separators-as-dashes>--`. */
