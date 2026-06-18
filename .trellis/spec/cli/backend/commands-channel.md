@@ -18,6 +18,21 @@ integration via env wiring and storage layout).
 | Worker provider plugin (`WorkerAdapter`) | Extension contract: future providers depend on shape stability |
 | Env wiring (`TRELLIS_CHANNEL_ROOT/PROJECT/AS`) | Cross-process configuration |
 
+### Current Core / CLI Boundary
+
+`@mindfoldhq/trellis-core/channel` owns reusable channel domain behavior:
+event schemas, reducers, durable mutation APIs, idempotency, worker registry,
+inbox policy, and public SDK contracts.
+
+`packages/cli/src/commands/channel/store/*` still exists and is current code,
+not dead code. Some files are thin re-export / compatibility modules over core
+(`schema.ts`, `filter.ts`, `thread-state.ts`); others remain CLI-local runtime
+primitives for supervisor / spawn / kill / wait paths during the supervisor
+migration (`events.ts`, `paths.ts`, `lock.ts`, `watch.ts`). Do not delete these
+wrappers until their callers have moved to core APIs. New reusable behavior
+belongs in core; CLI-local files should only handle terminal UX, process
+supervision, pid/cursor sidecars, and migration glue.
+
 ---
 
 ## 2. Signatures
@@ -1109,7 +1124,7 @@ trellis channel send trellis-issue --scope global --as main --thread forum-mode 
 | `--ephemeral` create + list + prune | integration | (a) `list` default hides, (b) `list --all` shows with `*`, (c) `list` footer prints "(N ephemeral channels hidden ...)", (d) `prune --ephemeral` only deletes ephemeral, (e) `prune --ephemeral --idle 1h` throws mutex error |
 | Path-traversal jail | security | `--file /etc/passwd` from cwd `/tmp/work` → file skipped, stderr warn |
 | Agent name validator | security | `--agent ../../evil` → throw |
-| Frontmatter prototype pollution | security | `.trellis/agents/x.md` with `__proto__: ...` frontmatter → key dropped, no pollution observable |
+| Frontmatter prototype pollution | security | a `.trellis/agents/<name>.md` fixture with `__proto__: ...` frontmatter → key dropped, no pollution observable |
 | `safeIdentifier` | unit | newline / NUL / control chars stripped from worker name in protocol prompt |
 
 ---

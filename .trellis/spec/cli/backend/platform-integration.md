@@ -1011,8 +1011,9 @@ Extension-backed platforms must not call `writeSharedHooks()` for their config d
 
 ### Audit reference
 
-Full reliability audit (per-platform evidence, GitHub issues, Cursor staff confirmations, Claude Code canary test) lives at:
-`.trellis/tasks/04-17-subagent-hook-reliability-audit/research/platform-hook-audit.md`
+Historical reliability audit (per-platform evidence, GitHub issues, Cursor
+staff confirmations, Claude Code canary test) lives in the archived task:
+`.trellis/tasks/archive/2026-04/04-17-subagent-hook-reliability-audit/research/platform-hook-audit.md`
 
 ---
 
@@ -1417,7 +1418,14 @@ The hook uses `find_trellis_root()` to walk up from CWD until it finds `.trellis
 
 ### Why No State Machine / No Extra `task.json` Fields
 
-After first-principles analysis (see `.trellis/tasks/04-17-workflow-enforcement-v2/prd.md`), we dropped the original design's `current_phase` string / `phase_history` / `checkpoints` / 7 new `task.py` commands / skill tail blocks. The core insight: **workflow.md Phase 1.0/1.1/... is documentation layering, not runtime state**. The existing `task.json.status` (`planning` / `in_progress` / `completed`) is sufficient to express task lifecycle; sub-phase position is inferred by the AI from conversation history + git state.
+After first-principles analysis (historical task:
+`.trellis/tasks/archive/2026-04/04-17-workflow-enforcement-v2/prd.md`), we
+dropped the original design's `current_phase` string / `phase_history` /
+`checkpoints` / 7 new `task.py` commands / skill tail blocks. The core insight:
+**workflow.md Phase 1.0/1.1/... is documentation layering, not runtime state**.
+The existing `task.json.status` (`planning` / `in_progress` / `completed`) is
+sufficient to express task lifecycle; sub-phase position is inferred by the AI
+from conversation history + git state.
 
 This keeps state minimal, avoids the "task.json drifts from filesystem reality" class of bugs, and is trivially customizable — users modify one markdown file, not Python/TypeScript.
 

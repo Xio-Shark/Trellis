@@ -1077,8 +1077,8 @@ if not success:
 When changing `safe_commit.py`, `add_session.py:_auto_commit_workspace`, or
 `task_store.py:_auto_commit_archive`:
 
-- `safe_trellis_paths_to_add` excludes `.trellis/.backup-*`, `.trellis/worktrees`,
-  `.trellis/.template-hashes.json`, `.trellis/.runtime`, `.trellis/.cache`.
+- `safe_trellis_paths_to_add` excludes `.trellis/.backup-*`, `.trellis/worktrees/`,
+  `.trellis/.template-hashes.json`, `.trellis/.runtime`, `.trellis/.cache/`.
 - `safe_git_add` returns `(False, False, stderr)` when paths are gitignored;
   `used_force` is never `True` in any returned tuple.
 - `print_gitignore_warning` output contains the literal substring
