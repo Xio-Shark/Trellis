@@ -283,7 +283,7 @@ Classify each hit:
 
 | Kind | Example | Action |
 |------|---------|--------|
-| **Schema / creator** | `task_store.cmd_create`, `utils/task-json.ts:emptyTaskJson` (TS factory used by `init.ts` + `update.ts`) | Drop field from output |
+| **Schema / creator** | `task_store.cmd_create`, `@mindfoldhq/trellis-core/task:emptyTaskRecord` (re-exported by `utils/task-json.ts:emptyTaskJson` for legacy CLI call sites) | Drop field from output |
 | **Writer / updater** | `inject-subagent-context.py:update_current_phase`, OpenCode plugin equivalent | **Drop the write call OR delete the function entirely** |
 | **Reader / getter** | `tasks.py:load_task` (defaults via `data.get("field", default)` on `TaskInfo`) | Keep with tolerance default (`data.get("field", null)`) — handles legacy files |
 | **Docs / comments** | spec, README, PRDs | Update references |
@@ -342,7 +342,7 @@ The task `04-21-task-schema-unify` ran a retroactive audit on the 0.5.0-beta.0 d
 |---|----------|------------|-------------------------------|
 | 1 | `packages/cli/src/commands/init.ts` (`interface TaskJson` + `getBootstrapTaskJson`) | Divergent 17-field TS interface + inline object literal | Audit grepped for field names, but this writer omitted them rather than writing them — it silently diverged in shape, not content |
 | 2 | `packages/cli/src/commands/update.ts` (migration-task inline literal) | Inline TS object still wrote `current_phase: 0` + `next_action: [...]` | Writer lives in a language the original Python-focused audit skipped |
-| 3 | `.trellis/scripts/create_bootstrap.py` | Orphan Python CLI — its own 13-field shape incl. structured subtasks | Not invoked by any command; shipped as template but dead. Easy to miss because grepping for "bootstrap" returns too many hits |
+| 3 | Historical `create_bootstrap.py` script (removed in 0.5.0-beta.9) | Orphan Python CLI — its own 13-field shape incl. structured subtasks | Was not invoked by any command and was shipped as a dead template. It is now removed by hash-verified migration, but remains part of the case study because it explains why shipped-but-unused files count during schema audits |
 | 4 | `.trellis/scripts/common/types.py` — `TaskData` TypedDict declared `current_phase: int` + `next_action: list[dict]` | **Type-declaration writer**: no runtime code produces the field, but readers that annotate `TaskData` get IDE autocomplete for ghost fields, and code reviewers see "valid field" | A TypedDict is technically a declaration, not a writer — but to the reader-side contract, it IS a writer of expectations |
 
 **Three lessons added to the audit discipline**:
@@ -351,7 +351,15 @@ The task `04-21-task-schema-unify` ran a retroactive audit on the 0.5.0-beta.0 d
 2. **Shipped-but-unused code counts**: any file enumerated in a template registry (`packages/cli/src/templates/trellis/index.ts`, `templates/markdown/index.ts`) is a writer of user expectations even if no command invokes it. Orphan = still writes.
 3. **Type declarations count as writers of the reader-side contract**: a TypedDict / TS interface that still declares the deprecated field misleads consumers the same way a runtime writer does. Prune declarations in the same PR as runtime writers.
 
-**Consolidation outcome**: `packages/cli/src/utils/task-json.ts` now exports a single `TaskJson` type + `emptyTaskJson(overrides)` factory. Both `init.ts` and `update.ts` route through it. The audit set for future schema changes is now: canonical Python `cmd_create` (runtime) + canonical TS `emptyTaskJson` (bootstrap + migration) + `TaskData` TypedDict (declaration). Three surfaces instead of seven.
+**Consolidation outcome**: the canonical TypeScript task shape now lives in
+`@mindfoldhq/trellis-core/task` as `TrellisTaskRecord` +
+`emptyTaskRecord(overrides)`. `packages/cli/src/utils/task-json.ts` only
+re-exports those under the legacy `TaskJson` / `emptyTaskJson` names for CLI
+call sites. Both `init.ts` and `update.ts` route through that shared factory.
+The audit set for future schema changes is now: canonical Python `cmd_create`
+(runtime) + core `TrellisTaskRecord` / `emptyTaskRecord` (TS schema + factory) +
+CLI `utils/task-json.ts` re-export users (bootstrap + migration) + `TaskData`
+TypedDict (Python declaration).
 
 ---
 

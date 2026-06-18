@@ -137,7 +137,7 @@ Native source-of-truth contract:
 |---|---|
 | `trellis workflow --template <id>` and current workflow is modified | Exit 1 with guidance to use `--force` or `--create-new`; do not prompt, even on a TTY |
 | Interactive `trellis workflow` picker and current workflow is modified | Prompt for overwrite, create-new, or skip |
-| `--create-new` | Write `.trellis/workflow.md.new`; do not change active workflow or hash file |
+| `--create-new` | Write a generated `workflow.md.new` file beside `.trellis/workflow.md`; do not change active workflow or hash file |
 | `--force` | Overwrite active workflow and apply the native/non-native hash contract |
 | Missing workflow id | Throw `WorkflowResolveError` / command error; CLI exits non-zero |
 | Marketplace index fetch fails | List can still show bundled native with warning; resolve fails with workflow-specific error |
@@ -176,7 +176,7 @@ Integration tests:
   hash.
 - Explicit `--template` with modified workflow fails even when `stdin.isTTY` is
   true.
-- `--create-new` writes `.trellis/workflow.md.new` and does not touch the active
+- `--create-new` writes a generated `workflow.md.new` file beside `.trellis/workflow.md` and does not touch the active
   workflow or hash.
 - `trellis update` after switching to non-native does not restore native.
 - Marketplace native mirror matches bundled native workflow when the mirror file

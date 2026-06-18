@@ -732,7 +732,7 @@ describe("regression: update only configured platforms (beta.16)", () => {
       "kiro",
       "gemini",
       "antigravity",
-      "windsurf",
+      "devin",
       "qoder",
       "codebuddy",
       "copilot",
@@ -4031,7 +4031,7 @@ print(len(entries))
       { cwd: tmpDir, encoding: "utf-8" },
     );
 
-    // The [Kilo, Antigravity, Windsurf] inline block content surfaces:
+    // The [Kilo, Antigravity, Devin] inline block content surfaces:
     // it tells the main session to load trellis-before-dev directly.
     expect(output).toContain("trellis-before-dev");
     expect(output).toContain("Read `{TASK_DIR}/prd.md`");
@@ -4290,9 +4290,12 @@ describe("regression: platform additions (beta.9, beta.13, beta.16)", () => {
     expect(AI_TOOLS.antigravity.configDir).toBe(".agent/workflows");
   });
 
-  it("[windsurf] Windsurf platform is registered", () => {
-    expect(AI_TOOLS).toHaveProperty("windsurf");
-    expect(AI_TOOLS.windsurf.configDir).toBe(".windsurf/workflows");
+  it("[devin] Devin platform is registered (formerly Windsurf)", () => {
+    expect(AI_TOOLS).toHaveProperty("devin");
+    expect(AI_TOOLS.devin.configDir).toBe(".devin/workflows");
+    expect(AI_TOOLS.devin.name).toBe("Devin");
+    // Windsurf was renamed to Devin — the old key must be gone.
+    expect(AI_TOOLS).not.toHaveProperty("windsurf");
   });
 
   it("[qoder] Qoder platform is registered", () => {
@@ -4371,8 +4374,10 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
     expect(commonCliAdapter).toContain(".agent");
   });
 
-  it("[windsurf] cli_adapter.py supports windsurf platform", () => {
-    expect(commonCliAdapter).toContain('"windsurf"');
+  it("[devin] cli_adapter.py supports devin platform (formerly windsurf)", () => {
+    expect(commonCliAdapter).toContain('"devin"');
+    expect(commonCliAdapter).toContain(".devin");
+    // Legacy .windsurf/ is still recognized for back-compat detection.
     expect(commonCliAdapter).toContain(".windsurf");
   });
 
@@ -4645,7 +4650,7 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
     expect(commonCliAdapter).toContain(".kiro");
     expect(commonCliAdapter).toContain(".gemini");
     expect(commonCliAdapter).toContain(".agent");
-    expect(commonCliAdapter).toContain(".windsurf");
+    expect(commonCliAdapter).toContain(".devin");
     expect(commonCliAdapter).toContain(".qoder");
     expect(commonCliAdapter).toContain(".codebuddy");
     expect(commonCliAdapter).toContain(".github/copilot");
@@ -4871,7 +4876,10 @@ describe("regression: migration manifest consistency", () => {
         to: (n) => `.agent/skills/trellis-${n}/SKILL.md`,
       },
       {
-        id: "windsurf",
+        // Devin shipped as "windsurf" (.windsurf/) at 0.5.0-beta.0 — this
+        // historical manifest predates the Windsurf → Devin rename, so the
+        // rename entries here are still keyed on the old .windsurf/ paths.
+        id: "devin (legacy .windsurf/)",
         from: (n) => `.windsurf/workflows/trellis-${n}.md`,
         to: (n) => `.windsurf/skills/trellis-${n}/SKILL.md`,
       },
@@ -4974,16 +4982,16 @@ describe("regression: collectTemplates paths match init directory structure (0.3
     }
   });
 
-  it("[windsurf] windsurf uses workflows/ instead of commands/trellis/", () => {
-    const templates = collectPlatformTemplates("windsurf");
+  it("[devin] devin uses workflows/ instead of commands/trellis/", () => {
+    const templates = collectPlatformTemplates("devin");
     expect(templates).toBeInstanceOf(Map);
     if (!templates) return;
     const keys = [...templates.keys()];
     for (const key of keys) {
       expect(
-        key.startsWith(".windsurf/workflows/") ||
-          key.startsWith(".windsurf/skills/"),
-        `windsurf path should use workflows/ or skills/: ${key}`,
+        key.startsWith(".devin/workflows/") ||
+          key.startsWith(".devin/skills/"),
+        `devin path should use workflows/ or skills/: ${key}`,
       ).toBe(true);
     }
   });
@@ -5647,7 +5655,7 @@ describe("regression: Gemini CLI 0.40.x template compatibility (#224)", () => {
         `Codex and Gemini disagree on ${filePath} — last-writer-wins would corrupt the shared skill`,
       ).toBe(codexContent);
     }
-    // At least the 5 shared workflow skills + bundled trellis-meta files must
+    // At least the shared common skills + bundled trellis-meta files must
     // overlap. If this drops to 0 the assertion above is silently passing.
     expect(overlapCount).toBeGreaterThan(0);
   });
@@ -5699,8 +5707,8 @@ describe("regression: Gemini CLI 0.40.x template compatibility (#224)", () => {
   });
 
   it("[#224] needsCodexUpgrade looks for Codex-only command-as-skill markers, not bare `.agents/skills/` prefix", () => {
-    // Regression: with Gemini also writing to `.agents/skills/` (5 shared
-    // workflow skills only), the legacy-Codex detector previously triggered
+    // Regression: with Gemini also writing to `.agents/skills/` (shared common
+    // skills only), the legacy-Codex detector previously triggered
     // a false-positive `.codex/` install on every fresh `init --gemini` +
     // `update` cycle. The fix narrows detection to Codex-only files
     // (`trellis-continue/SKILL.md`, `trellis-finish-work/SKILL.md`) which

@@ -23,6 +23,7 @@ These guides help you **ask the right questions before coding**.
 |-------|---------|-------------|
 | [Code Reuse Thinking Guide](./code-reuse-thinking-guide.md) | Identify patterns and reduce duplication | When you notice repeated patterns |
 | [Cross-Layer Thinking Guide](./cross-layer-thinking-guide.md) | Think through data flow across layers | Features spanning multiple layers |
+| [Cross-Platform Thinking Guide](./cross-platform-thinking-guide.md) | Catch OS, shell, Python, path, and persistence assumptions | When commands, hooks, templates, scripts, or persisted JSON must work across platforms |
 
 ---
 
@@ -50,6 +51,17 @@ These guides help you **ask the right questions before coding**.
 - [ ] Multiple branches update the same derived state from `kind` / `action`
 
 → Read [Code Reuse Thinking Guide](./code-reuse-thinking-guide.md)
+
+### When to Think About Cross-Platform Issues
+
+- [ ] You are editing Python scripts, shell commands, hooks, or generated config
+- [ ] You are adding or documenting a command users copy into terminals
+- [ ] Code or docs assume `python3`, shebang execution, `/` path separators, or
+      POSIX-only shell behavior
+- [ ] You are changing persisted JSON or migrations that must work across
+      macOS, Linux, and Windows
+
+→ Read [Cross-Platform Thinking Guide](./cross-platform-thinking-guide.md)
 
 ### When Verifying AI Cross-Review Results
 

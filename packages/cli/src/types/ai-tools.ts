@@ -16,7 +16,7 @@ export type AITool =
   | "kiro"
   | "gemini"
   | "antigravity"
-  | "windsurf"
+  | "devin"
   | "qoder"
   | "codebuddy"
   | "copilot"
@@ -38,7 +38,7 @@ export type TemplateDir =
   | "kiro"
   | "gemini"
   | "antigravity"
-  | "windsurf"
+  | "devin"
   | "qoder"
   | "codebuddy"
   | "copilot"
@@ -60,7 +60,7 @@ export type CliFlag =
   | "kiro"
   | "gemini"
   | "antigravity"
-  | "windsurf"
+  | "devin"
   | "qoder"
   | "codebuddy"
   | "copilot"
@@ -271,12 +271,12 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
       cliFlag: "antigravity",
     },
   },
-  windsurf: {
-    name: "Windsurf",
-    templateDirs: ["common", "windsurf"],
-    configDir: ".windsurf/workflows",
-    extraManagedPaths: [".windsurf/skills"],
-    cliFlag: "windsurf",
+  devin: {
+    name: "Devin",
+    templateDirs: ["common", "devin"],
+    configDir: ".devin/workflows",
+    extraManagedPaths: [".devin/skills"],
+    cliFlag: "devin",
     defaultChecked: false,
     hasPythonHooks: false,
     templateContext: {
@@ -285,7 +285,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
       userActionLabel: "Workflows",
       agentCapable: false,
       hasHooks: false,
-      cliFlag: "windsurf",
+      cliFlag: "devin",
     },
   },
   qoder: {

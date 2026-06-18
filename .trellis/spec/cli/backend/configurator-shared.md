@@ -8,7 +8,7 @@ For per-platform integration mechanics (which directory each platform writes, wh
 
 ## Overview
 
-`configurators/shared.ts` exists to keep platform configurators (`configurators/claude.ts`, `configurators/cursor.ts`, `configurators/codex.ts`, `configurators/gemini.ts`, `configurators/iflow.ts`, `configurators/kiro.ts`, `configurators/qoder.ts`, `configurators/copilot.ts`, `configurators/codebuddy.ts`, `configurators/droid.ts`, `configurators/kilo.ts`, `configurators/antigravity.ts`, `configurators/windsurf.ts`, `configurators/pi.ts`, `configurators/opencode.ts`) from independently re-implementing the same byte-for-byte rendering, write, and prelude-injection logic. Drift between configurators reliably becomes a bug:
+`configurators/shared.ts` exists to keep platform configurators (`configurators/claude.ts`, `configurators/cursor.ts`, `configurators/codex.ts`, `configurators/gemini.ts`, `configurators/iflow.ts`, `configurators/kiro.ts`, `configurators/qoder.ts`, `configurators/copilot.ts`, `configurators/codebuddy.ts`, `configurators/droid.ts`, `configurators/kilo.ts`, `configurators/antigravity.ts`, `configurators/devin.ts`, `configurators/pi.ts`, `configurators/opencode.ts`) from independently re-implementing the same byte-for-byte rendering, write, and prelude-injection logic. Drift between configurators reliably becomes a bug:
 
 - If two platforms render `{{PYTHON_CMD}}` differently, `trellis update`'s template-hash compare reports a phantom diff after every install.
 - If two configurators that both write into `.agents/skills/` resolve `{{CMD_REF}}` per-platform, the last writer wins and clobbers the other (see `platform-integration.md` "Rule: `.agents/skills/` writes use `resolvePlaceholdersNeutral()`").
@@ -50,7 +50,7 @@ These return `ResolvedTemplate[]` (`{ name, content }`) and are the canonical en
 
 `configurators/shared.ts:resolveCommands` — returns command templates as plain commands (no frontmatter). Used by platforms that have a native command surface (Cursor, Claude, Gemini, OpenCode, etc.). Filters out `start.md` on agent-capable platforms — the session-start hook injects the workflow overview, so a user-facing `/start` would be redundant. Filtering is by `ctx.agentCapable`, not `hasHooks`; agent-capable correlates with "has a session-start mechanism (hook or plugin)".
 
-`configurators/shared.ts:resolveSkills` — returns the 5 single-file workflow skills (`brainstorm`, `before-dev`, `check`, `break-loop`, `update-spec`) wrapped with skill frontmatter and platform-specific `{{CMD_REF}}` rendering. Used by "both" platforms — those that emit native commands AND skills (Qoder, Cursor with `.cursor/skills`, Windsurf).
+`configurators/shared.ts:resolveSkills` — returns the 5 single-file workflow skills (`brainstorm`, `before-dev`, `check`, `break-loop`, `update-spec`) wrapped with skill frontmatter and platform-specific `{{CMD_REF}}` rendering. Used by "both" platforms — those that emit native commands AND skills (Qoder, Cursor with `.cursor/skills`, Devin).
 
 `configurators/shared.ts:resolveSkillsNeutral` — same 5 skills, but uses `resolvePlaceholdersNeutral`. Use this for any skill set destined for `.agents/skills/`.
 

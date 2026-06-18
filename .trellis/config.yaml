@@ -72,9 +72,17 @@ max_journal_lines: 2000
 #   webapp:
 #     path: ./webapp
 #     git: true
+packages:
+  cli:
+    path: packages/cli
+  core:
+    path: packages/core
+  docs-site:
+    path: docs-site
+    type: submodule
 
 # Default package used when --package is not specified.
-# default_package: frontend
+default_package: cli
 
 #-------------------------------------------------------------------------------
 # Channel worker OOM guard
