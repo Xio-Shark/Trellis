@@ -60,8 +60,10 @@ export type SharedHookPlatform =
  * - Kiro supports only `agentSpawn` (no SessionStart / UserPromptSubmit
  *   event), so it takes just `inject-subagent-context.py`.
  * - Claude Code `statusLine` is intentionally not installed by default.
- *   Users can add their own statusLine command in `.claude/settings.json`
- *   without Trellis owning a generated hook file.
+ *   Users can add their own statusLine command in `.claude/settings.json`,
+ *   or opt in to the Trellis one via `trellis init --with-statusline`
+ *   (installed from `templates/claude/hooks/`, not from this table — no
+ *   other platform has a statusLine event).
  */
 export const SHARED_HOOKS_BY_PLATFORM: Record<
   SharedHookPlatform,

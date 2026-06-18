@@ -986,6 +986,56 @@ describe("update() integration", () => {
     expect(updatedSettings.hooks).toBeDefined();
   });
 
+  it("#22a does not install statusline on update for opted-out projects", async () => {
+    await init({ yes: true, force: true, claude: true });
+
+    const statusLinePath = path.join(
+      tmpDir,
+      ".claude",
+      "hooks",
+      "statusline.py",
+    );
+    expect(fs.existsSync(statusLinePath)).toBe(false);
+
+    await update({ force: true });
+
+    // statusline.py must NOT enter the template walk as a `newFiles` install
+    expect(fs.existsSync(statusLinePath)).toBe(false);
+    const settings = JSON.parse(
+      fs.readFileSync(path.join(tmpDir, ".claude", "settings.json"), "utf-8"),
+    ) as Record<string, unknown>;
+    expect(settings).not.toHaveProperty("statusLine");
+  });
+
+  it("#22b preserves a --with-statusline install across update", async () => {
+    await init({ yes: true, force: true, claude: true, withStatusline: true });
+
+    const settingsPath = path.join(tmpDir, ".claude", "settings.json");
+    const statusLinePath = path.join(
+      tmpDir,
+      ".claude",
+      "hooks",
+      "statusline.py",
+    );
+
+    expect(fs.existsSync(statusLinePath)).toBe(true);
+    const hookContentBefore = fs.readFileSync(statusLinePath, "utf-8");
+    const settingsBefore = fs.readFileSync(settingsPath, "utf-8");
+    expect(
+      (JSON.parse(settingsBefore) as Record<string, unknown>).statusLine,
+    ).toBeDefined();
+
+    await update({ force: true });
+
+    expect(fs.existsSync(statusLinePath)).toBe(true);
+    expect(fs.readFileSync(statusLinePath, "utf-8")).toBe(hookContentBefore);
+    // Byte-identical, not just deep-equal: init's injectStatusLine must
+    // produce exactly what preserveExistingClaudeStatusLine re-derives
+    // (statusLine appended last). Any drift — even key order — makes update
+    // flag a phantom settings.json change on every fresh opted-in project.
+    expect(fs.readFileSync(settingsPath, "utf-8")).toBe(settingsBefore);
+  });
+
   // --- Breaking-change migration gate (v0.5.0-beta.0+) ---
   // Gate: if upgrading from a version that spans a breaking manifest with
   // recommendMigrate=true, `update` must be invoked with --migrate (or --dry-run
