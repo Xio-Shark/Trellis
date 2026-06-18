@@ -130,7 +130,7 @@ To customize breadcrumb wording, edit the `[workflow-state:STATUS]` block in
 
 The `[workflow-state:STATUS]` blocks are not the only runtime-sensitive
 content in `workflow.md`. Phase headings, step headings, and platform marker
-blocks such as `[codex-inline, Kilo, Antigravity, Windsurf]` are parsed by
+blocks such as `[codex-inline, Kilo, Antigravity, Devin]` are parsed by
 `workflow_phase.py` / `get_context.py` when step-specific instructions are
 loaded.
 
@@ -243,7 +243,7 @@ rely on categorical breadcrumb invisibility inside sub-agents.
 Hook-inject platforms: claude, cursor, codebuddy, droid, kiro (`agentSpawn`), opencode (JS plugin).
 Pull-prelude platforms: codex, gemini, qoder, copilot.
 Extension-backed platforms: pi.
-Hookless: kilo, antigravity, windsurf.
+Hookless: kilo, antigravity, devin.
 
 **Implication**: sub-agent-required guidance must still be propagated through
 `inject-subagent-context` for hook-inject platforms, `buildPullBasedPrelude` for

@@ -75,7 +75,7 @@ docs/
 ├── ai-tools/              # AI tools guides
 │   ├── cursor.mdx
 │   ├── claude-code.mdx
-│   └── windsurf.mdx
+│   └── devin.mdx
 │
 ├── snippets/              # Reusable content fragments
 │   └── snippet-intro.mdx

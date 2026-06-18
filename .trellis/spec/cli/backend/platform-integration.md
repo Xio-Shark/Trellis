@@ -1,6 +1,6 @@
 # Platform Integration Guide
 
-How to add support for a new AI CLI platform (like Claude Code, Cursor, Gemini CLI, OpenCode, Codex, Kilo, Kiro, Qoder, CodeBuddy, Copilot, Droid, Pi, Windsurf, Antigravity).
+How to add support for a new AI CLI platform (like Claude Code, Cursor, Gemini CLI, OpenCode, Codex, Kilo, Kiro, Qoder, CodeBuddy, Copilot, Droid, Pi, Devin, Antigravity).
 
 ---
 
@@ -208,13 +208,13 @@ files.set(".agents/skills/check/SKILL.md", resolvePlaceholdersNeutral(tmpl, ctx)
 
 > Note: Droid uses "droids" terminology instead of "agents" but follows the same pattern. Uses `writeAgents()` with the droids directory.
 
-**Windsurf pattern** (no template directory):
+**Devin pattern** (no template directory):
 
 | Directory | Contents |
 |-----------|----------|
-| (no template directory) | Windsurf generates from `common/` templates + shared hooks at runtime |
+| (no template directory) | Devin generates from `common/` templates + shared hooks at runtime |
 
-> Note: Windsurf uses `resolveCommands()` for workflows and `resolveSkills()` for auto-triggered skills. Shared hooks are written via `writeSharedHooks()`. No platform-specific template files needed.
+> Note: Devin uses `resolveCommands()` for workflows and `resolveSkills()` for auto-triggered skills. Shared hooks are written via `writeSharedHooks()`. No platform-specific template files needed.
 
 **Required commands/skills**: All platforms must include the following (adapted to each platform's format). Content comes from `src/templates/common/`:
 
@@ -431,7 +431,7 @@ while debugging. Statuslines may shorten this to `[session]` to avoid noisy UI.
 |------|----------|----------------|
 | `src/templates/trellis/scripts/common/task_store.py` | `_SUBAGENT_CONFIG_DIRS` (tuple) | Add `.{configDir}/` if the new platform can spawn sub-agents (Class-1 hook-inject, Class-2 pull-based, or extension-backed) |
 
-This tuple is consulted by `cmd_create` to decide whether to seed `implement.jsonl` / `check.jsonl` for the new task. Agent-less platforms (Kilo, Antigravity, Windsurf) MUST be excluded — they don't consume jsonl.
+This tuple is consulted by `cmd_create` to decide whether to seed `implement.jsonl` / `check.jsonl` for the new task. Agent-less platforms (Kilo, Antigravity, Devin) MUST be excluded — they don't consume jsonl.
 
 Same root reason as `cli_adapter.py`: Python scripts run at user-project runtime and can't import from the TS `AI_TOOLS` registry, so they maintain their own parallel registry. When adding/removing sub-agent capability, update both in tandem.
 
@@ -794,7 +794,7 @@ These are now **automatically derived** from the registry:
 | CodeBuddy | `/trellis:xxx` | Markdown (`.md`) | `/trellis:finish-work` |
 | Copilot | `/trellis:xxx` | Markdown (`.prompt.md`) | `/trellis:finish-work` |
 | Droid | `/trellis:xxx` | Markdown (`.md`) | `/trellis:finish-work` |
-| Windsurf | `/trellis-xxx` | Markdown (`.md`) + `SKILL.md` | `/trellis-finish-work` |
+| Devin | `/trellis-xxx` | Markdown (`.md`) + `SKILL.md` | `/trellis-finish-work` |
 | Pi Agent | `/trellis-xxx` prompt templates + `/skill:<name>` skills | Markdown (`.md`) + `SKILL.md` + TypeScript extension | `/trellis-finish-work` |
 
 When creating platform templates, ensure references match the platform's interaction format and file format.
@@ -812,7 +812,7 @@ Commands emitted by `resolveCommands(ctx)` / `resolveAllAsSkills(ctx)` in `src/c
 **Rule**: filter is by `ctx.agentCapable`, not `hasHooks`. `agentCapable` is authoritative because it also correlates with "has a session-start mechanism" (Python hook or JS plugin).
 
 - Agent-capable: `claude-code, cursor, opencode, codex, kiro, gemini, qoder, codebuddy, copilot, droid, pi`
-- Agent-less: `kilo, antigravity, windsurf`
+- Agent-less: `kilo, antigravity, devin`
 
 ## Subagent Context Injection: Hook-based vs Pull-based vs Extension-backed
 
