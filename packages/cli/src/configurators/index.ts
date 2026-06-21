@@ -90,7 +90,10 @@ import {
   getAllAgents as getGeminiAgents,
   getSettingsTemplate as getGeminiSettings,
 } from "../templates/gemini/index.js";
-import { getAllAgents as getKiroAgents } from "../templates/kiro/index.js";
+import {
+  getAllAgents as getKiroAgents,
+  getIdeHooks as getKiroIdeHooks,
+} from "../templates/kiro/index.js";
 import {
   getSharedHookScriptsForPlatform,
   type SharedHookPlatform,
@@ -279,6 +282,12 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
       }
       for (const [k, v] of collectSharedHooks(".kiro/hooks", "kiro")) {
         files.set(k, v);
+      }
+      for (const hook of getKiroIdeHooks()) {
+        files.set(
+          `.kiro/hooks/${hook.name}`,
+          resolvePlaceholders(hook.content),
+        );
       }
       return files;
     },

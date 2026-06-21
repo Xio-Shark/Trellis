@@ -157,7 +157,10 @@ describe("UserPromptSubmit hook wiring", () => {
     });
   }
 
-  it("kiro agent JSONs do NOT wire UserPromptSubmit (downgrade per Codex R3 #4)", async () => {
+  it("kiro main `trellis` agent wires userPromptSubmit; sub-agents do not", async () => {
+    // Kiro DOES support per-turn hooks (official docs: CLI agent
+    // `hooks.userPromptSubmit`). The main `trellis` agent wires the per-turn
+    // breadcrumb; the 3 sub-agents only inject sub-agent context on spawn.
     const fs = await import("node:fs");
     const { dirname, join } = await import("node:path");
     const { fileURLToPath } = await import("node:url");
@@ -173,10 +176,18 @@ describe("UserPromptSubmit hook wiring", () => {
     for (const entry of fs.readdirSync(kiroAgentsDir)) {
       if (!entry.endsWith(".json")) continue;
       const content = fs.readFileSync(join(kiroAgentsDir, entry), "utf-8");
-      expect(
-        content,
-        `kiro/agents/${entry} should not wire inject-workflow-state.py`,
-      ).not.toContain("inject-workflow-state.py");
+      const parsed = JSON.parse(content) as {
+        hooks?: Record<string, unknown>;
+      };
+      if (entry === "trellis.json") {
+        expect(Object.keys(parsed.hooks ?? {})).toContain("userPromptSubmit");
+        expect(content).toContain("inject-workflow-state.py");
+      } else {
+        expect(
+          content,
+          `kiro/agents/${entry} (sub-agent) should not wire inject-workflow-state.py`,
+        ).not.toContain("inject-workflow-state.py");
+      }
     }
   });
 });

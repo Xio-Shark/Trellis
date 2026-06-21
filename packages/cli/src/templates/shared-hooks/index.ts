@@ -57,8 +57,14 @@ export type SharedHookPlatform =
  *   Class-2 (pull-based) platforms (codex, copilot, gemini, qoder) can't
  *   have hooks mutate sub-agent prompts — their sub-agents load context
  *   via a prelude instead.
- * - Kiro supports only `agentSpawn` (no SessionStart / UserPromptSubmit
- *   event), so it takes just `inject-subagent-context.py`.
+ * - Kiro supports per-turn + spawn hooks on both surfaces (per the official
+ *   docs https://kiro.dev/docs/cli/hooks/): the CLI custom agent declares
+ *   `hooks.userPromptSubmit` + `hooks.agentSpawn`, and the IDE declares a
+ *   `.kiro.hook` with `when.type=promptSubmit`. So Kiro ships
+ *   `session-start.py` (agentSpawn overview), `inject-workflow-state.py`
+ *   (per-turn breadcrumb), and `inject-subagent-context.py` (sub-agent
+ *   spawn). The scripts emit a plain-text Kiro branch — Kiro adds a hook's
+ *   stdout directly to the conversation context (no JSON envelope).
  * - Claude Code `statusLine` is intentionally not installed by default.
  *   Users can add their own statusLine command in `.claude/settings.json`,
  *   or opt in to the Trellis one via `trellis init --with-statusline`
@@ -93,7 +99,11 @@ export const SHARED_HOOKS_BY_PLATFORM: Record<
     "inject-workflow-state.py",
     "inject-subagent-context.py",
   ],
-  kiro: ["inject-subagent-context.py"],
+  kiro: [
+    "session-start.py",
+    "inject-workflow-state.py",
+    "inject-subagent-context.py",
+  ],
 };
 
 /**

@@ -89,10 +89,17 @@ describe("shared-hooks capability table", () => {
     }
   });
 
-  it("kiro registers only inject-subagent-context.py (agentSpawn is its only hook event)", () => {
-    expect([...SHARED_HOOKS_BY_PLATFORM.kiro]).toEqual([
-      "inject-subagent-context.py",
-    ]);
+  it("kiro registers session-start, workflow-state, and subagent-context hooks", () => {
+    // Kiro wires per-turn + spawn hooks on both surfaces (CLI agent
+    // userPromptSubmit/agentSpawn + IDE .kiro.hook promptSubmit), so it ships
+    // the same trio as other agent-capable push-based platforms.
+    expect([...SHARED_HOOKS_BY_PLATFORM.kiro].sort()).toEqual(
+      [
+        "inject-subagent-context.py",
+        "inject-workflow-state.py",
+        "session-start.py",
+      ].sort(),
+    );
   });
 
   it("getSharedHookScriptsForPlatform returns exactly the declared set per platform", () => {

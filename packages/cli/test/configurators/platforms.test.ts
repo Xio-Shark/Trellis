@@ -398,6 +398,76 @@ describe("configurePlatform", () => {
     expect(fs.existsSync(path.join(skillsRoot, BUNDLED_REFERENCE))).toBe(true);
   });
 
+  it("configurePlatform('kiro') writes main agent, IDE hook, and shared hooks", async () => {
+    await configurePlatform("kiro", tmpDir);
+
+    const expectedPythonCmd =
+      process.platform === "win32" ? "python" : "python3";
+
+    // Shared hooks now include per-turn + session-start, not just subagent.
+    const hooksDir = path.join(tmpDir, ".kiro", "hooks");
+    for (const script of [
+      "inject-workflow-state.py",
+      "session-start.py",
+      "inject-subagent-context.py",
+    ]) {
+      expect(fs.existsSync(path.join(hooksDir, script))).toBe(true);
+    }
+
+    // Main `trellis` agent wires per-turn + session-start hooks; PYTHON_CMD
+    // resolved.
+    const trellisPath = path.join(tmpDir, ".kiro", "agents", "trellis.json");
+    expect(fs.existsSync(trellisPath)).toBe(true);
+    const trellisRaw = fs.readFileSync(trellisPath, "utf-8");
+    expect(trellisRaw).not.toContain("{{PYTHON_CMD}}");
+    const trellis = JSON.parse(trellisRaw) as {
+      resources?: string[];
+      hooks?: Record<string, { command: string }[]>;
+    };
+    expect(trellis.hooks?.userPromptSubmit?.[0].command).toBe(
+      `${expectedPythonCmd} .kiro/hooks/inject-workflow-state.py`,
+    );
+    expect(trellis.hooks?.agentSpawn?.[0].command).toBe(
+      `${expectedPythonCmd} .kiro/hooks/session-start.py`,
+    );
+    expect(trellis.resources).toContain("file://.trellis/workflow.md");
+
+    // 3 sub-agents keep their inject-subagent-context.py spawn hook.
+    for (const name of [
+      "trellis-implement",
+      "trellis-check",
+      "trellis-research",
+    ]) {
+      const sub = JSON.parse(
+        fs.readFileSync(
+          path.join(tmpDir, ".kiro", "agents", `${name}.json`),
+          "utf-8",
+        ),
+      ) as { hooks?: Record<string, { command: string }[]> };
+      expect(sub.hooks?.agentSpawn?.[0].command).toBe(
+        `${expectedPythonCmd} .kiro/hooks/inject-subagent-context.py`,
+      );
+    }
+
+    // IDE `.kiro.hook` written with PYTHON_CMD resolved and valid schema.
+    const ideHookPath = path.join(
+      hooksDir,
+      "trellis-workflow-state.kiro.hook",
+    );
+    expect(fs.existsSync(ideHookPath)).toBe(true);
+    const ideRaw = fs.readFileSync(ideHookPath, "utf-8");
+    expect(ideRaw).not.toContain("{{PYTHON_CMD}}");
+    const ideHook = JSON.parse(ideRaw) as {
+      when: { type: string };
+      then: { type: string; command: string };
+    };
+    expect(ideHook.when.type).toBe("promptSubmit");
+    expect(ideHook.then.type).toBe("runCommand");
+    expect(ideHook.then.command).toBe(
+      `${expectedPythonCmd} .kiro/hooks/inject-workflow-state.py`,
+    );
+  });
+
   it("configurePlatform('gemini') creates .gemini directory", async () => {
     await configurePlatform("gemini", tmpDir);
     expect(fs.existsSync(path.join(tmpDir, ".gemini"))).toBe(true);
