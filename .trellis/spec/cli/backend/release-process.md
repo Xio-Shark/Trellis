@@ -115,6 +115,25 @@ git push origin <branch>
 
 `packages/cli/scripts/release.js` excludes `docs-site` and `marketplace` from its automatic pre-release staging so submodule pointer changes cannot be hidden inside a generic release commit.
 
+### Contract: every modified submodule must be pushed before the version tag
+
+The tag-triggered `publish.yml` CI runs `git submodule update --init --recursive` against the tagged commit. If **any** submodule pointer references a SHA that doesn't exist on the submodule's remote, CI fails at checkout with:
+
+```
+fatal: remote error: upload-pack: not our ref <SHA>
+fatal: Fetched in submodule path '<name>', but it did not contain <SHA>. Direct fetching of that commit failed.
+```
+
+This is per-submodule. Pushing `docs-site` but forgetting `marketplace` (or vice versa) still fails. Verify all submodules before `pnpm release`:
+
+```bash
+git submodule foreach 'sha=$(git rev-parse HEAD); git ls-remote origin $sha | grep -q $sha && echo "ok $name" || echo "FAIL $name $sha not on remote"'
+```
+
+Any `FAIL` line means: `cd <submodule> && git checkout -B main && git push origin main` before tagging. If the tag was already pushed when you discover the miss, recover by pushing the submodule then re-running the failed CI jobs (`gh run rerun <id> --failed`) — no new tag is needed.
+
+> **Incident note (2026-06, v0.6.4).** `marketplace/workflows/native/workflow.md` was touched as a parity mirror for a bundled template edit, committed in-submodule, and pointer-bumped in the main repo — but the submodule itself was never pushed to its `origin/main`. `pnpm release` happily tagged `v0.6.4`; CI fetched the new tag, tried to materialise the marketplace pointer `680bcbb`, and died at checkout. Fix took two commands (`git -C marketplace push origin main` + `gh run rerun --failed`) but the failure mode is invisible from main-repo `git status` (the submodule is "clean" locally), which is exactly why the verify step above is mandatory and not advisory.
+
 ### Contract: the pre-release sweep MUST exclude `.trellis/`
 
 The pre-release `git add` in `release.js` (the `chore: pre-release updates`

@@ -804,18 +804,21 @@ When creating platform templates, ensure references match the platform's interac
 
 ## Command Set by Platform Capability
 
-Commands emitted by `resolveCommands(ctx)` / `resolveAllAsSkills(ctx)` in `src/configurators/shared.ts`:
+Commands emitted by `resolveCommands(ctx)` / `resolveAllAsSkills(ctx)` / `resolveAllAsSkillsNeutral(ctx)` in `src/configurators/shared.ts`:
 
-| Command | Agent-capable platforms (11) | Agent-less platforms (3) |
-|---------|------------------------------|--------------------------|
-| `start` | ❌ not emitted by the common command resolver (Codex installs `trellis-start` as a skill because it has no active SessionStart hook; Pi re-adds `.pi/prompts/trellis-start.md` as an extension-backed fallback because `session_start` is notify-only) | ✅ emitted — manual equivalent of session-start hook |
-| `continue` | ✅ emitted | ✅ emitted |
-| `finish-work` | ✅ emitted | ✅ emitted |
+| Command | `agentCapable && hasHooks` (9) | `agentCapable && !hasHooks` (4) | `!agentCapable` (3) |
+|---------|--------------------------------|----------------------------------|---------------------|
+| `start` | ❌ filtered by the shared resolver — SessionStart-style hook injects opening context, user-facing `/start` would be redundant. Pi is the approved exception and re-adds `.pi/prompts/trellis-start.md` because `session_start` is notify-only. | ✅ emitted (skill and/or slash command per platform) — no hook fires, users need an invocable `start` | ✅ emitted — manual equivalent of session-start hook |
+| `continue` | ✅ emitted | ✅ emitted | ✅ emitted |
+| `finish-work` | ✅ emitted | ✅ emitted | ✅ emitted |
 
-**Rule**: filter is by `ctx.agentCapable`, not `hasHooks`. `agentCapable` is authoritative because it also correlates with "has a session-start mechanism" (Python hook or JS plugin).
+**Rule**: filter is by `ctx.agentCapable && ctx.hasHooks` — **both flags required** (changed in 0.6.4; the prior single-flag rule silently dropped `start` from Codex / ZCode / OpenCode / Reasonix). `agentCapable` alone is not a proxy for "has a session-start mechanism" because four agent-capable platforms ship without a SessionStart-equivalent hook and rely on user-invocable `start` instead.
 
-- Agent-capable: `claude-code, cursor, opencode, codex, kiro, gemini, qoder, codebuddy, copilot, droid, pi`
-- Agent-less: `kilo, antigravity, devin`
+- `agentCapable && hasHooks`: `claude-code, cursor, kiro, gemini, qoder, codebuddy, copilot, droid, pi`
+- `agentCapable && !hasHooks`: `codex, opencode, reasonix, zcode` — Codex has a UserPromptSubmit hook but no SessionStart; OpenCode has a `plugins/session-start.js` plugin but registry-`hasHooks` is reserved for the SessionStart-style hook protocol; ZCode and Reasonix have neither.
+- `!agentCapable`: `kilo, antigravity, devin`
+
+> **Gotcha**: do not treat `hasHooks=false` as "platform has no automation at all". For OpenCode it means "no SessionStart hook protocol" — its plugin still injects context. The flag is a hook-protocol marker, not a capability summary. When filtering by capability, query the actual capability you need, never assume a default pairing from one boolean.
 
 ## Subagent Context Injection: Hook-based vs Pull-based vs Extension-backed
 

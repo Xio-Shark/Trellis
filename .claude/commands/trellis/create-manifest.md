@@ -199,7 +199,7 @@ Verify:
 1. `packages/cli/src/migrations/manifests/<version>.json` exists and has valid JSON.
 2. Manifest `changelog` renders as real newlines.
 3. Both docs-site changelog MDX files exist and match 1:1.
-4. Docs-site submodule commit is pushed before the main repo pointer commit.
+4. **All** submodule commits are pushed before the main repo pointer commit (currently `docs-site/` + `marketplace/`). Verify with: `git submodule foreach 'sha=$(git rev-parse HEAD); git ls-remote origin $sha | grep -q $sha && echo "ok $name" || echo "FAIL $name $sha"'`. Tag-triggered CI does `git submodule update --init --recursive` and fails on the first unpushed pointer with `fatal: remote error: upload-pack: not our ref <SHA>`.
 5. `@mindfoldhq/trellis` and `@mindfoldhq/trellis-core` versions still match.
 
 ## Step 11: Publish Through CI
