@@ -23,7 +23,8 @@ export type AITool =
   | "droid"
   | "pi"
   | "reasonix"
-  | "zcode";
+  | "zcode"
+  | "trae";
 
 /**
  * Template directory categories
@@ -45,7 +46,8 @@ export type TemplateDir =
   | "droid"
   | "pi"
   | "reasonix"
-  | "zcode";
+  | "zcode"
+  | "trae";
 
 /**
  * CLI flag names for platform selection (e.g., --claude, --cursor, --kilo, --kiro, --gemini, --antigravity)
@@ -67,7 +69,8 @@ export type CliFlag =
   | "droid"
   | "pi"
   | "reasonix"
-  | "zcode";
+  | "zcode"
+  | "trae";
 
 /**
  * Template context for placeholder resolution.
@@ -83,7 +86,12 @@ export interface TemplateContext {
     | "Bash scripts or Agent calls"
     | "Bash scripts or file reads";
   /** Label for user-invocable actions */
-  userActionLabel: "Slash commands" | "Skills" | "Workflows" | "Prompts";
+  userActionLabel:
+    | "Slash commands"
+    | "Skills"
+    | "Workflows"
+    | "Prompts"
+    | "Commands";
   /** Platform supports spawning sub-agents with isolated context */
   agentCapable: boolean;
   /** Platform has hook system (SessionStart, PreToolUse) */
@@ -406,6 +414,22 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
       agentCapable: true,
       hasHooks: false,
       cliFlag: "zcode",
+    },
+  },
+  trae: {
+    name: "Trae",
+    templateDirs: ["common", "trae"],
+    configDir: ".trae",
+    cliFlag: "trae",
+    defaultChecked: false,
+    hasPythonHooks: true,
+    templateContext: {
+      cmdRefPrefix: "/trellis-",
+      executorAI: "Bash scripts or tool calls",
+      userActionLabel: "Commands",
+      agentCapable: true,
+      hasHooks: true,
+      cliFlag: "trae",
     },
   },
 };

@@ -85,6 +85,7 @@ program
   .option("--pi", "Include Pi Agent extension assets")
   .option("--reasonix", "Include Reasonix skills")
   .option("--zcode", "Include ZCode commands")
+  .option("--trae", "Include Trae IDE commands")
   .option(
     "--with-statusline",
     "Install the Trellis statusLine for Claude Code (off by default)",

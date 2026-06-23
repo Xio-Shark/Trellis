@@ -34,6 +34,7 @@ import { configureDroid } from "./droid.js";
 import { configurePi, collectPiTemplates } from "./pi.js";
 import { configureReasonix, collectReasonixTemplates } from "./reasonix.js";
 import { configureZcode, collectZcodeTemplates } from "./zcode.js";
+import { configureTrae } from "./trae.js";
 
 // Shared utilities
 import {
@@ -73,6 +74,10 @@ import {
   getAllAgents as getQoderAgents,
   getSettingsTemplate as getQoderSettings,
 } from "../templates/qoder/index.js";
+import {
+  getAllAgents as getTraeAgents,
+  getSettingsTemplate as getTraeSettings,
+} from "../templates/trae/index.js";
 import {
   getAllAgents as getCodebuddyAgents,
   getSettingsTemplate as getCodebuddySettings,
@@ -455,6 +460,32 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
   zcode: {
     configure: configureZcode,
     collectTemplates: () => collectZcodeTemplates(),
+  },
+  trae: {
+    configure: configureTrae,
+    collectTemplates: () => {
+      const files = collectBothTemplates(
+        AI_TOOLS.trae.templateContext,
+        (n) => `.trae/commands/trellis-${n}.md`,
+        ".trae/skills",
+        (filePath, content) => {
+          const name = path.basename(filePath, ".md");
+          return wrapWithCommandFrontmatter(name, content);
+        },
+      );
+      for (const agent of applyPullBasedPreludeMarkdown(getTraeAgents())) {
+        files.set(`.trae/agents/${agent.name}.md`, agent.content);
+      }
+      for (const [k, v] of collectSharedHooks(".trae/hooks", "trae")) {
+        files.set(k, v);
+      }
+      const settings = getTraeSettings();
+      files.set(
+        `.trae/${settings.targetPath}`,
+        resolvePlaceholders(settings.content),
+      );
+      return files;
+    },
   },
 };
 
