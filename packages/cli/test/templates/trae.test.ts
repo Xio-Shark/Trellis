@@ -129,7 +129,7 @@ describe("trae hooks.json registers SessionStart + UserPromptSubmit", () => {
     // Trae docs: matcher is only for PreToolUse/PostToolUse/Notification.
     // SessionStart fires once per new session (source: "startup" only).
     // Having matchers on SessionStart would cause 3x execution or be ignored.
-    const sessionStartGroups = (parsed.hooks as Record<string, Array<Record<string, unknown>>>)["SessionStart"];
+    const sessionStartGroups = (parsed.hooks as Record<string, Record<string, unknown>[]>)["SessionStart"];
     expect(sessionStartGroups).toHaveLength(1);
     expect(sessionStartGroups[0]).not.toHaveProperty("matcher");
   });
@@ -153,7 +153,7 @@ describe("trae hooks.json registers SessionStart + UserPromptSubmit", () => {
   it("UserPromptSubmit hook group has no matcher", () => {
     const raw = fs.readFileSync(hooksPath, "utf-8");
     const parsed = JSON.parse(raw) as { hooks?: Record<string, unknown> };
-    const userPromptGroups = (parsed.hooks as Record<string, Array<Record<string, unknown>>>)["UserPromptSubmit"];
+    const userPromptGroups = (parsed.hooks as Record<string, Record<string, unknown>[]>)["UserPromptSubmit"];
     expect(userPromptGroups).toHaveLength(1);
     expect(userPromptGroups[0]).not.toHaveProperty("matcher");
   });
@@ -222,6 +222,7 @@ describe("trae pull-based prelude injection (class-2)", () => {
     const agents = applyPullBasedPreludeMarkdown(getAllAgents());
     const research = agents.find((a) => a.name === "trellis-research");
     expect(research).toBeDefined();
-    expect(research!.content).not.toContain("Load Trellis Context First");
+    if (!research) return; // guard for type-safety
+    expect(research.content).not.toContain("Load Trellis Context First");
   });
 });

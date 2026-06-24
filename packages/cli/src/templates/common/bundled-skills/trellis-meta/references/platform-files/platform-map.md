@@ -41,6 +41,7 @@ These platforms usually have `trellis-research`, `trellis-implement`, and `trell
 - GitHub Copilot
 - Factory Droid
 - Pi Agent
+- Trae IDE
 - Reasonix (delivered as skills with `runAs: subagent` under `.reasonix/skills/`, not as a separate `agents/` directory)
 - ZCode
 

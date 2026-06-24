@@ -693,17 +693,19 @@ def detect_platform(project_root: Path) -> Platform:
     2. .opencode directory exists → opencode
     3. .iflow directory exists → iflow
     4. .cursor directory exists (without .claude) → cursor
-    5. .codex exists and no other platform dirs → codex
-    6. .kilocode directory exists → kilo
-    7. .kiro/skills exists and no other platform dirs → kiro
-    8. .gemini directory exists → gemini
+    5. .gemini directory exists → gemini
+    6. .codex exists and no other platform dirs → codex
+    7. .kilocode directory exists → kilo
+    8. .kiro/skills exists and no other platform dirs → kiro
     9. .agent/workflows exists and no other platform dirs → antigravity
     10. .devin/workflows (or legacy .windsurf/workflows) exists and no other platform dirs → devin
     11. .codebuddy directory exists → codebuddy
     12. .qoder directory exists → qoder
-    13. .pi directory exists → pi
-    14. .trae directory exists → trae
-    15. Default → claude
+    13. .github/copilot directory exists → copilot
+    14. .factory directory exists → droid
+    15. .pi directory exists → pi
+    16. .trae directory exists → trae
+    17. Default → claude
 
     Args:
         project_root: Project root directory
