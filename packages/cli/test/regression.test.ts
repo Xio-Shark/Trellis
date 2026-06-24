@@ -3527,7 +3527,7 @@ print(len(entries))
     }
   });
 
-  it("[workflow-state-r2] template workflow.md [workflow-state:planning] mentions artifact gates + optional jsonl manifests", () => {
+  it("[workflow-state-r2] template workflow.md [workflow-state:planning] mentions artifact gates + required jsonl curation", () => {
     const wf = templateWorkflowMd();
     const match = wf.match(
       /\[workflow-state:planning\]([\s\S]*?)\[\/workflow-state:planning\]/,
@@ -3536,7 +3536,48 @@ print(len(entries))
     const body = match?.[1] ?? "";
     expect(body).toMatch(/Lightweight: `prd\.md` can be enough/);
     expect(body).toMatch(/Complex: finish `prd\.md`, `design\.md`, and `implement\.md`/);
-    expect(body).toMatch(/implement\.jsonl|check\.jsonl/);
+    expect(body).toContain(
+      "curate `implement.jsonl` and `check.jsonl` as spec/research manifests before start",
+    );
+  });
+
+  it("[#292] workflow and brainstorm templates treat seed-only jsonl as not planning-ready", () => {
+    const wf = templateWorkflowMd();
+    expect(wf).not.toContain("seed-only manifests are tolerated by consumers");
+    expect(wf).not.toContain(
+      "curated when extra spec or research context is needed",
+    );
+    expect(wf).toContain(
+      'Ready gate: both `implement.jsonl` and `check.jsonl` must contain at least one real `{"file": "...", "reason": "..."}` entry before `task.py start`.',
+    );
+    expect(wf).toContain(
+      "Runtime consumers tolerate missing or seed-only manifests for compatibility, but that tolerance is not a planning-ready state.",
+    );
+    expect(wf).toContain(
+      "`implement.jsonl` and `check.jsonl` each contain at least one real curated entry (seed row does not count)",
+    );
+
+    const templateRoot = path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "..",
+      "src",
+      "templates",
+    );
+    const brainstormFiles = [
+      "common/skills/brainstorm.md",
+      "codex/skills/brainstorm/SKILL.md",
+      "copilot/prompts/brainstorm.prompt.md",
+    ];
+
+    for (const relativePath of brainstormFiles) {
+      const content = fs.readFileSync(
+        path.join(templateRoot, relativePath),
+        "utf-8",
+      );
+      expect(content, relativePath).toContain(
+        "Sub-agent-dispatch tasks have real curated entries in both `implement.jsonl` and `check.jsonl`; seed-only manifests are not ready.",
+      );
+    }
   });
 
   it("[workflow-state-r3-no_task] template workflow.md [workflow-state:no_task] block is present and well-formed", () => {

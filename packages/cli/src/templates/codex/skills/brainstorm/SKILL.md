@@ -97,7 +97,7 @@ Do not ask process questions such as whether to search, inspect files, or contin
 
 Lightweight tasks may have only `prd.md`. Complex tasks must have `prd.md`, `design.md`, and `implement.md` before `task.py start`.
 
-`implement.md` is not a replacement for `implement.jsonl`. Use JSONL files only for manifest-style spec and research references when the task needs them.
+`implement.md` is not a replacement for `implement.jsonl`. On sub-agent-dispatch workflows, `implement.jsonl` and `check.jsonl` must each contain at least one real spec/research entry before `task.py start`; the seed `_example` row does not count. Inline workflows skip this JSONL gate because Phase 2 loads context through `trellis-before-dev`.
 
 ## Quality Bar
 
@@ -107,6 +107,7 @@ Before declaring planning ready:
 - Repository-answerable questions have already been answered through inspection.
 - Remaining open questions are genuinely about user intent or scope.
 - Complex tasks have `design.md` and `implement.md`.
+- Sub-agent-dispatch tasks have real curated entries in both `implement.jsonl` and `check.jsonl`; seed-only manifests are not ready.
 - The user has reviewed the final planning artifacts or explicitly approved proceeding.
 
 Do not start implementation until the user approves or asks for implementation.

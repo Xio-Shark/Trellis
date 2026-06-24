@@ -115,7 +115,7 @@ function printEvent(ev: ChannelEvent, raw: boolean): void {
     console.log(JSON.stringify(ev));
     return;
   }
-  const ts = (ev.ts || "").slice(11, 19);
+  const ts = (ev.ts ?? "").slice(11, 19);
   const by = colorBy(ev.by);
   switch (ev.kind) {
     case "create": {
