@@ -3580,6 +3580,40 @@ print(len(entries))
     }
   });
 
+  it("[#320] brainstorm templates require lossless PRD convergence before start", () => {
+    const templateRoot = path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "..",
+      "src",
+      "templates",
+    );
+    const brainstormFiles = [
+      "common/skills/brainstorm.md",
+      "codex/skills/brainstorm/SKILL.md",
+      "copilot/prompts/brainstorm.prompt.md",
+    ];
+
+    for (const relativePath of brainstormFiles) {
+      const content = fs.readFileSync(
+        path.join(templateRoot, relativePath),
+        "utf-8",
+      );
+      expect(content, relativePath).toContain(
+        "Before final review or `task.py start`, run the PRD convergence pass below.",
+      );
+      expect(content, relativePath).toContain("## PRD Convergence Pass");
+      expect(content, relativePath).toContain(
+        "Fold temporary brainstorm sections such as `What I already know`, `Assumptions`, and resolved `Open Questions`",
+      );
+      expect(content, relativePath).toContain(
+        "Preserve every file:line anchor, decision, constraint, requirement ID, and acceptance-criteria mapping.",
+      );
+      expect(content, relativePath).toContain(
+        "no unresolved temporary brainstorm sections, no duplicate facts across sections",
+      );
+    }
+  });
+
   it("[workflow-state-r3-no_task] template workflow.md [workflow-state:no_task] block is present and well-formed", () => {
     const wf = templateWorkflowMd();
     expect(wf).toMatch(
