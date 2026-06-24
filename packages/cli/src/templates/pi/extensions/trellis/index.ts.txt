@@ -83,6 +83,10 @@ const MAX_PARALLEL_PROMPTS = 6;
 const ABORT_KILL_GRACE_MS = 1500;
 const SESSION_OVERVIEW_TIMEOUT_MS = 1500;
 const THROTTLE_MS = 500;
+const FIRST_REPLY_NOTICE = `<first-reply-notice>
+First visible reply: say once in Chinese that Trellis SessionStart context is loaded, then answer directly.
+This notice is one-shot: do not repeat it after the first assistant reply in the same session.
+</first-reply-notice>`;
 
 // ── State types ───────────────────────────────────────────────────────
 type RunStatus = "pending" | "running" | "succeeded" | "failed" | "cancelled";
@@ -876,12 +880,12 @@ function workflowBreadcrumb(root: string, key: string | null): string {
 }
 
 // ── Session Overview ───────────────────────────────────────────────────
-function sessionOverview(root: string, key: string | null): string {
+function runContextScript(root: string, key: string | null, args: string[]): string {
   const script = join(root, ".trellis", "scripts", "get_context.py");
   if (!exists(script)) return "";
   try {
     const py = process.platform === "win32" ? "python" : "python3";
-    const result = spawnSync(py, [script], {
+    const result = spawnSync(py, [script, ...args], {
       cwd: root,
       env: key ? { ...process.env, TRELLIS_CONTEXT_ID: key } : process.env,
       encoding: "utf-8",
@@ -890,10 +894,42 @@ function sessionOverview(root: string, key: string | null): string {
     });
     if (result.status !== 0) return "";
     const stdout = (result.stdout ?? "").trim();
-    return stdout ? `<session-overview>\n${stdout}\n</session-overview>` : "";
+    return stdout;
   } catch {
     return "";
   }
+}
+
+function sessionOverview(root: string, key: string | null): string {
+  const stdout = runContextScript(root, key, []);
+  return stdout ? `<session-overview>\n${stdout}\n</session-overview>` : "";
+}
+
+function workflowOverview(root: string, key: string | null): string {
+  const stdout = runContextScript(root, key, [
+    "--mode",
+    "phase",
+    "--platform",
+    "pi",
+  ]);
+  return stdout ? `<trellis-workflow>\n${stdout}\n</trellis-workflow>` : "";
+}
+
+function buildStartupContext(
+  root: string,
+  key: string | null,
+  overview: string,
+): string {
+  const workflow = workflowOverview(root, key);
+  return [
+    "<session-context>\nTrellis compact SessionStart context. Use it to orient the session; load details on demand.\n</session-context>",
+    FIRST_REPLY_NOTICE,
+    overview,
+    workflow,
+    "<ready>\nUse the current workflow state to decide whether to create, continue, or skip a Trellis task.\n</ready>",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function buildContext(root: string, agent: string, key: string | null): string {
@@ -1386,6 +1422,16 @@ export default function trellisExtension(pi: {
     };
     return turnCache;
   };
+  const startupKeys = new Set<string>();
+  const getStartupCtx = (
+    k: string | null,
+    turn: { ov: string },
+  ): string => {
+    const key = k ?? "default";
+    if (startupKeys.has(key)) return "";
+    startupKeys.add(key);
+    return buildStartupContext(root, k, turn.ov);
+  };
 
   // Toggle only the latest subagent native card; do not use Pi global tool expansion.
   const toggleDetail = (ctx: PiExtensionContext) => {
@@ -1564,7 +1610,7 @@ export default function trellisExtension(pi: {
   pi.on?.("session_start", (event, ctx) => {
     getKey(event, ctx);
     ctx?.ui?.notify?.(
-      "Trellis project context is available. Use /trellis-continue to resume the current task.",
+      "Trellis project context is available. Use /trellis-start to bootstrap or /trellis-continue to resume.",
       "info",
     );
   });
@@ -1599,13 +1645,29 @@ export default function trellisExtension(pi: {
       return { isError: true };
     return undefined;
   });
+  pi.on?.("input", (event, ctx) => {
+    const k = getKey(event, ctx);
+    const ev = event as { text?: string };
+    if (typeof ev.text !== "string" || !ev.text.trim())
+      return { action: "continue" };
+    const { wf, ov } = getTurnCtx(k);
+    const injection = [wf, ov].filter(Boolean).join("\n\n");
+    if (!injection) return { action: "continue" };
+    return {
+      action: "transform",
+      text: [ev.text, injection].join("\n\n"),
+    };
+  });
   pi.on?.("before_agent_start", (event, ctx) => {
     const k = getKey(event, ctx);
     const cur = (event as { systemPrompt?: string }).systemPrompt ?? "";
     const ctxText = buildContext(root, "trellis-implement", k);
-    const { wf, ov } = getTurnCtx(k);
+    const turn = getTurnCtx(k);
+    const startup = getStartupCtx(k, turn);
     return {
-      systemPrompt: [cur, ctxText, wf, ov].filter(Boolean).join("\n\n"),
+      systemPrompt: [cur, startup, ctxText, turn.wf, turn.ov]
+        .filter(Boolean)
+        .join("\n\n"),
     };
   });
   pi.on?.("context", (event, ctx) => {

@@ -934,7 +934,7 @@ describe("configurePlatform", () => {
     ).toBe(true);
     expect(
       fs.existsSync(path.join(tmpDir, ".pi", "prompts", "trellis-start.md")),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       fs.existsSync(
         path.join(tmpDir, ".pi", "skills", "trellis-check", "SKILL.md"),
@@ -1044,7 +1044,7 @@ describe("configurePlatform", () => {
   it("collectPlatformTemplates('pi') maps prompts, skills, agents, extension, and settings", () => {
     const templates = collectPlatformTemplates("pi");
     expect(templates).toBeInstanceOf(Map);
-    expect(templates?.get(".pi/prompts/trellis-start.md")).toBeUndefined();
+    expect(templates?.get(".pi/prompts/trellis-start.md")).toBeDefined();
     expect(templates?.get(".pi/prompts/trellis-finish-work.md")).toBeDefined();
     expect(templates?.get(".pi/prompts/trellis-continue.md")).toBeDefined();
     expect(templates?.get(".pi/skills/trellis-check/SKILL.md")).toBeDefined();

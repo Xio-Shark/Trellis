@@ -103,6 +103,8 @@ When adding a new platform `{platform}`, update the following:
 
 > Note: Pi Agent uses project-local TypeScript extensions instead of Trellis Python hooks. Keep generated hooks under `.pi/extensions/`, write prompt templates under `.pi/prompts/trellis-*.md`, write Agent Skills under `.pi/skills/`, and do not copy `shared-hooks/*.py` into `.pi/`. Do not redirect Pi to shared `.agents/skills` until shared Agent Skill text is platform-neutral; Codex and Pi command references can differ. For the nested Pi launcher contract, see "Scenario: Pi Sub-Agent Launcher".
 >
+> Pi is an explicit `trellis-start` exception: `session_start` is notify-only and cannot mutate model-visible context, so the configurator must keep `.pi/prompts/trellis-start.md` as a manual bootstrap fallback while the extension injects compact startup context through `before_agent_start`.
+>
 > Project-local package isolation rule: when Trellis enables Pi for a project, `.pi/settings.json` does not include `npm:pi-subagents` in `packages` — Trellis's own tool is named `trellis_subagent`, so no name collision with community `subagent` tool exists. Users may install community sub-agent packages (nicobailon/pi-subagents or tintinweb/pi-subagents) independently.
 
 **Skills pattern** (Codex, Kiro):
@@ -537,12 +539,13 @@ For Pi Agent:
 | Trellis concept | Pi surface |
 |---|---|
 | Session start | `session_start` extension event (notify-only; context-key is established but no prompt mutation) |
-| Per-turn workflow-state breadcrumb | `input` extension event — emits `<workflow-state>` + `<session-overview>` via `buildPerTurnInjection()` |
-| Per-agent-invocation context | `before_agent_start` extension event — appends `buildTrellisContext()` (PRD + jsonl) **and** the same per-turn breadcrumb to `systemPrompt` so sub-agent first turns see workflow state |
+| Per-turn workflow-state breadcrumb | `input` extension event — appends cached `<workflow-state>` + `<session-overview>` from `getTurnCtx()` to the user input text |
+| Startup context | first `before_agent_start` for a resolved context key appends compact SessionStart-equivalent context, `<first-reply-notice>`, `<session-overview>`, and `<trellis-workflow>` to `systemPrompt` |
+| Per-agent-invocation context | `before_agent_start` extension event — appends task context (PRD + jsonl) **and** the same per-turn breadcrumb to `systemPrompt` so sub-agent first turns see workflow state |
 | Per-Bash-tool session identity | `tool_call` extension event; mutates `event.input.command` in place via `injectTrellisContextIntoBash()` to prefix `export TRELLIS_CONTEXT_ID=<context-key>;` |
 | Sub-agent dispatch | custom `trellis_subagent` tool with `promptSnippet`/`promptGuidelines = SUBAGENT_DISPATCH_PROTOCOL`; resolves the Pi CLI JS entrypoint when possible, runs `--mode text -p --no-session`, sends the delegated prompt through stdin, and forwards `TRELLIS_CONTEXT_ID` |
 
-The three injection points (`input` / `before_agent_start` / `tool_call`) are coordinated through `TurnContextCache` so the same turn doesn't re-spawn `get_context.py --mode session-overview`. See "Class-3 injection points (Pi extension)" below the modes table for the runtime contract.
+The three injection points (`input` / `before_agent_start` / `tool_call`) are coordinated through `TurnContextCache` so the same turn doesn't re-spawn the default `get_context.py` session-context call. See "Class-3 injection points (Pi extension)" below the modes table for the runtime contract.
 
 If `agentCapable` is true, `task.py create` must seed `implement.jsonl` / `check.jsonl`, and generated sub-agent definitions or extension code must consume those files.
 
@@ -805,7 +808,7 @@ Commands emitted by `resolveCommands(ctx)` / `resolveAllAsSkills(ctx)` in `src/c
 
 | Command | Agent-capable platforms (11) | Agent-less platforms (3) |
 |---------|------------------------------|--------------------------|
-| `start` | ❌ not emitted by the common command resolver (Codex installs `trellis-start` as a skill because it has no active SessionStart hook) | ✅ emitted — manual equivalent of session-start hook |
+| `start` | ❌ not emitted by the common command resolver (Codex installs `trellis-start` as a skill because it has no active SessionStart hook; Pi re-adds `.pi/prompts/trellis-start.md` as an extension-backed fallback because `session_start` is notify-only) | ✅ emitted — manual equivalent of session-start hook |
 | `continue` | ✅ emitted | ✅ emitted |
 | `finish-work` | ✅ emitted | ✅ emitted |
 
@@ -896,7 +899,7 @@ Platform can expose hook-equivalent events and custom tools through a project-lo
 
 | Platform | Extension surface | Context delivery |
 |---|---|---|
-| Pi Agent | `.pi/extensions/trellis/index.ts` events + `trellis_subagent` tool | extension builds prompt from `.pi/agents/*.md`, `prd.md`, `design.md` if present, `implement.md` if present, and JSONL-referenced files via `buildTrellisContext()`; injects per-turn `<workflow-state>` + `<session-overview>` via `buildPerTurnInjection()`; agent definitions also receive the pull-based prelude as a fallback |
+| Pi Agent | `.pi/extensions/trellis/index.ts` events + `trellis_subagent` tool | extension builds prompt from `.pi/agents/*.md`, `prd.md`, `design.md` if present, `implement.md` if present, and JSONL-referenced files via `buildContext()`; injects per-turn `<workflow-state>` + `<session-overview>` via `getTurnCtx()` into user input and agent startup context; agent definitions also receive the pull-based prelude as a fallback |
 
 See **"Class-3 injection points (Pi extension)"** and **"Cross-platform consistency invariant"** below for the runtime contract details.
 
@@ -906,12 +909,14 @@ See **"Class-3 injection points (Pi extension)"** and **"Cross-platform consiste
 
 | Injection point | Handler | When it fires | What it injects |
 |---|---|---|---|
-| `input` | `pi.on?.("input", …)` | every user turn (pre-LLM) | per-turn `<workflow-state>` + `<session-overview>` via `buildPerTurnInjection()`; same content goes into both `additionalContext` and `systemPrompt` so the breadcrumb survives whichever the model surface honors |
-| `before_agent_start` | `pi.on?.("before_agent_start", …)` | every agent invocation (main + sub-agents) | full Trellis context via `buildTrellisContext()` (PRD + jsonl-referenced specs + agent definition) **appended to** the existing systemPrompt, plus the same per-turn breadcrumb so a sub-agent's first turn still sees workflow state |
+| `input` | `pi.on?.("input", …)` | every user turn (pre-LLM) | per-turn `<workflow-state>` + `<session-overview>` from `getTurnCtx()` appended to the user input through an `action: "transform"` result |
+| `before_agent_start` | `pi.on?.("before_agent_start", …)` | every agent invocation (main + sub-agents) | first invocation per context key appends compact SessionStart-equivalent context plus `<first-reply-notice>`; every invocation appends task context (PRD + jsonl-referenced specs + agent definition) and the same per-turn breadcrumb so a sub-agent's first turn still sees workflow state |
 | `tool_call` (Bash) | `pi.on?.("tool_call", …)` | every Bash tool call | mutates `event.input.command` in place via `injectTrellisContextIntoBash()` to prefix `export TRELLIS_CONTEXT_ID=<context-key>;` so child Python scripts (e.g. `task.py current`) inherit session identity |
 | `trellis_subagent` tool | `pi.registerTool?.({ name: "trellis_subagent", … })` | extension load time (once) | `promptSnippet` and `promptGuidelines` carry `SUBAGENT_DISPATCH_PROTOCOL` so the model sees the dispatch contract before it ever calls the tool |
 
-`TurnContextCache` (in `index.ts.txt`) memoizes the per-turn context-key → `{workflowState, sessionOverview}` pair so the **same** turn's `input` and `before_agent_start` handlers don't double-spawn `get_context.py --mode session-overview`. The cache key is the resolved context key; entries are short-lived (one turn).
+`TurnContextCache` (in `index.ts.txt`) memoizes the per-turn context-key → `{workflowState, sessionOverview}` pair so the **same** turn's `input` and `before_agent_start` handlers don't double-spawn the default `get_context.py` session-context call. The cache key is the resolved context key; entries are short-lived (one turn).
+
+The startup context is tracked separately by resolved context key and injected only once. It shells out to `get_context.py` for both the default session overview and `--mode phase --platform pi`, then wraps those canonical outputs in `<session-overview>` and `<trellis-workflow>`. Do not move this payload to `session_start`; Pi's event can notify the UI but has no model-visible context return path.
 
 ### Cross-platform consistency invariant
 
@@ -922,7 +927,7 @@ Concrete rules:
 - **Regex parity**: `templates/pi/extensions/trellis/index.ts.txt:WORKFLOW_STATE_TAG_RE` MUST mirror `templates/shared-hooks/inject-workflow-state.py:_TAG_RE` byte-for-byte. Both use the closing-tag backreference `\1` (or its TS equivalent in `[\/workflow-state:\1\]`) so a tag block parses identically in Python and TypeScript.
 - **Breadcrumb body source**: `loadWorkflowBreadcrumbs()` in the Pi extension reads `.trellis/workflow.md` directly — same source as the Python hook. There is no separate TS-side template for breadcrumb bodies. If the regex drifts, the TS port silently falls back to hardcoded defaults and Pi loses parity.
 - **Status writer parity**: `task.json.status` is the sole input to "which `[workflow-state:STATUS]` block fires". Both the Python hook (`get_active_task` + status read) and the TS port (`readActiveTaskStatus()` in `index.ts.txt`) MUST agree on the status string. Custom statuses pass through both unchanged.
-- **`<session-overview>` parity**: Pi shells out to `python3 .trellis/scripts/get_context.py --mode session-overview` rather than re-implementing context generation in TS, so output stays canonical. Don't replace this with an inline TS implementation — that's a parity drift waiting to happen.
+- **`<session-overview>` parity**: Pi shells out to `python3 .trellis/scripts/get_context.py` rather than re-implementing context generation in TS, so output stays canonical. Don't replace this with an inline TS implementation — that's a parity drift waiting to happen.
 
 #### Anti-pattern: bypassing the shared TS port
 
@@ -939,8 +944,8 @@ const overview = `<session-overview>\n${gitStatus}\n${activeTasks}\n</session-ov
 ```typescript
 // WRONG — skips the once-per-turn cache; every input + before_agent_start spawns a child python
 function onInput(event, ctx) {
-  const overview = spawnSync("python3", [".trellis/scripts/get_context.py", "--mode", "session-overview"]);
-  return { additionalContext: overview };
+  const overview = spawnSync("python3", [".trellis/scripts/get_context.py"]);
+  return { action: "transform", text: `${event.text}\n\n${overview}` };
 }
 ```
 
@@ -951,10 +956,10 @@ function onInput(event, ctx) {
 const WORKFLOW_STATE_TAG_RE =
   /\[workflow-state:([A-Za-z0-9_-]+)\]\s*\n([\s\S]*?)\n\s*\[\/workflow-state:\1\]/g;
 
-// Both events go through the same cached builder
-const buildPerTurnInjection = (contextKey) => {
-  const { workflowState, sessionOverview } = turnContextCache.get(projectRoot, contextKey);
-  return [workflowState, sessionOverview].filter(Boolean).join("\n\n");
+// Both events go through the same cached per-turn context.
+const getTurnCtx = (contextKey) => {
+  const turn = turnContextCache.get(projectRoot, contextKey);
+  return [turn.wf, turn.ov].filter(Boolean).join("\n\n");
 };
 ```
 
@@ -1253,6 +1258,7 @@ conversation:
 | `shared-hooks/session-start.py` | ✅ | Claude/Cursor/Gemini/Qoder/CodeBuddy/Droid-style shared hook context |
 | `codex/hooks/session-start.py` | ✅ | Codex accepts SessionStart stdout / `additionalContext` when `features.hooks = true` (legacy: `codex_hooks = true`) |
 | `opencode/plugins/session-start.js` | ✅ | Plugin prepends Trellis context into the first user message and persists it |
+| `pi/extensions/trellis/index.ts.txt` | ✅ | Pi cannot inject through `session_start`, so the first `before_agent_start` emits a compact SessionStart-equivalent payload into `systemPrompt` |
 | `copilot/hooks/session-start.py` | ❌ | Microsoft documents `SessionStart.hookSpecificOutput.additionalContext` (preview, VS Code 1.110+), but consumption depends on the user's VS Code/Copilot version. Trellis emits the spec-compliant payload; do not add a first-reply notice until consumption is verified end-to-end. |
 
 Keep hook payload shapes unchanged. Add this as text inside the existing
