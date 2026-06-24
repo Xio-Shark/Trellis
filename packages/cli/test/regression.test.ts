@@ -12,7 +12,7 @@
  * 5. Platform Registry (beta.9, beta.13, beta.16)
  */
 
-import { execSync, spawnSync } from "node:child_process";
+import { execSync, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -3166,6 +3166,57 @@ describe("regression: current-task path normalization", () => {
     } finally {
       fs.rmSync(nonTrellisDir, { recursive: true, force: true });
     }
+  });
+
+  it("[#356] inject-workflow-state.py exits when host leaves stdin open with no payload", async () => {
+    setupTaskRepo();
+    writeWorkflowStateHook();
+
+    const hookPath = path.join(
+      tmpDir,
+      ".trellis",
+      "hooks",
+      "inject-workflow-state.py",
+    );
+    const child = spawn(pythonCmd, [hookPath], {
+      cwd: tmpDir,
+      env: sessionEnv({ KIRO_PROJECT_DIR: tmpDir }),
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf-8");
+    child.stderr.setEncoding("utf-8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+
+    const result = await new Promise<{
+      code: number | null;
+      signal: NodeJS.Signals | null;
+      timedOut: boolean;
+    }>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        child.kill("SIGKILL");
+        resolve({ code: null, signal: "SIGKILL", timedOut: true });
+      }, 1500);
+      child.once("error", (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+      child.once("exit", (code, signal) => {
+        clearTimeout(timer);
+        resolve({ code, signal, timedOut: false });
+      });
+    });
+
+    expect(result.timedOut, stderr).toBe(false);
+    expect(result.code).toBe(0);
+    expect(stdout).toContain("<workflow-state>");
   });
 
   // ------------------------------------------------------------
