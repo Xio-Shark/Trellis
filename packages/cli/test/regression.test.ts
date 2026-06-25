@@ -3784,7 +3784,7 @@ print(len(entries))
       { cwd: tmpDir, encoding: "utf-8" },
     );
 
-    expect(output).toContain("The Codex sub-agent definition auto-handles");
+    expect(output).toContain("The pull-based sub-agent definition auto-handles");
     expect(output).toContain(
       "Resolves the active task with `task.py current --source`",
     );

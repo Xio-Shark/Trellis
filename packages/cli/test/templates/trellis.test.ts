@@ -156,6 +156,21 @@ describe("trellis template constants", () => {
     expect(block).toMatch(/codex|copilot|gemini|qoder/);
   });
 
+  it("[issue-zcode-repeat] Trae uses the pull-based implement block, not hook auto-handles", () => {
+    const implement = stepSection("2.1");
+    expect(implement).not.toContain(
+      "[Claude Code, Cursor, OpenCode, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi, Trae]",
+    );
+    expect(implement).not.toContain(
+      "[/Claude Code, Cursor, OpenCode, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi, Trae]",
+    );
+    expect(implement).toContain("[codex-sub-agent, ZCode, Reasonix, Trae]");
+    expect(implement).toContain("[/codex-sub-agent, ZCode, Reasonix, Trae]");
+    expect(implement).toContain(
+      "The pull-based sub-agent definition auto-handles the context load requirement",
+    );
+  });
+
   it("[issue-237] workflow.md in_progress breadcrumb self-exempts implement/check sub-agents", () => {
     // The in_progress breadcrumb may be injected into sub-agent turns on some
     // hosts, so its main-session dispatch guidance must not recursively apply

@@ -568,7 +568,63 @@ describe("init() integration", () => {
     expect(trackedPaths).toEqual(expect.arrayContaining(expectedPiPaths));
   });
 
-  it("#3l zcode platform emits trellis-start skill and start slash command", async () => {
+  it("#3l trae platform writes hooks, commands, agents, and tracked templates", async () => {
+    await init({ yes: true, trae: true });
+
+    // Trae is agentCapable && hasHooks, so trellis-start is filtered like other
+    // SessionStart-backed platforms. The generated agents are still pull-based
+    // for sub-agent task context because Trae hooks cannot mutate sub-agent prompts.
+    expect(fs.existsSync(path.join(tmpDir, ".trae", "hooks.json"))).toBe(true);
+    expect(
+      fs.existsSync(path.join(tmpDir, ".trae", "hooks", "session-start.py")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".trae", "hooks", "inject-workflow-state.py"),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".trae", "commands", "trellis-finish-work.md"),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".trae", "commands", "trellis-start.md"),
+      ),
+    ).toBe(false);
+    expect(
+      fs.existsSync(path.join(tmpDir, ".trae", "agents", "trellis-implement.md")),
+    ).toBe(true);
+    expect(
+      fs.readFileSync(
+        path.join(tmpDir, ".trae", "agents", "trellis-implement.md"),
+        "utf-8",
+      ),
+    ).toContain("Load Trellis Context First");
+
+    const hashFile = path.join(
+      tmpDir,
+      DIR_NAMES.WORKFLOW,
+      ".template-hashes.json",
+    );
+    const hashesFile = JSON.parse(fs.readFileSync(hashFile, "utf-8")) as {
+      hashes?: Record<string, string>;
+    };
+    const trackedPaths = Object.keys(hashesFile.hashes ?? {}).map((p) =>
+      p.replace(/\\/g, "/"),
+    );
+    const traeTemplates = collectPlatformTemplates("trae");
+    expect(traeTemplates).toBeInstanceOf(Map);
+    if (!traeTemplates) {
+      throw new Error("Expected Trae templates to be collectable");
+    }
+    expect(trackedPaths).toEqual(
+      expect.arrayContaining([...traeTemplates.keys()]),
+    );
+  });
+
+  it("#3m zcode platform emits trellis-start skill and start slash command", async () => {
     await init({ yes: true, zcode: true });
 
     // ZCode is agentCapable && !hasHooks → start is preserved via both the
@@ -592,7 +648,7 @@ describe("init() integration", () => {
     ).toBe(true);
   });
 
-  it("#3m opencode platform emits start slash command", async () => {
+  it("#3n opencode platform emits start slash command", async () => {
     await init({ yes: true, opencode: true });
 
     // OpenCode is agentCapable && !hasHooks per registry (plugins/session-start.js
@@ -610,7 +666,7 @@ describe("init() integration", () => {
     ).toBe(true);
   });
 
-  it("#3n reasonix platform emits trellis-start skill without runAs:subagent", async () => {
+  it("#3o reasonix platform emits trellis-start skill without runAs:subagent", async () => {
     await init({ yes: true, reasonix: true });
 
     // Reasonix is agentCapable && !hasHooks → trellis-start ships as a plain
