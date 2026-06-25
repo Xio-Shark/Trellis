@@ -5832,19 +5832,19 @@ describe("regression: Gemini CLI 0.40.x template compatibility (#224)", () => {
     }
   });
 
-  it("[#224] needsCodexUpgrade looks for Codex-only command-as-skill markers, not bare `.agents/skills/` prefix", () => {
+  it("[#224] needsCodexUpgrade looks for command-as-skill markers, not bare `.agents/skills/` prefix", () => {
     // Regression: with Gemini also writing to `.agents/skills/` (shared common
     // skills only), the legacy-Codex detector previously triggered
     // a false-positive `.codex/` install on every fresh `init --gemini` +
-    // `update` cycle. The fix narrows detection to Codex-only files
-    // (`trellis-continue/SKILL.md`, `trellis-finish-work/SKILL.md`) which
-    // Gemini does NOT write (it puts continue/finish-work under
-    // `.gemini/commands/trellis/*.toml`).
+    // `update` cycle. The fix narrows detection to command-as-skill files
+    // (`trellis-continue/SKILL.md`, `trellis-finish-work/SKILL.md`) and the
+    // update integration suite covers platforms such as ZCode that share
+    // `.agents/skills/` but must not trigger the legacy Codex backfill.
     const updateSrc = fs.readFileSync(
       path.resolve(repoRoot, "packages/cli/src/commands/update.ts"),
       "utf-8",
     );
-    // Must check for Codex-only command-as-skill markers, not the bare
+    // Must check for command-as-skill markers, not the bare
     // `.agents/skills/` prefix.
     expect(updateSrc).toMatch(
       /\.agents\/skills\/trellis-continue\/SKILL\.md/,

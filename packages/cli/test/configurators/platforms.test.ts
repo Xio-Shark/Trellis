@@ -656,6 +656,40 @@ describe("configurePlatform", () => {
     }
   });
 
+  it("configurePlatform('zcode') keeps command fallbacks out of shared .agents skills", async () => {
+    await configurePlatform("zcode", tmpDir);
+
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".zcode", "commands", "trellis", "start.md"),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".agents", "skills", "trellis-start", "SKILL.md"),
+      ),
+    ).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(
+          tmpDir,
+          ".agents",
+          "skills",
+          "trellis-continue",
+          "SKILL.md",
+        ),
+      ),
+    ).toBe(false);
+
+    const templates = collectPlatformTemplates("zcode");
+    expect(templates?.has(".zcode/commands/trellis/start.md")).toBe(true);
+    expect(templates?.has(".agents/skills/trellis-start/SKILL.md")).toBe(false);
+    expect(templates?.has(".agents/skills/trellis-continue/SKILL.md")).toBe(
+      false,
+    );
+    expect(templates?.has(".agents/skills/trellis-check/SKILL.md")).toBe(true);
+  });
+
   it("configurePlatform('codebuddy') creates .codebuddy directory", async () => {
     await configurePlatform("codebuddy", tmpDir);
     expect(fs.existsSync(path.join(tmpDir, ".codebuddy"))).toBe(true);

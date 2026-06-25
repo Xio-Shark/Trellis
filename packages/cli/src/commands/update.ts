@@ -564,20 +564,34 @@ function needsCodexUpgrade(cwd: string): boolean {
     return false;
   }
 
-  // Codex-only marker: legacy Codex installs always tracked the
-  // command-as-skill files `trellis-continue/SKILL.md` and
-  // `trellis-finish-work/SKILL.md` under `.agents/skills/`. Other platforms
-  // that share `.agents/skills/` (e.g. Gemini CLI 0.40+ via the workspace
-  // alias — issue #224) only write shared common skills and never these two
-  // command files, so their presence in the hash file is a reliable signal
-  // that the project was originally configured with Codex before `.codex/`
-  // existed as a separate config dir.
+  // Legacy Codex marker: old Codex installs tracked command-as-skill files
+  // under `.agents/skills/` before `.codex/` existed as a separate config dir.
+  // A current or future non-Codex platform may own those paths too, so do not
+  // trigger the Codex backfill when a configured non-Codex platform declares
+  // the marker paths in its templates.
   const hashes = loadHashes(cwd);
-  const keys = Object.keys(hashes);
-  return (
-    keys.some((key) => key === ".agents/skills/trellis-continue/SKILL.md") ||
-    keys.some((key) => key === ".agents/skills/trellis-finish-work/SKILL.md")
+  const legacyMarkers = [
+    ".agents/skills/trellis-continue/SKILL.md",
+    ".agents/skills/trellis-finish-work/SKILL.md",
+  ];
+  const hasLegacyMarker = legacyMarkers.some(
+    (key) => hashes[key] !== undefined,
   );
+  if (!hasLegacyMarker) {
+    return false;
+  }
+
+  for (const platformId of getConfiguredPlatforms(cwd)) {
+    if (platformId === "codex") {
+      continue;
+    }
+    const platformFiles = collectPlatformTemplates(platformId);
+    if (platformFiles && legacyMarkers.some((key) => platformFiles.has(key))) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function preserveExistingClaudeStatusLine(

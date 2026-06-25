@@ -341,7 +341,7 @@ Migrations are forward-only. A user who downgrades while staying on the same maj
 
 ### Codex two-layer upgrade
 
-Old Trellis used `.agents/skills/` as the Codex configDir; current Trellis uses `.codex/` plus a shared `.agents/skills/` layer. `commands/update.ts:needsCodexUpgrade` detects the legacy state by looking for Codex-only marker entries (`trellis-continue/SKILL.md`, `trellis-finish-work/SKILL.md`) in the hash file. When detected, `update()` injects `codex` into `extraPlatforms` so `collectTemplateFiles` produces the missing `.codex/` files. Don't add platform-detection-via-hashes for any other case without a similarly tight marker — false positives here would create bogus directories.
+Old Trellis used `.agents/skills/` as the Codex configDir; current Trellis uses `.codex/` plus a shared `.agents/skills/` layer. `commands/update.ts:needsCodexUpgrade` detects the legacy state by looking for command-as-skill marker entries (`trellis-continue/SKILL.md`, `trellis-finish-work/SKILL.md`) in the hash file, then excludes any configured non-Codex platform whose current template collector declares those same marker paths. Current non-Codex platforms with a private command surface, such as ZCode, must not declare those marker paths under `.agents/skills`; this keeps combined installs from producing hash churn and keeps the Codex legacy detector unambiguous. When legacy Codex is detected, `update()` injects `codex` into `extraPlatforms` so `collectTemplateFiles` produces the missing `.codex/` files. Don't add platform-detection-via-hashes for any other case without a similarly tight marker and non-owner exclusion — false positives here would create bogus directories.
 
 ### Things that look like bugs but aren't
 

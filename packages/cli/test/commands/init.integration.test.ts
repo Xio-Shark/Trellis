@@ -624,18 +624,18 @@ describe("init() integration", () => {
     );
   });
 
-  it("#3m zcode platform emits trellis-start skill and start slash command", async () => {
+  it("#3m zcode platform emits start slash command without shared command-as-skill fallback", async () => {
     await init({ yes: true, zcode: true });
 
-    // ZCode is agentCapable && !hasHooks → start is preserved via both the
-    // shared-skills path (.agents/skills/) and the platform commands path
-    // (.zcode/commands/trellis/). No SessionStart hook covers session bootstrap,
-    // so users must be able to invoke trellis-start themselves.
+    // ZCode is agentCapable && !hasHooks, so start must be user-invocable.
+    // It has a private command surface, so command fallbacks stay under
+    // .zcode/commands/trellis/ instead of the shared .agents/skills/ path
+    // that Codex also owns.
     expect(
       fs.existsSync(
         path.join(tmpDir, ".agents", "skills", "trellis-start", "SKILL.md"),
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       fs.existsSync(
         path.join(tmpDir, ".zcode", "commands", "trellis", "start.md"),

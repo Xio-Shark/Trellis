@@ -138,13 +138,13 @@ When adding a new platform `{platform}`, update the following:
 
 #### Rule: `.agents/skills/` writes use `resolvePlaceholdersNeutral()`
 
-`.agents/skills/` is a **shared destination**: multiple configurators (Codex, Gemini CLI 0.40+ via the workspace alias, future agentskills.io consumers) all write into the same path. Per-platform `{{CMD_REF:name}}` resolution (`$name` for Codex, `/trellis:name` for Gemini, etc.) makes the same `<skill>/SKILL.md` differ byte-for-byte depending on which configurator ran last → "last-writer-wins" content collisions and `.template-hashes.json` churn.
+`.agents/skills/` is a **shared destination**: multiple configurators (Codex, Gemini CLI 0.40+ via the workspace alias, ZCode, future agentskills.io consumers) all write into the same path. Per-platform `{{CMD_REF:name}}` resolution (`$name` for Codex, `/trellis:name` for Gemini/ZCode, etc.) makes the same `<skill>/SKILL.md` differ byte-for-byte depending on which configurator ran last → "last-writer-wins" content collisions and `.template-hashes.json` churn.
 
 **Rule**: Anything written under `.agents/skills/` MUST be rendered via `resolvePlaceholdersNeutral()` (in `configurators/shared.ts`), which substitutes `` `name` (Trellis command) `` for `{{CMD_REF:name}}` instead of a platform prefix. All other placeholders (`{{CLI_FLAG}}`, `{{EXECUTOR_AI}}`, `{{USER_ACTION_LABEL}}`, conditionals, `{{PYTHON_CMD}}`) still resolve from the platform context — those don't appear in the auto-triggered skill templates from `common/skills/`, so the rendered output stays identical across writers.
 
 Per-platform skill directories (`.claude/skills/`, `.cursor/skills/`, `.qoder/skills/`, etc.) keep using `resolvePlaceholders()` — `{{CMD_REF}}` resolves to the platform-correct slash form there, because no other configurator writes those paths.
 
-**Codex-only files under `.agents/skills/`** (currently `trellis-continue/SKILL.md` and `trellis-finish-work/SKILL.md`, written via `resolveAllAsSkillsNeutral()`) are an explicit exception: only Codex writes them, so byte-identity across platforms is not required and they may use `{{CLI_FLAG}}` / `{{PYTHON_CMD}}`. They still go through the neutral helper to keep `{{CMD_REF}}` neutralized for consistency with the surrounding shared skills.
+**Command-as-skill fallback files under `.agents/skills/`** (currently `trellis-start/SKILL.md`, `trellis-continue/SKILL.md`, and `trellis-finish-work/SKILL.md`, written via `resolveAllAsSkillsNeutral()` by Codex) may use per-platform `{{CLI_FLAG}}` / `{{PYTHON_CMD}}` because they are user-invoked fallback entrypoints. They still go through the neutral helper to keep `{{CMD_REF}}` neutralized for consistency with the surrounding shared skills. A platform that has its own command surface (for example ZCode's `.zcode/commands/trellis/*.md`) must write only `resolveSkillsNeutral()` output under `.agents/skills/`; otherwise combined installs with Codex produce last-writer/hash churn on `trellis-start` / `trellis-continue`.
 
 **Wrong**:
 ```typescript

@@ -14,7 +14,7 @@ import { ensureDir, writeFile } from "../utils/file-writer.js";
 import { getAllAgents } from "../templates/zcode/index.js";
 import {
   collectSkillTemplates,
-  resolveAllAsSkillsNeutral,
+  resolveSkillsNeutral,
   resolveBundledSkills,
   resolveCommands,
   writeSkills,
@@ -34,7 +34,7 @@ export function collectZcodeTemplates(): Map<string, string> {
   // 1. Shared skills → .agents/skills/ (byte-identical with Codex/Gemini)
   for (const [filePath, content] of collectSkillTemplates(
     ".agents/skills",
-    resolveAllAsSkillsNeutral(ctx),
+    resolveSkillsNeutral(ctx),
     resolveBundledSkills(ctx),
   )) {
     files.set(filePath, content);
@@ -63,7 +63,7 @@ export async function configureZcode(cwd: string): Promise<void> {
   // 1. Shared skills → .agents/skills/
   await writeSkills(
     path.join(cwd, ".agents", "skills"),
-    resolveAllAsSkillsNeutral(ctx),
+    resolveSkillsNeutral(ctx),
     resolveBundledSkills(ctx),
   );
 
