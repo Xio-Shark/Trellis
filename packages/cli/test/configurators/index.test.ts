@@ -410,7 +410,7 @@ describe("collectPlatformTemplates", () => {
   it("pi collectTemplates includes prompts, agents, extension, and settings", () => {
     const result = collectPlatformTemplates("pi");
     expect(result).toBeInstanceOf(Map);
-    expect(result?.has(".pi/prompts/trellis-start.md")).toBe(false);
+    expect(result?.has(".pi/prompts/trellis-start.md")).toBe(true);
     expect(result?.has(".pi/prompts/trellis-finish-work.md")).toBe(true);
     expect(result?.has(".pi/agents/trellis-implement.md")).toBe(true);
     expect(result?.has(".pi/extensions/trellis/index.ts")).toBe(true);

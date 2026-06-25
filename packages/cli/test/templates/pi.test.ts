@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import vm from "node:vm";
 import ts from "typescript";
+import { collectPiTemplates } from "../../src/configurators/pi.js";
 import {
   getAllAgents,
   getExtensionTemplate,
@@ -37,9 +38,14 @@ interface PiExtensionInternals {
   ) => PiRunConfig;
   cmdHasTrellisCtx: (cmd: string) => boolean;
   shellQuote: (v: string) => string;
+  trellisExtension: (pi: {
+    registerTool?: (tool: unknown) => void;
+    registerShortcut?: (key: string, opts: unknown) => void;
+    on?: (event: string, handler: (event: unknown, ctx?: unknown) => unknown) => void;
+  }) => void;
 }
 
-function loadExtensionInternals(): PiExtensionInternals {
+function loadExtensionInternals(cwd = process.cwd()): PiExtensionInternals {
   const source = `${getExtensionTemplate()}
 
 export {
@@ -50,6 +56,7 @@ export {
   resolveRunCfg,
   cmdHasTrellisCtx,
   shellQuote,
+  trellisExtension,
 };
 `;
   const compiled = ts.transpileModule(source, {
@@ -61,16 +68,47 @@ export {
   }).outputText;
   const require = createRequire(import.meta.url);
   const moduleObject: { exports: Record<string, unknown> } = { exports: {} };
+  const sandboxProcess = Object.create(process) as NodeJS.Process;
+  Object.defineProperty(sandboxProcess, "cwd", { value: () => cwd });
+  Object.defineProperty(sandboxProcess, "env", { value: process.env });
   const sandbox = vm.createContext({
     Buffer,
     console,
     exports: moduleObject.exports,
     module: moduleObject,
-    process,
+    process: sandboxProcess,
     require,
   });
   vm.runInContext(compiled, sandbox);
   return moduleObject.exports as unknown as PiExtensionInternals;
+}
+
+function createMinimalTrellisRoot(): string {
+  const root = mkdtempSync(join(tmpdir(), "trellis-pi-355-"));
+  mkdirSync(join(root, ".pi"), { recursive: true });
+  mkdirSync(join(root, ".trellis", "scripts"), { recursive: true });
+  writeFileSync(
+    join(root, ".trellis", "workflow.md"),
+    [
+      "[workflow-state:no_task]",
+      "No active task. First classify the current turn and ask for task-creation consent before creating any Trellis task.",
+      "[/workflow-state:no_task]",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(
+    join(root, ".trellis", "scripts", "get_context.py"),
+    [
+      "#!/usr/bin/env python3",
+      "import sys",
+      "if '--mode' in sys.argv and 'phase' in sys.argv:",
+      "    print('## Phase Index\\nPhase 1: Plan')",
+      "else:",
+      "    print('SESSION CONTEXT\\nCurrent task: none.')",
+      "",
+    ].join("\n"),
+  );
+  return root;
 }
 
 describe("pi templates", () => {
@@ -104,6 +142,20 @@ describe("pi templates", () => {
     expect(settings.packages).toBeUndefined();
   });
 
+  it("collects a manual trellis-start prompt for Pi fallback bootstrap", () => {
+    const templates = collectPiTemplates();
+
+    expect(templates.get(".pi/prompts/trellis-start.md")).toContain(
+      "# Start Session",
+    );
+    expect(templates.get(".pi/prompts/trellis-continue.md")).toContain(
+      "get_context.py --mode phase",
+    );
+    expect(templates.get(".pi/prompts/trellis-finish-work.md")).toContain(
+      "finish-work",
+    );
+  });
+
   it("extension registers the trellis_subagent tool with mode+thinking schema", () => {
     const extension = getExtensionTemplate();
 
@@ -124,17 +176,83 @@ describe("pi templates", () => {
     expect(extension).toContain("Active task:");
   });
 
-  it("extension wires the four Pi events Trellis needs for context flow", () => {
+  it("extension wires the Pi events Trellis needs for context flow", () => {
     const extension = getExtensionTemplate();
 
     // session_start: notify-only welcome
     expect(extension).toContain('pi.on?.("session_start"');
+    // input: per-turn model-visible workflow breadcrumb
+    expect(extension).toContain('pi.on?.("input"');
     // before_agent_start: inject Trellis task context + per-turn breadcrumb
     expect(extension).toContain('pi.on?.("before_agent_start"');
     // tool_call: inject TRELLIS_CONTEXT_ID into bash commands
     expect(extension).toContain('pi.on?.("tool_call"');
     // tool_result: mark failed/cancelled subagent runs as errors
     expect(extension).toContain('pi.on?.("tool_result"');
+  });
+
+  it("injects workflow state on input and startup context on first agent start", () => {
+    const root = createMinimalTrellisRoot();
+    const { trellisExtension } = loadExtensionInternals(root);
+    const handlers = new Map<
+      string,
+      (event: unknown, ctx?: unknown) => unknown
+    >();
+
+    trellisExtension({
+      registerTool: vi.fn(),
+      registerShortcut: vi.fn(),
+      on(event, handler) {
+        handlers.set(event, handler);
+      },
+    });
+
+    const ctx = {
+      sessionManager: { getSessionId: () => "pi-unit-355" },
+      ui: { notify: vi.fn() },
+    };
+    const inputResult = handlers.get("input")?.(
+      { type: "input", text: "Adjust service routing", source: "interactive" },
+      ctx,
+    ) as { action: string; text?: string };
+
+    expect(inputResult.action).toBe("transform");
+    expect(inputResult.text).toContain("<workflow-state>");
+    expect(inputResult.text).toContain("Status: no_task");
+
+    const beforeAgentStart = handlers.get("before_agent_start");
+    const first = beforeAgentStart?.(
+      {
+        type: "before_agent_start",
+        prompt: "Adjust service routing",
+        systemPrompt: "BASE",
+        systemPromptOptions: {},
+      },
+      ctx,
+    ) as { systemPrompt: string };
+
+    expect(first.systemPrompt).toContain(
+      "Trellis compact SessionStart context",
+    );
+    expect(first.systemPrompt).toContain("<first-reply-notice>");
+    expect(first.systemPrompt).toContain("<trellis-workflow>");
+    expect(first.systemPrompt).toContain("Phase 1: Plan");
+    expect(first.systemPrompt).toContain("No active Trellis task found");
+
+    const second = beforeAgentStart?.(
+      {
+        type: "before_agent_start",
+        prompt: "Continue",
+        systemPrompt: "BASE",
+        systemPromptOptions: {},
+      },
+      ctx,
+    ) as { systemPrompt: string };
+
+    expect(second.systemPrompt).not.toContain(
+      "Trellis compact SessionStart context",
+    );
+    expect(second.systemPrompt).toContain("<workflow-state>");
   });
 
   it("extension bash tool_call handler prefixes TRELLIS_CONTEXT_ID", () => {

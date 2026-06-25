@@ -522,7 +522,7 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".pi", "settings.json"))).toBe(true);
     expect(
       fs.existsSync(path.join(tmpDir, ".pi", "prompts", "trellis-start.md")),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       fs.existsSync(
         path.join(tmpDir, ".pi", "prompts", "trellis-finish-work.md"),

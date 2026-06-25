@@ -50,6 +50,8 @@ These return `ResolvedTemplate[]` (`{ name, content }`) and are the canonical en
 
 `configurators/shared.ts:resolveCommands` — returns command templates as plain commands (no frontmatter). Used by platforms that have a native command surface (Cursor, Claude, Gemini, OpenCode, etc.). Filters out `start.md` on agent-capable platforms — the session-start hook injects the workflow overview, so a user-facing `/start` would be redundant. Filtering is by `ctx.agentCapable`, not `hasHooks`; agent-capable correlates with "has a session-start mechanism (hook or plugin)".
 
+Pi is the exception handled in `configurators/pi.ts`: `session_start` is notify-only and cannot mutate model-visible context, so Pi keeps a generated `.pi/prompts/trellis-start.md` fallback while its extension injects compact startup context through the first `before_agent_start`. The configurator must still derive the fallback through `resolveCommands({ ...ctx, hasHooks: false })` rather than reading common command templates directly, so placeholder rendering and future command transforms stay centralized.
+
 `configurators/shared.ts:resolveSkills` — returns the 5 single-file workflow skills (`brainstorm`, `before-dev`, `check`, `break-loop`, `update-spec`) wrapped with skill frontmatter and platform-specific `{{CMD_REF}}` rendering. Used by "both" platforms — those that emit native commands AND skills (Qoder, Cursor with `.cursor/skills`, Devin).
 
 `configurators/shared.ts:resolveSkillsNeutral` — same 5 skills, but uses `resolvePlaceholdersNeutral`. Use this for any skill set destined for `.agents/skills/`.
@@ -133,7 +135,7 @@ Configurators must respect these. They are not enforced by types; tests in `test
 - **`.agents/skills/` writes use `resolvePlaceholdersNeutral`.** See `platform-integration.md` "Rule: `.agents/skills/` writes use `resolvePlaceholdersNeutral()`". Per-platform skill roots (`.claude/skills/`, `.qoder/skills/`, etc.) keep using `resolvePlaceholders`.
 - **Class-2 agent definitions carry the pull-based prelude.** `applyPullBasedPreludeMarkdown` / `applyPullBasedPreludeToml` must run on every class-2 platform's `trellis-implement` and `trellis-check` definitions (research is intentionally exempt).
 - **Pull-based prelude wording is the same on every class-2 platform.** They all call `buildPullBasedPrelude`. A platform that hand-rolls its own prelude breaks the cross-platform contract documented in `platform-integration.md` "Active task discovery on class-2 platforms".
-- **`start.md` is filtered for agent-capable platforms.** `filterCommands` is private; `resolveCommands` / `resolveAllAsSkills` / `resolveAllAsSkillsNeutral` apply it. Configurators must not bypass these and call `getCommandTemplates()` directly — that re-introduces `start` on platforms that don't need it.
+- **`start.md` is filtered for agent-capable platforms.** `filterCommands` is private; `resolveCommands` / `resolveAllAsSkills` / `resolveAllAsSkillsNeutral` apply it. Configurators must not bypass these and call `getCommandTemplates()` directly — that re-introduces `start` on platforms that don't need it. Pi is the only approved prompt fallback exception, and it still obtains `start` through `resolveCommands` with the Pi context adjusted to `hasHooks: false`.
 - **Skill / command descriptions live in `SKILL_DESCRIPTIONS` / `COMMAND_DESCRIPTIONS`.** Adding a workflow skill or palette command requires adding the description here; the wrapper helpers throw at init if the description is missing.
 - **Bundled skills already own frontmatter.** `wrapWithSkillFrontmatter` must not be applied to `resolveBundledSkills` output. `writeSkills` and `collectSkillTemplates` accept bundled files separately for this reason.
 - **Hooks dir writes go through `writeSharedHooks(dir, platform)`.** The `platform` arg drives the per-platform inclusion list. Class-2 platforms automatically lose `inject-subagent-context.py` — configurators must not pass an arbitrary file list of their own.
@@ -219,6 +221,16 @@ for (const cmd of resolveCommands(ctx)) {
 ```
 
 `resolveCommands` filters `start` for agent-capable platforms and runs `resolvePlaceholders`. Direct iteration re-introduces `start` and skips placeholder resolution.
+
+Pi-specific fallback:
+
+```typescript
+const start = resolveCommands({ ...piCtx, hasHooks: false }).find(
+  (command) => command.name === "start",
+);
+```
+
+This is allowed only because Pi's `session_start` event cannot inject model-visible context. Keep the fallback in Pi's configurator, not in shared filtering logic.
 
 ### Forgetting `replacePythonCommandLiterals` in a custom write
 
