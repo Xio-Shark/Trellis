@@ -220,7 +220,7 @@ Inline mode: skip jsonl curation; Phase 2 reads artifacts/specs via `trellis-bef
      therefore must cover every required step from implementation through
      commit, including Phase 3.3 spec update and Phase 3.4 commit. -->
 
-Sub-agent dispatch protocol applies to all platforms and all sub-agents, including class-2 Codex/Copilot/Gemini/Qoder/Trae and `trellis-research`: every dispatch prompt starts with `Active task: <task path from task.py current>` before role-specific instructions.
+Sub-agent dispatch protocol applies to all platforms and all sub-agents, including class-2 Codex/Gemini/Qoder/Copilot/ZCode/Reasonix/Trae and `trellis-research`: every dispatch prompt starts with `Active task: <task path from task.py current>` before role-specific instructions.
 
 [workflow-state:in_progress]
 Tools: `trellis-implement` / `trellis-research` are sub-agent types only (Task/Agent tool, NOT Skill; there is no skill by these names). `trellis-update-spec` is a skill. `trellis-check` exists as both; prefer the Agent form when verifying after code changes.
@@ -472,7 +472,7 @@ Goal: turn reviewed planning artifacts into code that passes quality checks.
 
 #### 2.1 Implement `[required · repeatable]`
 
-[Claude Code, Cursor, OpenCode, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
+[Claude Code, Cursor, OpenCode, CodeBuddy, Droid, Pi]
 
 Spawn the implement sub-agent:
 
@@ -484,9 +484,9 @@ The platform hook/plugin auto-handles:
 - Reads `implement.jsonl` and injects referenced spec/research files into the agent prompt
 - Injects `prd.md`, `design.md` if present, and `implement.md` if present
 
-[/Claude Code, Cursor, OpenCode, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi]
+[/Claude Code, Cursor, OpenCode, CodeBuddy, Droid, Pi]
 
-[codex-sub-agent, ZCode, Reasonix, Trae]
+[codex-sub-agent, Gemini, Qoder, Copilot, ZCode, Reasonix, Trae]
 
 Spawn the implement sub-agent:
 
@@ -498,7 +498,7 @@ The pull-based sub-agent definition auto-handles the context load requirement:
 - Resolves the active task with `task.py current --source`, then reads `prd.md`, `design.md` if present, and `implement.md` if present
 - Reads `implement.jsonl` and requires the agent to load each referenced spec/research file before coding
 
-[/codex-sub-agent, ZCode, Reasonix, Trae]
+[/codex-sub-agent, Gemini, Qoder, Copilot, ZCode, Reasonix, Trae]
 
 [Kiro]
 

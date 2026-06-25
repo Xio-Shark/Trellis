@@ -830,7 +830,7 @@ Trellis sub-agents (implement / check / research) need task context (`prd.md` + 
 | Class | Mechanism | Platforms |
 |---|---|---|
 | **Class-1** — Hook-inject | Python hook (or JS plugin) under `.{platform}/hooks/` fires on the sub-agent spawn tool and rewrites the tool's prompt input | Claude Code, Cursor, OpenCode, Kiro, CodeBuddy, Factory Droid |
-| **Class-2** — Pull-based | Platform's hook can't reliably mutate sub-agent prompts; Trellis injects a "Required: Load Trellis Context First" prelude into each sub-agent definition file so the sub-agent reads context itself at startup | Codex, Gemini CLI, Qoder, Copilot, Trae IDE |
+| **Class-2** — Pull-based | Platform's hook can't reliably mutate sub-agent prompts; Trellis injects a "Required: Load Trellis Context First" prelude into each sub-agent definition file so the sub-agent reads context itself at startup | Codex, Gemini CLI, Qoder, Copilot, ZCode, Reasonix, Trae IDE |
 | **Class-3** — Extension-backed | Platform exposes hook-equivalent events and custom tools through a project-local TypeScript extension; Trellis owns the sub-agent tool and the context injection path | Pi Agent |
 
 ### Class-1 — Hook-inject (6 platforms)
@@ -878,7 +878,7 @@ import { isTrellisSubagent } from "../lib/trellis-context.js"
 
 `getActiveTask()` in `lib/trellis-context.js` itself includes the single-session fallback so any caller (`workflow-state` breadcrumb, `session-start` task status) sees the same resolved task as the prompt injector. The fallback only activates when the explicit context-key lookup misses, so multi-window setups remain isolated.
 
-### Class-2 — Pull-based (5 platforms)
+### Class-2 — Pull-based (7 platforms)
 
 Platform's hook either doesn't expose a sub-agent spawn event or can't modify the prompt. Sub-agents must Read context themselves at startup. Trellis injects a "Required: Load Trellis Context First" prelude into each sub-agent definition file.
 
@@ -888,6 +888,8 @@ Platform's hook either doesn't expose a sub-agent spawn event or can't modify th
 | Qoder | No `Task` tool concept; `SubagentStart` input has no `prompt` field; Context Isolation |
 | Codex | `PreToolUse` only fires for Bash; `CollabAgentSpawn` hook unimplemented ([#15486](https://github.com/openai/codex/issues/15486)) |
 | Copilot | `preToolUse` doesn't enforce on subagents ([#2392](https://github.com/github/copilot-cli/issues/2392), [#2540](https://github.com/github/copilot-cli/issues/2540)) |
+| ZCode | No Trellis-supported hook surface for sub-agent prompt mutation; generated `.zcode/cli/agents/*.md` files receive the pull-based prelude. |
+| Reasonix | Sub-agent skills run with `runAs: subagent`; no prompt-mutation hook exists, so workflow dispatch must carry the active task and the sub-agent skill reads task artifacts itself. |
 | Trae IDE | `SessionStart` / `UserPromptSubmit` hooks cover main-session context, but no Trellis-supported sub-agent prompt mutation surface exists; generated `.trae/agents/*.md` files receive the pull-based prelude. |
 
 #### Active task discovery on class-2 platforms (issue #225)
@@ -989,6 +991,7 @@ A drift between the two is silent: the model will still see *some* dispatch guid
 #### Tests required
 
 - Regression test asserting the `Active task:` rule appears in `templates/trellis/workflow.md` (`templates/trellis.test.ts > [issue-225]`).
+- Regression test asserting `workflow.md` Phase 2.1 routes generated pull-based sub-agent definitions through the pull-based block, not the `The platform hook/plugin auto-handles` block (`templates/trellis.test.ts > [issue-zcode-repeat]`). The test derives generated pull-based platforms from `collectPlatformTemplates()` by looking for `Required: Load Trellis Context First`; adding a new pull-based platform without adding its workflow marker mapping must fail. Pi is excluded from this derivation because its generated agents keep the same prelude as a fallback while the primary context path is class-3 extension-backed and is covered by Pi-specific tests.
 - Configurator test asserting the Pi extension's `SUBAGENT_DISPATCH_PROTOCOL` constant contains the same `Active task:` rule and the same class-1/class-2/class-3 platform list.
 - Cross-source parity test: when the breadcrumb text in `workflow.md` changes, the Pi extension's `SUBAGENT_DISPATCH_PROTOCOL` constant must change in the same commit. Either co-locate the parity assertion in a single regression test, or rely on diff review — but document the rule here.
 
