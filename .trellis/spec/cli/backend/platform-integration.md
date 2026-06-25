@@ -56,16 +56,18 @@ When adding a new platform `{platform}`, update the following:
 
 > **Key concept**: Most platforms now derive their content from `src/templates/common/` (commands + skills) via `resolvePlaceholders()` in `configurators/shared.ts`. Platform-specific template directories only contain **agents**, **settings/hooks config**, and platform-specific overrides. The `createTemplateReader()` factory from `src/templates/template-utils.ts` eliminates boilerplate in platform `index.ts` files.
 
-**Standard with shared hooks** (Qoder, CodeBuddy, Droid, Cursor, Gemini):
+**Standard with shared hooks** (Qoder, CodeBuddy, Droid, Cursor, Gemini, Trae):
 
 | Directory | Contents |
 |-----------|----------|
 | `src/templates/{platform}/` | Root directory |
 | `src/templates/{platform}/index.ts` | Uses `createTemplateReader(import.meta.url)` — exports agents, settings |
 | `src/templates/{platform}/agents/` | Agent definitions (`.md` files — implement, check, research) |
-| `src/templates/{platform}/settings.json` | Platform settings (may use `{{PYTHON_CMD}}` placeholder) |
+| `src/templates/{platform}/settings.json` or `hooks.json` | Platform settings / hook config (may use `{{PYTHON_CMD}}` placeholder) |
 
 > Note: These platforms use `writeSharedHooks()` from `shared.ts` to copy platform-independent hook scripts from `src/templates/shared-hooks/` into each platform's hooks directory. Commands and skills come from `src/templates/common/` via `resolveCommands()` / `resolveSkills()` / `resolveAllAsSkills()`. The `createTemplateReader()` factory provides `listMdAgents()`, `getSettings()`, etc. without per-platform boilerplate.
+>
+> Trae follows this shared-hook template pattern but writes `.trae/hooks.json`, `.trae/commands/trellis-*.md` with command frontmatter, `.trae/skills/`, `.trae/agents/`, and `.trae/hooks/`. Its main session uses `SessionStart` / `UserPromptSubmit` hooks; sub-agent context remains class-2 pull-based because Trae does not expose a Trellis-supported sub-agent prompt mutation surface.
 
 **Claude Code pattern** (full hooks + agents + settings):
 
@@ -799,6 +801,7 @@ These are now **automatically derived** from the registry:
 | Droid | `/trellis:xxx` | Markdown (`.md`) | `/trellis:finish-work` |
 | Devin | `/trellis-xxx` | Markdown (`.md`) + `SKILL.md` | `/trellis-finish-work` |
 | Pi Agent | `/trellis-xxx` prompt templates + `/skill:<name>` skills | Markdown (`.md`) + `SKILL.md` + TypeScript extension | `/trellis-finish-work` |
+| Trae IDE | `/trellis-xxx` commands + skills | Markdown (`.md` with frontmatter) + `SKILL.md` + `hooks.json` | `/trellis-finish-work` |
 
 When creating platform templates, ensure references match the platform's interaction format and file format.
 
@@ -806,7 +809,7 @@ When creating platform templates, ensure references match the platform's interac
 
 Commands emitted by `resolveCommands(ctx)` / `resolveAllAsSkills(ctx)` / `resolveAllAsSkillsNeutral(ctx)` in `src/configurators/shared.ts`:
 
-| Command | `agentCapable && hasHooks` (9) | `agentCapable && !hasHooks` (4) | `!agentCapable` (3) |
+| Command | `agentCapable && hasHooks` (10) | `agentCapable && !hasHooks` (4) | `!agentCapable` (3) |
 |---------|--------------------------------|----------------------------------|---------------------|
 | `start` | ❌ filtered by the shared resolver — SessionStart-style hook injects opening context, user-facing `/start` would be redundant. Pi is the approved exception and re-adds `.pi/prompts/trellis-start.md` because `session_start` is notify-only. | ✅ emitted (skill and/or slash command per platform) — no hook fires, users need an invocable `start` | ✅ emitted — manual equivalent of session-start hook |
 | `continue` | ✅ emitted | ✅ emitted | ✅ emitted |
@@ -814,7 +817,7 @@ Commands emitted by `resolveCommands(ctx)` / `resolveAllAsSkills(ctx)` / `resolv
 
 **Rule**: filter is by `ctx.agentCapable && ctx.hasHooks` — **both flags required** (changed in 0.6.4; the prior single-flag rule silently dropped `start` from Codex / ZCode / OpenCode / Reasonix). `agentCapable` alone is not a proxy for "has a session-start mechanism" because four agent-capable platforms ship without a SessionStart-equivalent hook and rely on user-invocable `start` instead.
 
-- `agentCapable && hasHooks`: `claude-code, cursor, kiro, gemini, qoder, codebuddy, copilot, droid, pi`
+- `agentCapable && hasHooks`: `claude-code, cursor, kiro, gemini, qoder, codebuddy, copilot, droid, pi, trae`
 - `agentCapable && !hasHooks`: `codex, opencode, reasonix, zcode` — Codex has a UserPromptSubmit hook but no SessionStart; OpenCode has a `plugins/session-start.js` plugin but registry-`hasHooks` is reserved for the SessionStart-style hook protocol; ZCode and Reasonix have neither.
 - `!agentCapable`: `kilo, antigravity, devin`
 
@@ -827,7 +830,7 @@ Trellis sub-agents (implement / check / research) need task context (`prd.md` + 
 | Class | Mechanism | Platforms |
 |---|---|---|
 | **Class-1** — Hook-inject | Python hook (or JS plugin) under `.{platform}/hooks/` fires on the sub-agent spawn tool and rewrites the tool's prompt input | Claude Code, Cursor, OpenCode, Kiro, CodeBuddy, Factory Droid |
-| **Class-2** — Pull-based | Platform's hook can't reliably mutate sub-agent prompts; Trellis injects a "Required: Load Trellis Context First" prelude into each sub-agent definition file so the sub-agent reads context itself at startup | Codex, Gemini CLI, Qoder, Copilot |
+| **Class-2** — Pull-based | Platform's hook can't reliably mutate sub-agent prompts; Trellis injects a "Required: Load Trellis Context First" prelude into each sub-agent definition file so the sub-agent reads context itself at startup | Codex, Gemini CLI, Qoder, Copilot, Trae IDE |
 | **Class-3** — Extension-backed | Platform exposes hook-equivalent events and custom tools through a project-local TypeScript extension; Trellis owns the sub-agent tool and the context injection path | Pi Agent |
 
 ### Class-1 — Hook-inject (6 platforms)
@@ -875,7 +878,7 @@ import { isTrellisSubagent } from "../lib/trellis-context.js"
 
 `getActiveTask()` in `lib/trellis-context.js` itself includes the single-session fallback so any caller (`workflow-state` breadcrumb, `session-start` task status) sees the same resolved task as the prompt injector. The fallback only activates when the explicit context-key lookup misses, so multi-window setups remain isolated.
 
-### Class-2 — Pull-based (4 platforms)
+### Class-2 — Pull-based (5 platforms)
 
 Platform's hook either doesn't expose a sub-agent spawn event or can't modify the prompt. Sub-agents must Read context themselves at startup. Trellis injects a "Required: Load Trellis Context First" prelude into each sub-agent definition file.
 
@@ -885,6 +888,7 @@ Platform's hook either doesn't expose a sub-agent spawn event or can't modify th
 | Qoder | No `Task` tool concept; `SubagentStart` input has no `prompt` field; Context Isolation |
 | Codex | `PreToolUse` only fires for Bash; `CollabAgentSpawn` hook unimplemented ([#15486](https://github.com/openai/codex/issues/15486)) |
 | Copilot | `preToolUse` doesn't enforce on subagents ([#2392](https://github.com/github/copilot-cli/issues/2392), [#2540](https://github.com/github/copilot-cli/issues/2540)) |
+| Trae IDE | `SessionStart` / `UserPromptSubmit` hooks cover main-session context, but no Trellis-supported sub-agent prompt mutation surface exists; generated `.trae/agents/*.md` files receive the pull-based prelude. |
 
 #### Active task discovery on class-2 platforms (issue #225)
 
@@ -1258,7 +1262,7 @@ conversation:
 
 | Implementation | Include notice? | Reason |
 |---|---:|---|
-| `shared-hooks/session-start.py` | ✅ | Claude/Cursor/Gemini/Qoder/CodeBuddy/Droid-style shared hook context |
+| `shared-hooks/session-start.py` | ✅ | Claude/Cursor/Gemini/Qoder/CodeBuddy/Droid/Trae-style shared hook context |
 | `codex/hooks/session-start.py` | ✅ | Codex accepts SessionStart stdout / `additionalContext` when `features.hooks = true` (legacy: `codex_hooks = true`) |
 | `opencode/plugins/session-start.js` | ✅ | Plugin prepends Trellis context into the first user message and persists it |
 | `pi/extensions/trellis/index.ts.txt` | ✅ | Pi cannot inject through `session_start`, so the first `before_agent_start` emits a compact SessionStart-equivalent payload into `systemPrompt` |
@@ -1420,6 +1424,7 @@ The same rule applies to every other hook that's positioned as "repeated reminde
 | Codex | `UserPromptSubmit` | `.codex/hooks.json` | **Requires `features.hooks = true` in user's `~/.codex/config.toml` (Codex 0.129+; legacy: `codex_hooks = true`).** Codex 0.129+ also requires running `/hooks` once to approve the installed hook before it activates — until approved, hooks never fire (the trellis-bootstrap fallback in inject-workflow-state.py covers the gap by directing the AI to read `trellis-start` skill manually) |
 | OpenCode | `chat.message` (Bun plugin) | `plugins/inject-workflow-state.js` | Equivalent JS implementation |
 | Kiro | CLI: `userPromptSubmit` (main `trellis` agent JSON) · IDE: `promptSubmit` (`.kiro/hooks/*.kiro.hook`) | CLI: `.kiro/agents/trellis.json` `hooks` · IDE: `.kiro/hooks/trellis-workflow-state.kiro.hook` (`then.runCommand`) | Plain stdout (NOT the `hookSpecificOutput` JSON envelope) — Kiro adds a hook's raw stdout to conversation context. `inject-workflow-state.py` has a `platform == "kiro"` branch (detected via `KIRO_PROJECT_DIR` env or `.kiro` script path) that prints the bare breadcrumb. **Activation:** CLI users must make `trellis` the active agent (`kiro-cli settings chat.defaultAgent trellis` or `/agent swap trellis`) — Kiro defaults to built-in `kiro_default`. **Real-machine note:** the plain-stdout→context contract (and whether IDE `runCommand` stdout is injected vs only `askAgent`) is per official docs, pending Kiro hardware verification; fallback is `askAgent` + static steering. Sub-agent context injection unchanged via `agentSpawn → inject-subagent-context.py` |
+| Trae IDE | `UserPromptSubmit` | `.trae/hooks.json` | Auto; shared Python hook written under `.trae/hooks/inject-workflow-state.py` |
 
 ### CWD Robustness
 
