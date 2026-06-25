@@ -137,6 +137,7 @@ def should_skip_injection() -> bool:
         "GEMINI_NON_INTERACTIVE",
         "KIRO_NON_INTERACTIVE",
         "COPILOT_NON_INTERACTIVE",
+        "TRAE_NON_INTERACTIVE",
     ]
     return any(os.environ.get(var) == "1" for var in non_interactive_vars)
 
@@ -195,6 +196,7 @@ def _detect_platform(input_data: dict) -> str | None:
         "QODER_PROJECT_DIR": "qoder",
         "KIRO_PROJECT_DIR": "kiro",
         "COPILOT_PROJECT_DIR": "copilot",
+        "TRAE_PROJECT_DIR": "trae",
     }
     for env_name, platform in env_map.items():
         if os.environ.get(env_name):
@@ -216,6 +218,8 @@ def _detect_platform(input_data: dict) -> str | None:
         return "droid"
     if ".kiro" in script_parts:
         return "kiro"
+    if ".trae" in script_parts:
+        return "trae"
     return None
 
 
@@ -739,6 +743,7 @@ def main():
         "GEMINI_PROJECT_DIR",
         "KIRO_PROJECT_DIR",
         "COPILOT_PROJECT_DIR",
+        "TRAE_PROJECT_DIR",
     ]
     project_dir = None
     for var in project_dir_env_vars:

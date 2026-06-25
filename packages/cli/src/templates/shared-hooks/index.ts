@@ -39,7 +39,8 @@ export type SharedHookPlatform =
   | "copilot"
   | "codebuddy"
   | "droid"
-  | "kiro";
+  | "kiro"
+  | "trae";
 
 /**
  * Which shared hooks each platform actually invokes. Single source of truth
@@ -104,6 +105,7 @@ export const SHARED_HOOKS_BY_PLATFORM: Record<
     "inject-workflow-state.py",
     "inject-subagent-context.py",
   ],
+  trae: ["session-start.py", "inject-workflow-state.py"],
 };
 
 /**

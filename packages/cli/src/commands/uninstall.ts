@@ -79,6 +79,7 @@ function buildStructuredFileSpecs(): Map<string, StructuredFileSpec> {
         ".codebuddy/settings.json",
         ".qoder/settings.json",
         ".codex/hooks.json",
+        ".trae/hooks.json",
       ] as const
     ).map(
       (p): StructuredFileSpec => ({

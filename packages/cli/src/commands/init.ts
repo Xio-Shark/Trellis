@@ -1020,6 +1020,7 @@ interface InitOptions {
   pi?: boolean;
   reasonix?: boolean;
   zcode?: boolean;
+  trae?: boolean;
   yes?: boolean;
   user?: string;
   force?: boolean;

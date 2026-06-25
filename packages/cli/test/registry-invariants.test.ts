@@ -133,6 +133,11 @@ describe("UserPromptSubmit hook wiring", () => {
       path: "codex/hooks.json",
       event: "UserPromptSubmit",
     },
+    {
+      platform: "trae",
+      path: "trae/hooks.json",
+      event: "UserPromptSubmit",
+    },
   ] as const;
 
   for (const { platform, path, event } of PLATFORM_HOOK_CONFIGS) {
