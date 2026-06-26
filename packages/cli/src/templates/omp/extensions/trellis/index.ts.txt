@@ -1,7 +1,8 @@
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 
 // ---------------------------------------------------------------------------
 // Project root detection
@@ -19,6 +20,36 @@ function findProjectRoot(startDir: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// Session identity helpers (mirrors Python _sanitize_key / _hash_value / _context_key)
+// ---------------------------------------------------------------------------
+
+function sanitizeKey(raw: string): string {
+   const safe = raw.trim().replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^[._-]+|[._-]+$/g, "");
+   return safe ? safe.slice(0, 160) : "";
+}
+
+function hashValue(raw: string): string {
+   return createHash("sha256").update(raw).digest("hex").slice(0, 24);
+}
+
+function buildContextKey(platformName: string, kind: string, value: string): string {
+   if (kind === "transcript") {
+      return `${platformName}_transcript_${hashValue(value)}`;
+   }
+   const safeValue = sanitizeKey(value);
+   return safeValue ? `${platformName}_${safeValue}` : `${platformName}_${hashValue(value)}`;
+}
+
+function resolveContextKey(): string | null {
+   // 1. 显式覆盖 — Trellis hooks 启动子进程时设置
+   const override = process.env.TRELLIS_CONTEXT_ID?.trim();
+   if (override) {
+      return sanitizeKey(override) || hashValue(override);
+   }
+   return null;
+}
+
+// ---------------------------------------------------------------------------
 // Active task resolution
 // ---------------------------------------------------------------------------
 
@@ -28,28 +59,38 @@ function resolveActiveTaskStatus(
    const sessionsDir = join(projectRoot, ".trellis", ".runtime", "sessions");
    if (!existsSync(sessionsDir)) return { status: "no_task", taskDir: null, taskTitle: null };
 
-   let sessionFiles: string[];
-   try {
-      sessionFiles = readdirSync(sessionsDir).filter((f) => f.endsWith(".json"));
-   } catch {
-      return { status: "no_task", taskDir: null, taskTitle: null };
-   }
-   if (sessionFiles.length === 0) return { status: "no_task", taskDir: null, taskTitle: null };
+   // --- 通过 context key 解析 session 文件 ---
+   const contextKey = resolveContextKey();
+   let sessionFilePath: string | null = null;
 
-   if (sessionFiles.length > 1) {
-      sessionFiles.sort((a, b) => {
-         const ma = statSync(join(sessionsDir, a)).mtimeMs;
-         const mb = statSync(join(sessionsDir, b)).mtimeMs;
-         return mb - ma;
-      });
+   if (contextKey) {
+      // 有身份标识：直接定位文件
+      const candidate = join(sessionsDir, `${contextKey}.json`);
+      if (existsSync(candidate)) {
+         sessionFilePath = candidate;
+      }
    }
 
-   const sessionFile = sessionFiles[0];
+   if (!sessionFilePath) {
+      // 单 session fallback：恰好 1 个文件时使用，否则拒绝猜测
+      let sessionFiles: string[];
+      try {
+         sessionFiles = readdirSync(sessionsDir).filter((f) => f.endsWith(".json"));
+      } catch {
+         return { status: "no_task", taskDir: null, taskTitle: null };
+      }
+      if (sessionFiles.length === 1) {
+         sessionFilePath = join(sessionsDir, sessionFiles[0]);
+      } else {
+         // 0 或 ≥2 个文件且无身份标识：返回 no_task，不跨会话猜测
+         return { status: "no_task", taskDir: null, taskTitle: null };
+      }
+   }
+
+   // --- 读取 session 数据 ---
    let sessionData: Record<string, unknown>;
    try {
-      sessionData = JSON.parse(
-         readFileSync(join(sessionsDir, sessionFile), "utf-8"),
-      );
+      sessionData = JSON.parse(readFileSync(sessionFilePath, "utf-8"));
    } catch {
       return { status: "no_task", taskDir: null, taskTitle: null };
    }
@@ -276,6 +317,16 @@ export default function(pi: ExtensionAPI): void {
 
    pi.on("session_start", async (_event, ctx) => {
       projectRoot = findProjectRoot(ctx.cwd);
+      // Derive context key from OMP session identity and export it so
+      // resolveActiveTaskStatus() and spawned subprocesses (get_context.py,
+      // task.py) can locate the correct session runtime file.
+      if (!process.env.TRELLIS_CONTEXT_ID) {
+         const sessionId = (ctx.sessionManager as { getSessionId?: () => string }).getSessionId?.();
+         if (sessionId) {
+            process.env.TRELLIS_CONTEXT_ID = buildContextKey("pi", "session", sessionId);
+         }
+      }
+
       if (!projectRoot) return;
 
       if (isSubAgent) {

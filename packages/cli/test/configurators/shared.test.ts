@@ -3,7 +3,6 @@ import {
   getPythonCommandForPlatform,
   replacePythonCommandLiterals,
   resolveAllAsSkillsNeutral,
-  resolveCommands,
   resolvePlaceholders,
   resolvePlaceholdersNeutral,
   resolveSkillsNeutral,
