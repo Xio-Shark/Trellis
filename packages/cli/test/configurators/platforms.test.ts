@@ -1015,7 +1015,7 @@ describe("configurePlatform", () => {
     expect(extension).toContain('customType: "trellis-runtime-context"');
     expect(extension).toContain("display: false");
     expect(extension).toContain('const runtimeContext = [turn.wf, turn.ov]');
-    expect(extension).toContain("systemPrompt:");
+    expect(extension).toContain("systemPrompt: [cur, startup, ctxText]");
     expect(extension).not.toContain('action: "transform"');
     expect(extension).not.toContain('pi.on?.("input"');
     expect(extension).toContain('pi.on?.("context"');

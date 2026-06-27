@@ -1660,9 +1660,7 @@ export default function trellisExtension(pi: {
             display: false,
           }
         : undefined,
-      systemPrompt: [cur, startup, ctxText, turn.wf, turn.ov]
-        .filter(Boolean)
-        .join("\n\n"),
+      systemPrompt: [cur, startup, ctxText].filter(Boolean).join("\n\n"),
     };
   });
   pi.on?.("context", (event, ctx) => {

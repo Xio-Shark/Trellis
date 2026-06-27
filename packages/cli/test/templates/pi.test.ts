@@ -240,7 +240,8 @@ describe("pi templates", () => {
     expect(first.systemPrompt).toContain("<trellis-workflow>");
     expect(first.systemPrompt).toContain("Phase 1: Plan");
     expect(first.systemPrompt).toContain("No active Trellis task found");
-    expect(first.systemPrompt).toContain("<workflow-state>");
+    expect(first.systemPrompt).not.toContain("<workflow-state>");
+    // The first system prompt still contains startup's one-shot session overview.
     expect(first.systemPrompt).toContain("<session-overview>");
     expect(first.message).toEqual(
       expect.objectContaining({
@@ -276,8 +277,8 @@ describe("pi templates", () => {
       "Trellis compact SessionStart context",
     );
     expect(second.systemPrompt).toContain("No active Trellis task found");
-    expect(second.systemPrompt).toContain("<workflow-state>");
-    expect(second.systemPrompt).toContain("<session-overview>");
+    expect(second.systemPrompt).not.toContain("<workflow-state>");
+    expect(second.systemPrompt).not.toContain("<session-overview>");
     expect(second.message).toEqual(
       expect.objectContaining({
         customType: "trellis-runtime-context",
