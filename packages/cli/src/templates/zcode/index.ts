@@ -2,7 +2,7 @@
  * ZCode template module.
  *
  * ZCode (智谱) is an agentic AI coding tool that supports multi-agent
- * collaboration. It stores agents as `.zcode/cli/agents/<name>.md`
+ * collaboration. It stores agents as `.zcode/agents/<name>.md`
  * (Markdown with YAML frontmatter: name, description, color).
  *
  * Sub-agent definitions (trellis-implement, trellis-check) use pull-based

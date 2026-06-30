@@ -403,7 +403,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     templateDirs: ["common", "zcode"],
     configDir: ".zcode",
     supportsAgentSkills: true,
-    extraManagedPaths: [".zcode/cli/agents", ".zcode/commands"],
+    extraManagedPaths: [".zcode/agents", ".zcode/commands"],
     cliFlag: "zcode",
     defaultChecked: false,
     hasPythonHooks: false,

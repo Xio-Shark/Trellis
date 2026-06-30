@@ -643,7 +643,7 @@ describe("init() integration", () => {
     ).toBe(true);
     expect(
       fs.existsSync(
-        path.join(tmpDir, ".zcode", "cli", "agents", "trellis-implement.md"),
+        path.join(tmpDir, ".zcode", "agents", "trellis-implement.md"),
       ),
     ).toBe(true);
   });

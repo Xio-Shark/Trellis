@@ -5,7 +5,7 @@
  * Three output paths:
  * - `.agents/skills/` — shared skills, byte-identical with Codex/Gemini writes
  * - `.zcode/commands/trellis/` — slash commands (invoked as /trellis:<name>)
- * - `.zcode/cli/agents/` — sub-agent definitions with pull-based prelude
+ * - `.zcode/agents/` — sub-agent definitions with pull-based prelude
  */
 
 import path from "node:path";
@@ -45,9 +45,9 @@ export function collectZcodeTemplates(): Map<string, string> {
     files.set(`.zcode/commands/trellis/${cmd.name}.md`, cmd.content);
   }
 
-  // 3. Sub-agents → .zcode/cli/agents/ (with pull-based prelude)
+  // 3. Sub-agents → .zcode/agents/ (with pull-based prelude)
   for (const agent of applyPullBasedPreludeMarkdown(getAllAgents())) {
-    files.set(`.zcode/cli/agents/${agent.name}.md`, agent.content);
+    files.set(`.zcode/agents/${agent.name}.md`, agent.content);
   }
 
   return files;
@@ -74,9 +74,9 @@ export async function configureZcode(cwd: string): Promise<void> {
     await writeFile(path.join(commandsDir, `${cmd.name}.md`), cmd.content);
   }
 
-  // 3. Sub-agents → .zcode/cli/agents/ (with pull-based prelude)
+  // 3. Sub-agents → .zcode/agents/ (with pull-based prelude)
   await writeAgents(
-    path.join(cwd, ".zcode", "cli", "agents"),
+    path.join(cwd, ".zcode", "agents"),
     applyPullBasedPreludeMarkdown(getAllAgents()),
   );
 }
