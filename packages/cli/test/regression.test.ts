@@ -1790,6 +1790,116 @@ describe("regression: current-task path normalization", () => {
     expect(fs.existsSync(contextPath)).toBe(false);
   });
 
+  it("[issue-377] task.py create normalizes a --slug carrying today's date prefix", () => {
+    writeTrellisScripts();
+    writeProjectFile(
+      path.join(".trellis", ".developer"),
+      "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
+    );
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    const now = new Date();
+    const todayPrefix = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+    const result = spawnSync(
+      pythonCmd,
+      [
+        taskScriptPath,
+        "create",
+        "Example Task",
+        "--slug",
+        `${todayPrefix}-example-task`,
+        "--assignee",
+        "test-dev",
+      ],
+      { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain("normalized to");
+    const tasksDir = path.join(tmpDir, ".trellis", "tasks");
+    expect(
+      fs.existsSync(path.join(tasksDir, `${todayPrefix}-example-task`)),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(tasksDir, `${todayPrefix}-${todayPrefix}-example-task`),
+      ),
+    ).toBe(false);
+  });
+
+  it("[issue-377] task.py create rejects a --slug carrying a different date prefix", () => {
+    writeTrellisScripts();
+    writeProjectFile(
+      path.join(".trellis", ".developer"),
+      "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
+    );
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    const now = new Date();
+    // Pick a valid date prefix that is guaranteed not to be today.
+    const otherPrefix =
+      now.getMonth() + 1 === 1 && now.getDate() === 1 ? "02-02" : "01-01";
+
+    const result = spawnSync(
+      pythonCmd,
+      [
+        taskScriptPath,
+        "create",
+        "Example Task",
+        "--slug",
+        `${otherPrefix}-example-task`,
+        "--assignee",
+        "test-dev",
+      ],
+      { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("date prefix");
+    expect(result.stderr).toContain("--slug example-task");
+    const tasksDir = path.join(tmpDir, ".trellis", "tasks");
+    const created = fs.existsSync(tasksDir) ? fs.readdirSync(tasksDir) : [];
+    expect(created.filter((d) => d.endsWith("example-task"))).toEqual([]);
+  });
+
+  it("[issue-377] task.py create leaves non-date numeric slug prefixes untouched", () => {
+    writeTrellisScripts();
+    writeProjectFile(
+      path.join(".trellis", ".developer"),
+      "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
+    );
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    const now = new Date();
+    const todayPrefix = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+    // 13-45 is not a valid MM-DD date, so it is part of the slug body.
+    const result = spawnSync(
+      pythonCmd,
+      [
+        taskScriptPath,
+        "create",
+        "Example Task",
+        "--slug",
+        "13-45-example-task",
+        "--assignee",
+        "test-dev",
+      ],
+      { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).not.toContain("normalized to");
+    expect(
+      fs.existsSync(
+        path.join(
+          tmpDir,
+          ".trellis",
+          "tasks",
+          `${todayPrefix}-13-45-example-task`,
+        ),
+      ),
+    ).toBe(true);
+  });
+
   it("[task-input-contract] task.py archive accepts task name, relative path, and absolute path", () => {
     setupTaskRepo();
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
