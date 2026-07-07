@@ -241,7 +241,7 @@ describe("pi templates", () => {
     expect(first.systemPrompt).toContain("Phase 1: Plan");
     expect(first.systemPrompt).toContain("No active Trellis task found");
     expect(first.systemPrompt).not.toContain("<workflow-state>");
-    // The first system prompt still contains startup's one-shot session overview.
+    // The system prompt carries startup's session-overview snapshot.
     expect(first.systemPrompt).toContain("<session-overview>");
     expect(first.message).toEqual(
       expect.objectContaining({
@@ -269,31 +269,84 @@ describe("pi templates", () => {
       ctx,
     ) as {
       systemPrompt?: string;
-      message: { customType?: string; content?: string; display?: boolean };
+      message?: { customType?: string; content?: string; display?: boolean };
     };
 
-    expect(second.systemPrompt).toContain("BASE");
-    expect(second.systemPrompt).not.toContain(
-      "Trellis compact SessionStart context",
-    );
-    expect(second.systemPrompt).toContain("No active Trellis task found");
-    expect(second.systemPrompt).not.toContain("<workflow-state>");
-    expect(second.systemPrompt).not.toContain("<session-overview>");
-    expect(second.message).toEqual(
-      expect.objectContaining({
-        customType: "trellis-runtime-context",
-        display: false,
-      }),
-    );
-    expect("role" in second.message).toBe(false);
-    expect("timestamp" in second.message).toBe(false);
-    expect(second.message.content).not.toContain(
-      "Trellis compact SessionStart context",
-    );
-    expect(second.message.content).not.toContain("BASE");
-    expect(second.message.content).toContain("<workflow-state>");
-    expect(second.message.content).toContain("<session-overview>");
+    // Provider prefix caches invalidate from byte 0 on any systemPrompt
+    // change, so later turns must return the exact same bytes as turn one.
+    expect(second.systemPrompt).toBe(first.systemPrompt);
+    // Unchanged runtime context is not re-sent: the persisted message from
+    // turn one is already in the session history.
+    expect(second.message).toBeUndefined();
     expect(handlers.has("context")).toBe(true);
+  });
+
+  it("delivers task context changes as persisted messages, not systemPrompt churn", () => {
+    const root = createMinimalTrellisRoot();
+    const { trellisExtension } = loadExtensionInternals(root);
+    const handlers = new Map<
+      string,
+      (event: unknown, ctx?: unknown) => unknown
+    >();
+
+    trellisExtension({
+      registerTool: vi.fn(),
+      registerShortcut: vi.fn(),
+      on(event, handler) {
+        handlers.set(event, handler);
+      },
+    });
+
+    const ctx = {
+      sessionManager: { getSessionId: () => "pi-unit-task-update" },
+      ui: { notify: vi.fn() },
+    };
+    const beforeAgentStart = handlers.get("before_agent_start");
+    const fire = () =>
+      beforeAgentStart?.(
+        {
+          type: "before_agent_start",
+          prompt: "Continue",
+          systemPrompt: "BASE",
+          systemPromptOptions: {},
+        },
+        ctx,
+      ) as {
+        systemPrompt?: string;
+        message?: { customType?: string; content?: string; display?: boolean };
+      };
+
+    const first = fire();
+    expect(first.systemPrompt).toContain("No active Trellis task found");
+
+    // A task is created and activated mid-session.
+    const taskDir = join(root, ".trellis", "tasks", "07-07-cache-fix");
+    mkdirSync(taskDir, { recursive: true });
+    writeFileSync(join(taskDir, "prd.md"), "# PRD\nStable prefix matters.");
+    writeFileSync(
+      join(taskDir, "task.json"),
+      JSON.stringify({ id: "07-07-cache-fix", status: "in_progress" }),
+    );
+    mkdirSync(join(root, ".trellis", ".runtime", "sessions"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(root, ".trellis", ".runtime", "sessions", "pi_pi-unit-task-update.json"),
+      JSON.stringify({ current_task: "tasks/07-07-cache-fix" }),
+    );
+
+    const second = fire();
+    // systemPrompt keeps the turn-one snapshot byte-for-byte...
+    expect(second.systemPrompt).toBe(first.systemPrompt);
+    // ...and the new task context arrives as a persisted hidden message.
+    expect(second.message?.customType).toBe("trellis-runtime-context");
+    expect(second.message?.content).toContain("<trellis-task-context-update>");
+    expect(second.message?.content).toContain("Stable prefix matters.");
+
+    // No further changes -> nothing new to persist.
+    const third = fire();
+    expect(third.systemPrompt).toBe(first.systemPrompt);
+    expect(third.message).toBeUndefined();
   });
 
   it("extension bash tool_call handler prefixes TRELLIS_CONTEXT_ID", () => {
