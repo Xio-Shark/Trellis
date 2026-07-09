@@ -1537,6 +1537,111 @@ describe("regression: current-task path normalization", () => {
     expect(context.current_task).toBe(`.trellis/tasks/${taskDir}`);
   });
 
+  it("[issue-397] task.py create warns on blank description and reports session activation", () => {
+    writeTrellisScripts();
+    writeProjectFile(
+      path.join(".trellis", ".developer"),
+      "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
+    );
+    writeProjectFile(path.join(".trellis", "workflow.md"), "# Workflow\n");
+
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    const result = spawnSync(
+      pythonCmd,
+      [
+        taskScriptPath,
+        "create",
+        "blank description task",
+        "--slug",
+        "blank-description",
+        "--assignee",
+        "test-dev",
+      ],
+      {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        env: sessionEnv({ TRELLIS_CONTEXT_ID: "issue-397-session" }),
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain("task description is empty");
+    expect(result.stderr).toContain("Activated task for this session");
+    expect(result.stderr).toContain("Source: session:issue-397-session");
+
+    const taskDir = fs
+      .readdirSync(path.join(tmpDir, ".trellis", "tasks"))
+      .find((d) => d.includes("blank-description"));
+    expect(taskDir).toBeDefined();
+    const taskJson = JSON.parse(
+      fs.readFileSync(
+        path.join(tmpDir, ".trellis", "tasks", taskDir as string, "task.json"),
+        "utf-8",
+      ),
+    ) as { description: string };
+    expect(taskJson.description).toBe("");
+  });
+
+  it("[issue-397] task.py create --no-start does not move the session pointer", () => {
+    writeTrellisScripts();
+    writeProjectFile(
+      path.join(".trellis", ".developer"),
+      "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
+    );
+    writeProjectFile(path.join(".trellis", "workflow.md"), "# Workflow\n");
+    writeSessionContext("batch-session", ".trellis/tasks/existing-task");
+
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    const result = spawnSync(
+      pythonCmd,
+      [
+        taskScriptPath,
+        "create",
+        "batch backlog task",
+        "--slug",
+        "batch-backlog",
+        "--assignee",
+        "test-dev",
+        "--description",
+        "   ",
+        "--no-start",
+      ],
+      {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        env: sessionEnv({ TRELLIS_CONTEXT_ID: "batch-session" }),
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain("Skipped session activation (--no-start)");
+    const context = JSON.parse(
+      fs.readFileSync(
+        path.join(
+          tmpDir,
+          ".trellis",
+          ".runtime",
+          "sessions",
+          "batch-session.json",
+        ),
+        "utf-8",
+      ),
+    ) as { current_task: string };
+    expect(context.current_task).toBe(".trellis/tasks/existing-task");
+
+    const taskDir = fs
+      .readdirSync(path.join(tmpDir, ".trellis", "tasks"))
+      .find((d) => d.includes("batch-backlog"));
+    expect(taskDir).toBeDefined();
+    const taskJson = JSON.parse(
+      fs.readFileSync(
+        path.join(tmpDir, ".trellis", "tasks", taskDir as string, "task.json"),
+        "utf-8",
+      ),
+    ) as { description: string };
+    expect(taskJson.description).toBe("");
+  });
+
   it("[workflow-state-r7] task.py create degrades silently without session identity (no .runtime side effect)", () => {
     // R7 contract: best-effort activation. No context key (CLI shell with no
     // session env) → task is still created, but no .runtime/sessions/ file is

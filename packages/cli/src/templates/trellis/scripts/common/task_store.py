@@ -292,11 +292,21 @@ def cmd_create(args: argparse.Namespace) -> int:
     _, branch_out, _ = run_git(["branch", "--show-current"], cwd=repo_root)
     current_branch = branch_out.strip() or "main"
 
+    description = (args.description or "").strip()
+    if not description.strip():
+        print(
+            colored(
+                "warning: task description is empty; pass --description to improve search and later audits.",
+                Colors.YELLOW,
+            ),
+            file=sys.stderr,
+        )
+
     task_data = {
         "id": slug,
         "name": slug,
         "title": args.title,
-        "description": args.description or "",
+        "description": description,
         "status": "planning",
         "dev_type": None,
         "scope": None,
@@ -324,7 +334,7 @@ def cmd_create(args: argparse.Namespace) -> int:
     prd_path = task_dir / "prd.md"
     if not prd_path.exists():
         prd_path.write_text(
-            _default_prd_content(args.title, args.description),
+            _default_prd_content(args.title, description),
             encoding="utf-8",
         )
 
@@ -367,16 +377,31 @@ def cmd_create(args: argparse.Namespace) -> int:
     # outside an AI session) — the task is still created, the user can run
     # task.py start later. Pointer is session-scoped so this never affects
     # other AI sessions.
-    try:
-        from .active_task import resolve_context_key, set_active_task
-        if resolve_context_key():
-            try:
-                rel_dir = task_dir.relative_to(repo_root).as_posix()
-            except ValueError:
-                rel_dir = str(task_dir)
-            set_active_task(rel_dir, repo_root)
-    except Exception:
-        pass
+    if getattr(args, "no_start", False):
+        print(
+            colored(
+                "Skipped session activation (--no-start); run task.py start when ready.",
+                Colors.YELLOW,
+            ),
+            file=sys.stderr,
+        )
+    else:
+        try:
+            from .active_task import resolve_context_key, set_active_task
+            if resolve_context_key():
+                try:
+                    rel_dir = task_dir.relative_to(repo_root).as_posix()
+                except ValueError:
+                    rel_dir = str(task_dir)
+                active = set_active_task(rel_dir, repo_root)
+                if active:
+                    print(
+                        colored(f"Activated task for this session: {active.task_path}", Colors.GREEN),
+                        file=sys.stderr,
+                    )
+                    print(f"Source: {active.source}", file=sys.stderr)
+        except Exception:
+            pass
 
     print(colored(f"Created task: {dir_name}", Colors.GREEN), file=sys.stderr)
     print("", file=sys.stderr)
