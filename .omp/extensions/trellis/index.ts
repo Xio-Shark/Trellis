@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { join, dirname, isAbsolute, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 
@@ -40,13 +40,32 @@ function buildContextKey(platformName: string, kind: string, value: string): str
    return safeValue ? `${platformName}_${safeValue}` : `${platformName}_${hashValue(value)}`;
 }
 
-function resolveContextKey(): string | null {
-   // 1. 显式覆盖 — Trellis hooks 启动子进程时设置
-   const override = process.env.TRELLIS_CONTEXT_ID?.trim();
-   if (override) {
-      return sanitizeKey(override) || hashValue(override);
+function deriveContextKey(ctx?: { sessionManager?: { getSessionId?: () => string; getSessionFile?: () => string } }): string | null {
+   const sessionId = ctx?.sessionManager?.getSessionId?.();
+   if (sessionId) {
+      return buildContextKey("omp", "session", sessionId);
    }
-   return null;
+   const sessionFile = ctx?.sessionManager?.getSessionFile?.();
+   if (sessionFile) {
+      return buildContextKey("omp", "transcript", sessionFile);
+   }
+   const override = process.env.TRELLIS_CONTEXT_ID?.trim();
+   return override ? sanitizeKey(override) || hashValue(override) : null;
+}
+
+function isInsideRoot(root: string, candidate: string): boolean {
+   const rel = relative(root, candidate);
+   return rel === "" || (rel !== ".." && !rel.startsWith("../") && !rel.startsWith("..\\") && !isAbsolute(rel));
+}
+
+function resolveProjectFile(projectRoot: string, file: string): string | null {
+   try {
+      const rootReal = realpathSync(projectRoot);
+      const targetReal = realpathSync(resolve(projectRoot, file));
+      return isInsideRoot(rootReal, targetReal) ? targetReal : null;
+   } catch {
+      return null;
+   }
 }
 
 // ---------------------------------------------------------------------------
@@ -55,12 +74,12 @@ function resolveContextKey(): string | null {
 
 function resolveActiveTaskStatus(
    projectRoot: string,
+   contextKey: string | null,
 ): { status: string; taskDir: string | null; taskTitle: string | null } {
    const sessionsDir = join(projectRoot, ".trellis", ".runtime", "sessions");
    if (!existsSync(sessionsDir)) return { status: "no_task", taskDir: null, taskTitle: null };
 
    // --- 通过 context key 解析 session 文件 ---
-   const contextKey = resolveContextKey();
    let sessionFilePath: string | null = null;
 
    if (contextKey) {
@@ -123,7 +142,7 @@ function resolveActiveTaskStatus(
 
 const SESSION_CONTEXT_TIMEOUT_MS = 5000;
 
-function buildSessionContext(projectRoot: string): string {
+function buildSessionContext(projectRoot: string, contextKey: string | null): string {
    const script = join(projectRoot, ".trellis", "scripts", "get_context.py");
    if (!existsSync(script)) return "";
 
@@ -131,6 +150,9 @@ function buildSessionContext(projectRoot: string): string {
       const result = spawnSync("python3", [script], {
          cwd: projectRoot,
          encoding: "utf-8",
+         env: contextKey
+            ? { ...process.env, TRELLIS_CONTEXT_ID: contextKey }
+            : process.env,
          timeout: SESSION_CONTEXT_TIMEOUT_MS,
          windowsHide: true,
       });
@@ -192,8 +214,10 @@ function buildTaskContext(projectRoot: string, taskDir: string, agentType?: Agen
             const row = JSON.parse(trimmed) as Record<string, unknown>;
             const file = typeof row.file === "string" ? row.file.trim() : "";
             if (!file) continue;
+            const targetPath = resolveProjectFile(projectRoot, file);
+            if (!targetPath) continue;
             let content = "";
-            try { content = readFileSync(join(projectRoot, file), "utf-8"); } catch { }
+            try { content = readFileSync(targetPath, "utf-8"); } catch { }
             if (content.trim()) {
                fileChunks.push(`### ${file}\n\n${content.trim()}`);
             }
@@ -226,16 +250,17 @@ class TurnContextCache {
    private workflowMsg = "";
    private static readonly TTL_MS = 1500;
 
-   get(projectRoot: string): { workflowMsg: string } {
+   get(projectRoot: string, contextKey: string | null): { workflowMsg: string } {
       const now = Date.now();
+      const cacheKey = `${projectRoot}:${contextKey ?? ""}`;
       if (
-         this.key === projectRoot &&
+         this.key === cacheKey &&
          now - this.timestamp < TurnContextCache.TTL_MS
       ) {
          return { workflowMsg: this.workflowMsg };
       }
 
-      const { status } = resolveActiveTaskStatus(projectRoot);
+      const { status } = resolveActiveTaskStatus(projectRoot, contextKey);
 
       const workflowPath = join(projectRoot, ".trellis", "workflow.md");
       let workflowMd = "";
@@ -255,7 +280,7 @@ class TurnContextCache {
 
       this.workflowMsg = `<workflow-state>\n${workflowBody}\n</workflow-state>\n\n<session-overview>\n${SESSION_OVERVIEW_TEXT}\n</session-overview>`;
 
-      this.key = projectRoot;
+      this.key = cacheKey;
       this.timestamp = now;
       return { workflowMsg: this.workflowMsg };
    }
@@ -303,9 +328,8 @@ function detectAgentType(): AgentType {
 // ---------------------------------------------------------------------------
 
 export default function(pi: ExtensionAPI): void {
-   pi.setLabel("Trellis");
-
    let projectRoot: string | null = null;
+   let currentContextKey: string | null = null;
    const turnCache = new TurnContextCache();
    const agentType = detectAgentType();
    const isSubAgent = agentType !== null;
@@ -315,23 +339,21 @@ export default function(pi: ExtensionAPI): void {
    let lastCompactionTs = 0;
    let lastInjectionTs = 0;
 
+   const rememberContextKey = (ctx?: { sessionManager?: { getSessionId?: () => string; getSessionFile?: () => string } }): string | null => {
+      const key = deriveContextKey(ctx);
+      if (key) currentContextKey = key;
+      return currentContextKey;
+   };
+
    pi.on("session_start", async (_event, ctx) => {
       projectRoot = findProjectRoot(ctx.cwd);
-      // Derive context key from OMP session identity and export it so
-      // resolveActiveTaskStatus() and spawned subprocesses (get_context.py,
-      // task.py) can locate the correct session runtime file.
-      if (!process.env.TRELLIS_CONTEXT_ID) {
-         const sessionId = (ctx.sessionManager as { getSessionId?: () => string }).getSessionId?.();
-         if (sessionId) {
-            process.env.TRELLIS_CONTEXT_ID = buildContextKey("pi", "session", sessionId);
-         }
-      }
+      const contextKey = rememberContextKey(ctx);
 
       if (!projectRoot) return;
 
       if (isSubAgent) {
          // Sub-agent: inject precise task context once
-         const { taskDir } = resolveActiveTaskStatus(projectRoot);
+         const { taskDir } = resolveActiveTaskStatus(projectRoot, contextKey);
          if (taskDir) {
             const taskContext = buildTaskContext(projectRoot, taskDir, agentType);
             if (taskContext) {
@@ -344,7 +366,7 @@ export default function(pi: ExtensionAPI): void {
          }
       } else {
          // Main session: inject session context (global map) + task context
-         const sessionContext = buildSessionContext(projectRoot);
+         const sessionContext = buildSessionContext(projectRoot, contextKey);
          if (sessionContext) {
             await pi.sendMessage({
                customType: "trellis-session-context",
@@ -353,7 +375,7 @@ export default function(pi: ExtensionAPI): void {
             });
          }
 
-         const { taskDir } = resolveActiveTaskStatus(projectRoot);
+         const { taskDir } = resolveActiveTaskStatus(projectRoot, contextKey);
          if (taskDir) {
             const taskContext = buildTaskContext(projectRoot, taskDir);
             if (taskContext) {
@@ -378,9 +400,10 @@ export default function(pi: ExtensionAPI): void {
          projectRoot = findProjectRoot(ctx.cwd);
       }
       if (!projectRoot) return;
+      const contextKey = rememberContextKey(ctx);
 
       // Persistent injection: workflow state for this turn
-      const cached = turnCache.get(projectRoot);
+      const cached = turnCache.get(projectRoot, contextKey);
       lastInjectionTs = Date.now();
 
       return {
@@ -395,13 +418,14 @@ export default function(pi: ExtensionAPI): void {
    // context fires before EVERY LLM API call (including tool-use continuations
    // and post-compaction agent.continue() paths). Acts as a safety net when
    // before_agent_start's persisted message was removed by compaction.
-   pi.on("context", async (event) => {
+   pi.on("context", async (event, ctx) => {
       if (!projectRoot) return;
+      const contextKey = rememberContextKey(ctx);
 
       // Fast path: no compaction since last injection — message is still present
       if (lastInjectionTs > lastCompactionTs) return;
 
-      const cached = turnCache.get(projectRoot);
+      const cached = turnCache.get(projectRoot, contextKey);
       if (!cached.workflowMsg) return;
 
       // Post-compaction: reverse-scan to confirm absence before injecting
@@ -433,8 +457,9 @@ export default function(pi: ExtensionAPI): void {
       }
       // Resolve projectRoot on first input if session_start missed it
       if (!projectRoot) return { action: "continue" };
+      const contextKey = rememberContextKey(ctx);
       // Pre-warm the cache so before_agent_start and context can use it
-      turnCache.get(projectRoot);
+      turnCache.get(projectRoot, contextKey);
       return { action: "continue" };
    });
 }

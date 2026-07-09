@@ -41,6 +41,17 @@ describe("omp templates", () => {
     expect(extension).toContain("ExtensionAPI");
   });
 
+  it("extension template avoids known runtime and context-safety regressions", () => {
+    const extension = getExtensionTemplate();
+
+    expect(extension).not.toContain("pi.setLabel(");
+    expect(extension).not.toContain("process.env.TRELLIS_CONTEXT_ID =");
+    expect(extension).toContain('buildContextKey("omp", "session", sessionId)');
+    expect(extension).toContain("realpathSync");
+    expect(extension).toContain("resolveProjectFile(projectRoot, file)");
+    expect(extension).toContain("readFileSync(targetPath");
+  });
+
   it("extension template contains session context injection markers", () => {
     const extension = getExtensionTemplate();
     // R1: Session start rich injection via get_context.py
