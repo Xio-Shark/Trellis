@@ -1358,7 +1358,7 @@ describe("update() integration", () => {
       "[codex-sub-agent, Gemini, Qoder, Copilot, ZCode, Reasonix, Trae]",
     );
     expect(updated).toContain(
-      "[/Claude Code, Cursor, OpenCode, CodeBuddy, Droid, Pi]",
+      "[/Claude Code, Cursor, OpenCode, CodeBuddy, Droid, Pi, Oh My Pi]",
     );
     expect(updated).toContain("[codex-inline, Kilo, Antigravity, Devin]");
     expect(updated).not.toContain("[Codex]");
