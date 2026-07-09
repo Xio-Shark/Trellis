@@ -130,6 +130,7 @@ _SUBAGENT_CONFIG_DIRS: tuple[str, ...] = (
     ".pi",        # Pi Agent
     ".trae",      # Trae IDE
     ".omp",       # Oh My Pi
+    ".zcode",     # ZCode
 )
 
 _SEED_EXAMPLE = (
@@ -241,6 +242,34 @@ def cmd_create(args: argparse.Namespace) -> int:
     # Create task directory with MM-DD-slug format
     tasks_dir = get_tasks_dir(repo_root)
     date_prefix = generate_task_date_prefix()
+
+    # Guard against date-prefixed --slug (e.g. a full task dir name pasted in),
+    # which would otherwise produce MM-DD-MM-DD-slug (issue #377). Only an
+    # explicit --slug is guarded; title-derived slugs are left untouched.
+    if args.slug:
+        m = re.match(r"^(\d{2})-(\d{2})-(.+)$", slug)
+        if m and 1 <= int(m.group(1)) <= 12 and 1 <= int(m.group(2)) <= 31:
+            slug_prefix = f"{m.group(1)}-{m.group(2)}"
+            if slug_prefix == date_prefix:
+                slug = m.group(3)
+                print(
+                    colored(
+                        f'warning: --slug should not include the MM-DD prefix; normalized to "{slug}"',
+                        Colors.YELLOW,
+                    ),
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    colored(
+                        f"Error: --slug starts with a date prefix ({slug_prefix}-), but task.py create always uses today's date ({date_prefix}).",
+                        Colors.RED,
+                    ),
+                    file=sys.stderr,
+                )
+                print(f"Pass only the slug body, e.g. --slug {m.group(3)}", file=sys.stderr)
+                return 1
+
     dir_name = f"{date_prefix}-{slug}"
     task_dir = tasks_dir / dir_name
     task_json_path = task_dir / FILE_TASK_JSON
