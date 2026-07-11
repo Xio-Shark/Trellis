@@ -26,6 +26,7 @@ import {
 import { DIR_NAMES } from "../../constants/paths.js";
 
 import {
+  channelDir,
   channelRoot,
   currentProjectKey,
   projectDir,
@@ -378,7 +379,7 @@ function readReservationWorkers(
   channel: string,
   project: string,
 ): WorkerState[] {
-  const dir = path.join(projectDir(project), channel);
+  const dir = channelDir(channel, project);
   let files: string[];
   try {
     files = fs.readdirSync(dir);

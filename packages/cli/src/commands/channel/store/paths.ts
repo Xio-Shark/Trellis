@@ -59,6 +59,24 @@ export function projectDir(project: string = currentProjectKey()): string {
  *  flat-layout channel. New project buckets touch this on first use. */
 const BUCKET_MARKER = ".bucket";
 
+/** Characters allowed in a channel or worker name used as a path segment. */
+const SAFE_SEGMENT_RE = /^[A-Za-z0-9._-]+$/;
+
+/**
+ * Reject names that would escape their bucket when joined into a path.
+ * A channel/worker name becomes a filesystem segment; without this guard
+ * a name like `../../x` lets `path.join` resolve outside the store and a
+ * later `fs.rmSync(recursive)` deletes arbitrary directories.
+ */
+export function assertSafeName(name: string, kind = "channel"): void {
+  if (name === "." || name === ".." || !SAFE_SEGMENT_RE.test(name)) {
+    throw new Error(
+      `Invalid ${kind} name: ${JSON.stringify(name)}. ` +
+        `Names may only contain letters, digits, '.', '_' and '-'.`,
+    );
+  }
+}
+
 /**
  * Channel directory inside its project bucket. Defaults to the current
  * project (cwd-derived); pass an explicit project for cross-project
@@ -68,6 +86,7 @@ export function channelDir(
   name: string,
   project: string = currentProjectKey(),
 ): string {
+  assertSafeName(name);
   return path.join(projectDir(project), name);
 }
 
@@ -91,6 +110,7 @@ export function workerFile(
   suffix: string,
   project: string = currentProjectKey(),
 ): string {
+  assertSafeName(worker, "worker");
   return path.join(channelDir(name, project), `${worker}.${suffix}`);
 }
 
@@ -99,6 +119,7 @@ export function workerLockPath(
   worker: string,
   project: string = currentProjectKey(),
 ): string {
+  assertSafeName(worker, "worker");
   return path.join(channelDir(name, project), `${worker}.spawnlock`);
 }
 
