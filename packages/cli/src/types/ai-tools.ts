@@ -24,7 +24,8 @@ export type AITool =
   | "pi"
   | "reasonix"
   | "zcode"
-  | "trae";
+  | "trae"
+  | "omp";
 
 /**
  * Template directory categories
@@ -47,7 +48,8 @@ export type TemplateDir =
   | "pi"
   | "reasonix"
   | "zcode"
-  | "trae";
+  | "trae"
+  | "omp";
 
 /**
  * CLI flag names for platform selection (e.g., --claude, --cursor, --kilo, --kiro, --gemini, --antigravity)
@@ -70,7 +72,8 @@ export type CliFlag =
   | "pi"
   | "reasonix"
   | "zcode"
-  | "trae";
+  | "trae"
+  | "omp";
 
 /**
  * Template context for placeholder resolution.
@@ -446,6 +449,22 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
       agentCapable: true,
       hasHooks: true,
       cliFlag: "trae",
+    },
+  },
+  omp: {
+    name: "Oh My Pi",
+    templateDirs: ["common", "omp"],
+    configDir: ".omp",
+    cliFlag: "omp",
+    defaultChecked: false,
+    hasPythonHooks: false,
+    templateContext: {
+      cmdRefPrefix: "/trellis:",
+      executorAI: "Bash scripts or Task calls",
+      userActionLabel: "Slash commands",
+      agentCapable: true,
+      hasHooks: true,
+      cliFlag: "omp",
     },
   },
 };

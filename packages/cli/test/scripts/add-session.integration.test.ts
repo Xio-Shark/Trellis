@@ -74,26 +74,35 @@ function setupRepo(tmp: string): void {
   }
 }
 
-function makeTask(repo: string, name: string, prdBody: string): void {
+function makeTask(
+  repo: string,
+  name: string,
+  prdBody: string,
+  branch?: string,
+): void {
   const dir = path.join(repo, ".trellis", "tasks", name);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, "prd.md"), prdBody);
+  const taskJson: Record<string, unknown> = {
+    id: name,
+    name,
+    title: name,
+    status: "in_progress",
+    priority: "P2",
+    createdAt: "2026-06-18",
+    assignee: DEVELOPER,
+    creator: DEVELOPER,
+    subtasks: [],
+    children: [],
+    relatedFiles: [],
+    meta: {},
+  };
+  if (branch) {
+    taskJson.branch = branch;
+  }
   fs.writeFileSync(
     path.join(dir, "task.json"),
-    JSON.stringify({
-      id: name,
-      name,
-      title: name,
-      status: "in_progress",
-      priority: "P2",
-      createdAt: "2026-06-18",
-      assignee: DEVELOPER,
-      creator: DEVELOPER,
-      subtasks: [],
-      children: [],
-      relatedFiles: [],
-      meta: {},
-    }) + "\n",
+    JSON.stringify(taskJson) + "\n",
   );
 }
 
@@ -103,12 +112,7 @@ function makeTask(repo: string, name: string, prdBody: string): void {
  * `get_current_task` returns this task without needing a platform context.
  */
 function setCurrentTask(repo: string, taskName: string): void {
-  const sessionsDir = path.join(
-    repo,
-    ".trellis",
-    ".runtime",
-    "sessions",
-  );
+  const sessionsDir = path.join(repo, ".trellis", ".runtime", "sessions");
   fs.mkdirSync(sessionsDir, { recursive: true });
   fs.writeFileSync(
     path.join(sessionsDir, "session.json"),
@@ -194,10 +198,36 @@ describe.skipIf(!hasPython())("add_session.py auto-commit", () => {
     expect(journal).toContain(
       "- Detailed change bullets were not supplied; see the summary above.",
     );
-    expect(journal).toContain("- Validation was not recorded for this session.");
+    expect(journal).toContain(
+      "- Validation was not recorded for this session.",
+    );
     expect(journal).not.toContain("(Add details)");
     expect(journal).not.toContain("(Add test results)");
     expect(journal).not.toContain("(Add summary)");
+  });
+
+  it("falls back to the current checkout branch when task.json branch is stale", () => {
+    makeTask(tmp, "task-a", "task A prd\n", "deleted-task-branch");
+    setCurrentTask(tmp, "task-a");
+    git(tmp, "add", "-A");
+    git(tmp, "commit", "-q", "-m", "initial");
+
+    runAddSession(tmp, "stale branch work");
+
+    const journal = fs.readFileSync(
+      path.join(tmp, ".trellis", "workspace", DEVELOPER, "journal-1.md"),
+      "utf-8",
+    );
+    const index = fs.readFileSync(
+      path.join(tmp, ".trellis", "workspace", DEVELOPER, "index.md"),
+      "utf-8",
+    );
+
+    expect(journal).toContain("**Branch**: `main`");
+    expect(index).toContain("| 1 |");
+    expect(index).toContain("| `main` |");
+    expect(journal).not.toContain("deleted-task-branch");
+    expect(index).not.toContain("deleted-task-branch");
   });
 
   it("does not wide-scan task dirs when the current task is unresolvable (>=2 sessions)", () => {
@@ -229,7 +259,13 @@ describe.skipIf(!hasPython())("add_session.py auto-commit", () => {
 
     runAddSession(tmp, "ambiguous-session work");
 
-    const lastFiles = git(tmp, "show", "HEAD", "--name-only", "--pretty=format:")
+    const lastFiles = git(
+      tmp,
+      "show",
+      "HEAD",
+      "--name-only",
+      "--pretty=format:",
+    )
       .split("\n")
       .map((s) => s.trim())
       .filter(Boolean);

@@ -367,7 +367,7 @@ a `.current-task` fallback or a Python hook directory.
 
 ##### 2. Signatures
 
-- `python3 .trellis/scripts/task.py create "<title>" [--slug <slug>]`
+- `python3 .trellis/scripts/task.py create "<title>" [--slug <slug>] [--description <text>] [--no-start]`
 - `python3 .trellis/scripts/task.py start <task-dir>`
 - `python3 .trellis/scripts/task.py current [--source]`
 - `python3 .trellis/scripts/task.py finish`
@@ -377,12 +377,29 @@ a `.current-task` fallback or a Python hook directory.
 
 ##### 3. Contracts
 
-- `task.py create` creates only task-owned files under
-  `.trellis/tasks/<date-slug>/`. It must not create `.trellis/.runtime/` and
-  must not write `.trellis/.current-task`.
+- `task.py create` always creates task-owned files under
+  `.trellis/tasks/<date-slug>/`. It must never write `.trellis/.current-task`.
+- `task.py create` normalizes `--description` with `.strip()` before writing
+  `task.json` and `prd.md`. Missing or whitespace-only descriptions are stored
+  as `""` and emit a warning on stderr.
+- Unless `--no-start` is passed, `task.py create` best-effort activates the new
+  task for the current session when a context key is available. This writes
+  `.trellis/.runtime/sessions/<session-key>.json` and prints both the activated
+  task and `Source: session:<key>` on stderr.
+- `task.py create --no-start` must not change any session pointer, even when a
+  context key is available. It prints a skip notice and leaves existing session
+  runtime state untouched.
+- `task.py create` without a context key creates the task and does not create
+  `.trellis/.runtime/`.
+- `task.py create` creates `implement.jsonl` / `check.jsonl` only when the
+  repo has a platform configured that consumes those files. `.codex/` is not
+  enough by itself: Codex defaults to `codex.dispatch_mode: inline`, which
+  loads context through skills. Codex seeds JSONL only when
+  `codex.dispatch_mode: sub-agent` is explicitly configured.
 - `task.py start` writes session-local state only when a context key is
-  available. Otherwise it exits non-zero and must not write
-  `.trellis/.current-task`.
+  available. Otherwise it enters degraded mode: no session pointer is persisted,
+  `.trellis/.current-task` is not written, and `task.json.status` may still move
+  from `planning` to `in_progress`.
 - Session state is stored at
   `.trellis/.runtime/sessions/<session-key>.json`. The runtime directory is
   created lazily by the JSON write path.
@@ -406,8 +423,13 @@ a `.current-task` fallback or a Python hook directory.
 
 | Condition | Required behavior |
 |-----------|-------------------|
-| `create` succeeds | Task files exist; no `.runtime`; no `.current-task` |
-| `start` without context key | Fails; no `.runtime`; no `.current-task`; hints IDE/session identity or `TRELLIS_CONTEXT_ID` |
+| `create` without description or with whitespace-only description | Warns on stderr; stores `task.json.description == ""`; initial `prd.md` goal falls back to `TBD.` |
+| `create` with context key, default mode | Task files exist; session runtime points at the new task; activation and source are printed; no `.current-task` |
+| `create --no-start` with context key | Task files exist; existing session runtime is unchanged; skip notice is printed; no `.current-task` |
+| `create` without context key | Task files exist; no `.runtime`; no `.current-task` |
+| `create` with `.codex/` and no `codex.dispatch_mode` override | Task files exist; no `implement.jsonl`; no `check.jsonl` |
+| `create` with `.codex/` and `codex.dispatch_mode: sub-agent` | Task files exist; `implement.jsonl` and `check.jsonl` contain seed `_example` rows |
+| `start` without context key | Returns success in degraded mode; no `.runtime`; no `.current-task`; hints IDE/session identity or `TRELLIS_CONTEXT_ID` |
 | `start` with `TRELLIS_CONTEXT_ID` | Writes `.runtime/sessions/<key>.json`; does not require `.current-task` |
 | `current --source` with same context key | Prints `Source: session:<key>` |
 | `current --source` without context | Prints `(none)` and `Source: none` |
@@ -421,15 +443,23 @@ a `.current-task` fallback or a Python hook directory.
 - Good: Cursor provides `conversation_id`; resolver writes
   `cursor_<conversation-id>.json` and hook/plugin output includes the
   session source (statuslines shorten it to `[session]`).
-- Base: A normal shell command has no session env; `task.py start` fails with
-  a session identity hint and does not create `.current-task`.
-- Bad: `task.py create` pre-creates `.runtime`, or any resolver reads/writes
-  `.trellis/.current-task` as an active-task fallback.
+- Base: A normal shell command has no session env; `task.py create` creates the
+  task without `.runtime`, and `task.py start` degrades with a session identity
+  hint instead of writing `.current-task`.
+- Bad: `task.py create --no-start` changes an existing session pointer, or any
+  resolver reads/writes `.trellis/.current-task` as an active-task fallback.
 
 ##### 6. Tests Required
 
-- Regression tests for `create` producing no runtime/current-task state.
-- Regression tests for `start` without a context key failing without creating
+- Regression tests for `create` with a context key writing session runtime and
+  surfacing the session source.
+- Regression tests for `create --no-start` preserving an existing session
+  pointer.
+- Regression tests for blank and whitespace-only `--description` warning and
+  normalized `task.json.description`.
+- Regression tests for `create` without a context key producing no runtime or
+  current-task state.
+- Regression tests for `start` without a context key degrading without creating
   `.current-task`.
 - Regression tests for `TRELLIS_CONTEXT_ID` and platform-native env keys.
 - Hook/statusline/plugin tests proving the resolver source is surfaced.
@@ -441,19 +471,22 @@ a `.current-task` fallback or a Python hook directory.
 ###### Wrong
 
 ```python
-# Wrong: silently creates or deletes repo-global task state when no session
-# identity exists.
-if not resolve_context_key():
-    write_file(".trellis/.current-task", task_path)
+# Wrong: batch creation silently moves the current session pointer and gives no
+# escape hatch.
+set_active_task(task_path, repo_root)
+print(f"Created task: {dir_name}")
 ```
 
 ###### Correct
 
 ```python
-context_key = resolve_context_key(platform_input, platform)
-if not context_key:
-    return ActiveTask(None, "none")
-clear_session_context(context_key)
+if args.no_start:
+    print("Skipped session activation (--no-start)", file=sys.stderr)
+elif resolve_context_key():
+    active = set_active_task(task_path, repo_root)
+    if active:
+        print(f"Activated task for this session: {active.task_path}", file=sys.stderr)
+        print(f"Source: {active.source}", file=sys.stderr)
 ```
 
 ### `common/types.py` — Typed Data Model
@@ -1287,6 +1320,10 @@ Two near-misses worth remembering:
 
 - `codex.dispatch_mode` originally had its own ad-hoc YAML reader. A
   `# default` comment on the user's config silently broke dispatch routing.
+- `task.py create` must read `codex.dispatch_mode` through
+  `get_codex_dispatch_mode()` before deciding whether `.codex/` should seed
+  `implement.jsonl` / `check.jsonl`. Missing or invalid values default to
+  `inline`, not `sub-agent`.
 - `session_auto_commit` (0.5.11) almost shipped with a one-line
   `config.get(...).strip()` reader before being routed through
   `get_session_auto_commit`.
