@@ -904,9 +904,32 @@ export async function downloadWithStrategy(
     return false;
   }
 
-  // overwrite: Delete existing directory first
+  // overwrite: Download to a temp dir first, then swap it in. Deleting
+  // destDir up-front and downloading in place would destroy the user's
+  // existing spec if the download fails (network timeout, etc.) — the
+  // operation they asked for never completed, yet their data is gone.
   if (strategy === "overwrite" && exists) {
-    await fs.promises.rm(destDir, { recursive: true });
+    const tempDir = path.join(os.tmpdir(), `trellis-template-${Date.now()}`);
+    try {
+      await withTimeout(
+        downloadTemplate(gigetSource, {
+          dir: tempDir,
+          preferOffline: true,
+        }),
+        TIMEOUTS.DOWNLOAD_MS,
+        "Template download",
+      );
+      // Download succeeded — only now is it safe to replace the old dir.
+      // copyMissing into a freshly removed dir copies everything, and works
+      // across filesystems (tempDir lives in os.tmpdir()).
+      await fs.promises.rm(destDir, { recursive: true, force: true });
+      await copyMissing(tempDir, destDir);
+    } finally {
+      // Best-effort cleanup; also settles giget's orphaned download promise
+      // on timeout (giget has no AbortSignal, so removing the dir ENOENTs it).
+      await fs.promises.rm(tempDir, { recursive: true, force: true });
+    }
+    return true;
   }
 
   // append: Download to temp dir, then merge missing files
