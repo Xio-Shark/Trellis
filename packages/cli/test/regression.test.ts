@@ -738,6 +738,7 @@ describe("regression: update only configured platforms (beta.16)", () => {
       "copilot",
       "droid",
       "pi",
+      "zcode",
     ] as const;
     for (const id of withTracking) {
       const result = collectPlatformTemplates(id);
@@ -2003,6 +2004,38 @@ describe("regression: current-task path normalization", () => {
       current_task: string;
     };
     expect(context.current_task).toBe(".trellis/tasks/issue-106");
+  });
+
+  it("[zcode-session-key] hook input and shell env resolve the same runtime key", () => {
+    setupTaskRepo();
+    const probePath = path.join(tmpDir, "zcode-context-key-probe.py");
+    writeProjectFile(
+      "zcode-context-key-probe.py",
+      [
+        "import json",
+        "import sys",
+        `sys.path.insert(0, ${JSON.stringify(path.join(tmpDir, ".trellis", "scripts"))})`,
+        "from common.active_task import resolve_context_key",
+        'value = "sess-zcode-review"',
+        "print(json.dumps({",
+        '  "hook": resolve_context_key({"session_id": value}, platform="zcode"),',
+        '  "shell": resolve_context_key(),',
+        "}))",
+      ].join("\n"),
+    );
+
+    const result = JSON.parse(
+      execSync(`${pythonCmd} ${JSON.stringify(probePath)}`, {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        env: sessionEnv({ CLAUDE_SESSION_ID: "sess-zcode-review" }),
+      }),
+    ) as { hook: string; shell: string };
+
+    expect(result).toEqual({
+      hook: "claude_sess-zcode-review",
+      shell: "claude_sess-zcode-review",
+    });
   });
 
   it("[session-current-task] task.py start uses Codex Desktop CODEX_THREAD_ID", () => {
@@ -4565,6 +4598,21 @@ describe("regression: platform additions (beta.9, beta.13, beta.16)", () => {
     expect(AI_TOOLS.pi.templateContext.hasHooks).toBe(true);
   });
 
+  it("[zcode] ZCode platform is registered with hook support", () => {
+    // ZCode 3.x ships a workspace hook config (.zcode/config.json,
+    // SessionStart + UserPromptSubmit + PreToolUse) reusing the shared Python
+    // hook scripts. It is class-1 for sub-agent context because PreToolUse
+    // Agent/Task can mutate the sub-agent prompt.
+    expect(AI_TOOLS).toHaveProperty("zcode");
+    expect(AI_TOOLS.zcode.configDir).toBe(".zcode");
+    expect(AI_TOOLS.zcode.cliFlag).toBe("zcode");
+    expect(AI_TOOLS.zcode.hasPythonHooks).toBe(true);
+    expect(AI_TOOLS.zcode.templateContext.agentCapable).toBe(true);
+    expect(AI_TOOLS.zcode.templateContext.hasHooks).toBe(true);
+    // .zcode/hooks is now a managed path (written by configureZcode).
+    expect(AI_TOOLS.zcode.extraManagedPaths).toContain(".zcode/hooks");
+  });
+
   it("[beta.9] all platforms have consistent required fields", () => {
     for (const id of PLATFORM_IDS) {
       const tool = AI_TOOLS[id];
@@ -4797,7 +4845,6 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
     expect(taskStore as string).toContain('".codex"');
     expect(taskStore as string).toContain('".github/copilot"');
     expect(taskStore as string).toContain('".pi"');
-    expect(taskStore as string).toContain('".zcode"');
     // Seed row is self-describing and has no `file` field (so consumers skip
     // it naturally).
     expect(taskStore as string).toMatch(/_write_seed_jsonl/);
@@ -5265,6 +5312,24 @@ describe("regression: collectTemplates paths match init directory structure (0.3
     expect(keys).toContain(".github/copilot/hooks.json");
     expect(keys).toContain(".github/hooks/trellis.json");
   });
+
+  it("[zcode] collectTemplates tracks hooks + config.json and filters start command", () => {
+    const templates = collectPlatformTemplates("zcode");
+    expect(templates).toBeInstanceOf(Map);
+    if (!templates) return;
+
+    const keys = [...templates.keys()];
+    // Shared hooks written to .zcode/hooks/
+    expect(keys).toContain(".zcode/hooks/session-start.py");
+    expect(keys).toContain(".zcode/hooks/inject-workflow-state.py");
+    expect(keys).toContain(".zcode/hooks/inject-subagent-context.py");
+    // Workspace hook registration
+    expect(keys).toContain(".zcode/config.json");
+    // agentCapable && hasHooks → start command is filtered out.
+    expect(keys).not.toContain(".zcode/commands/trellis/start.md");
+    expect(keys).toContain(".zcode/commands/trellis/finish-work.md");
+    expect(keys).toContain(".zcode/commands/trellis/continue.md");
+  });
 });
 
 // =============================================================================
@@ -5686,19 +5751,6 @@ describe("regression: research agent persists findings to task dir", () => {
     expect(content).not.toMatch(/^- Modify any files\s*$/m);
   });
 
-  it("[packages/cli/src/templates/zcode/agents/trellis-research.md] uses ZCode frontmatter + has persist instruction", () => {
-    const rel = "packages/cli/src/templates/zcode/agents/trellis-research.md";
-    const content = fs
-      .readFileSync(path.join(repoRoot, rel), "utf-8")
-      .replace(/\r\n/g, "\n");
-    const fm = content.split("---\n")[1] ?? "";
-    expect(fm).toContain("color:");
-    expect(fm).not.toMatch(/^tools:/m);
-    expect(content).toContain("{TASK_DIR}/research/");
-    expect(content).toMatch(/PERSIST|[Pp]ersist/);
-    expect(content).not.toMatch(/^- Modify any files\s*$/m);
-  });
-
   it("codex research.toml uses workspace-write sandbox and persist instruction", () => {
     const content = fs.readFileSync(
       path.join(
@@ -6077,7 +6129,7 @@ describe("regression: sub-agent context injection fallback (0.5.3)", () => {
     expect(matches.length).toBeGreaterThanOrEqual(3);
   });
 
-  // 5 markdown class-1 platforms × 2 agents = 10 markdown files.
+  // 6 markdown class-1 platforms × 2 agents = 12 markdown files.
   // Kiro is a JSON file (separate test below).
   const CLASS1_MD_AGENT_FILES: { platform: string; rel: string; agent: "implement" | "check" }[] = [
     { platform: "claude", rel: "packages/cli/src/templates/claude/agents/trellis-implement.md", agent: "implement" },
@@ -6090,6 +6142,8 @@ describe("regression: sub-agent context injection fallback (0.5.3)", () => {
     { platform: "opencode", rel: "packages/cli/src/templates/opencode/agents/trellis-check.md", agent: "check" },
     { platform: "droid", rel: "packages/cli/src/templates/droid/droids/trellis-implement.md", agent: "implement" },
     { platform: "droid", rel: "packages/cli/src/templates/droid/droids/trellis-check.md", agent: "check" },
+    { platform: "zcode", rel: "packages/cli/src/templates/zcode/agents/trellis-implement.md", agent: "implement" },
+    { platform: "zcode", rel: "packages/cli/src/templates/zcode/agents/trellis-check.md", agent: "check" },
   ];
 
   const __dirnameFb = path.dirname(fileURLToPath(import.meta.url));

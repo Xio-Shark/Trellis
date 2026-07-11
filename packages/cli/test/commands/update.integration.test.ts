@@ -250,7 +250,7 @@ describe("update() integration", () => {
     await init({ yes: true, force: true, zcode: true });
 
     expect(fs.existsSync(projectFile(".zcode/commands/trellis/start.md"))).toBe(
-      true,
+      false,
     );
     expect(
       fs.existsSync(projectFile(".zcode/skills/trellis-start/SKILL.md")),

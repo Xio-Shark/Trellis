@@ -637,11 +637,13 @@ describe("init() integration", () => {
     );
   });
 
-  it("#3m zcode platform emits start slash command without shared command-as-skill fallback", async () => {
+  it("#3m zcode platform filters start command and writes hooks (hasHooks=true)", async () => {
     await init({ yes: true, zcode: true });
 
     // ZCode owns its private .zcode surface. Commands remain commands, while
-    // .zcode/skills contains workflow/bundled skills only.
+    // .zcode/skills contains workflow/bundled skills only. Since ZCode is
+    // agentCapable && hasHooks, the start command is filtered out (SessionStart
+    // hook injects equivalent context) and hook assets are written.
     expect(fs.existsSync(path.join(tmpDir, ".agents", "skills"))).toBe(false);
     expect(
       fs.existsSync(
@@ -652,7 +654,7 @@ describe("init() integration", () => {
       fs.existsSync(
         path.join(tmpDir, ".zcode", "commands", "trellis", "start.md"),
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       fs.existsSync(
         path.join(tmpDir, ".zcode", "skills", "trellis-start", "SKILL.md"),

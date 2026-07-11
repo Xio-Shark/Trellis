@@ -437,7 +437,7 @@ describe("collectPlatformTemplates", () => {
     );
     expect(result?.has(".zcode/skills/trellis-before-dev/SKILL.md")).toBe(true);
     expect(result?.has(".zcode/skills/trellis-check/SKILL.md")).toBe(true);
-    expect(result?.has(".zcode/commands/trellis/start.md")).toBe(true);
+    expect(result?.has(".zcode/commands/trellis/start.md")).toBe(false);
     expect(result?.has(".zcode/agents/trellis-implement.md")).toBe(true);
     expect(result?.has(".zcode/agents/trellis-check.md")).toBe(true);
     expect(result?.has(".zcode/agents/trellis-research.md")).toBe(true);

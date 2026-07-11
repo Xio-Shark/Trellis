@@ -1,7 +1,7 @@
 # `tl mem` — Cross-Platform AI Session Memory
 
 How Trellis indexes, searches, and extracts dialogue from on-disk session files
-written by Claude Code, Codex, OpenCode, and Pi Agent.
+written by Claude Code, Codex, OpenCode, Pi Agent, and ZCode.
 
 The retrieval engine lives in `@mindfoldhq/trellis-core/mem` (`packages/core/src/mem/`);
 `packages/cli/src/commands/mem.ts` is a thin CLI wrapper over it. See "Package
@@ -21,6 +21,7 @@ CLIs already drop on disk:
 | Codex       | `~/.codex/sessions/**/rollout-<ts>-<id>.jsonl`                                                     |
 | OpenCode    | Reader unavailable in 0.6.0-beta.4 (reverted, see Notes)                                           |
 | Pi Agent    | `~/.pi/agent/sessions/--<encoded-cwd>--/<timestamp>_<id>.jsonl` or env/settings custom session dir |
+| ZCode       | `~/.zcode/cli/db/db.sqlite` plus active `db.sqlite-wal` / `db.sqlite-shm` files                    |
 
 For every session, `mem` can: list metadata (id / cwd / time), grep cleaned
 dialogue across all of them, drill into a single session for a token-budgeted
@@ -49,8 +50,8 @@ invoked from the `tl` Commander wire.
 **Core owns** (`packages/core/src/mem/`, public surface at the
 `@mindfoldhq/trellis-core/mem` subpath — **not** the root barrel):
 
-- persisted-session readers / adapters for Claude Code, Codex, OpenCode, Pi
-  (`adapters/{claude,codex,opencode,pi}.ts`)
+- persisted-session readers / adapters for Claude Code, Codex, OpenCode, Pi,
+  and ZCode (`adapters/{claude,codex,opencode,pi,zcode}.ts`)
 - search, relevance scoring, excerpt selection (`search.ts`)
 - dialogue cleaning (`dialogue.ts`), filtering (`filter.ts`)
 - dialogue-context extraction (`context.ts`), brainstorm-phase slicing
@@ -75,8 +76,10 @@ The CLI imports core through the public subpath only:
 import { searchMemSessions } from "@mindfoldhq/trellis-core/mem";
 ```
 
-Core returns structured results carrying a `warnings` array; the CLI decides
-how to print warnings and what exit code to use. Core never prints or exits.
+Core search/context/extract results carry a `warnings` array. List/projects
+preserve their array return types and accept an optional `onWarning` sink. The
+CLI decides how to print warnings and what exit code to use; core never prints
+or exits.
 
 ---
 
@@ -103,7 +106,7 @@ Cross-cutting (`buildFilter`):
 
 | Flag                                          | Default         | Notes                                                                                                                                                                |
 | --------------------------------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--platform claude\|codex\|opencode\|pi\|all` | `all`           | Validated by the CLI against the `MemSourceFilter` union (hand-written guard, no zod). Unknown value → exit 2.                                                       |
+| `--platform claude\|codex\|opencode\|pi\|zcode\|all` | `all` | Validated by the CLI against the `MemSourceFilter` union (hand-written guard, no zod). Unknown value → exit 2. |
 | `--since YYYY-MM-DD`                          | none            | Inclusive lower bound. Parsed by `new Date(value)`; invalid → exit 2.                                                                                                |
 | `--until YYYY-MM-DD`                          | none            | Inclusive upper bound; parser appends `T23:59:59.999Z` so a date string covers the whole UTC day.                                                                    |
 | `--cwd <path>`                                | `process.cwd()` | Project scope. Resolved with `path.resolve`. Combined with `--global` → `--global` wins.                                                                             |
@@ -134,6 +137,7 @@ three functions:
 | Codex    | `core/mem/adapters/codex.ts:codexListSessions`       | `codexExtractDialogue`    | `codexSearch`                                     |
 | OpenCode | `core/mem/adapters/opencode.ts:opencodeListSessions` | `opencodeExtractDialogue` | `opencodeSearch` (degraded no-op in 0.6.0-beta.4) |
 | Pi       | `core/mem/adapters/pi.ts:piListSessions`             | `piExtractDialogue`       | `piSearch`                                        |
+| ZCode    | `core/mem/adapters/zcode.ts:zcodeListSessions`       | `zcodeExtractDialogue`    | `zcodeSearch`                                     |
 
 `core/mem/sessions.ts:listAll` fans out to the platform list functions and
 merges results sorted by `updated ?? created` descending; the same module's
@@ -278,6 +282,24 @@ const effective = applyLatestPiCompaction(path);
 for (const entry of effective) addCleanTurnAndTaskEvents(entry);
 ```
 
+### ZCode
+
+- **Layout**: one shared SQLite database at `~/.zcode/cli/db/db.sqlite` with
+  `session`, `message`, and `part` tables. Recent commits may exist only in the
+  sibling WAL.
+- **Snapshot safety**: the zero-dependency reader double-reads the WAL-index
+  header, fixes the committed end mark at `mxFrame`, validates WAL header/frame
+  cumulative checksums, and retries when main/WAL/shm changes during capture.
+- **Single-session memory**: extract/context traverse `message` and `part` with
+  predicates and retain only rows belonging to the requested session. Search
+  prepares one whole-db store for the command and releases it in `finally`.
+- **Degradation**: missing storage means no sessions. Corrupt files, unstable
+  WAL snapshots, or missing required tables/columns produce empty ZCode output
+  plus one structured `zcode-db-unreadable` warning; core never prints it.
+- **Cleaning/phase**: text parts become user/assistant turns; compaction starts
+  the effective dialogue at the latest summary; Bash tool parts provide
+  `task.py create|start` boundaries.
+
 ### OpenCode (reader unavailable as of 0.6.0-beta.4+)
 
 In 0.6.0-beta.3 a SQLite-backed reader was added for OpenCode 1.2+
@@ -321,7 +343,7 @@ Every list function emits items conforming to the `MemSessionInfo` type
 
 | Field       | Required      | Source                                                                                                                                                  |
 | ----------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `platform`  | yes           | `claude` / `codex` / `opencode` / `pi`                                                                                                                  |
+| `platform`  | yes           | `claude` / `codex` / `opencode` / `pi` / `zcode`                                                                                                        |
 | `id`        | yes           | platform session id                                                                                                                                     |
 | `title`     | optional      | Claude index `title`, OpenCode `title`, Pi latest `session_info.name`; Codex has no title                                                               |
 | `cwd`       | optional      | OpenCode `directory`, Claude index/event `cwd`, Codex first-event `payload.cwd`, Pi session header `cwd`                                                |
@@ -755,6 +777,7 @@ machine-readable stdout used by `--json` consumers.
 | Claude   | Native — boundary detection on `tool_use` (Bash) blocks in raw JSONL                                                                        |
 | Codex    | Native — boundary detection on `function_call` events whose `name` is `exec_command` or `shell` (Codex's Bash twin)                         |
 | Pi       | Native — boundary detection on assistant `toolCall` blocks named `bash` / `shell` and `bashExecution.command` messages on the active branch |
+| ZCode    | Native — boundary detection on `part.data` Bash tool records after compaction has selected the effective dialogue                         |
 | OpenCode | Reader unavailable in 0.6.0-beta.4+ (returns empty + warning)                                                                               |
 
 `core/mem/adapters/codex.ts:collectCodexTurnsAndEvents` is the Codex twin of
@@ -928,7 +951,7 @@ checks. The public domain types live in `core/mem/types.ts`:
 
 | Type                                                                 | Domain                                                              |
 | -------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `MemSourceKind` / `MemSourceFilter`                                  | `"claude" \| "codex" \| "opencode" \| "pi"` (+ `"all"` for filters) |
+| `MemSourceKind` / `MemSourceFilter`                                  | `"claude" \| "codex" \| "opencode" \| "pi" \| "zcode"` (+ `"all"` for filters) |
 | `MemSessionInfo`                                                     | unified session metadata across platforms                           |
 | `DialogueRole` / `DialogueTurn`                                      | `"user" \| "assistant"` and a cleaned turn                          |
 | `SearchExcerpt` / `SearchHit` / `MemSearchMatch` / `MemSearchResult` | search output                                                       |
@@ -1069,7 +1092,7 @@ consumers. Exposed only on the `/mem` subpath — **not** the root barrel.
 
 | Export                                                                                                                                                      | Use                                                                                        |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `listMemSessions`, `searchMemSessions`, `readMemContext`, `extractMemDialogue`, `listMemProjects`                                                           | the five orchestration entry points; all return structured results with a `warnings` array |
+| `listMemSessions`, `searchMemSessions`, `readMemContext`, `extractMemDialogue`, `listMemProjects`                                                           | five orchestration entry points; search/context/extract return `warnings`, list/projects accept `onWarning` |
 | `MemSessionNotFoundError`                                                                                                                                   | typed error for `context` / `extract` against an unknown session id                        |
 | `MemSessionInfo`, `MemFilter`, `DialogueTurn`, `SearchHit`, `MemSearchResult`, `MemContextResult`, `MemExtractResult`, `MemProjectSummary`, `MemWarning`, … | input/output types (see `core/mem/types.ts`)                                               |
 

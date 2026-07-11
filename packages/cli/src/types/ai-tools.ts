@@ -414,16 +414,21 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
       ".zcode/agents",
       ".zcode/commands",
       ".zcode/skills",
+      // Hooks assets written by configureZcode.
+      ".zcode/hooks",
     ],
     cliFlag: "zcode",
     defaultChecked: false,
-    hasPythonHooks: false,
+    hasPythonHooks: true,
     templateContext: {
       cmdRefPrefix: "/trellis:",
       executorAI: "Bash scripts or Agent calls",
       userActionLabel: "Skills",
       agentCapable: true,
-      hasHooks: false,
+      // ZCode (3.x) supports a workspace hook config at .zcode/config.json
+      // with SessionStart / UserPromptSubmit / PreToolUse events. PreToolUse
+      // can mutate sub-agent prompts, so ZCode is class-1 hook-inject.
+      hasHooks: true,
       cliFlag: "zcode",
     },
   },

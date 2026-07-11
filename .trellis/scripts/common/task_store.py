@@ -128,6 +128,7 @@ _SUBAGENT_CONFIG_DIRS: tuple[str, ...] = (
     ".factory",   # Factory Droid
     ".github/copilot",
     ".pi",        # Pi Agent
+    ".zcode",     # ZCode
 )
 
 _SEED_EXAMPLE = (

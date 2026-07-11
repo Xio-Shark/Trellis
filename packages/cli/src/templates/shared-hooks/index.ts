@@ -40,7 +40,8 @@ export type SharedHookPlatform =
   | "codebuddy"
   | "droid"
   | "kiro"
-  | "trae";
+  | "trae"
+  | "zcode";
 
 /**
  * Which shared hooks each platform actually invokes. Single source of truth
@@ -55,8 +56,8 @@ export type SharedHookPlatform =
  *   (or equivalent) event. Kiro + codex self-included; platforms without
  *   per-turn main-session hooks are excluded.
  * - `inject-subagent-context.py` — class-1 (push-based) platforms only.
- *   Class-2 (pull-based) platforms (codex, copilot, gemini, qoder) can't
- *   have hooks mutate sub-agent prompts — their sub-agents load context
+ *   Class-2 (pull-based) platforms such as codex, copilot, gemini, qoder,
+ *   and trae can't have hooks mutate sub-agent prompts — their sub-agents load context
  *   via a prelude instead.
  * - Kiro supports per-turn + spawn hooks on both surfaces (per the official
  *   docs https://kiro.dev/docs/cli/hooks/): the CLI custom agent declares
@@ -71,6 +72,11 @@ export type SharedHookPlatform =
  *   or opt in to the Trellis one via `trellis init --with-statusline`
  *   (installed from `templates/claude/hooks/`, not from this table — no
  *   other platform has a statusLine event).
+ * - ZCode (3.x) ships a workspace hook config at `.zcode/config.json` covering
+ *   SessionStart + UserPromptSubmit in the main session, plus PreToolUse for
+ *   `Agent|Task`. Live probing confirmed `hookSpecificOutput.updatedInput`
+ *   reaches the sub-agent prompt, so ZCode is class-1 and ships
+ *   `inject-subagent-context.py`.
  */
 export const SHARED_HOOKS_BY_PLATFORM: Record<
   SharedHookPlatform,
@@ -106,6 +112,11 @@ export const SHARED_HOOKS_BY_PLATFORM: Record<
     "inject-subagent-context.py",
   ],
   trae: ["session-start.py", "inject-workflow-state.py"],
+  zcode: [
+    "session-start.py",
+    "inject-workflow-state.py",
+    "inject-subagent-context.py",
+  ],
 };
 
 /**

@@ -825,17 +825,19 @@ When creating platform templates, ensure references match the platform's interac
 
 Commands emitted by `resolveCommands(ctx)` / `resolveAllAsSkills(ctx)` / `resolveAllAsSkillsNeutral(ctx)` in `src/configurators/shared.ts`:
 
-| Command       | `agentCapable && hasHooks` (10)                                                                                                                                                                                                                | `agentCapable && !hasHooks` (4)                                                                       | `!agentCapable` (3)                                  |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `start`       | ❌ filtered by the shared resolver — SessionStart-style hook injects opening context, user-facing `/start` would be redundant. Pi is the approved exception and re-adds `.pi/prompts/trellis-start.md` because `session_start` is notify-only. | ✅ emitted (skill and/or slash command per platform) — no hook fires, users need an invocable `start` | ✅ emitted — manual equivalent of session-start hook |
-| `continue`    | ✅ emitted                                                                                                                                                                                                                                     | ✅ emitted                                                                                            | ✅ emitted                                           |
-| `finish-work` | ✅ emitted                                                                                                                                                                                                                                     | ✅ emitted                                                                                            | ✅ emitted                                           |
+| Command | `agentCapable && hasHooks` (11) | `agentCapable && !hasHooks` (3) | `!agentCapable` (3) |
+|---------|--------------------------------|----------------------------------|---------------------|
+| `start` | ❌ filtered by the shared resolver — SessionStart-style hook injects opening context, user-facing `/start` would be redundant. Pi is the approved exception and re-adds `.pi/prompts/trellis-start.md` because `session_start` is notify-only. | ✅ emitted (skill and/or slash command per platform) — no hook fires, users need an invocable `start` | ✅ emitted — manual equivalent of session-start hook |
+| `continue` | ✅ emitted | ✅ emitted | ✅ emitted |
+| `finish-work` | ✅ emitted | ✅ emitted | ✅ emitted |
 
-**Rule**: filter is by `ctx.agentCapable && ctx.hasHooks` — **both flags required** (changed in 0.6.4; the prior single-flag rule silently dropped `start` from Codex / ZCode / OpenCode / Reasonix). `agentCapable` alone is not a proxy for "has a session-start mechanism" because four agent-capable platforms ship without a SessionStart-equivalent hook and rely on user-invocable `start` instead.
+**Rule**: filter is by `ctx.agentCapable && ctx.hasHooks` — **both flags required** (changed in 0.6.4; the prior single-flag rule silently dropped `start` from Codex / ZCode / OpenCode / Reasonix). `agentCapable` alone is not a proxy for "has a session-start mechanism" because some agent-capable platforms ship without a SessionStart-equivalent hook and rely on user-invocable `start` instead.
 
-- `agentCapable && hasHooks`: `claude-code, cursor, kiro, gemini, qoder, codebuddy, copilot, droid, pi, trae`
-- `agentCapable && !hasHooks`: `codex, opencode, reasonix, zcode` — Codex has a UserPromptSubmit hook but no SessionStart; OpenCode has a `plugins/session-start.js` plugin but registry-`hasHooks` is reserved for the SessionStart-style hook protocol; ZCode and Reasonix have neither.
+- `agentCapable && hasHooks`: `claude-code, cursor, kiro, gemini, qoder, codebuddy, copilot, droid, pi, trae, zcode`
+- `agentCapable && !hasHooks`: `codex, opencode, reasonix` — Codex has a UserPromptSubmit hook but no SessionStart; OpenCode has a `plugins/session-start.js` plugin but registry-`hasHooks` is reserved for the SessionStart-style hook protocol; Reasonix has neither.
 - `!agentCapable`: `kilo, antigravity, devin`
+
+> ZCode joined `agentCapable && hasHooks` in the zcode-hook-support task: it ships a workspace hook config at `.zcode/config.json` covering SessionStart + UserPromptSubmit (reusing the shared `session-start.py` / `inject-workflow-state.py`). Live probing confirmed ZCode PreToolUse with matcher `Agent|Task` can mutate the sub-agent prompt through `hookSpecificOutput.updatedInput`, so ZCode is **class-1** for sub-agent context and ships `inject-subagent-context.py`.
 
 > **Gotcha**: do not treat `hasHooks=false` as "platform has no automation at all". For OpenCode it means "no SessionStart hook protocol" — its plugin still injects context. The flag is a hook-protocol marker, not a capability summary. When filtering by capability, query the actual capability you need, never assume a default pairing from one boolean.
 
@@ -845,11 +847,11 @@ Trellis sub-agents (implement / check / research) need task context (`prd.md` + 
 
 | Class                          | Mechanism                                                                                                                                                                                                      | Platforms                                                     |
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| **Class-1** — Hook-inject      | Python hook (or JS plugin) under `.{platform}/hooks/` fires on the sub-agent spawn tool and rewrites the tool's prompt input                                                                                   | Claude Code, Cursor, OpenCode, Kiro, CodeBuddy, Factory Droid |
-| **Class-2** — Pull-based       | Platform's hook can't reliably mutate sub-agent prompts; Trellis injects a "Required: Load Trellis Context First" prelude into each sub-agent definition file so the sub-agent reads context itself at startup | Codex, Gemini CLI, Qoder, Copilot, ZCode, Reasonix, Trae IDE  |
+| **Class-1** — Hook-inject      | Python hook (or JS plugin) under `.{platform}/hooks/` fires on the sub-agent spawn tool and rewrites the tool's prompt input                                                                                   | Claude Code, Cursor, OpenCode, Kiro, CodeBuddy, Factory Droid, ZCode |
+| **Class-2** — Pull-based       | Platform's hook can't reliably mutate sub-agent prompts; Trellis injects a "Required: Load Trellis Context First" prelude into each sub-agent definition file so the sub-agent reads context itself at startup | Codex, Gemini CLI, Qoder, Copilot, Reasonix, Trae IDE  |
 | **Class-3** — Extension-backed | Platform exposes hook-equivalent events and custom tools through a project-local TypeScript extension; Trellis owns the sub-agent tool and the context injection path                                          | Pi Agent                                                      |
 
-### Class-1 — Hook-inject (6 platforms)
+### Class-1 — Hook-inject (7 platforms)
 
 Platform's PreToolUse-equivalent hook can fire on the sub-agent spawn tool AND modify the tool's prompt input. Trellis's `inject-subagent-context.py` (or OpenCode's plugin) reads `prd.md` + the JSONL-referenced spec files and rewrites the sub-agent's initial prompt.
 
@@ -861,6 +863,7 @@ Platform's PreToolUse-equivalent hook can fire on the sub-agent spawn tool AND m
 | Factory Droid | `PreToolUse` + matcher `Task`         | `updatedInput.prompt`                   |
 | Kiro          | per-agent `agentSpawn` hook           | direct stdout context                   |
 | OpenCode      | JS plugin `tool.execute.before`       | `args.prompt` mutation                  |
+| ZCode         | `PreToolUse` + matcher `Agent|Task`   | `hookSpecificOutput.updatedInput.prompt` |
 
 #### OpenCode injection contract (issue #264)
 
@@ -894,7 +897,7 @@ import { isTrellisSubagent } from "../lib/trellis-context.js"
 
 `getActiveTask()` in `lib/trellis-context.js` itself includes the single-session fallback so any caller (`workflow-state` breadcrumb, `session-start` task status) sees the same resolved task as the prompt injector. The fallback only activates when the explicit context-key lookup misses, so multi-window setups remain isolated.
 
-### Class-2 — Pull-based (7 platforms)
+### Class-2 — Pull-based (6 platforms)
 
 Platform's hook either doesn't expose a sub-agent spawn event or can't modify the prompt. Sub-agents must Read context themselves at startup. Trellis injects a "Required: Load Trellis Context First" prelude into each sub-agent definition file.
 
@@ -904,7 +907,6 @@ Platform's hook either doesn't expose a sub-agent spawn event or can't modify th
 | Qoder | No `Task` tool concept; `SubagentStart` input has no `prompt` field; Context Isolation |
 | Codex | `PreToolUse` only fires for Bash; `CollabAgentSpawn` hook unimplemented ([#15486](https://github.com/openai/codex/issues/15486)) |
 | Copilot | `preToolUse` doesn't enforce on subagents ([#2392](https://github.com/github/copilot-cli/issues/2392), [#2540](https://github.com/github/copilot-cli/issues/2540)) |
-| ZCode | No Trellis-supported hook surface for sub-agent prompt mutation; generated `.zcode/agents/*.md` files receive the pull-based prelude. |
 | Reasonix | Sub-agent skills run with `runAs: subagent`; no prompt-mutation hook exists, so workflow dispatch must carry the active task and the sub-agent skill reads task artifacts itself. |
 | Trae IDE | `SessionStart` / `UserPromptSubmit` hooks cover main-session context, but no Trellis-supported sub-agent prompt mutation surface exists; generated `.trae/agents/*.md` files receive the pull-based prelude. |
 
@@ -1031,7 +1033,7 @@ Pull-based prelude is injected by `injectPullBasedPreludeMarkdown()` / `injectPu
 1. Calls `writeSharedHooks(dir, platform)` where `SHARED_HOOKS_BY_PLATFORM[platform]` excludes `inject-subagent-context.py` — no prompt-mutation hook installed
 2. Calls `detectSubAgentType(name)` → `injectPullBasedPrelude*()` on every sub-agent definition before writing
 
-Hook-inject platforms keep using `writeSharedHooks(dir, platform)` with a capability table entry that includes `inject-subagent-context.py`, and their hook-config JSON references that hook as before.
+Hook-inject platforms keep using `writeSharedHooks(dir, platform)` with a capability table entry that includes `inject-subagent-context.py`, and their hook-config JSON references that hook as before. ZCode follows this path through `.zcode/config.json` `PreToolUse` entries matching `Agent|Task`; its generated `.zcode/agents/*.md` files carry only the hook-failure fallback protocol, not the pull-based prelude.
 
 ### Recursion guard in implement/check agent definitions
 
@@ -1321,7 +1323,7 @@ context string, not as a new JSON key.
 }
 ```
 
-Each host ignores keys it does not recognize, so dual emission is safe. **Do not refactor to single-format output** — dropping the Cursor key breaks Cursor's auto-context injection for all models (not just GPT). The same multi-format convention exists in `inject-subagent-context.py` (Cursor's `permission` + `updated_input` alongside Claude's `hookSpecificOutput`).
+Each host ignores keys it does not recognize, so dual emission is safe. **Do not refactor to single-format output** — dropping the Cursor key breaks Cursor's auto-context injection for all models (not just GPT). The same multi-format convention exists in `inject-subagent-context.py` (Cursor's `permission` + `updated_input` alongside Claude's `hookSpecificOutput`). ZCode is the exception: its PreToolUse hook should emit the live-tested nested `hookSpecificOutput.updatedInput` shape only, because ZCode's hook diagnostics describe strict stdout schemas.
 
 ### Constraint
 
@@ -1466,6 +1468,8 @@ The same rule applies to every other hook that's positioned as "repeated reminde
 ### CWD Robustness
 
 The hook uses `find_trellis_root()` to walk up from CWD until it finds `.trellis/`, so it works when the terminal is in a subdirectory (monorepo package, etc.) or when sub-agent spawn inherits a drifted CWD.
+
+ZCode hook commands must also make the script path itself CWD-robust. Use the ZCode project-root placeholder in `.zcode/config.json`, for example `{{PYTHON_CMD}} "${ZCODE_PROJECT_DIR}/.zcode/hooks/inject-workflow-state.py"`, rather than `{{PYTHON_CMD}} .zcode/hooks/inject-workflow-state.py`. The Python hook's `find_trellis_root()` only runs after Python opens the script; a cwd-relative command can fail before the hook starts if ZCode launches from a nested directory such as `.github/docs/...`.
 
 ### Why No State Machine / No Extra `task.json` Fields
 

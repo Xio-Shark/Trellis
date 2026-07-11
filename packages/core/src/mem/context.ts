@@ -18,6 +18,7 @@ import type {
   DialogueTurn,
   MemContextResult,
   MemContextTurn,
+  MemWarning,
   ReadMemContextOptions,
 } from "./types.js";
 
@@ -115,22 +116,25 @@ export function readMemContext(
   options: ReadMemContextOptions,
 ): MemContextResult {
   const f = resolveFilter(options.filter);
-  const s = findSessionById(options.sessionId, f);
-  if (!s) throw new MemSessionNotFoundError(options.sessionId);
+  const warnings: MemWarning[] = [];
+  const s = findSessionById(options.sessionId, f, warnings);
+  if (!s) throw new MemSessionNotFoundError(options.sessionId, warnings);
 
   const grep = typeof options.grep === "string" ? options.grep : undefined;
   const nTurns = options.turns ?? 3;
   const around = options.around ?? 1;
   const maxChars = options.maxChars ?? 6000;
 
-  let turns: DialogueTurn[] = extractDialogue(s);
+  let turns: DialogueTurn[] = extractDialogue(s, warnings);
   let mergedChildren = 0;
   if (options.includeChildren === true) {
-    const all = listAll({ ...f, cwd: undefined, limit: WIDE_LIMIT });
+    const all = listAll({ ...f, cwd: undefined, limit: WIDE_LIMIT }, warnings);
     const childIndex = buildChildIndex(all);
     const kids = childIndex.get(s.id) ?? [];
     mergedChildren = kids.length;
-    for (const c of kids) turns = [...turns, ...extractDialogue(c)];
+    for (const c of kids) {
+      turns = [...turns, ...extractDialogue(c, warnings)];
+    }
   }
 
   const selected = selectContextTurns(turns, grep, nTurns, around, maxChars);
@@ -144,6 +148,6 @@ export function readMemContext(
     budgetUsed: selected.budgetUsed,
     maxChars,
     turns: selected.turns,
-    warnings: [],
+    warnings,
   };
 }

@@ -83,6 +83,7 @@ def _detect_platform(input_data: dict) -> str | None:
     if isinstance(input_data.get("cursor_version"), str):
         return "cursor"
     env_map = {
+        "ZCODE_PROJECT_DIR": "zcode",
         "CLAUDE_PROJECT_DIR": "claude",
         "CURSOR_PROJECT_DIR": "cursor",
         "CODEBUDDY_PROJECT_DIR": "codebuddy",
@@ -110,6 +111,8 @@ def _detect_platform(input_data: dict) -> str | None:
         return "droid"
     if ".kiro" in script_parts:
         return "kiro"
+    if ".zcode" in script_parts:
+        return "zcode"
     return None
 
 
@@ -652,10 +655,15 @@ def _parse_hook_input(input_data: dict) -> tuple[str, str, dict]:
     - Claude Code / Qoder / CodeBuddy / Droid: tool_name=Task|Agent, tool_input.subagent_type
     - Cursor: tool_name=Task|Subagent, tool_input.subagent_type
     - Copilot CLI: toolName=task (camelCase key, lowercase value)
+    - ZCode: toolName=Agent, toolInput/tool_input.subagent_type
     - Gemini CLI: tool_name IS the agent name (BeforeTool matcher already filtered)
     - Kiro: agentSpawn hook, agent_name field at top level
     """
     tool_input = input_data.get("tool_input", {})
+    if not isinstance(tool_input, dict):
+        tool_input = input_data.get("toolInput", {})
+    if not isinstance(tool_input, dict):
+        tool_input = {}
 
     # Standard format: Task/Agent tool with subagent_type
     tool_name = input_data.get("tool_name", "") or input_data.get("toolName", "")
@@ -745,23 +753,32 @@ def main():
     if not context:
         sys.exit(0)
 
-    # Return updated input — use a multi-format output that covers all platforms.
-    # Most platforms ignore unrecognized fields, so we include multiple formats.
-    # The platform picks whichever fields it understands.
+    # Return updated input. Most platforms ignore unrecognized fields, so we
+    # include multiple formats. ZCode is stricter; live probing confirmed the
+    # nested Claude-compatible shape below reaches the sub-agent prompt.
     updated = {**tool_input, "prompt": new_prompt}
-    output = {
-        # Claude Code / Qoder / CodeBuddy / Droid format
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "allow",
+    if _detect_platform(input_data) == "zcode":
+        output = {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "allow",
+                "updatedInput": updated,
+            }
+        }
+    else:
+        output = {
+            # Claude Code / Qoder / CodeBuddy / Droid format
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "allow",
+                "updatedInput": updated,
+            },
+            # Cursor format
+            "permission": "allow",
+            "updated_input": updated,
+            # Gemini format
             "updatedInput": updated,
-        },
-        # Cursor format
-        "permission": "allow",
-        "updated_input": updated,
-        # Gemini format
-        "updatedInput": updated,
-    }
+        }
 
     print(json.dumps(output, ensure_ascii=False))
     sys.exit(0)

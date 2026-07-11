@@ -4,7 +4,11 @@
  */
 
 import { listAll, resolveFilter, WIDE_LIMIT } from "./sessions.js";
-import type { ListMemProjectsOptions, MemProjectSummary } from "./types.js";
+import type {
+  ListMemProjectsOptions,
+  MemProjectSummary,
+  MemWarning,
+} from "./types.js";
 
 /**
  * Aggregate distinct project cwds across every platform. Always scans
@@ -16,7 +20,9 @@ export function listMemProjects(
   options?: ListMemProjectsOptions,
 ): MemProjectSummary[] {
   const f = resolveFilter(options?.filter);
-  const all = listAll({ ...f, cwd: undefined, limit: WIDE_LIMIT });
+  const warnings: MemWarning[] = [];
+  const all = listAll({ ...f, cwd: undefined, limit: WIDE_LIMIT }, warnings);
+  for (const warning of warnings) options?.onWarning?.(warning);
 
   const byCwd = new Map<string, MemProjectSummary>();
   for (const s of all) {
@@ -28,7 +34,7 @@ export function listMemProjects(
         cwd: s.cwd,
         last_active: ts,
         sessions: 0,
-        by_platform: { claude: 0, codex: 0, opencode: 0, pi: 0 },
+        by_platform: { claude: 0, codex: 0, opencode: 0, pi: 0, zcode: 0 },
       };
       byCwd.set(s.cwd, agg);
     }

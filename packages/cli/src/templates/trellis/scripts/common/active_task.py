@@ -44,6 +44,7 @@ _KNOWN_PLATFORMS = {
     "copilot",
     "pi",
     "trae",
+    "zcode",
 }
 
 _ENV_SESSION_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -59,6 +60,11 @@ _ENV_SESSION_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("copilot", ("COPILOT_SESSION_ID", "COPILOT_SESSIONID")),
     ("pi", ("PI_SESSION_ID", "PI_SESSIONID")),
     ("trae", ("TRAE_SESSION_ID",)),
+    # ZCode reuses CLAUDE_SESSION_ID (it does not document a ZCODE_SESSION_ID).
+    # Platform-scoped lookup (_iter_env_keys filters by platform name), so this
+    # only fires when the resolver already detected "zcode" — no collision with
+    # the claude entry above.
+    ("zcode", ("CLAUDE_SESSION_ID",)),
 )
 _ENV_CONVERSATION_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("cursor", ("CURSOR_CONVERSATION_ID", "CURSOR_CONVERSATIONID")),
@@ -77,6 +83,12 @@ _ENV_PLATFORM_ALIASES = {
     "factory": "droid",
     "factory-ai": "droid",
     "github-copilot": "copilot",
+}
+# ZCode intentionally reuses CLAUDE_SESSION_ID. Hooks know the host is ZCode,
+# while later shell commands see only the shared env name and resolve it through
+# the Claude entry. Canonicalize both paths to one runtime filename.
+_CONTEXT_KEY_PLATFORM_ALIASES = {
+    "zcode": "claude",
 }
 
 
@@ -191,6 +203,7 @@ def _detect_platform(platform_input: dict[str, Any] | None, platform: str | None
 
 
 def _context_key(platform_name: str, kind: str, value: str) -> str:
+    platform_name = _CONTEXT_KEY_PLATFORM_ALIASES.get(platform_name, platform_name)
     if kind == "transcript":
         return f"{platform_name}_transcript_{_hash_value(value)}"
     safe_value = _sanitize_key(value)

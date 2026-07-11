@@ -8,6 +8,7 @@
  */
 
 import { describe, it, expect } from "vitest";
+import * as nodePath from "node:path";
 
 import {
   parseArgv,
@@ -74,6 +75,12 @@ describe("buildFilter", () => {
     expect(f.cwd).toBeUndefined();
   });
 
+  it("accepts zcode as a platform filter", () => {
+    const f = buildFilter({ platform: "zcode", global: true });
+    expect(f.platform).toBe("zcode");
+    expect(f.cwd).toBeUndefined();
+  });
+
   it("--global drops the cwd scope", () => {
     const f = buildFilter({ global: true });
     expect(f.cwd).toBeUndefined();
@@ -88,8 +95,9 @@ describe("buildFilter", () => {
   });
 
   it("--cwd overrides process.cwd() and resolves relative paths", () => {
-    const f = buildFilter({ cwd: "/some/abs/path" });
-    expect(f.cwd).toBe("/some/abs/path");
+    const cwd = nodePath.join("some", "relative", "path");
+    const f = buildFilter({ cwd });
+    expect(f.cwd).toBe(nodePath.resolve(cwd));
   });
 });
 

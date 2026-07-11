@@ -42,6 +42,7 @@ const {
 
 const CLAUDE_PROJECTS = nodePath.join(fakeHome, ".claude", "projects");
 const PI_SESSIONS = nodePath.join(fakeHome, ".pi", "agent", "sessions");
+const ZCODE_DB = nodePath.join(fakeHome, ".zcode", "cli", "db", "db.sqlite");
 const projectCwd = "/tmp/mem-api-project";
 const projectDir = nodePath.join(
   CLAUDE_PROJECTS,
@@ -197,6 +198,10 @@ afterEach(() => {
     recursive: true,
     force: true,
   });
+  nodeFs.rmSync(nodePath.join(fakeHome, ".zcode"), {
+    recursive: true,
+    force: true,
+  });
 });
 
 afterAll(() => {
@@ -204,6 +209,20 @@ afterAll(() => {
 });
 
 describe("listMemSessions", () => {
+  it("reports a structured warning when the ZCode database is corrupt", () => {
+    nodeFs.mkdirSync(nodePath.dirname(ZCODE_DB), { recursive: true });
+    nodeFs.writeFileSync(ZCODE_DB, "not sqlite");
+    const warnings: { code: string; message: string }[] = [];
+    const rows = listMemSessions({
+      filter: { platform: "zcode", cwd: undefined },
+      onWarning: (warning) => warnings.push(warning),
+    });
+    expect(rows).toEqual([]);
+    expect(warnings.map((warning) => warning.code)).toEqual([
+      "zcode-db-unreadable",
+    ]);
+  });
+
   it("lists Pi sessions through the public API", () => {
     const piId = "pi-list-session";
     seedPiSession(piId, projectCwd);
@@ -226,6 +245,19 @@ describe("listMemSessions", () => {
 });
 
 describe("searchMemSessions", () => {
+  it("returns a warning instead of treating a corrupt ZCode database as a clean miss", () => {
+    nodeFs.mkdirSync(nodePath.dirname(ZCODE_DB), { recursive: true });
+    nodeFs.writeFileSync(ZCODE_DB, "not sqlite");
+    const result = searchMemSessions({
+      keyword: "anything",
+      filter: { platform: "zcode", cwd: undefined },
+    });
+    expect(result.matches).toEqual([]);
+    expect(result.warnings.map((warning) => warning.code)).toEqual([
+      "zcode-db-unreadable",
+    ]);
+  });
+
   it("searches Pi cleaned dialogue through the public API", () => {
     const piId = "pi-search-session";
     seedPiSession(piId, projectCwd);
@@ -370,6 +402,7 @@ describe("listMemProjects", () => {
     expect(ours?.sessions).toBeGreaterThan(0);
     expect(ours?.by_platform.claude).toBe(1);
     expect(ours?.by_platform.pi).toBe(0);
+    expect(ours?.by_platform.zcode).toBe(0);
   });
 
   it("includes Pi sessions in project aggregation", () => {
@@ -381,5 +414,6 @@ describe("listMemProjects", () => {
     expect(ours?.sessions).toBe(1);
     expect(ours?.by_platform.pi).toBe(1);
     expect(ours?.by_platform.claude).toBe(0);
+    expect(ours?.by_platform.zcode).toBe(0);
   });
 });

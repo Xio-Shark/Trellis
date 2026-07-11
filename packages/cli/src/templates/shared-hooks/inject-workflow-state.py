@@ -96,6 +96,9 @@ def _detect_platform(input_data: dict) -> str | None:
     if isinstance(input_data.get("cursor_version"), str):
         return "cursor"
     env_map = {
+        # ZCode may set both ZCODE_PROJECT_DIR and CLAUDE_PROJECT_DIR; check
+        # ZCODE first so ZCode sessions aren't misdetected as claude.
+        "ZCODE_PROJECT_DIR": "zcode",
         "CLAUDE_PROJECT_DIR": "claude",
         "CURSOR_PROJECT_DIR": "cursor",
         "CODEBUDDY_PROJECT_DIR": "codebuddy",
@@ -128,6 +131,8 @@ def _detect_platform(input_data: dict) -> str | None:
         return "kiro"
     if ".trae" in script_parts:
         return "trae"
+    if ".zcode" in script_parts:
+        return "zcode"
     return None
 
 
