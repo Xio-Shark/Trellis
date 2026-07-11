@@ -69,8 +69,9 @@ delete escapes the store.
 
 > **Why the chokepoint, not the entrypoint**: validating inside `channelDir`
 > (not in each of create/rm/run) means one guard covers every current and future
-> caller. Per-command validation rots — `spawn.ts` once carried a "CLI already
-> validates names" comment that was false.
+> caller. `spawn.ts` had long *asserted* this — a "CLI layer already validates
+> names" comment — while no such validation existed; adding the guard at the
+> `channelDir` chokepoint is what finally made that comment true.
 
 ```ts
 // Correct: guard lives in the shared path builder
