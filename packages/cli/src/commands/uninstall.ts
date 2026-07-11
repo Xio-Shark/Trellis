@@ -23,9 +23,13 @@ import readline from "node:readline";
 import chalk from "chalk";
 import inquirer from "inquirer";
 
-import { DIR_NAMES } from "../constants/paths.js";
+import { DIR_NAMES, FILE_NAMES } from "../constants/paths.js";
 import { loadHashes } from "../utils/template-hash.js";
-import { cleanupEmptyDirs } from "./update.js";
+import {
+  cleanupEmptyDirs,
+  TRELLIS_BLOCK_START,
+  TRELLIS_BLOCK_END,
+} from "./update.js";
 import {
   ALL_MANAGED_DIRS,
   getConfiguredPlatforms,
@@ -128,6 +132,20 @@ function buildStructuredFileSpecs(): Map<string, StructuredFileSpec> {
           content,
           COPILOT_INSTRUCTIONS_BLOCK_START,
           COPILOT_INSTRUCTIONS_BLOCK_END,
+        ),
+    },
+    {
+      // AGENTS.md is a mixed-ownership file: Trellis owns the
+      // <!-- TRELLIS:START/END --> block, the user owns everything around
+      // it (update.ts preserves that outer content). Strip only the block;
+      // delete the file only when nothing user-authored remains.
+      posixPath: FILE_NAMES.AGENTS,
+      reason: "Strip Trellis managed block; preserve user instructions",
+      scrub: (content) =>
+        scrubManagedMarkdownBlock(
+          content,
+          TRELLIS_BLOCK_START,
+          TRELLIS_BLOCK_END,
         ),
     },
   ];

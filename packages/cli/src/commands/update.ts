@@ -100,8 +100,8 @@ interface ChangeAnalysis {
 type ConflictAction = "overwrite" | "skip" | "create-new";
 
 const CLAUDE_SETTINGS_PATH = ".claude/settings.json";
-const TRELLIS_BLOCK_START = "<!-- TRELLIS:START -->";
-const TRELLIS_BLOCK_END = "<!-- TRELLIS:END -->";
+export const TRELLIS_BLOCK_START = "<!-- TRELLIS:START -->";
+export const TRELLIS_BLOCK_END = "<!-- TRELLIS:END -->";
 const LEGACY_UNTRACKED_AGENTS_MD_BLOCK_HASHES = new Set<string>([
   // v0.5.0-beta.17 and earlier wrote AGENTS.md but did not hash-track it.
   // This hash is the pristine Trellis-managed block before the Subagents
