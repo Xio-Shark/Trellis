@@ -17,6 +17,7 @@
  * (per the PRD: "全删"). The `.trellis/` tree is removed unconditionally.
  */
 
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
@@ -257,7 +258,7 @@ function renderPlan(cwd: string, plan: UninstallPlan): void {
   if (plan.removeTrellisDir && fs.existsSync(trellisDir)) {
     console.log(
       `  ${chalk.red("-")} ${DIR_NAMES.WORKFLOW}/  ${chalk.gray(
-        "(entire directory, including tasks/runtime/config)",
+        "(entire directory — including your specs, task PRDs, journals, and memory)",
       )}`,
     );
   }
@@ -403,6 +404,45 @@ function executePlan(
 }
 
 /**
+ * List uncommitted (modified, staged, or untracked) files under the
+ * user-data subdirectories of `.trellis/` — spec/, tasks/, workspace/ — which
+ * hold user-authored specs, task PRDs, and journals that `update.ts` marks as
+ * PROTECTED. Uninstall deletes the whole `.trellis/` tree with no backup, so
+ * these are surfaced before the destructive step. Returns `[]` when this is
+ * not a git repo or git is unavailable (nothing we can check).
+ */
+export function collectUncommittedTrellisData(cwd: string): string[] {
+  const w = DIR_NAMES.WORKFLOW;
+  const userDataDirs = [
+    `${w}/${DIR_NAMES.SPEC}`,
+    `${w}/${DIR_NAMES.TASKS}`,
+    `${w}/${DIR_NAMES.WORKSPACE}`,
+  ];
+  try {
+    const out = execFileSync(
+      "git",
+      ["-C", cwd, "status", "--porcelain", "--", ...userDataDirs],
+      { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] },
+    );
+    return (
+      out
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        // Strip the 2-char status code, then keep the post-rename path if any.
+        .map((line) => line.replace(/^\S+\s+/, "").replace(/^.*\s->\s/, ""))
+    );
+  } catch {
+    return [];
+  }
+}
+
+/** Whether the uncommitted-data guard has been explicitly overridden. */
+function dirtyUninstallBypassEnabled(): boolean {
+  return process.env.TRELLIS_ALLOW_DIRTY_UNINSTALL === "1";
+}
+
+/**
  * Entry point.
  */
 export async function uninstall(options: UninstallOptions = {}): Promise<void> {
@@ -470,9 +510,43 @@ export async function uninstall(options: UninstallOptions = {}): Promise<void> {
   const plan = buildPlan(cwd, prunedHashes);
   renderPlan(cwd, plan);
 
+  // .trellis/ holds user-authored specs, task PRDs, and journals that have no
+  // backup here. Surface any uncommitted such files before deleting the tree,
+  // and — for scripted `--yes` runs where nobody reads the warning — fail
+  // closed unless explicitly overridden.
+  const uncommitted = collectUncommittedTrellisData(cwd);
+  if (uncommitted.length > 0) {
+    console.warn(
+      chalk.red.bold(
+        `\n⚠ ${uncommitted.length} uncommitted file(s) under .trellis/ (spec/tasks/workspace) ` +
+          `will be permanently deleted with no backup:`,
+      ),
+    );
+    for (const p of uncommitted.slice(0, 20)) {
+      console.warn(chalk.red(`    ${p}`));
+    }
+    if (uncommitted.length > 20) {
+      console.warn(chalk.red(`    … and ${uncommitted.length - 20} more`));
+    }
+    console.warn(
+      chalk.yellow("Commit or stash them first if you want to keep them.\n"),
+    );
+  }
+
   if (options.dryRun) {
     console.log(chalk.gray("Dry run — no files were modified."));
     return;
+  }
+
+  if (uncommitted.length > 0 && options.yes && !dirtyUninstallBypassEnabled()) {
+    console.error(
+      chalk.red(
+        "Refusing to uninstall with --yes while .trellis/ has uncommitted user data " +
+          "(spec/tasks/workspace). Commit or stash it, re-run without --yes to confirm " +
+          "interactively, or set TRELLIS_ALLOW_DIRTY_UNINSTALL=1 to override.",
+      ),
+    );
+    process.exit(1);
   }
 
   if (!options.yes) {
