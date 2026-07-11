@@ -611,6 +611,9 @@ function decodeRecord(
   const headerLenInfo = readVarint(payload, 0);
   const headerLen = headerLenInfo.value;
   const headerEnd = headerLenInfo.next;
+  if (headerLen > payload.length) {
+    throw new SqliteParseError("record header length exceeds payload");
+  }
 
   // Collect serial types.
   const serialTypes: number[] = [];
