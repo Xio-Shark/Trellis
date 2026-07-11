@@ -1439,7 +1439,26 @@ function isFileSafeToReplace(
 /**
  * Classify migrations based on file state and user modifications
  */
-function classifyMigrations(
+/**
+ * Whether the manifest records any file under `dirRelativePath` — i.e. whether
+ * Trellis actually created this directory. Used to gate rename-dir migrations:
+ * a directory Trellis never wrote (e.g. a user's own `.windsurf/` editor
+ * config that merely shares a path with a retired Trellis platform dir) must
+ * not be auto-moved.
+ */
+export function dirHasManifestEntries(
+  dirRelativePath: string,
+  hashes: TemplateHashes,
+): boolean {
+  const prefix = dirRelativePath.endsWith("/")
+    ? dirRelativePath
+    : dirRelativePath + "/";
+  return Object.keys(hashes).some(
+    (key) => key === dirRelativePath || key.startsWith(prefix),
+  );
+}
+
+export function classifyMigrations(
   migrations: MigrationItem[],
   cwd: string,
   hashes: TemplateHashes,
@@ -1515,9 +1534,17 @@ function classifyMigrations(
           // Target has user modifications - conflict
           result.conflict.push(item);
         }
-      } else {
-        // Directory rename - always auto (includes user files)
+      } else if (dirHasManifestEntries(item.from, hashes)) {
+        // Trellis created this directory (the manifest tracks files under it),
+        // so the rename is ours to make.
         result.auto.push(item);
+      } else {
+        // Target absent and the source has no manifest record: this is very
+        // likely a user-owned directory that merely shares a path with a
+        // retired Trellis platform dir (e.g. a real `.windsurf/` editor
+        // config). Skipping avoids silently moving the user's data out from
+        // under their editor — even under --force, since skip never executes.
+        result.skip.push(item);
       }
     } else if (item.type === "delete") {
       if (isTemplateModified(cwd, item.from, hashes)) {
@@ -1592,7 +1619,9 @@ function printMigrationSummary(classified: ClassifiedMigrations): void {
   }
 
   if (classified.skip.length > 0) {
-    console.log(chalk.gray("  ○ Skipping (old file not found):"));
+    console.log(
+      chalk.gray("  ○ Skipping (not found, protected, or not Trellis-owned):"),
+    );
     for (const item of classified.skip.slice(0, 3)) {
       console.log(chalk.gray(`    ${item.from}`));
     }
