@@ -29,15 +29,16 @@ export const PI_SESSIONS = expandHome(
     path.join(PI_AGENT_DIR, "sessions"),
 );
 
-function readPiSettingsSessionDir(): string | undefined {
-  const settingsFile = path.join(PI_AGENT_DIR, "settings.json");
+function readPiSettingsSessionDir(settingsFile: string): string | undefined {
   try {
     const raw: unknown = JSON.parse(fs.readFileSync(settingsFile, "utf8"));
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
     const sessionDir = (raw as { sessionDir?: unknown }).sessionDir;
-    return typeof sessionDir === "string" && sessionDir.trim()
-      ? expandHome(sessionDir)
-      : undefined;
+    if (typeof sessionDir !== "string" || !sessionDir.trim()) return undefined;
+    const expanded = expandHome(sessionDir);
+    return path.isAbsolute(expanded)
+      ? expanded
+      : path.resolve(path.dirname(settingsFile), expanded);
   } catch {
     return undefined;
   }
@@ -58,11 +59,19 @@ export function piProjectDirFromCwd(cwd: string): string {
   return path.join(path.join(PI_AGENT_DIR, "sessions"), safePath);
 }
 
-/** Discover Pi session roots visible from the current process. */
-export function piSessionRoots(): string[] {
+/** Discover Pi session roots visible from the current process and project. */
+export function piSessionRoots(cwd?: string): string[] {
   const roots = [path.join(PI_AGENT_DIR, "sessions"), PI_SESSIONS];
-  const settingsSessionDir = readPiSettingsSessionDir();
-  if (settingsSessionDir) roots.push(settingsSessionDir);
+  const globalSettingsDir = readPiSettingsSessionDir(
+    path.join(PI_AGENT_DIR, "settings.json"),
+  );
+  if (globalSettingsDir) roots.push(globalSettingsDir);
+  if (cwd) {
+    const projectSettingsDir = readPiSettingsSessionDir(
+      path.join(path.resolve(cwd), ".pi", "settings.json"),
+    );
+    if (projectSettingsDir) roots.push(projectSettingsDir);
+  }
 
   const seen = new Set<string>();
   const out: string[] = [];

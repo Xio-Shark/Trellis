@@ -207,9 +207,11 @@ export function collectPiTurnsAndEvents(s: MemSessionInfo): {
 
 - **Roots**: inspect the default root under
   `~/.pi/agent/sessions/--<encoded-cwd>--/`, `PI_CODING_AGENT_DIR`,
-  `PI_CODING_AGENT_SESSION_DIR`, and `settings.json.sessionDir` where visible
-  to the current Trellis process. Custom session dirs contain direct `.jsonl`
-  files and must be filtered by the header `cwd`.
+  `PI_CODING_AGENT_SESSION_DIR`, global `~/.pi/agent/settings.json`, and the
+  scoped project's `.pi/settings.json`. Resolve relative `sessionDir` values
+  from the directory containing their settings file, matching Pi's settings
+  contract. Custom session dirs contain direct `.jsonl` files and must be
+  filtered by the header `cwd`.
 - **Metadata**: the first row must be a `type: "session"` header. Emit
   `platform: "pi"`, `id`, `cwd`, `created`, `updated`, `filePath`, and optional
   `title` from the latest `session_info.name`. Do not use the first user

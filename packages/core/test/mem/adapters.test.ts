@@ -694,6 +694,7 @@ describe("piListSessions / piExtractDialogue", () => {
   afterEach(() => {
     rimraf(nodePath.join(fakeHome, ".pi"));
     rimraf(nodePath.join(fakeHome, ".pi-custom-sessions"));
+    rimraf(nodePath.join(fakeHome, "pi-project-settings"));
   });
 
   it("returns no sessions when the Pi sessions root doesn't exist", () => {
@@ -736,14 +737,19 @@ describe("piListSessions / piExtractDialogue", () => {
     expect(found?.title).toBe("Pi memory task");
   });
 
-  it("lists sessions from settings-configured custom session roots", () => {
-    const customRoot = nodePath.join(fakeHome, ".pi-custom-sessions");
+  it("resolves relative global sessionDir from the Pi agent directory", () => {
+    const customRoot = nodePath.join(
+      fakeHome,
+      ".pi",
+      "agent",
+      "custom-sessions",
+    );
     const customFile = nodePath.join(
       customRoot,
       `2026-06-18_${sessionId}.jsonl`,
     );
     writeJson(nodePath.join(fakeHome, ".pi", "agent", "settings.json"), {
-      sessionDir: customRoot,
+      sessionDir: "custom-sessions",
     });
     writeJsonl(customFile, [
       {
@@ -763,6 +769,39 @@ describe("piListSessions / piExtractDialogue", () => {
     ]);
 
     const found = piListSessions(mkFilter({ cwd: projectCwd })).find(
+      (s) => s.id === sessionId,
+    );
+    expect(found?.filePath).toBe(customFile);
+  });
+
+  it("lists sessions from project-local Pi settings", () => {
+    const localCwd = nodePath.join(fakeHome, "pi-project-settings");
+    const customRoot = nodePath.join(localCwd, ".pi", "custom-sessions");
+    const customFile = nodePath.join(
+      customRoot,
+      `2026-06-18_${sessionId}.jsonl`,
+    );
+    writeJson(nodePath.join(localCwd, ".pi", "settings.json"), {
+      sessionDir: "custom-sessions",
+    });
+    writeJsonl(customFile, [
+      {
+        type: "session",
+        version: 3,
+        id: sessionId,
+        timestamp: "2026-06-18T10:00:00.000Z",
+        cwd: localCwd,
+      },
+      {
+        type: "message",
+        id: "u1",
+        parentId: null,
+        timestamp: "2026-06-18T10:00:01.000Z",
+        message: { role: "user", content: "project-local root" },
+      },
+    ]);
+
+    const found = piListSessions(mkFilter({ cwd: localCwd })).find(
       (s) => s.id === sessionId,
     );
     expect(found?.filePath).toBe(customFile);
