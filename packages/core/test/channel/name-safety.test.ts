@@ -7,6 +7,9 @@ import { createChannel } from "../../src/channel/index.js";
 import {
   assertSafeName,
   channelDir,
+  isSafeName,
+  listChannelNamesInProject,
+  projectDir,
 } from "../../src/channel/internal/store/paths.js";
 import { setupChannelTmp, type TmpEnv } from "./setup.js";
 
@@ -37,6 +40,22 @@ describe("channel name path-traversal guard", () => {
 
   it("channelDir throws instead of resolving outside the store", () => {
     expect(() => channelDir("../../escape")).toThrow(/Invalid channel name/);
+  });
+
+  it("listChannelNamesInProject skips legacy dirs with pre-validation names", async () => {
+    await createChannel({ channel: "good-one", by: "main" });
+
+    // A dir created before name validation existed. Returning it would make
+    // the watcher's channelDir/eventsPath calls throw mid-discovery.
+    const bucket = projectDir();
+    const legacyDir = path.join(bucket, "坏 名字");
+    fs.mkdirSync(legacyDir, { recursive: true });
+    fs.writeFileSync(path.join(legacyDir, "events.jsonl"), "");
+
+    const names = listChannelNamesInProject(path.basename(bucket));
+    expect(names).toContain("good-one");
+    expect(names).not.toContain("坏 名字");
+    for (const name of names) expect(isSafeName(name)).toBe(true);
   });
 
   it("createChannel --force cannot delete a directory outside the store", async () => {
