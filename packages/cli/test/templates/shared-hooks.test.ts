@@ -104,6 +104,18 @@ describe("shared-hooks capability table", () => {
     );
   });
 
+  it("zcode registers session-start, workflow-state, and subagent-context hooks", () => {
+    // ZCode 3.x ships a workspace hook config (.zcode/config.json) covering
+    // SessionStart + UserPromptSubmit + PreToolUse Agent/Task.
+    expect([...SHARED_HOOKS_BY_PLATFORM.zcode].sort()).toEqual(
+      [
+        "inject-subagent-context.py",
+        "inject-workflow-state.py",
+        "session-start.py",
+      ].sort(),
+    );
+  });
+
   it("getSharedHookScriptsForPlatform returns exactly the declared set per platform", () => {
     for (const platform of Object.keys(
       SHARED_HOOKS_BY_PLATFORM,

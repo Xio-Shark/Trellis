@@ -261,7 +261,7 @@ describe("update() integration", () => {
     await init({ yes: true, force: true, zcode: true });
 
     expect(fs.existsSync(projectFile(".zcode/commands/trellis/start.md"))).toBe(
-      true,
+      false,
     );
     expect(
       fs.existsSync(projectFile(".zcode/skills/trellis-start/SKILL.md")),
@@ -1366,10 +1366,10 @@ describe("update() integration", () => {
     const updated = fs.readFileSync(workflowPath, "utf-8");
     expect(updated).toBe(replacePythonCommandLiterals(workflowMdTemplate));
     expect(updated).toContain(
-      "[codex-sub-agent, Gemini, Qoder, Copilot, ZCode, Reasonix, Trae, Grok]",
+      "[codex-sub-agent, Gemini, Qoder, Copilot, Reasonix, Trae, Grok]",
     );
     expect(updated).toContain(
-      "[/Claude Code, Cursor, OpenCode, CodeBuddy, Droid, Pi, Oh My Pi]",
+      "[/Claude Code, Cursor, OpenCode, CodeBuddy, Droid, Pi, ZCode, Oh My Pi]",
     );
     expect(updated).toContain("[codex-inline, Kilo, Antigravity, Devin]");
     expect(updated).not.toContain("[Codex]");

@@ -27,6 +27,14 @@ import {
   piListSessions,
   piSearch,
 } from "./adapters/pi.js";
+import {
+  collectZcodeTurnsAndEvents,
+  prepareZcodeSessionStore,
+  releaseZcodeSessionStore,
+  zcodeExtractDialogue,
+  zcodeListSessions,
+  zcodeSearch,
+} from "./adapters/zcode.js";
 import { buildBrainstormWindows } from "./phase.js";
 import { relevanceScore, searchInDialogue } from "./search.js";
 import type {
@@ -54,10 +62,12 @@ export const WIDE_LIMIT = 1_000_000;
  * session id cannot be resolved. */
 export class MemSessionNotFoundError extends Error {
   readonly sessionId: string;
-  constructor(sessionId: string) {
+  readonly warnings: MemWarning[];
+  constructor(sessionId: string, warnings: MemWarning[] = []) {
     super(`mem session not found: ${sessionId}`);
     this.name = "MemSessionNotFoundError";
     this.sessionId = sessionId;
+    this.warnings = warnings;
   }
 }
 
@@ -73,7 +83,10 @@ export function resolveFilter(filter?: MemFilter): MemFilter {
 }
 
 /** Fan out to every in-scope platform, merge by recency, cap at `f.limit`. */
-export function listAll(f: MemFilter): MemSessionInfo[] {
+export function listAll(
+  f: MemFilter,
+  warnings: MemWarning[] = [],
+): MemSessionInfo[] {
   const all: MemSessionInfo[] = [];
   if (f.platform === "all" || f.platform === "claude")
     all.push(...claudeListSessions(f));
@@ -83,13 +96,18 @@ export function listAll(f: MemFilter): MemSessionInfo[] {
     all.push(...opencodeListSessions(f));
   if (f.platform === "all" || f.platform === "pi")
     all.push(...piListSessions(f));
+  if (f.platform === "all" || f.platform === "zcode")
+    all.push(...zcodeListSessions(f, warnings));
   all.sort((a, b) =>
     (b.updated ?? b.created ?? "").localeCompare(a.updated ?? a.created ?? ""),
   );
   return all.slice(0, f.limit);
 }
 
-function extractDialogue(s: MemSessionInfo): DialogueTurn[] {
+function extractDialogue(
+  s: MemSessionInfo,
+  warnings: MemWarning[] = [],
+): DialogueTurn[] {
   switch (s.platform) {
     case "claude":
       return claudeExtractDialogue(s);
@@ -99,10 +117,16 @@ function extractDialogue(s: MemSessionInfo): DialogueTurn[] {
       return opencodeExtractDialogue(s);
     case "pi":
       return piExtractDialogue(s);
+    case "zcode":
+      return zcodeExtractDialogue(s, warnings);
   }
 }
 
-function searchSession(s: MemSessionInfo, kw: string): SearchHit {
+function searchSession(
+  s: MemSessionInfo,
+  kw: string,
+  warnings: MemWarning[] = [],
+): SearchHit {
   switch (s.platform) {
     case "claude":
       return claudeSearch(s, kw);
@@ -112,10 +136,15 @@ function searchSession(s: MemSessionInfo, kw: string): SearchHit {
       return opencodeSearch(kw);
     case "pi":
       return piSearch(s, kw);
+    case "zcode":
+      return zcodeSearch(s, kw, warnings);
   }
 }
 
-function collectTurnsAndEvents(s: MemSessionInfo): {
+function collectTurnsAndEvents(
+  s: MemSessionInfo,
+  warnings: MemWarning[] = [],
+): {
   turns: DialogueTurn[];
   events: TaskPyEvent[];
 } {
@@ -128,6 +157,8 @@ function collectTurnsAndEvents(s: MemSessionInfo): {
       return { turns: opencodeExtractDialogue(s), events: [] };
     case "pi":
       return collectPiTurnsAndEvents(s);
+    case "zcode":
+      return collectZcodeTurnsAndEvents(s, warnings);
   }
 }
 
@@ -162,11 +193,12 @@ function searchSessionWithChildren(
   s: MemSessionInfo,
   kw: string,
   childIndex: Map<string, MemSessionInfo[]>,
+  warnings: MemWarning[],
 ): SearchHit {
   const children = childIndex.get(s.id) ?? [];
-  if (children.length === 0) return searchSession(s, kw);
-  const merged: DialogueTurn[] = [...extractDialogue(s)];
-  for (const c of children) merged.push(...extractDialogue(c));
+  if (children.length === 0) return searchSession(s, kw, warnings);
+  const merged: DialogueTurn[] = [...extractDialogue(s, warnings)];
+  for (const c of children) merged.push(...extractDialogue(c, warnings));
   return searchInDialogue(merged, kw);
 }
 
@@ -174,9 +206,10 @@ function searchSessionWithChildren(
 export function findSessionById(
   id: string,
   f: MemFilter,
+  warnings: MemWarning[] = [],
 ): MemSessionInfo | undefined {
   const wide: MemFilter = { ...f, cwd: undefined, limit: WIDE_LIMIT };
-  const all = listAll(wide);
+  const all = listAll(wide, warnings);
   return all.find((s) => s.id === id) ?? all.find((s) => s.id.startsWith(id));
 }
 
@@ -189,9 +222,11 @@ interface PhaseSlice {
 
 /** Slice cleaned dialogue by phase. Claude / Codex / Pi have native boundary
  * detection; OpenCode degrades to "all turns + warning". */
-function sliceMemPhase(s: MemSessionInfo, phase: MemPhase): PhaseSlice {
-  const warnings: MemWarning[] = [];
-
+function sliceMemPhase(
+  s: MemSessionInfo,
+  phase: MemPhase,
+  warnings: MemWarning[] = [],
+): PhaseSlice {
   if (phase === "all" || s.platform === "opencode") {
     if (phase !== "all" && s.platform === "opencode") {
       warnings.push({
@@ -201,7 +236,7 @@ function sliceMemPhase(s: MemSessionInfo, phase: MemPhase): PhaseSlice {
           `returning full dialogue.`,
       });
     }
-    const turns = extractDialogue(s);
+    const turns = extractDialogue(s, warnings);
     return {
       groups: [{ label: null, turns }],
       windows: [],
@@ -210,7 +245,7 @@ function sliceMemPhase(s: MemSessionInfo, phase: MemPhase): PhaseSlice {
     };
   }
 
-  const { turns, events } = collectTurnsAndEvents(s);
+  const { turns, events } = collectTurnsAndEvents(s, warnings);
   const windows = buildBrainstormWindows(events, turns.length);
 
   if (phase === "brainstorm") {
@@ -272,7 +307,10 @@ function sliceMemPhase(s: MemSessionInfo, phase: MemPhase): PhaseSlice {
 export function listMemSessions(
   options?: ListMemSessionsOptions,
 ): MemSessionInfo[] {
-  return listAll(resolveFilter(options?.filter));
+  const warnings: MemWarning[] = [];
+  const sessions = listAll(resolveFilter(options?.filter), warnings);
+  for (const warning of warnings) options?.onWarning?.(warning);
+  return sessions;
 }
 
 /** Multi-token AND grep over cleaned dialogue across all matching sessions,
@@ -284,8 +322,9 @@ export function searchMemSessions(
   const f = resolveFilter(options.filter);
   const kw = options.keyword;
   const includeChildren = options.includeChildren === true;
+  const warnings: MemWarning[] = [];
 
-  const candidates = listAll({ ...f, limit: WIDE_LIMIT });
+  const candidates = listAll({ ...f, limit: WIDE_LIMIT }, warnings);
   const childIndex = includeChildren
     ? buildChildIndex(candidates)
     : new Map<string, MemSessionInfo[]>();
@@ -296,18 +335,26 @@ export function searchMemSessions(
     candidateIds.has(s.parent_id);
 
   const matches: MemSearchMatch[] = [];
-  for (const s of candidates) {
-    if (isAbsorbedChild(s)) continue;
-    const hit = includeChildren
-      ? searchSessionWithChildren(s, kw, childIndex)
-      : searchSession(s, kw);
-    if (hit.count === 0) continue;
-    matches.push({
-      session: s,
-      hit,
-      score: relevanceScore(hit),
-      descendantsMerged: childIndex.get(s.id)?.length ?? 0,
-    });
+  const zcodeCandidate = candidates.find((s) => s.platform === "zcode");
+  if (zcodeCandidate) {
+    prepareZcodeSessionStore(zcodeCandidate.filePath, warnings);
+  }
+  try {
+    for (const s of candidates) {
+      if (isAbsorbedChild(s)) continue;
+      const hit = includeChildren
+        ? searchSessionWithChildren(s, kw, childIndex, warnings)
+        : searchSession(s, kw, warnings);
+      if (hit.count === 0) continue;
+      matches.push({
+        session: s,
+        hit,
+        score: relevanceScore(hit),
+        descendantsMerged: childIndex.get(s.id)?.length ?? 0,
+      });
+    }
+  } finally {
+    releaseZcodeSessionStore();
   }
   matches.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
@@ -320,7 +367,7 @@ export function searchMemSessions(
   return {
     matches: matches.slice(0, f.limit),
     totalMatches: matches.length,
-    warnings: [],
+    warnings,
   };
 }
 
@@ -331,10 +378,11 @@ export function extractMemDialogue(
 ): MemExtractResult {
   const f = resolveFilter(options.filter);
   const phase: MemPhase = options.phase ?? "all";
-  const s = findSessionById(options.sessionId, f);
-  if (!s) throw new MemSessionNotFoundError(options.sessionId);
+  const warnings: MemWarning[] = [];
+  const s = findSessionById(options.sessionId, f, warnings);
+  if (!s) throw new MemSessionNotFoundError(options.sessionId, warnings);
 
-  const slice = sliceMemPhase(s, phase);
+  const slice = sliceMemPhase(s, phase, warnings);
   const grepLc =
     typeof options.grep === "string" ? options.grep.toLowerCase() : undefined;
   const filterTurns = (turns: DialogueTurn[]): DialogueTurn[] =>

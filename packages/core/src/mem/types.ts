@@ -7,7 +7,7 @@
  * reads channel events.
  */
 
-export type MemSourceKind = "claude" | "codex" | "opencode" | "pi";
+export type MemSourceKind = "claude" | "codex" | "opencode" | "pi" | "zcode";
 export type MemSourceFilter = MemSourceKind | "all";
 export type MemPhase = "brainstorm" | "implement" | "all";
 export type DialogueRole = "user" | "assistant";
@@ -157,6 +157,9 @@ export interface TaskPyEvent {
 
 export interface ListMemSessionsOptions {
   filter?: MemFilter;
+  /** Optional sink for non-fatal source warnings while preserving the
+   * historical array return type. */
+  onWarning?: (warning: MemWarning) => void;
 }
 
 export interface SearchMemSessionsOptions {
@@ -191,4 +194,5 @@ export interface ExtractMemDialogueOptions {
 
 export interface ListMemProjectsOptions {
   filter?: MemFilter;
+  onWarning?: (warning: MemWarning) => void;
 }

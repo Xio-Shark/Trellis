@@ -177,10 +177,10 @@ describe("trellis template constants", () => {
     const implement = stepSection("2.1");
     const hookAutoBlock = platformBlock(
       implement,
-      "[Claude Code, Cursor, OpenCode, CodeBuddy, Droid, Pi, Oh My Pi]",
+      "[Claude Code, Cursor, OpenCode, CodeBuddy, Droid, Pi, ZCode, Oh My Pi]",
     );
     const pullBasedMarker =
-      "[codex-sub-agent, Gemini, Qoder, Copilot, ZCode, Reasonix, Trae, Grok]";
+      "[codex-sub-agent, Gemini, Qoder, Copilot, Reasonix, Trae, Grok]";
     const pullBasedBlock = platformBlock(implement, pullBasedMarker);
 
     const workflowLabelByPlatform: Partial<Record<AITool, string>> = {
@@ -188,7 +188,6 @@ describe("trellis template constants", () => {
       gemini: "Gemini",
       qoder: "Qoder",
       copilot: "Copilot",
-      zcode: "ZCode",
       trae: "Trae",
       grok: "Grok",
     };

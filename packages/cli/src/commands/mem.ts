@@ -70,6 +70,7 @@ const VALID_PLATFORMS: readonly string[] = [
   "codex",
   "opencode",
   "pi",
+  "zcode",
   "all",
 ];
 
@@ -176,10 +177,23 @@ function printSessions(rows: readonly MemSessionInfo[]): void {
 
 // ---------- commands ----------
 
+function printWarnings(
+  warnings: readonly { message: string }[] | undefined,
+): void {
+  for (const warning of warnings ?? []) {
+    console.error(`warning: ${warning.message}`);
+  }
+}
+
 function cmdList(argv: Argv): void {
   const f = buildFilter(argv.flags);
   maybeWarnOpencode(f);
-  const rows = listMemSessions({ filter: f });
+  const warnings: { message: string }[] = [];
+  const rows = listMemSessions({
+    filter: f,
+    onWarning: (warning) => warnings.push(warning),
+  });
+  printWarnings(warnings);
   if (argv.flags.json) {
     console.log(JSON.stringify(rows, null, 2));
     return;
@@ -204,6 +218,7 @@ function cmdSearch(argv: Argv): void {
     filter: f,
     includeChildren,
   });
+  printWarnings(result.warnings);
   const top = result.matches;
 
   if (argv.flags.json) {
@@ -261,7 +276,12 @@ function cmdProjects(argv: Argv): void {
   // recent activity, then picks one for `--cwd` in a follow-up `search`.
   const f = buildFilter({ ...argv.flags, global: true });
   maybeWarnOpencode(f);
-  const rows = listMemProjects({ filter: f });
+  const warnings: { message: string }[] = [];
+  const rows = listMemProjects({
+    filter: f,
+    onWarning: (warning) => warnings.push(warning),
+  });
+  printWarnings(warnings);
   const limit = parseOptionalNumberFlag(argv.flags.limit, "--limit", 30);
   const top = rows.slice(0, limit);
 
@@ -327,10 +347,13 @@ function cmdContext(argv: Argv): void {
       includeChildren,
     });
   } catch (error) {
-    if (error instanceof MemSessionNotFoundError)
+    if (error instanceof MemSessionNotFoundError) {
+      printWarnings(error.warnings);
       die(`session not found: ${id}`);
+    }
     throw error;
   }
+  printWarnings(result.warnings);
   const s = result.session;
 
   if (argv.flags.json) {
@@ -408,12 +431,14 @@ function cmdExtract(argv: Argv): void {
   try {
     result = extractMemDialogue({ sessionId: id, filter: f, phase, grep });
   } catch (error) {
-    if (error instanceof MemSessionNotFoundError)
+    if (error instanceof MemSessionNotFoundError) {
+      printWarnings(error.warnings);
       die(`session not found: ${id}`);
+    }
     throw error;
   }
 
-  for (const w of result.warnings) console.error(`warning: ${w.message}`);
+  printWarnings(result.warnings);
 
   const s = result.session;
   if (argv.flags.json) {
@@ -455,7 +480,7 @@ function cmdExtract(argv: Argv): void {
 }
 
 function cmdHelp(): void {
-  console.log(`trellis mem — list/search Claude/Codex/OpenCode/Pi sessions
+  console.log(`trellis mem — list/search Claude/Codex/OpenCode/Pi/ZCode sessions
 
 commands:
   list                          list sessions (default if no command)
@@ -467,7 +492,7 @@ commands:
                                 use this to discover which --cwd to pass to search
 
 flags:
-  --platform claude|codex|opencode|pi|all   default all
+  --platform claude|codex|opencode|pi|zcode|all   default all
   --since YYYY-MM-DD                     inclusive lower bound
   --until YYYY-MM-DD                     inclusive upper bound
   --global                               include all projects (default: cwd-scoped)
@@ -476,7 +501,7 @@ flags:
   --grep KW                              extract / context: filter turns by keyword (multi-token AND)
   --phase brainstorm|implement|all       extract: slice by Trellis brainstorm windows
                                          (default all; brainstorm = [task.py create, task.py start);
-                                         Claude/Codex/Pi supported; OpenCode warns + returns all)
+                                         Claude/Codex/Pi/ZCode supported; OpenCode warns + returns all)
   --turns N                              context: number of hit turns to return (default 3)
   --around N                             context: turns of surrounding context per hit (default 1)
   --max-chars N                          context: total char budget (default 6000, ~1500 tokens)
