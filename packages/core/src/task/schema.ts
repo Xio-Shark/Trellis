@@ -2,7 +2,7 @@
  * Canonical task.json shape — single source of truth for Trellis tasks.
  *
  * The runtime Python writer is `.trellis/scripts/common/task_store.py`
- * (`cmd_create`). The 24-field shape and field order below mirror that
+ * (`cmd_create`). The field shape and field order below mirror that
  * writer exactly so every TS and Python entry point produces structurally
  * identical task.json files.
  *
@@ -32,6 +32,10 @@ export interface TrellisTaskRecord {
   subtasks: string[];
   children: string[];
   parent: string | null;
+  /** Sibling dependency edges (task directory names). Empty = no deps. */
+  depends_on: string[];
+  /** Parallel isolation: worktree | shared | null (unset / serial). */
+  isolation: "worktree" | "shared" | null;
   relatedFiles: string[];
   notes: string;
   meta: Record<string, unknown>;
@@ -63,6 +67,8 @@ export const TASK_RECORD_FIELD_ORDER = [
   "subtasks",
   "children",
   "parent",
+  "depends_on",
+  "isolation",
   "relatedFiles",
   "notes",
   "meta",
@@ -94,11 +100,13 @@ const NULLABLE_STRING_FIELDS: ReadonlySet<TaskRecordField> = new Set([
   "commit",
   "pr_url",
   "parent",
+  "isolation",
 ]);
 
 const STRING_ARRAY_FIELDS: ReadonlySet<TaskRecordField> = new Set([
   "subtasks",
   "children",
+  "depends_on",
   "relatedFiles",
 ]);
 
@@ -166,6 +174,13 @@ function assignField(
     if (value !== null && typeof value !== "string") {
       throw new Error(`task.${field} must be a string or null`);
     }
+    if (field === "isolation" && value !== null) {
+      if (value !== "worktree" && value !== "shared") {
+        throw new Error(
+          'task.isolation must be "worktree", "shared", or null',
+        );
+      }
+    }
     bag[field] = value;
     return;
   }
@@ -191,7 +206,7 @@ function assignField(
 /**
  * Produce a fully-populated canonical-shape {@link TrellisTaskRecord}.
  *
- * All 24 fields are present in canonical order. `overrides` shallow-merges
+ * All canonical fields are present in canonical order. `overrides` shallow-merges
  * over the defaults — callers supply per-task values (id, name, title,
  * assignee, createdAt, etc.) and leave null-default fields untouched
  * unless they have a real value.
@@ -222,6 +237,8 @@ export function emptyTaskRecord(
     subtasks: [],
     children: [],
     parent: null,
+    depends_on: [],
+    isolation: null,
     relatedFiles: [],
     notes: "",
     meta: {},
@@ -232,6 +249,9 @@ export function emptyTaskRecord(
   }
   if (overrides.children !== undefined) {
     record.children = [...overrides.children];
+  }
+  if (overrides.depends_on !== undefined) {
+    record.depends_on = [...overrides.depends_on];
   }
   if (overrides.relatedFiles !== undefined) {
     record.relatedFiles = [...overrides.relatedFiles];

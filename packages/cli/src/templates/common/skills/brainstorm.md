@@ -164,6 +164,20 @@ Lightweight tasks may have only `prd.md`. Complex tasks must have `prd.md`, `des
 
 `implement.md` is not a replacement for `implement.jsonl`. On sub-agent-dispatch workflows, `implement.jsonl` and `check.jsonl` must each contain at least one real spec/research entry before `task.py start`; the seed `_example` row does not count. Inline workflows skip this JSONL gate because Phase 2 loads context through `trellis-before-dev`.
 
+## Parallel Decoupled Children
+
+When one request has several independently verifiable deliverables:
+
+1. Create a parent + children (`task.py create ... --parent ...`).
+2. For each child pair, ask whether they share files/types/tests. Shared → add a `depends_on` edge or merge; not shared → parallel candidate.
+3. Dual-write on every child:
+   - `task.json`: `depends_on` (directory names) + `isolation` (`worktree` for code, `shared` ok for docs/readonly)
+   - `prd.md` / `implement.md`: a `## Dependencies` block mirroring those fields
+4. Human reviews the ready set (`task.py ready <parent>`; `task.py drift <parent>` warns only).
+5. MVP: manually spawn channel workers for ready children. Auto spawn / `--yes` is Phase B.
+
+Tree position is ownership, not ordering. See `.trellis/spec/guides/parallel-decoupled-tasks.md`.
+
 ## PRD Convergence Pass
 
 Before declaring planning ready or running `task.py start`, rewrite `prd.md` once against the final structure described in the artifact rules above. This is not optional cleanup; it is the final planning gate.

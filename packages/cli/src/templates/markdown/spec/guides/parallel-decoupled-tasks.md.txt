@@ -1,0 +1,127 @@
+# Parallel Decoupled Tasks
+
+> **Purpose**: Split complex work into independently verifiable children with an explicit dependency graph, then dispatch ready sets safely.
+
+---
+
+## When to Use
+
+- One request has **several deliverables** that can be verified independently
+- Some children can run **in parallel**; others must wait on siblings
+- You need a clear **ready / blocked** view before spawning agents
+
+If the work is a single serial deliverable, stay with one task — do not invent a graph.
+
+---
+
+## Tree vs dependency graph
+
+| Concept | Field / structure | Means |
+|---------|-------------------|--------|
+| Ownership tree | `parent` / `children` | Who owns the map and integration |
+| Sibling deps | `depends_on: string[]` | Directory names that must be `completed`/`done`/archived first |
+| Isolation | `isolation: "worktree" \| "shared"` | How safe parallel writers are |
+
+**Authoritative**: `task.json`. Markdown `## Dependencies` is a human/agent-readable projection.
+
+---
+
+## Dual-write contract
+
+In each child `task.json`:
+
+```json
+{
+  "depends_on": ["07-16-sibling-a"],
+  "isolation": "worktree"
+}
+```
+
+And in that child's `prd.md` (or `implement.md`):
+
+```markdown
+## Dependencies
+- depends_on: `07-16-sibling-a`
+- isolation: worktree
+- parallel_group: wave-1
+```
+
+Legacy tasks missing these fields ≡ `depends_on: []` and unset isolation (serial behavior unchanged).
+
+`task.py drift <parent>` warns on mismatch. Drift does **not** block `ready` in MVP. json→markdown sync is reserved for a later phase; Phase B may fail-closed on drift before auto spawn.
+
+---
+
+## Isolation rules
+
+| Value | Use when | Parallel rule |
+|-------|----------|---------------|
+| `worktree` | Code / shared types / tests will change | Each worker gets its own worktree/branch |
+| `shared` | Docs, research, readonly analysis | Same cwd allowed |
+| unset | Serial or not yet planned | Do not assume parallel safety |
+
+**Never** same-cwd multi-writer for code tasks.
+
+---
+
+## Planning checklist
+
+1. Complex multi-deliverable → parent + children.
+2. For each child pair: shared files/types/tests? Yes → edge or merge; No → parallel candidate.
+3. Write `depends_on` + `isolation` to `task.json` and dual-write markdown.
+4. Human reviews parallel groups (default). Then:
+   ```bash
+   python3 ./.trellis/scripts/task.py ready <parent-dir>
+   python3 ./.trellis/scripts/task.py drift <parent-dir>
+   ```
+5. MVP: manually spawn channel workers for the ready set (`isolation=worktree` → independent worktree).
+6. When all required children complete → parent integration (merge/check). Conflicts → serial fix; do not pretend parallel succeeded.
+
+---
+
+## Demo path (MVP A)
+
+Example: parent with three children
+
+- `child-a`: `depends_on: []`, `isolation: worktree`
+- `child-b`: `depends_on: []`, `isolation: worktree`
+- `child-c`: `depends_on: [child-a, child-b]`, `isolation: worktree`
+
+Wave 1: `ready` lists A and B; C is blocked. Human confirms → spawn A and B in separate worktrees.  
+Wave 2: after A and B are completed/archived, `ready` lists C.  
+Finally: parent integrates.
+
+Cycle in the parent subgraph → `ready` fails closed (exit non-zero).
+
+---
+
+## CLI reference (MVP A)
+
+```bash
+python3 ./.trellis/scripts/task.py ready <parent-dir>
+python3 ./.trellis/scripts/task.py drift <parent-dir>   # warn exit may be non-zero; does not block ready
+python3 ./.trellis/scripts/task.py deps <task-dir>
+```
+
+Ready predicate: every `depends_on` entry is completed/done/archived; child status is actionable (`planning` / `pending` / `in_progress`); no cycle.
+
+---
+
+## Roadmap (A → B → C → full)
+
+| Phase | Capability | Status |
+|-------|------------|--------|
+| **A (MVP)** | Protocol + `ready`/`drift`/`deps` + planning docs; **manual** spawn | This guide |
+| **B** | Auto spawn ready set after human confirm; `dispatch-ready [--yes]` / config `parallel.auto_confirm`; wave recompute; failure does not unlock downstream | Documented / future |
+| **C** | Default worker → `xio` (or profile); worktree/merge aligned with xiocode; Trellis still owns the graph | Documented / future |
+| **Full** | Parent integration gate; conflict degrade to serial; optional drift fail-closed | Documented / future |
+
+`--yes` and markdown sync are **reserved** for Phase B+ — do not fake flags in MVP.
+
+---
+
+## Out of scope
+
+- Same-cwd multi-writer parallel code edits
+- Claiming perfect automatic decoupling
+- Implementing the DAG engine inside an app worker (e.g. xiocode) — Trellis owns orchestration

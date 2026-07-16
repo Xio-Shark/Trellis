@@ -46,6 +46,11 @@ class TaskData(TypedDict, total=False):
     subtasks: list[str]
     children: list[str]
     parent: str | None
+    # Sibling dependency edges (orthogonal to parent/children tree).
+    # Directory names; missing field ≡ [].
+    depends_on: list[str]
+    # Parallel isolation hint: "worktree" | "shared". Unset = not forced.
+    isolation: str
     relatedFiles: list[str]
     notes: str
     meta: dict
@@ -87,6 +92,22 @@ class TaskInfo:
     @property
     def branch(self) -> str | None:
         return self.raw.get("branch")
+
+    @property
+    def depends_on(self) -> tuple[str, ...]:
+        """Sibling dependency directory names (empty if unset / legacy)."""
+        raw = self.raw.get("depends_on") or []
+        if not isinstance(raw, list):
+            return ()
+        return tuple(str(x).strip() for x in raw if isinstance(x, str) and str(x).strip())
+
+    @property
+    def isolation(self) -> str | None:
+        """Parallel isolation: worktree | shared | None if unset."""
+        value = self.raw.get("isolation")
+        if isinstance(value, str) and value.strip() in ("worktree", "shared"):
+            return value.strip()
+        return None
 
     @property
     def meta(self) -> dict:

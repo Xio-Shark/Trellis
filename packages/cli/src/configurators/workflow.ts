@@ -33,6 +33,7 @@ import {
   guidesIndexContent,
   guidesCrossLayerThinkingGuideContent,
   guidesCodeReuseThinkingGuideContent,
+  guidesParallelDecoupledTasksContent,
 } from "../templates/markdown/index.js";
 
 import { writeFile, ensureDir } from "../utils/file-writer.js";
@@ -241,6 +242,10 @@ async function createSpecTemplates(
     {
       name: "code-reuse-thinking-guide.md",
       content: guidesCodeReuseThinkingGuideContent,
+    },
+    {
+      name: "parallel-decoupled-tasks.md",
+      content: guidesParallelDecoupledTasksContent,
     },
   ];
   for (const doc of guidesDocs) {

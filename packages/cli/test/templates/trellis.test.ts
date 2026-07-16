@@ -268,9 +268,10 @@ describe("trellis template constants", () => {
     expect(workflowMdTemplate).toContain(
       "several independently verifiable deliverables",
     );
-    expect(workflowMdTemplate).toContain(
-      "Parent/child structure is not a dependency system",
-    );
+    expect(workflowMdTemplate).toContain("Tree ≠ dependency graph");
+    expect(workflowMdTemplate).toContain("depends_on");
+    expect(workflowMdTemplate).toContain("isolation");
+    expect(workflowMdTemplate).toContain("task.py ready <parent-dir>");
     expect(workflowMdTemplate).toContain("--parent <parent-dir>");
     expect(workflowMdTemplate).toContain("task.py add-subtask <parent> <child>");
     expect(workflowMdTemplate).toContain(
@@ -283,9 +284,8 @@ describe("trellis template constants", () => {
     expect(step).toContain("When considering a parent/child split");
     expect(step).toContain("Parent tasks own source requirements");
     expect(step).toContain("Child tasks own actual deliverables");
-    expect(step).toContain(
-      "Parent/child structure is not a dependency system",
-    );
+    expect(step).toContain("Tree ≠ dependency graph");
+    expect(step).toContain("depends_on");
     expect(step).toContain("Do not start the parent unless");
   });
 
@@ -295,7 +295,8 @@ describe("trellis template constants", () => {
     for (const block of [planning, planningInline]) {
       expect(block).toContain("Multi-deliverable scope");
       expect(block).toContain("parent task plus independently verifiable child tasks");
-      expect(block).toContain("not implied by tree position");
+      expect(block).toContain("depends_on");
+      expect(block).toContain("tree position alone is not a dependency");
     }
   });
 
@@ -321,6 +322,7 @@ describe("getAllScripts", () => {
     expect(scripts.has("common/__init__.py")).toBe(true);
     expect(scripts.has("common/paths.py")).toBe(true);
     expect(scripts.has("common/active_task.py")).toBe(true);
+    expect(scripts.has("common/task_deps.py")).toBe(true);
     expect(scripts.has("task.py")).toBe(true);
     expect(scripts.has("get_developer.py")).toBe(true);
   });
