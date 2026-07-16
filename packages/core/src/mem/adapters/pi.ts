@@ -150,7 +150,7 @@ function candidateFiles(f: MemFilter): string[] {
     }
   };
 
-  for (const root of piSessionRoots()) {
+  for (const root of piSessionRoots(f.cwd)) {
     if (f.cwd && path.resolve(root) === path.resolve(defaultRoot)) {
       pushJsonlFiles(piProjectDirFromCwd(f.cwd));
     } else {

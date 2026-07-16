@@ -100,8 +100,8 @@ interface ChangeAnalysis {
 type ConflictAction = "overwrite" | "skip" | "create-new";
 
 const CLAUDE_SETTINGS_PATH = ".claude/settings.json";
-const TRELLIS_BLOCK_START = "<!-- TRELLIS:START -->";
-const TRELLIS_BLOCK_END = "<!-- TRELLIS:END -->";
+export const TRELLIS_BLOCK_START = "<!-- TRELLIS:START -->";
+export const TRELLIS_BLOCK_END = "<!-- TRELLIS:END -->";
 const LEGACY_UNTRACKED_AGENTS_MD_BLOCK_HASHES = new Set<string>([
   // v0.5.0-beta.17 and earlier wrote AGENTS.md but did not hash-track it.
   // This hash is the pristine Trellis-managed block before the Subagents
@@ -317,11 +317,13 @@ interface SafeFileDeleteClassified {
  * - File exists
  * - Content hash matches allowed_hashes
  * - Path is not protected or in update.skip
+ * - Path is not owned by the current template set
  */
 function collectSafeFileDeletes(
   migrations: MigrationItem[],
   cwd: string,
   skipPaths: string[],
+  currentTemplatePaths: ReadonlySet<string>,
   /**
    * Bypass `update.skip` for safe-file-delete. Enable this for breaking releases
    * where honoring skip would leave the project half-migrated (old files at
@@ -331,7 +333,11 @@ function collectSafeFileDeletes(
    */
   bypassUpdateSkip = false,
 ): SafeFileDeleteClassified[] {
-  const safeDeletes = migrations.filter((m) => m.type === "safe-file-delete");
+  // Historical migrations are loaded forever, so current template ownership
+  // must win when a later release intentionally restores a retired path.
+  const safeDeletes = migrations.filter(
+    (m) => m.type === "safe-file-delete" && !currentTemplatePaths.has(m.from),
+  );
   const results: SafeFileDeleteClassified[] = [];
 
   for (const item of safeDeletes) {
@@ -1439,7 +1445,26 @@ function isFileSafeToReplace(
 /**
  * Classify migrations based on file state and user modifications
  */
-function classifyMigrations(
+/**
+ * Whether the manifest records any file under `dirRelativePath` — i.e. whether
+ * Trellis actually created this directory. Used to gate rename-dir migrations:
+ * a directory Trellis never wrote (e.g. a user's own `.windsurf/` editor
+ * config that merely shares a path with a retired Trellis platform dir) must
+ * not be auto-moved.
+ */
+export function dirHasManifestEntries(
+  dirRelativePath: string,
+  hashes: TemplateHashes,
+): boolean {
+  const prefix = dirRelativePath.endsWith("/")
+    ? dirRelativePath
+    : dirRelativePath + "/";
+  return Object.keys(hashes).some(
+    (key) => key === dirRelativePath || key.startsWith(prefix),
+  );
+}
+
+export function classifyMigrations(
   migrations: MigrationItem[],
   cwd: string,
   hashes: TemplateHashes,
@@ -1515,9 +1540,17 @@ function classifyMigrations(
           // Target has user modifications - conflict
           result.conflict.push(item);
         }
-      } else {
-        // Directory rename - always auto (includes user files)
+      } else if (dirHasManifestEntries(item.from, hashes)) {
+        // Trellis created this directory (the manifest tracks files under it),
+        // so the rename is ours to make.
         result.auto.push(item);
+      } else {
+        // Target absent and the source has no manifest record: this is very
+        // likely a user-owned directory that merely shares a path with a
+        // retired Trellis platform dir (e.g. a real `.windsurf/` editor
+        // config). Skipping avoids silently moving the user's data out from
+        // under their editor — even under --force, since skip never executes.
+        result.skip.push(item);
       }
     } else if (item.type === "delete") {
       if (isTemplateModified(cwd, item.from, hashes)) {
@@ -1592,7 +1625,9 @@ function printMigrationSummary(classified: ClassifiedMigrations): void {
   }
 
   if (classified.skip.length > 0) {
-    console.log(chalk.gray("  ○ Skipping (old file not found):"));
+    console.log(
+      chalk.gray("  ○ Skipping (not found, protected, or not Trellis-owned):"),
+    );
     for (const item of classified.skip.slice(0, 3)) {
       console.log(chalk.gray(`    ${item.from}`));
     }
@@ -1941,6 +1976,43 @@ function printMigrationResult(result: MigrationResult): void {
 }
 
 /**
+ * One-time 0.2.0 migration: rename `traces-*.md` → `journal-*.md` in every
+ * developer workspace directory.
+ *
+ * Never overwrites an existing `journal-N.md`: a newer session may already
+ * have created it, and `.trellis/workspace/` is excluded from the update
+ * backup (see `BACKUP_EXCLUDE_PATTERNS`), so clobbering it would be
+ * unrecoverable data loss. Conflicting `traces-N.md` files are left in place
+ * and reported instead.
+ */
+export function renameTracesToJournal(workspaceDir: string): {
+  renamed: number;
+  skipped: string[];
+} {
+  const skipped: string[] = [];
+  let renamed = 0;
+  if (!fs.existsSync(workspaceDir)) return { renamed, skipped };
+
+  for (const dev of fs.readdirSync(workspaceDir)) {
+    const devPath = path.join(workspaceDir, dev);
+    if (!fs.statSync(devPath).isDirectory()) continue;
+
+    for (const file of fs.readdirSync(devPath)) {
+      if (!(file.startsWith("traces-") && file.endsWith(".md"))) continue;
+      const oldPath = path.join(devPath, file);
+      const newPath = path.join(devPath, file.replace("traces-", "journal-"));
+      if (fs.existsSync(newPath)) {
+        skipped.push(oldPath);
+        continue;
+      }
+      fs.renameSync(oldPath, newPath);
+      renamed++;
+    }
+  }
+  return { renamed, skipped };
+}
+
+/**
  * Main update command
  */
 export async function update(options: UpdateOptions): Promise<void> {
@@ -2106,6 +2178,7 @@ export async function update(options: UpdateOptions): Promise<void> {
     allMigrations,
     cwd,
     skipPaths,
+    new Set(templates.keys()),
     breakingBypass,
   );
   const hasSafeDeletes =
@@ -2413,29 +2486,19 @@ export async function update(options: UpdateOptions): Promise<void> {
     // and variable file numbers (traces-1.md, traces-2.md, etc.), so we can't enumerate them
     // in the migration manifest. This is a one-time migration for the 0.2.0 naming redesign.
     const workspaceDir = path.join(cwd, PATHS.WORKSPACE);
-    if (fs.existsSync(workspaceDir)) {
-      let journalRenamed = 0;
-      const devDirs = fs.readdirSync(workspaceDir);
-      for (const dev of devDirs) {
-        const devPath = path.join(workspaceDir, dev);
-        if (!fs.statSync(devPath).isDirectory()) continue;
-
-        const files = fs.readdirSync(devPath);
-        for (const file of files) {
-          if (file.startsWith("traces-") && file.endsWith(".md")) {
-            const oldPath = path.join(devPath, file);
-            const newFile = file.replace("traces-", "journal-");
-            const newPath = path.join(devPath, newFile);
-            fs.renameSync(oldPath, newPath);
-            journalRenamed++;
-          }
-        }
-      }
-      if (journalRenamed > 0) {
-        console.log(
-          chalk.cyan(`Renamed ${journalRenamed} traces file(s) to journal`),
-        );
-      }
+    const { renamed: journalRenamed, skipped: journalSkipped } =
+      renameTracesToJournal(workspaceDir);
+    if (journalRenamed > 0) {
+      console.log(
+        chalk.cyan(`Renamed ${journalRenamed} traces file(s) to journal`),
+      );
+    }
+    for (const oldPath of journalSkipped) {
+      console.warn(
+        chalk.yellow(
+          `Kept ${path.relative(cwd, oldPath)}: its journal target already exists`,
+        ),
+      );
     }
   }
 

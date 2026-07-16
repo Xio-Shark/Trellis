@@ -297,7 +297,11 @@ export function wrapWithCommandFrontmatter(
       `Missing command description for "${baseName}". Add it to COMMAND_DESCRIPTIONS in shared.ts.`,
     );
   }
-  return `---\nname: ${name}\ndescription: ${description}\n---\n\n${content}`;
+  // JSON.stringify produces a double-quoted YAML scalar, which is safe even
+  // when the description contains a colon (an unquoted plain scalar cannot
+  // contain ": " — some parsers reject it outright, e.g. Trae CLI's SlashCommand
+  // schema; others silently truncate at the second colon).
+  return `---\nname: ${name}\ndescription: ${JSON.stringify(description)}\n---\n\n${content}`;
 }
 
 /**
@@ -325,9 +329,12 @@ export function wrapWithOmpFrontmatter(name: string, content: string): string {
   // Strip leading H1 + blank line from template body
   const body = content.replace(/^# [^\n]+\n\n/, "");
   const hint = COMMAND_ARGUMENT_HINTS[baseName];
+  // JSON.stringify produces a double-quoted YAML scalar, safe even when the
+  // description contains a colon (see wrapWithCommandFrontmatter).
+  const quotedDescription = JSON.stringify(description);
   const frontmatter = hint
-    ? `---\ndescription: ${description}\nargument-hint: ${hint}\n---`
-    : `---\ndescription: ${description}\n---`;
+    ? `---\ndescription: ${quotedDescription}\nargument-hint: ${JSON.stringify(hint)}\n---`
+    : `---\ndescription: ${quotedDescription}\n---`;
   return `${frontmatter}\n\n${body}`;
 }
 
@@ -366,7 +373,7 @@ export interface ResolvedSkillFile {
  * auto-injects the workflow overview, so a user-facing `start` would be
  * redundant.
  *
- * `agentCapable && !hasHooks` platforms (Codex, ZCode, OpenCode, Reasonix)
+ * `agentCapable && !hasHooks` platforms (Codex, ZCode, OpenCode, Reasonix, Grok)
  * have no such hook (or use an out-of-band plugin), so they need the
  * user-invocable `trellis-start` skill / `start.md` command as fallback.
  * Agent-less platforms (Kilo, Antigravity, Devin) also keep `start` since

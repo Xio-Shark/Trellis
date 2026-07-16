@@ -44,6 +44,7 @@ _KNOWN_PLATFORMS = {
     "copilot",
     "pi",
     "trae",
+    "grok",
     "zcode",
 }
 

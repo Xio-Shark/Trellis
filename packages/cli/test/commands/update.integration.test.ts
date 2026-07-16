@@ -246,6 +246,17 @@ describe("update() integration", () => {
     expect(entries.filter((e) => e.startsWith(".backup-")).length).toBe(0);
   });
 
+  it("#1b current OpenCode templates are not classified as deprecated", async () => {
+    const startPath = ".opencode/commands/trellis/start.md";
+    await init({ yes: true, force: true, opencode: true });
+    expect(fs.existsSync(projectFile(startPath))).toBe(true);
+
+    await update({ dryRun: true });
+
+    const output = vi.mocked(console.log).mock.calls.flat().join("\n");
+    expect(output).not.toContain(`${startPath} (modified, skipped)`);
+  });
+
   it("[issue-zcode-codex-upgrade] zcode private skills do not trigger legacy Codex backfill", async () => {
     await init({ yes: true, force: true, zcode: true });
 
@@ -1355,7 +1366,7 @@ describe("update() integration", () => {
     const updated = fs.readFileSync(workflowPath, "utf-8");
     expect(updated).toBe(replacePythonCommandLiterals(workflowMdTemplate));
     expect(updated).toContain(
-      "[codex-sub-agent, Gemini, Qoder, Copilot, Reasonix, Trae]",
+      "[codex-sub-agent, Gemini, Qoder, Copilot, Reasonix, Trae, Grok]",
     );
     expect(updated).toContain(
       "[/Claude Code, Cursor, OpenCode, CodeBuddy, Droid, Pi, ZCode, Oh My Pi]",

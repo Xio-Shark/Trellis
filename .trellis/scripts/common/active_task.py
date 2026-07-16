@@ -43,6 +43,8 @@ _KNOWN_PLATFORMS = {
     "kiro",
     "copilot",
     "pi",
+    "trae",
+    "grok",
     "zcode",
 }
 
@@ -58,6 +60,7 @@ _ENV_SESSION_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("kiro", ("KIRO_SESSION_ID",)),
     ("copilot", ("COPILOT_SESSION_ID", "COPILOT_SESSIONID")),
     ("pi", ("PI_SESSION_ID", "PI_SESSIONID")),
+    ("trae", ("TRAE_SESSION_ID",)),
     # ZCode reuses CLAUDE_SESSION_ID (it does not document a ZCODE_SESSION_ID).
     # Platform-scoped lookup (_iter_env_keys filters by platform name), so this
     # only fires when the resolver already detected "zcode" — no collision with
