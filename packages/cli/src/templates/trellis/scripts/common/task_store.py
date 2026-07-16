@@ -330,6 +330,9 @@ def cmd_create(args: argparse.Namespace) -> int:
         "subtasks": [],
         "children": [],
         "parent": None,
+        # Sibling dependency edges (orthogonal to parent/children).
+        "depends_on": [],
+        "isolation": None,
         "relatedFiles": [],
         "notes": "",
         "meta": {},

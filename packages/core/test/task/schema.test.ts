@@ -19,6 +19,8 @@ describe("emptyTaskRecord", () => {
     expect(record.dev_type).toBeNull();
     expect(record.subtasks).toEqual([]);
     expect(record.children).toEqual([]);
+    expect(record.depends_on).toEqual([]);
+    expect(record.isolation).toBeNull();
     expect(record.relatedFiles).toEqual([]);
     expect(record.meta).toEqual({});
     expect(record.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -42,6 +44,7 @@ describe("emptyTaskRecord", () => {
   it("copies collection overrides so callers cannot share mutable state", () => {
     const overrides = {
       children: ["child-a"],
+      depends_on: ["dep-a"],
       relatedFiles: ["src/demo.ts"],
       subtasks: ["subtask-a"],
       meta: { tracker: "demo", nested: { id: "n1" } },
@@ -50,6 +53,7 @@ describe("emptyTaskRecord", () => {
     const second = emptyTaskRecord(overrides);
 
     overrides.children.push("child-b");
+    overrides.depends_on.push("dep-b");
     overrides.meta.nested.id = "changed-by-override";
     first.relatedFiles.push("src/changed.ts");
     first.subtasks.push("subtask-b");
@@ -57,8 +61,10 @@ describe("emptyTaskRecord", () => {
     (first.meta.nested as { id: string }).id = "changed-by-first";
 
     expect(first.children).toEqual(["child-a"]);
+    expect(first.depends_on).toEqual(["dep-a"]);
     expect(second.relatedFiles).toEqual(["src/demo.ts"]);
     expect(second.subtasks).toEqual(["subtask-a"]);
+    expect(second.depends_on).toEqual(["dep-a"]);
     expect(second.meta).toEqual({ tracker: "demo", nested: { id: "n1" } });
   });
 });
@@ -116,10 +122,21 @@ describe("taskRecordSchema", () => {
       branch: null,
       worktree_path: null,
       parent: null,
+      isolation: null,
     });
     expect(parsed.branch).toBeNull();
     expect(parsed.worktree_path).toBeNull();
     expect(parsed.parent).toBeNull();
+    expect(parsed.isolation).toBeNull();
+  });
+
+  it("rejects invalid isolation values", () => {
+    expect(() =>
+      taskRecordSchema.parse({
+        ...emptyTaskRecord(),
+        isolation: "same-cwd",
+      }),
+    ).toThrow(/task.isolation must be/);
   });
 
   it("safeParse returns success / error discriminated result", () => {

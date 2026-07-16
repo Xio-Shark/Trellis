@@ -19,6 +19,9 @@ Usage:
     python3 task.py list-archive [month]        # List archived tasks
     python3 task.py add-subtask <parent-dir> <child-dir>     # Link child to parent
     python3 task.py remove-subtask <parent-dir> <child-dir>  # Unlink child from parent
+    python3 task.py ready <parent-dir>          # Ready/blocked children (+ isolation)
+    python3 task.py drift <parent-dir>          # Warn on json vs ## Dependencies drift
+    python3 task.py deps <task-dir>             # Show depends_on + reverse dependents
 """
 
 from __future__ import annotations
@@ -60,6 +63,13 @@ from common.task_context import (
     cmd_add_context,
     cmd_validate,
     cmd_list_context,
+)
+from common.task_deps import (
+    evaluate_drift,
+    evaluate_ready,
+    get_depends_on,
+    get_isolation,
+    reverse_dependents,
 )
 
 
@@ -296,6 +306,170 @@ def cmd_list_archive(args: argparse.Namespace) -> int:
 
 
 # =============================================================================
+# Command: ready / drift / deps (parallel orchestration MVP A)
+# =============================================================================
+
+def _fmt_isolation(value: str | None) -> str:
+    return value if value else "(unset)"
+
+
+def _fmt_dep_reason(dep_status_name: str | None, location: str) -> str:
+    if location == "missing":
+        return "missing"
+    if dep_status_name is None:
+        return "unknown"
+    return f"{dep_status_name} ({location})"
+
+
+def cmd_ready(args: argparse.Namespace) -> int:
+    """List ready / blocked children under a parent task."""
+    repo_root = get_repo_root()
+    parent_path = resolve_task_dir(args.parent_dir, repo_root)
+    task_json = parent_path / FILE_TASK_JSON
+    if not task_json.is_file():
+        print(colored(f"Error: parent task not found: {args.parent_dir}", Colors.RED))
+        return 1
+
+    tasks_dir = get_tasks_dir(repo_root)
+    report = evaluate_ready(parent_path, tasks_dir)
+
+    print(colored(f"Ready report: {report.parent}", Colors.BLUE))
+    print()
+
+    if report.cycle is not None:
+        cycle_str = " → ".join(report.cycle)
+        print(colored("CYCLE DETECTED (fail closed)", Colors.RED))
+        print(f"  {cycle_str}")
+        print()
+        print("Fix depends_on edges before dispatching parallel workers.")
+        return 1
+
+    for w in report.warnings:
+        print(colored(f"Warning: {w}", Colors.YELLOW))
+    if report.warnings:
+        print()
+
+    print(colored(f"Ready ({len(report.ready)}):", Colors.GREEN))
+    if not report.ready:
+        print("  (none)")
+    for info in report.ready:
+        deps = ", ".join(info.depends_on) if info.depends_on else "(none)"
+        print(
+            f"  - {info.dir_name}  "
+            f"[status={info.status}]  "
+            f"isolation={_fmt_isolation(info.isolation)}  "
+            f"depends_on=[{deps}]"
+        )
+    print()
+
+    print(colored(f"Blocked ({len(report.blocked)}):", Colors.YELLOW))
+    if not report.blocked:
+        print("  (none)")
+    for info in report.blocked:
+        print(
+            f"  - {info.dir_name}  "
+            f"[status={info.status}]  "
+            f"isolation={_fmt_isolation(info.isolation)}"
+        )
+        for dep in info.blocked_by:
+            reason = _fmt_dep_reason(dep.status, dep.location)
+            print(f"      waiting on: {dep.name}  ({reason})")
+    print()
+
+    if report.skipped:
+        print(colored(f"Skipped ({len(report.skipped)}):", Colors.BLUE))
+        for info in report.skipped:
+            print(
+                f"  - {info.dir_name}  "
+                f"[status={info.status}]  "
+                f"{info.skip_reason or ''}"
+            )
+        print()
+
+    # Strong hint when ready set mixes worktree isolation (MVP manual spawn).
+    worktree_ready = [i for i in report.ready if i.isolation == "worktree"]
+    if len(report.ready) > 1 and worktree_ready:
+        print(colored(
+            "Hint: isolation=worktree — spawn each ready child in its own "
+            "worktree/branch (never same-cwd multi-writer). MVP: confirm with "
+            "a human, then manually trellis channel spawn. Auto dispatch is Phase B.",
+            Colors.YELLOW,
+        ))
+    elif len(report.ready) > 1:
+        print(colored(
+            "Hint: multiple ready children — review isolation, confirm with a "
+            "human, then manually spawn workers. Auto dispatch is Phase B "
+            "(dispatch-ready / --yes reserved).",
+            Colors.YELLOW,
+        ))
+
+    return 0
+
+
+def cmd_drift(args: argparse.Namespace) -> int:
+    """Warn when task.json depends_on/isolation drift from markdown.
+
+    Non-zero exit when drift is found. Does NOT block ready / scheduling (MVP).
+    """
+    repo_root = get_repo_root()
+    parent_path = resolve_task_dir(args.parent_dir, repo_root)
+    task_json = parent_path / FILE_TASK_JSON
+    if not task_json.is_file():
+        print(colored(f"Error: parent task not found: {args.parent_dir}", Colors.RED))
+        return 1
+
+    tasks_dir = get_tasks_dir(repo_root)
+    report = evaluate_drift(parent_path, tasks_dir)
+
+    print(colored(f"Drift report: {report.parent}", Colors.BLUE))
+    print("(json is authoritative; markdown is a human-readable projection)")
+    print("Drift warnings do not block ready / scheduling in MVP.")
+    print()
+
+    for w in report.warnings:
+        print(colored(f"Warning: {w}", Colors.YELLOW))
+    if report.warnings:
+        print()
+
+    if not report.items:
+        print(colored("No drift detected.", Colors.GREEN))
+        return 0
+
+    print(colored(f"Drift ({len(report.items)}):", Colors.YELLOW))
+    for item in report.items:
+        src = f" in {item.source_file}" if item.source_file else ""
+        print(f"  - {item.child}.{item.field}{src}")
+        print(f"      task.json: {item.json_value}")
+        print(f"      markdown:  {item.md_value}")
+    print()
+    print("Fix by updating markdown to match task.json (or edit json, then "
+          "re-dual-write). json→markdown sync is reserved for a later phase.")
+    return 1
+
+
+def cmd_deps(args: argparse.Namespace) -> int:
+    """Show depends_on and reverse dependents for a task."""
+    repo_root = get_repo_root()
+    task_path = resolve_task_dir(args.task_dir, repo_root)
+    task_json = task_path / FILE_TASK_JSON
+    if not task_json.is_file():
+        print(colored(f"Error: task not found: {args.task_dir}", Colors.RED))
+        return 1
+
+    data = read_json(task_json) or {}
+    deps = get_depends_on(data)
+    isolation = get_isolation(data)
+    tasks_dir = get_tasks_dir(repo_root)
+    reverse = reverse_dependents(tasks_dir, task_path.name)
+
+    print(colored(f"Dependencies: {task_path.name}", Colors.BLUE))
+    print(f"  isolation:  {_fmt_isolation(isolation)}")
+    print(f"  depends_on: {deps if deps else '(none)'}")
+    print(f"  depended on by: {reverse if reverse else '(none)'}")
+    return 0
+
+
+# =============================================================================
 # Help
 # =============================================================================
 
@@ -320,6 +494,9 @@ Usage:
   python3 task.py archive <task-dir>                 Archive completed task
   python3 task.py add-subtask <parent> <child>       Link child task to parent
   python3 task.py remove-subtask <parent> <child>    Unlink child from parent
+  python3 task.py ready <parent-dir>                 List ready/blocked children (+ isolation)
+  python3 task.py drift <parent-dir>                 Warn on json vs ## Dependencies drift
+  python3 task.py deps <task-dir>                    Show depends_on + reverse dependents
   python3 task.py list [--mine] [--status <status>]  List tasks
   python3 task.py list-archive [YYYY-MM]             List archived tasks
 
@@ -342,6 +519,9 @@ Examples:
   python3 task.py archive add-login
   python3 task.py add-subtask parent-task child-task  # Link existing tasks
   python3 task.py remove-subtask parent-task child-task
+  python3 task.py ready parent-task                  # Ready/blocked under parent
+  python3 task.py drift parent-task                  # Dual-write drift warnings
+  python3 task.py deps child-task                    # depends_on + reverse deps
   python3 task.py list                               # List all active tasks
   python3 task.py list --mine                        # List my tasks only
   python3 task.py list --mine --status in_progress   # List my in-progress tasks
@@ -467,6 +647,27 @@ def main() -> int:
     p_rmsub.add_argument("parent_dir", help="Parent task directory")
     p_rmsub.add_argument("child_dir", help="Child task directory")
 
+    # ready — parallel orchestration MVP A
+    p_ready = subparsers.add_parser(
+        "ready",
+        help="List ready/blocked children under a parent (depends_on / isolation)",
+    )
+    p_ready.add_argument("parent_dir", help="Parent task directory")
+
+    # drift — json vs markdown ## Dependencies (warn only; does not block ready)
+    p_drift = subparsers.add_parser(
+        "drift",
+        help="Warn when task.json depends_on/isolation drift from markdown",
+    )
+    p_drift.add_argument("parent_dir", help="Parent task directory")
+
+    # deps — show depends_on + reverse dependents
+    p_deps = subparsers.add_parser(
+        "deps",
+        help="Show depends_on and reverse dependents for a task",
+    )
+    p_deps.add_argument("task_dir", help="Task directory")
+
     # list-archive
     p_listarch = subparsers.add_parser("list-archive", help="List archived tasks")
     p_listarch.add_argument("month", nargs="?", help="Month (YYYY-MM)")
@@ -491,6 +692,9 @@ def main() -> int:
         "archive": cmd_archive,
         "add-subtask": cmd_add_subtask,
         "remove-subtask": cmd_remove_subtask,
+        "ready": cmd_ready,
+        "drift": cmd_drift,
+        "deps": cmd_deps,
         "list": cmd_list,
         "list-archive": cmd_list_archive,
     }

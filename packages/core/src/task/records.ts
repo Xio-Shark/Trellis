@@ -30,7 +30,7 @@ export interface WriteTaskRecordOptions {
 /**
  * Read a task.json file and return a canonicalized record.
  *
- * Unknown fields on disk that are not part of the canonical 24-field
+ * Unknown fields on disk that are not part of the canonical task
  * shape are NOT returned — `loadTaskRecord` is the structured public API.
  * To preserve unknown fields across a load/write cycle, callers should
  * use {@link writeTaskRecord}, which merges canonical updates on top of

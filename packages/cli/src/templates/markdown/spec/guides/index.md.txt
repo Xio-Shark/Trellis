@@ -23,10 +23,20 @@ These guides help you **ask the right questions before coding**.
 |-------|---------|-------------|
 | [Code Reuse Thinking Guide](./code-reuse-thinking-guide.md) | Identify patterns and reduce duplication | When you notice repeated patterns |
 | [Cross-Layer Thinking Guide](./cross-layer-thinking-guide.md) | Think through data flow across layers | Features spanning multiple layers |
+| [Parallel Decoupled Tasks](./parallel-decoupled-tasks.md) | Parent/child parallel waves, `depends_on` / `isolation`, ready CLI | Multi-deliverable plans that can fan out |
 
 ---
 
 ## Quick Reference: Thinking Triggers
+
+### When to Think About Parallel Decoupled Tasks
+
+- [ ] One request has 2+ independently verifiable deliverables
+- [ ] Some children can run without sharing files/types/tests
+- [ ] You need an explicit ready set before spawning agents
+- [ ] Code changes will run in parallel (need `isolation: worktree`)
+
+→ Read [Parallel Decoupled Tasks](./parallel-decoupled-tasks.md)
 
 ### When to Think About Cross-Layer Issues
 

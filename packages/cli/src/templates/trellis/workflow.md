@@ -67,6 +67,11 @@ python3 ./.trellis/scripts/task.py set-scope <name> <scope>
 python3 ./.trellis/scripts/task.py add-subtask <parent> <child>
 python3 ./.trellis/scripts/task.py remove-subtask <parent> <child>
 
+# Parallel deps (MVP A — ready set; no auto spawn)
+python3 ./.trellis/scripts/task.py ready <parent>     # ready / blocked + isolation
+python3 ./.trellis/scripts/task.py drift <parent>     # json vs ## Dependencies warn
+python3 ./.trellis/scripts/task.py deps <task>        # depends_on + reverse dependents
+
 # PR creation
 python3 ./.trellis/scripts/task.py create-pr [name] [--dry-run]
 ```
@@ -167,7 +172,25 @@ Phase 3: Finish  → verify, update spec, commit, and wrap up
 
 Use a parent task when one user request contains several independently verifiable deliverables. The parent task owns the source requirement set, the task map, cross-child acceptance criteria, and final integration review; it normally should not be the implementation target unless it also has direct work.
 
-Use child tasks for deliverables that can be planned, implemented, checked, and archived independently. Parent/child structure is not a dependency system: if one child must wait for another, write that ordering in the child `prd.md` / `implement.md` and keep each child's acceptance criteria testable.
+Use child tasks for deliverables that can be planned, implemented, checked, and archived independently.
+
+**Tree ≠ dependency graph.** Parent/children describe ownership. Sibling ordering and parallel waves use `task.json` fields:
+
+| Field | Role |
+|-------|------|
+| `depends_on: string[]` | Sibling task **directory names** that must be completed first (authoritative) |
+| `isolation: "worktree" \| "shared"` | Parallel safety: code changes → `worktree`; docs/readonly → `shared` ok |
+
+Dual-write: also put a readable `## Dependencies` block in each child's `prd.md` / `implement.md`. `task.py drift <parent>` warns on mismatch (does not block ready). json→markdown sync and auto spawn are later phases.
+
+```bash
+python3 ./.trellis/scripts/task.py ready <parent-dir>   # ready / blocked + reasons + isolation
+python3 ./.trellis/scripts/task.py drift <parent-dir>   # dual-write warnings
+```
+
+**MVP (A) execution:** human confirms the ready set → manually spawn channel workers (one worktree per `isolation=worktree` child) → parent integrates when children complete. No auto spawn in MVP. Phase B adds `dispatch-ready [--yes]`; Phase C may default workers to xio. Never same-cwd multi-writer.
+
+See `.trellis/spec/guides/parallel-decoupled-tasks.md` for the planning checklist and A→B→C path.
 
 Create new children with `task.py create "<title>" --slug <name> --parent <parent-dir>`. Link existing tasks with `task.py add-subtask <parent> <child>`, and unlink mistakes with `task.py remove-subtask <parent> <child>`.
 
@@ -192,7 +215,8 @@ Complex task: ask the user if you can create a Trellis task and enter the planni
 [workflow-state:planning]
 Load `trellis-brainstorm`; stay in planning.
 Lightweight: `prd.md` can be enough. Complex: finish `prd.md`, `design.md`, and `implement.md`; ask for review before `task.py start`.
-Multi-deliverable scope: consider a parent task plus independently verifiable child tasks; dependencies must be written in child artifacts, not implied by tree position.
+Multi-deliverable scope: consider a parent task plus independently verifiable child tasks; write sibling order as `depends_on` / `isolation` in task.json and dual-write `## Dependencies` in child artifacts (tree position alone is not a dependency).
+
 Sub-agent mode: curate `implement.jsonl` and `check.jsonl` as spec/research manifests before start.
 [/workflow-state:planning]
 
@@ -205,7 +229,8 @@ Sub-agent mode: curate `implement.jsonl` and `check.jsonl` as spec/research mani
 [workflow-state:planning-inline]
 Load `trellis-brainstorm`; stay in planning.
 Lightweight: `prd.md` can be enough. Complex: finish `prd.md`, `design.md`, and `implement.md`; ask for review before `task.py start`.
-Multi-deliverable scope: consider a parent task plus independently verifiable child tasks; dependencies must be written in child artifacts, not implied by tree position.
+Multi-deliverable scope: consider a parent task plus independently verifiable child tasks; write sibling order as `depends_on` / `isolation` in task.json and dual-write `## Dependencies` in child artifacts (tree position alone is not a dependency).
+
 Inline mode: skip jsonl curation; Phase 2 reads artifacts/specs via `trellis-before-dev`.
 [/workflow-state:planning-inline]
 
@@ -344,8 +369,10 @@ When considering a parent/child split:
 - Use a parent task when one request contains several independently verifiable deliverables.
 - Parent tasks own source requirements, child-task mapping, cross-child acceptance criteria, and final integration review.
 - Child tasks own actual deliverables that can be planned, implemented, checked, and archived independently.
-- Parent/child structure is not a dependency system. If child B depends on child A, write that ordering in child B's `prd.md` / `implement.md`.
-- Start the child task that owns the next deliverable. Do not start the parent unless the parent itself has direct implementation work.
+- Tree ≠ dependency graph. For sibling order / parallel waves, set `depends_on` (directory names) and `isolation` (`worktree` for code, `shared` ok for docs) on each child `task.json`, and dual-write a `## Dependencies` section in `prd.md` / `implement.md`.
+- Ask per child pair: shared files/types/tests? If yes → add an edge or merge tasks; if no → can parallelize.
+- After planning: human reviews the ready set (`task.py ready <parent>`), then manually spawns workers. Auto dispatch (`--yes`) is Phase B.
+- Start the child task that owns the next deliverable (or each ready child after human confirm). Do not start the parent unless the parent itself has direct implementation work.
 
 Return to this step whenever requirements change and revise the relevant artifact.
 
