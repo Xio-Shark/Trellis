@@ -5478,6 +5478,76 @@ print(len(entries))
       "<codex-mode>",
     );
   });
+
+  it("[issue-395] task.py list --json emits a stable machine-readable schema", () => {
+    setupTaskRepo();
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+
+    const output = execSync(
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} list --json`,
+      { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
+    );
+
+    const parsed = JSON.parse(output) as {
+      tasks: {
+        dir: string;
+        title: string;
+        status: string;
+        priority: string;
+        assignee: string | null;
+        parent: string | null;
+        children: string[];
+      }[];
+    };
+    expect(parsed.tasks).toHaveLength(1);
+    expect(parsed.tasks[0]).toMatchObject({
+      dir: ".trellis/tasks/issue-106",
+      title: "Issue 106 task",
+      status: "in_progress",
+      parent: null,
+      children: [],
+    });
+  });
+
+  it("[issue-395] task.py current --json reports null when no task is active", () => {
+    setupTaskRepo();
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+
+    const result = spawnSync(
+      pythonCmd,
+      [taskScriptPath, "current", "--json"],
+      { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
+    );
+
+    expect(result.status).toBe(1);
+    const parsed = JSON.parse(result.stdout) as { current_task: unknown };
+    expect(parsed.current_task).toBeNull();
+  });
+
+  it("[issue-395] task.py current --json reports the active task object", () => {
+    setupTaskRepo();
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+
+    execSync(
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} start ${JSON.stringify(".trellis/tasks/issue-106")}`,
+      { cwd: tmpDir, encoding: "utf-8", env: sessionEnv({ TRELLIS_CONTEXT_ID: "json-current-session" }) },
+    );
+
+    const output = execSync(
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} current --json`,
+      { cwd: tmpDir, encoding: "utf-8", env: sessionEnv({ TRELLIS_CONTEXT_ID: "json-current-session" }) },
+    );
+
+    const parsed = JSON.parse(output) as {
+      current_task: { dir: string; title: string; status: string } | null;
+    };
+    expect(parsed.current_task).toMatchObject({
+      dir: ".trellis/tasks/issue-106",
+      title: "Issue 106 task",
+      status: "in_progress",
+    });
+  });
+
 });
 
 describe("regression: backslash in markdown templates (beta.12)", () => {
