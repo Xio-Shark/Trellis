@@ -103,7 +103,7 @@ When adding a new platform `{platform}`, update the following:
 | `src/templates/{platform}/extensions/trellis/index.ts.txt` | Project-local extension source written to `.pi/extensions/trellis/index.ts`               |
 | `src/templates/{platform}/settings.json`                   | Platform settings that enable extension, skills, and prompts                              |
 
-> Note: Pi Agent uses project-local TypeScript extensions instead of Trellis Python hooks. Keep generated hooks under `.pi/extensions/`, write prompt templates under `.pi/prompts/trellis-*.md`, write Agent Skills under `.pi/skills/`, and do not copy `shared-hooks/*.py` into `.pi/`. Do not redirect Pi to shared `.agents/skills` until shared Agent Skill text is platform-neutral; Codex and Pi command references can differ. For the nested Pi launcher contract, see "Scenario: Pi Sub-Agent Launcher".
+> Note: Pi Agent uses project-local TypeScript extensions instead of Trellis Python hooks. Keep generated hooks under `.pi/extensions/`, write prompt templates under `.pi/prompts/trellis-*.md`, and do not copy `shared-hooks/*.py` into `.pi/`. Agent Skills write to the shared `.agents/skills/` root (same path Codex and Gemini CLI use) via `resolveSkillsNeutral()`, not a private `.pi/skills/` root — Pi discovers `.agents/skills/` natively, and keeping a separate `.pi/skills/` copy caused Pi to see every skill twice when Codex or Gemini was also installed (#447). `configDir` stays `.pi`; `supportsAgentSkills: true` adds `.agents/skills` to Pi's managed paths, same as Codex/Gemini. A rename-dir migration (`0.6.8.json`) relocates any pre-#447 `.pi/skills/` install into `.agents/skills/` on `trellis update`. For the nested Pi launcher contract, see "Scenario: Pi Sub-Agent Launcher".
 >
 > Pi is an explicit `trellis-start` exception: `session_start` is notify-only and cannot mutate model-visible context, so the configurator must keep `.pi/prompts/trellis-start.md` as a manual bootstrap fallback while the extension injects startup/full Trellis context through `before_agent_start.systemPrompt` and persists compact workflow/session context through a hidden custom message returned from `before_agent_start`.
 >
@@ -620,7 +620,7 @@ Configurator output:
 ```text
 .pi/settings.json
 .pi/prompts/trellis-<command>.md
-.pi/skills/<skill>/SKILL.md
+.agents/skills/<skill>/SKILL.md
 .pi/agents/trellis-<agent>.md
 .pi/extensions/trellis/index.ts
 ```
@@ -671,7 +671,7 @@ Good:
 ```text
 .pi/extensions/trellis/index.ts
 .pi/agents/trellis-implement.md
-.pi/skills/update-spec/SKILL.md
+.agents/skills/update-spec/SKILL.md
 ```
 
 Base:

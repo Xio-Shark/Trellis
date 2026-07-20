@@ -424,9 +424,13 @@ import { downloadTemplate } from "giget";
 
 await downloadTemplate("gh:mindfold-ai/Trellis/marketplace/specs/electron-fullstack", {
   dir: destDir,
-  preferOffline: true,
 });
 ```
+
+**Note**: `downloadWithStrategy()` does not pass `preferOffline` — giget's
+default network-first behavior applies at all three call sites (skip,
+overwrite, append), so `init`/`update` always check the remote registry
+for new content instead of silently serving a stale cached tarball.
 
 ### Directory Conflict Strategy (skip/overwrite/append)
 
