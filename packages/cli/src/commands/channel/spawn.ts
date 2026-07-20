@@ -31,6 +31,8 @@ export interface SpawnOptions {
   cwd?: string;
   model?: string;
   resume?: string;
+  /** Codex-only: overrides the `thread/start` sandbox mode (default `workspace-write`). */
+  sandbox?: string;
   /** Auto-kill the worker after this many milliseconds (anti-zombie). */
   timeoutMs?: number;
   /** Emit supervisor_warning this many milliseconds before timeout. */
@@ -260,6 +262,7 @@ async function spawnLocked(
       systemPrompt: resolved.systemPrompt,
       model: resolved.model,
       resume: opts.resume,
+      sandbox: opts.sandbox,
       timeoutMs: opts.timeoutMs,
       warnBeforeMs: opts.warnBeforeMs,
       idleTimeoutMs,

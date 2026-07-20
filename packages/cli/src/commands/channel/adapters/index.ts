@@ -34,6 +34,7 @@ import {
   encodeCodexUserMessage,
   parseCodexLine,
   type CodexCtx,
+  type CodexSandboxMode,
 } from "./codex.js";
 import type { ParseResult } from "./types.js";
 
@@ -52,6 +53,8 @@ export interface SupervisorView {
   model?: string;
   systemPrompt: string;
   cwd: string;
+  /** Codex-only: overrides the `thread/start` sandbox mode (default `workspace-write`). */
+  sandbox?: CodexSandboxMode;
 }
 
 export interface WorkerAdapter<Ctx = AdapterCtx> {
@@ -144,7 +147,7 @@ const codexAdapter: WorkerAdapter<CodexCtx> = {
     const ts = encodeCodexRequest(
       ctx,
       "thread/start",
-      buildCodexThreadStartParams(view.cwd, view.systemPrompt),
+      buildCodexThreadStartParams(view.cwd, view.systemPrompt, view.sandbox),
       "thread/start",
     );
     child.stdin.write(ts.line);
