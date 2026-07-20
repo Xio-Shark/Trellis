@@ -30,7 +30,7 @@ from .config import (
     resolve_package,
     validate_package,
 )
-from .git import run_git
+from .git import branch_exists_locally, resolve_default_branch, run_git
 from .io import read_json, write_json
 from .log import Colors, colored
 from .paths import (
@@ -295,9 +295,14 @@ def cmd_create(args: argparse.Namespace) -> int:
 
     today = datetime.now().strftime("%Y-%m-%d")
 
-    # Record current branch as base_branch (PR target)
+    # Record the PR target branch. Prefer the repo's actual default branch
+    # (origin/HEAD) so creating a task from a feature branch doesn't
+    # mis-stamp that feature branch as the PR target (#399 item 1). Falls
+    # back to the checked-out branch when the default can't be resolved
+    # (no remote configured, offline, etc.) — the pre-existing behavior.
     _, branch_out, _ = run_git(["branch", "--show-current"], cwd=repo_root)
     current_branch = branch_out.strip() or "main"
+    base_branch = resolve_default_branch(repo_root) or current_branch
 
     description = (args.description or "").strip()
     if not description.strip():
@@ -324,7 +329,7 @@ def cmd_create(args: argparse.Namespace) -> int:
         "createdAt": today,
         "completedAt": None,
         "branch": None,
-        "base_branch": current_branch,
+        "base_branch": base_branch,
         "worktree_path": None,
         "commit": None,
         "pr_url": None,
@@ -506,6 +511,19 @@ def cmd_archive(args: argparse.Namespace) -> int:
     if task_json_path.is_file():
         data = read_json(task_json_path)
         if data:
+            # Warn (don't block) when the recorded branch is stale — it was
+            # likely already merged and deleted (#399 item 2).
+            stored_branch = data.get("branch")
+            if stored_branch and not branch_exists_locally(stored_branch, repo_root):
+                print(
+                    colored(
+                        f"Warning: recorded branch '{stored_branch}' no longer exists locally "
+                        "(likely merged and deleted).",
+                        Colors.YELLOW,
+                    ),
+                    file=sys.stderr,
+                )
+
             data["status"] = "completed"
             data["completedAt"] = today
             write_json(task_json_path, data)

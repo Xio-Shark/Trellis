@@ -5548,6 +5548,134 @@ print(len(entries))
     });
   });
 
+  it("[issue-399.1] task.py create stamps base_branch from origin/HEAD, not the checked-out branch", () => {
+    setupTaskRepo();
+    execSync("git init -q -b feature/some-work", { cwd: tmpDir });
+    execSync("git config user.email test@example.com", { cwd: tmpDir });
+    execSync("git config user.name Test", { cwd: tmpDir });
+    execSync("git add -A", { cwd: tmpDir });
+    execSync('git commit -q -m init', { cwd: tmpDir });
+
+    // Simulate a bare "origin" remote whose default branch is main, while
+    // the local checkout stays on a feature branch (#399 item 1 repro).
+    const remotePath = path.join(tmpDir, "..", "origin-bare.git");
+    execSync(`git init -q --bare ${JSON.stringify(remotePath)}`, { cwd: tmpDir });
+    execSync("git branch -m feature/some-work main", { cwd: tmpDir });
+    execSync(`git remote add origin ${JSON.stringify(remotePath)}`, { cwd: tmpDir });
+    execSync("git push -q origin main", { cwd: tmpDir });
+    execSync(`git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main`, { cwd: tmpDir });
+    execSync("git checkout -q -b feature/some-work", { cwd: tmpDir });
+
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    execSync(
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "base branch test" --slug base-branch-test --assignee test-dev --no-start`,
+      { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
+    );
+
+    const taskDir = fs
+      .readdirSync(path.join(tmpDir, ".trellis", "tasks"))
+      .find((d) => d.includes("base-branch-test"));
+    expect(taskDir).toBeDefined();
+    const taskJson = JSON.parse(
+      fs.readFileSync(
+        path.join(tmpDir, ".trellis", "tasks", taskDir as string, "task.json"),
+        "utf-8",
+      ),
+    ) as { base_branch: string };
+    expect(taskJson.base_branch).toBe("main");
+
+    fs.rmSync(remotePath, { recursive: true, force: true });
+  });
+
+  it("[issue-399.1] task.py create falls back to the checked-out branch when no default branch resolves", () => {
+    setupTaskRepo();
+    execSync("git init -q -b solo-branch", { cwd: tmpDir });
+    execSync("git config user.email test@example.com", { cwd: tmpDir });
+    execSync("git config user.name Test", { cwd: tmpDir });
+    execSync("git add -A", { cwd: tmpDir });
+    execSync('git commit -q -m init', { cwd: tmpDir });
+    // No origin remote configured at all.
+
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    execSync(
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "no remote test" --slug no-remote-test --assignee test-dev --no-start`,
+      { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
+    );
+
+    const taskDir = fs
+      .readdirSync(path.join(tmpDir, ".trellis", "tasks"))
+      .find((d) => d.includes("no-remote-test"));
+    const taskJson = JSON.parse(
+      fs.readFileSync(
+        path.join(tmpDir, ".trellis", "tasks", taskDir as string, "task.json"),
+        "utf-8",
+      ),
+    ) as { base_branch: string };
+    expect(taskJson.base_branch).toBe("solo-branch");
+  });
+
+  it("[issue-399.2] task.py validate warns when the recorded branch no longer exists locally", () => {
+    setupTaskRepo();
+    execSync("git init -q -b main", { cwd: tmpDir });
+    execSync("git config user.email test@example.com", { cwd: tmpDir });
+    execSync("git config user.name Test", { cwd: tmpDir });
+    execSync("git add -A", { cwd: tmpDir });
+    execSync('git commit -q -m init', { cwd: tmpDir });
+
+    const taskJsonPath = path.join(
+      tmpDir,
+      ".trellis",
+      "tasks",
+      "issue-106",
+      "task.json",
+    );
+    const data = JSON.parse(fs.readFileSync(taskJsonPath, "utf-8"));
+    data.branch = "task/deleted-branch-does-not-exist";
+    fs.writeFileSync(taskJsonPath, JSON.stringify(data, null, 2));
+
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    const result = spawnSync(
+      pythonCmd,
+      [taskScriptPath, "validate", ".trellis/tasks/issue-106"],
+      { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
+    );
+
+    expect(result.stdout).toContain(
+      "recorded branch 'task/deleted-branch-does-not-exist' no longer exists locally",
+    );
+  });
+
+  it("[issue-399.2] task.py archive warns when the recorded branch no longer exists locally", () => {
+    setupTaskRepo();
+    execSync("git init -q -b main", { cwd: tmpDir });
+    execSync("git config user.email test@example.com", { cwd: tmpDir });
+    execSync("git config user.name Test", { cwd: tmpDir });
+    execSync("git add -A", { cwd: tmpDir });
+    execSync('git commit -q -m init', { cwd: tmpDir });
+
+    const taskJsonPath = path.join(
+      tmpDir,
+      ".trellis",
+      "tasks",
+      "issue-106",
+      "task.json",
+    );
+    const data = JSON.parse(fs.readFileSync(taskJsonPath, "utf-8"));
+    data.branch = "task/deleted-branch-does-not-exist";
+    fs.writeFileSync(taskJsonPath, JSON.stringify(data, null, 2));
+
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    const result = spawnSync(
+      pythonCmd,
+      [taskScriptPath, "archive", ".trellis/tasks/issue-106", "--no-commit"],
+      { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
+    );
+
+    expect(result.stderr).toContain(
+      "recorded branch 'task/deleted-branch-does-not-exist' no longer exists locally",
+    );
+  });
+
 });
 
 describe("regression: backslash in markdown templates (beta.12)", () => {
