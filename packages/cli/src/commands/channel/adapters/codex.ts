@@ -608,15 +608,44 @@ export function buildCodexArgs(opts: { model?: string }): string[] {
   return args;
 }
 
+/** Codex's documented `sandbox` modes (see `codex app-server` thread/start). */
+export type CodexSandboxMode =
+  | "read-only"
+  | "workspace-write"
+  | "danger-full-access";
+
+export const CODEX_SANDBOX_MODES: ReadonlySet<CodexSandboxMode> = new Set([
+  "read-only",
+  "workspace-write",
+  "danger-full-access",
+]);
+
+/** Validate a `--sandbox` value. Returns `undefined` when unset (caller
+ *  falls back to the `workspace-write` default). */
+export function parseCodexSandboxMode(
+  v: string | undefined,
+): CodexSandboxMode | undefined {
+  if (v === undefined) return undefined;
+  if (!CODEX_SANDBOX_MODES.has(v as CodexSandboxMode)) {
+    throw new Error(
+      `Invalid --sandbox '${v}'. Must be one of: ${[...CODEX_SANDBOX_MODES].join(", ")}`,
+    );
+  }
+  return v as CodexSandboxMode;
+}
+
 export function buildCodexThreadStartParams(
   cwd: string,
   systemPrompt?: string,
+  sandbox?: CodexSandboxMode,
 ): Record<string, unknown> {
   const params: Record<string, unknown> = {
     cwd,
     // MVP: aggressive permissive defaults to avoid getting stuck mid-turn.
     approvalPolicy: "never",
-    sandbox: "workspace-write",
+    // Default stays workspace-write; callers (channel spawn --sandbox) may
+    // override to match the user's main-session Codex permissions (#413).
+    sandbox: sandbox ?? "workspace-write",
     // Disable codex native multi-agent so spawned worker can't recurse into
     // its own sub-agents (would conflict with channel's collaboration layer
     // and reproduce issue #234/#237 recursion).

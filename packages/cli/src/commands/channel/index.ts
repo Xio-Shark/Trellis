@@ -2,6 +2,7 @@ import chalk from "chalk";
 import { InvalidArgumentError, type Command } from "commander";
 
 import { isProvider, listProviders, type Provider } from "./adapters/index.js";
+import { parseCodexSandboxMode } from "./adapters/codex.js";
 import {
   channelContextAdd,
   channelContextDelete,
@@ -293,6 +294,10 @@ export function registerChannelCommand(program: Command): void {
     .option("--model <id>", "model override")
     .option("--resume <id>", "resume an existing session/thread id")
     .option(
+      "--sandbox <mode>",
+      "codex-only: worker sandbox mode: read-only | workspace-write | danger-full-access (default workspace-write)",
+    )
+    .option(
       "--timeout <duration>",
       "auto-kill worker after this duration (e.g. 30m, 1h, 7200s)",
     )
@@ -337,6 +342,7 @@ export function registerChannelCommand(program: Command): void {
         cwd?: string;
         model?: string;
         resume?: string;
+        sandbox?: string;
         timeout?: string;
         warnBefore?: string;
         file?: string[];
@@ -355,6 +361,7 @@ export function registerChannelCommand(program: Command): void {
         process.exit(1);
       }
       try {
+        parseCodexSandboxMode(opts.sandbox);
         await channelSpawn(name, {
           agent: opts.agent,
           provider: opts.provider as Provider | undefined,
@@ -362,6 +369,7 @@ export function registerChannelCommand(program: Command): void {
           cwd: opts.cwd,
           model: opts.model,
           resume: opts.resume,
+          sandbox: opts.sandbox,
           timeoutMs: parseDuration(opts.timeout),
           warnBeforeMs: parseDuration(opts.warnBefore),
           files: opts.file,
