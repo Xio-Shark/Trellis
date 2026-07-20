@@ -48,7 +48,7 @@ export interface SupervisorConfig {
   /** Resume an existing session/thread if id is provided. */
   resume?: string;
   /** Codex-only: overrides the `thread/start` sandbox mode (default `workspace-write`). */
-  sandbox?: string;
+  sandbox?: CodexSandboxMode;
   /** Auto-kill worker after this many ms (anti-zombie). */
   timeoutMs?: number;
   /** Emit supervisor_warning this many ms before timeout. `<=0` disables it. */
@@ -158,7 +158,7 @@ export async function runSupervisor(
     model: config.model,
     systemPrompt: config.systemPrompt,
     cwd: config.cwd,
-    sandbox: config.sandbox as CodexSandboxMode | undefined,
+    sandbox: config.sandbox,
   };
   const args = adapter.buildArgs(view);
 
