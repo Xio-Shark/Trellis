@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { InboxPolicy } from "@mindfoldhq/trellis-core/channel";
 
 import { loadAgent } from "./agent-loader.js";
+import type { CodexSandboxMode } from "./adapters/codex.js";
 import type { Provider } from "./adapters/index.js";
 import { assembleContext } from "./context-loader.js";
 import {
@@ -32,7 +33,7 @@ export interface SpawnOptions {
   model?: string;
   resume?: string;
   /** Codex-only: overrides the `thread/start` sandbox mode (default `workspace-write`). */
-  sandbox?: string;
+  sandbox?: CodexSandboxMode;
   /** Auto-kill the worker after this many milliseconds (anti-zombie). */
   timeoutMs?: number;
   /** Emit supervisor_warning this many milliseconds before timeout. */

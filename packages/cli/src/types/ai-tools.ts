@@ -380,7 +380,11 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     },
   },
   pi: {
-    name: "Pi Agent (also writes .agents/skills/ — read by Cursor, Gemini CLI, GitHub Copilot, Amp, Kimi Code)",
+    // Pi also writes .agents/skills/, which is read by Cursor, Gemini CLI,
+    // GitHub Copilot, Amp, and Kimi Code. Keep that detail here rather than
+    // in `name` — `name` leaks verbatim into `trellis platforms` output and
+    // init checkboxes, where a long parenthetical reads badly.
+    name: "Pi Agent",
     templateDirs: ["common", "pi"],
     configDir: ".pi",
     supportsAgentSkills: true,

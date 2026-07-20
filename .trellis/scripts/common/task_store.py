@@ -300,9 +300,27 @@ def cmd_create(args: argparse.Namespace) -> int:
     # mis-stamp that feature branch as the PR target (#399 item 1). Falls
     # back to the checked-out branch when the default can't be resolved
     # (no remote configured, offline, etc.) — the pre-existing behavior.
+    # --base-branch lets the caller override both when neither is correct.
     _, branch_out, _ = run_git(["branch", "--show-current"], cwd=repo_root)
     current_branch = branch_out.strip() or "main"
-    base_branch = resolve_default_branch(repo_root) or current_branch
+    explicit_base_branch: str | None = getattr(args, "base_branch", None)
+    if explicit_base_branch:
+        base_branch = explicit_base_branch
+    else:
+        resolved_base_branch = resolve_default_branch(repo_root)
+        if resolved_base_branch:
+            base_branch = resolved_base_branch
+        else:
+            base_branch = current_branch
+            print(
+                colored(
+                    f"warning: could not resolve the repository's default branch "
+                    f"(no remote configured, offline, etc.); stamping base_branch as "
+                    f"the checked-out branch '{base_branch}'. Pass --base-branch to override.",
+                    Colors.YELLOW,
+                ),
+                file=sys.stderr,
+            )
 
     description = (args.description or "").strip()
     if not description.strip():

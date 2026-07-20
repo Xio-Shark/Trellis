@@ -228,6 +228,29 @@ def _read_trellis_config(root: Path) -> dict:
         return {}
 
 
+def _resolve_codex_dispatch_mode(config: dict) -> str:
+    """Normalize `codex.dispatch_mode` from .trellis/config.yaml to "auto" or "inline".
+
+    Defaults to `auto`. The legacy `sub-agent` value is an alias for `auto`.
+    Any other explicit value (including invalid ones) falls back to `inline`
+    without per-turn warnings. Shared by `_codex_mode_banner` (the per-turn
+    banner) and `resolve_breadcrumb_key` (the breadcrumb tag key) so the two
+    stay in lockstep.
+    """
+    mode = "auto"
+    if isinstance(config, dict):
+        codex_cfg = config.get("codex")
+        if isinstance(codex_cfg, dict):
+            cfg_mode = str(codex_cfg.get("dispatch_mode", mode)).strip().lower()
+            if cfg_mode == "inline":
+                mode = "inline"
+            elif cfg_mode in ("auto", "sub-agent"):
+                mode = "auto"
+            else:
+                mode = "inline"
+    return mode
+
+
 def _codex_mode_banner(config: dict) -> str:
     """Emit a `<codex-mode>` banner for the additionalContext payload.
 
@@ -243,17 +266,7 @@ def _codex_mode_banner(config: dict) -> str:
     body which is per-status. Mode tells AI which dispatch protocol to follow;
     workflow-state tells AI what step it's at.
     """
-    mode = "auto"
-    if isinstance(config, dict):
-        codex_cfg = config.get("codex")
-        if isinstance(codex_cfg, dict):
-            cfg_mode = str(codex_cfg.get("dispatch_mode", mode)).strip().lower()
-            if cfg_mode == "inline":
-                mode = "inline"
-            elif cfg_mode in ("auto", "sub-agent"):
-                mode = "auto"
-            else:
-                mode = "inline"
+    mode = _resolve_codex_dispatch_mode(config)
     if mode == "auto":
         meaning = (
             "auto: implement/check work defaults to Trellis sub-agents; native Codex "
@@ -283,17 +296,7 @@ def resolve_breadcrumb_key(
     Non-codex platforms return the plain status unchanged.
     """
     if platform == "codex":
-        mode = "auto"
-        if isinstance(config, dict):
-            codex_cfg = config.get("codex")
-            if isinstance(codex_cfg, dict):
-                cfg_mode = str(codex_cfg.get("dispatch_mode", mode)).strip().lower()
-                if cfg_mode == "inline":
-                    mode = "inline"
-                elif cfg_mode in ("auto", "sub-agent"):
-                    mode = "auto"
-                else:
-                    mode = "inline"
+        mode = _resolve_codex_dispatch_mode(config)
         return f"{status}-inline" if mode == "inline" else status
     return status
 

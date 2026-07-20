@@ -361,7 +361,7 @@ export function registerChannelCommand(program: Command): void {
         process.exit(1);
       }
       try {
-        parseCodexSandboxMode(opts.sandbox);
+        const sandbox = parseCodexSandboxMode(opts.sandbox);
         await channelSpawn(name, {
           agent: opts.agent,
           provider: opts.provider as Provider | undefined,
@@ -369,7 +369,7 @@ export function registerChannelCommand(program: Command): void {
           cwd: opts.cwd,
           model: opts.model,
           resume: opts.resume,
-          sandbox: opts.sandbox,
+          sandbox,
           timeoutMs: parseDuration(opts.timeout),
           warnBeforeMs: parseDuration(opts.warnBefore),
           files: opts.file,
