@@ -22,6 +22,7 @@ import {
   type InboxPolicy,
 } from "@mindfoldhq/trellis-core/channel";
 
+import type { CodexSandboxMode } from "./adapters/codex.js";
 import { getAdapter, type Provider } from "./adapters/index.js";
 import { appendEvent } from "./store/events.js";
 import { workerFile } from "./store/paths.js";
@@ -46,6 +47,8 @@ export interface SupervisorConfig {
   model?: string;
   /** Resume an existing session/thread if id is provided. */
   resume?: string;
+  /** Codex-only: overrides the `thread/start` sandbox mode (default `workspace-write`). */
+  sandbox?: string;
   /** Auto-kill worker after this many ms (anti-zombie). */
   timeoutMs?: number;
   /** Emit supervisor_warning this many ms before timeout. `<=0` disables it. */
@@ -155,6 +158,7 @@ export async function runSupervisor(
     model: config.model,
     systemPrompt: config.systemPrompt,
     cwd: config.cwd,
+    sandbox: config.sandbox as CodexSandboxMode | undefined,
   };
   const args = adapter.buildArgs(view);
 
