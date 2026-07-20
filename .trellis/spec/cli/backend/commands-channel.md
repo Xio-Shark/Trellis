@@ -65,6 +65,10 @@ trellis channel spawn <name> [opts]
   --cwd <path>           : worker cwd (default process.cwd())
   --model <id>           : model override
   --resume <id>          : resume an existing session/thread id
+  --sandbox <mode>       : codex-only: read-only | workspace-write | danger-full-access
+                           (default workspace-write; overrides thread/start sandbox
+                           to match the user's main-session Codex permissions; ignored
+                           for other providers; invalid value throws before spawn)
   --timeout <duration>   : auto-kill after duration (e.g. "30m", "1h", "7200s")
                            — no default; opt-in hard cutoff
   --warn-before <duration>: emit `supervisor_warning` before timeout
