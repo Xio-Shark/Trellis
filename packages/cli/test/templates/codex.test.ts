@@ -115,6 +115,16 @@ describe("codex getConfigTemplate", () => {
     const config = getConfigTemplate();
     expect(config.content).not.toMatch(/^\[features\.multi_agent_v2\]/m);
   });
+
+  // #445 removed the per-agent `[features] multi_agent = false` guard (the
+  // #240/#241 wait_agent-deadlock structural fix), relying on Codex's default
+  // `agents.max_depth = 1`. That key is global/user-level, not settable inside
+  // an individual agent's .toml, so pin it here in the project config Trellis
+  // owns — this is the config surface that outranks a user's global override.
+  it("pins agents.max_depth = 1 to guard against recursion reopening (#240, #241, #445)", () => {
+    const config = getConfigTemplate();
+    expect(config.content).toMatch(/^\[agents\]\s*\nmax_depth = 1/m);
+  });
 });
 
 // =============================================================================
