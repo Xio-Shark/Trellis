@@ -4012,6 +4012,18 @@ print(json.dumps({
     expect(py).not.toMatch(/_FALLBACK_BREADCRUMBS\s*=\s*\{/);
   });
 
+  it("[workflow-state-dispatch-mode-dedup] _codex_mode_banner and resolve_breadcrumb_key share one normalization helper", () => {
+    // _codex_mode_banner and resolve_breadcrumb_key both normalize
+    // codex.dispatch_mode to auto/inline (sub-agent alias, invalid → inline).
+    // That cascade must live in exactly one place so the two never drift.
+    const py = injectWorkflowStateScript ?? "";
+    expect(py).toContain("def _resolve_codex_dispatch_mode(");
+    const cascadeOccurrences = (
+      py.match(/elif cfg_mode in \("auto", "sub-agent"\):/g) ?? []
+    ).length;
+    expect(cascadeOccurrences).toBe(1);
+  });
+
   it("[workflow-state-r5] opencode inject-workflow-state.js contains no FALLBACK_BREADCRUMBS dict", () => {
     const jsURL = new URL(
       "../src/templates/opencode/plugins/inject-workflow-state.js",
@@ -5597,10 +5609,27 @@ print(len(entries))
     // No origin remote configured at all.
 
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
-    execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "no remote test" --slug no-remote-test --assignee test-dev --no-start`,
+    const result = spawnSync(
+      pythonCmd,
+      [
+        taskScriptPath,
+        "create",
+        "no remote test",
+        "--slug",
+        "no-remote-test",
+        "--assignee",
+        "test-dev",
+        "--no-start",
+      ],
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
     );
+
+    // #399 follow-up: silently falling back must now warn on stderr, naming
+    // the branch that got stamped.
+    expect(result.stderr).toContain(
+      "warning: could not resolve the repository's default branch",
+    );
+    expect(result.stderr).toContain("solo-branch");
 
     const taskDir = fs
       .readdirSync(path.join(tmpDir, ".trellis", "tasks"))
@@ -5612,6 +5641,50 @@ print(len(entries))
       ),
     ) as { base_branch: string };
     expect(taskJson.base_branch).toBe("solo-branch");
+  });
+
+  it("[issue-399.1] task.py create --base-branch overrides both origin/HEAD detection and the fallback", () => {
+    setupTaskRepo();
+    execSync("git init -q -b solo-branch", { cwd: tmpDir });
+    execSync("git config user.email test@example.com", { cwd: tmpDir });
+    execSync("git config user.name Test", { cwd: tmpDir });
+    execSync("git add -A", { cwd: tmpDir });
+    execSync('git commit -q -m init', { cwd: tmpDir });
+    // No origin remote configured at all — would otherwise fall back with a warning.
+
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    const result = spawnSync(
+      pythonCmd,
+      [
+        taskScriptPath,
+        "create",
+        "explicit base branch test",
+        "--slug",
+        "explicit-base-branch-test",
+        "--assignee",
+        "test-dev",
+        "--base-branch",
+        "release/1.0",
+        "--no-start",
+      ],
+      { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
+    );
+
+    expect(result.stderr).not.toContain(
+      "warning: could not resolve the repository's default branch",
+    );
+
+    const taskDir = fs
+      .readdirSync(path.join(tmpDir, ".trellis", "tasks"))
+      .find((d) => d.includes("explicit-base-branch-test"));
+    expect(taskDir).toBeDefined();
+    const taskJson = JSON.parse(
+      fs.readFileSync(
+        path.join(tmpDir, ".trellis", "tasks", taskDir as string, "task.json"),
+        "utf-8",
+      ),
+    ) as { base_branch: string };
+    expect(taskJson.base_branch).toBe("release/1.0");
   });
 
   it("[issue-399.2] task.py validate warns when the recorded branch no longer exists locally", () => {

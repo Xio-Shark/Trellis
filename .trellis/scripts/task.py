@@ -470,6 +470,10 @@ def main() -> int:
     p_create.add_argument("--parent", help="Parent task directory (establishes subtask link)")
     p_create.add_argument("--package", help="Package name for monorepo projects")
     p_create.add_argument(
+        "--base-branch",
+        help="PR target branch (overrides origin/HEAD detection and the checked-out-branch fallback)",
+    )
+    p_create.add_argument(
         "--no-start",
         action="store_true",
         help="Create the task without making it active in this session",
