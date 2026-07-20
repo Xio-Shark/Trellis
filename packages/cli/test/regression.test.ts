@@ -4012,6 +4012,18 @@ print(json.dumps({
     expect(py).not.toMatch(/_FALLBACK_BREADCRUMBS\s*=\s*\{/);
   });
 
+  it("[workflow-state-dispatch-mode-dedup] _codex_mode_banner and resolve_breadcrumb_key share one normalization helper", () => {
+    // _codex_mode_banner and resolve_breadcrumb_key both normalize
+    // codex.dispatch_mode to auto/inline (sub-agent alias, invalid → inline).
+    // That cascade must live in exactly one place so the two never drift.
+    const py = injectWorkflowStateScript ?? "";
+    expect(py).toContain("def _resolve_codex_dispatch_mode(");
+    const cascadeOccurrences = (
+      py.match(/elif cfg_mode in \("auto", "sub-agent"\):/g) ?? []
+    ).length;
+    expect(cascadeOccurrences).toBe(1);
+  });
+
   it("[workflow-state-r5] opencode inject-workflow-state.js contains no FALLBACK_BREADCRUMBS dict", () => {
     const jsURL = new URL(
       "../src/templates/opencode/plugins/inject-workflow-state.js",
