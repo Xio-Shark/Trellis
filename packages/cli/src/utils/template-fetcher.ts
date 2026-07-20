@@ -914,7 +914,6 @@ export async function downloadWithStrategy(
       await withTimeout(
         downloadTemplate(gigetSource, {
           dir: tempDir,
-          preferOffline: true,
         }),
         TIMEOUTS.DOWNLOAD_MS,
         "Template download",
@@ -944,7 +943,6 @@ export async function downloadWithStrategy(
       await withTimeout(
         downloadTemplate(gigetSource, {
           dir: tempDir,
-          preferOffline: true,
         }),
         TIMEOUTS.DOWNLOAD_MS,
         "Template download",
@@ -980,7 +978,6 @@ export async function downloadWithStrategy(
     await withTimeout(
       downloadTemplate(gigetSource, {
         dir: destDir,
-        preferOffline: true,
       }),
       TIMEOUTS.DOWNLOAD_MS,
       "Template download",
