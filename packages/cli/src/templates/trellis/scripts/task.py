@@ -22,6 +22,8 @@ Usage:
     python3 task.py ready <parent-dir>          # Ready/blocked children (+ isolation)
     python3 task.py drift <parent-dir>          # Warn on json vs ## Dependencies drift
     python3 task.py deps <task-dir>             # Show depends_on + reverse dependents
+    python3 task.py dispatch-ready <parent-dir> [--yes]  # Plan / spawn ready-set waves
+    python3 task.py integrate <parent-dir> [--dry-run]   # Merge worktrees + verify (L4)
 """
 
 from __future__ import annotations
@@ -71,6 +73,14 @@ from common.task_deps import (
     get_isolation,
     reverse_dependents,
 )
+from common.task_dispatch import (
+    check_drift_gate,
+    execute_waves,
+    parent_may_complete,
+    resolve_effective_worker,
+    should_auto_confirm,
+)
+from common.task_integrate import execute_integrate, plan_integrate
 
 
 # =============================================================================
@@ -386,20 +396,20 @@ def cmd_ready(args: argparse.Namespace) -> int:
             )
         print()
 
-    # Strong hint when ready set mixes worktree isolation (MVP manual spawn).
+    # Strong hint when ready set mixes worktree isolation.
     worktree_ready = [i for i in report.ready if i.isolation == "worktree"]
     if len(report.ready) > 1 and worktree_ready:
         print(colored(
-            "Hint: isolation=worktree — spawn each ready child in its own "
-            "worktree/branch (never same-cwd multi-writer). MVP: confirm with "
-            "a human, then manually trellis channel spawn. Auto dispatch is Phase B.",
+            "Hint: isolation=worktree — each ready child needs its own "
+            "worktree_path. Review, then: "
+            "task.py dispatch-ready <parent> [--yes]",
             Colors.YELLOW,
         ))
     elif len(report.ready) > 1:
         print(colored(
-            "Hint: multiple ready children — review isolation, confirm with a "
-            "human, then manually spawn workers. Auto dispatch is Phase B "
-            "(dispatch-ready / --yes reserved).",
+            "Hint: multiple ready children — review isolation, then: "
+            "task.py dispatch-ready <parent> [--yes] "
+            "(default is dry-run plan only).",
             Colors.YELLOW,
         ))
 
@@ -469,6 +479,221 @@ def cmd_deps(args: argparse.Namespace) -> int:
     return 0
 
 
+def _print_wave_plan(plan, *, confirm: bool, worker: str | None = None) -> None:
+    print(colored(f"Dispatch plan: wave {plan.wave}", Colors.BLUE))
+    if worker:
+        print(f"Worker: {worker}")
+    if plan.cycle is not None:
+        cycle_str = " → ".join(plan.cycle)
+        print(colored("CYCLE DETECTED (fail closed)", Colors.RED))
+        print(f"  {cycle_str}")
+        return
+
+    for w in plan.warnings:
+        print(colored(f"Warning: {w}", Colors.YELLOW))
+    if plan.warnings:
+        print()
+
+    print(colored(f"Planned spawns ({len(plan.items)}):", Colors.GREEN))
+    if not plan.items:
+        print("  (none)")
+    for item in plan.items:
+        deps = ", ".join(item.depends_on) if item.depends_on else "(none)"
+        print(
+            f"  - {item.dir_name}  "
+            f"[status={item.status}]  "
+            f"isolation={_fmt_isolation(item.isolation)}  "
+            f"depends_on=[{deps}]"
+        )
+        if item.cwd_ok:
+            print(f"      cwd: {item.cwd}")
+            cmd_preview = list(item.command)
+            if (
+                len(cmd_preview) >= 3
+                and cmd_preview[0] in ("xio", "xiocode")
+                and cmd_preview[1] == "-p"
+            ):
+                prompt = cmd_preview[2]
+                cmd_preview[2] = prompt[:80] + ("…" if len(prompt) > 80 else "")
+            print(f"      cmd: {' '.join(cmd_preview)}")
+        else:
+            print(colored(f"      cwd ERROR: {item.cwd_error}", Colors.RED))
+    print()
+
+    if plan.blocked:
+        print(colored(f"Blocked ({len(plan.blocked)}):", Colors.YELLOW))
+        for info in plan.blocked:
+            print(
+                f"  - {info.dir_name}  "
+                f"[status={info.status}]  "
+                f"isolation={_fmt_isolation(info.isolation)}"
+            )
+            for dep in info.blocked_by:
+                reason = _fmt_dep_reason(dep.status, dep.location)
+                print(f"      waiting on: {dep.name}  ({reason})")
+        print()
+
+    if plan.skipped:
+        print(colored(f"Skipped ({len(plan.skipped)}):", Colors.BLUE))
+        for info in plan.skipped:
+            print(
+                f"  - {info.dir_name}  "
+                f"[status={info.status}]  "
+                f"{info.skip_reason or ''}"
+            )
+        print()
+
+    if not confirm:
+        print(colored(
+            "Dry-run only (no spawn). Re-run with --yes or set "
+            "parallel.auto_confirm: true to execute.",
+            Colors.YELLOW,
+        ))
+    elif plan.items:
+        worktree_missing = [
+            i for i in plan.items
+            if i.isolation == "worktree" and not i.cwd_ok
+        ]
+        if worktree_missing:
+            print(colored(
+                "Fail closed: isolation=worktree children need an existing "
+                "worktree_path before spawn.",
+                Colors.RED,
+            ))
+
+
+def cmd_dispatch_ready(args: argparse.Namespace) -> int:
+    """Plan or execute ready-set channel/xio spawns (Phase B/C).
+
+    Default: print plan and exit 0 (human confirm).
+    With --yes or parallel.auto_confirm: spawn waves via configured worker.
+    """
+    repo_root = get_repo_root()
+    parent_path = resolve_task_dir(args.parent_dir, repo_root)
+    task_json = parent_path / FILE_TASK_JSON
+    if not task_json.is_file():
+        print(colored(f"Error: parent task not found: {args.parent_dir}", Colors.RED))
+        return 1
+
+    tasks_dir = get_tasks_dir(repo_root)
+    confirm = should_auto_confirm(bool(getattr(args, "yes", False)), repo_root)
+    worker, _ = resolve_effective_worker(repo_root)
+
+    print(colored(f"Dispatch-ready: {parent_path.name}", Colors.BLUE))
+    print(f"Mode: {'EXECUTE (--yes / auto_confirm)' if confirm else 'DRY-RUN (plan only)'}")
+    print(f"Worker: {worker}")
+    print()
+
+    if confirm:
+        drift_err = check_drift_gate(parent_path, tasks_dir, repo_root)
+        if drift_err:
+            print(colored(f"Error: {drift_err}", Colors.RED))
+            return 1
+
+    exit_code, plans, results = execute_waves(
+        parent_path,
+        tasks_dir,
+        repo_root,
+        confirm=confirm,
+    )
+
+    if not plans:
+        print(colored("No plan produced.", Colors.YELLOW))
+        return exit_code
+
+    # Always print the first (or only dry-run) wave plan.
+    _print_wave_plan(plans[0], confirm=confirm, worker=worker)
+
+    if confirm:
+        for plan in plans[1:]:
+            print()
+            _print_wave_plan(plan, confirm=True, worker=worker)
+
+        if results:
+            print(colored("Spawn results:", Colors.BLUE))
+            for r in results:
+                color = Colors.GREEN if r.ok else Colors.RED
+                label = "ok" if r.ok else "FAIL"
+                print(colored(
+                    f"  [{label}] {r.dir_name}  attempts={r.attempts}  {r.message}",
+                    color,
+                ))
+            print()
+
+        ok_parent, reason = parent_may_complete(parent_path, tasks_dir)
+        if not ok_parent:
+            print(colored(f"Parent complete gate: {reason}", Colors.YELLOW))
+        elif not any(not r.ok for r in results) and plans and not plans[-1].items:
+            print(colored(
+                "All required ready waves finished; run "
+                f"`task.py integrate {parent_path.name}` before archive "
+                "(MergeGate-aligned).",
+                Colors.GREEN,
+            ))
+
+    return exit_code
+
+
+def cmd_integrate(args: argparse.Namespace) -> int:
+    """Merge worktree child branches + project verify (Full-form L4)."""
+    repo_root = get_repo_root()
+    parent_path = resolve_task_dir(args.parent_dir, repo_root)
+    task_json = parent_path / FILE_TASK_JSON
+    if not task_json.is_file():
+        print(colored(f"Error: parent task not found: {args.parent_dir}", Colors.RED))
+        return 1
+
+    tasks_dir = get_tasks_dir(repo_root)
+    dry_run = bool(getattr(args, "dry_run", False))
+    plan = plan_integrate(parent_path, tasks_dir, repo_root)
+
+    print(colored(f"Integrate: {parent_path.name}", Colors.BLUE))
+    print(f"Mode: {'DRY-RUN' if dry_run else 'EXECUTE'}")
+    print(f"Base branch: {plan.base_branch}")
+    print(f"Verify: {plan.verify_command or '(none)'}")
+    print()
+
+    if plan.blocked_reason:
+        print(colored(f"Error: {plan.blocked_reason}", Colors.RED))
+        return 1
+
+    if plan.noop_reason:
+        print(colored(f"No-op: {plan.noop_reason}", Colors.YELLOW))
+    elif plan.targets:
+        print(colored(f"Merge targets ({len(plan.targets)}):", Colors.GREEN))
+        for t in plan.targets:
+            wt = t.worktree_path or "(branch only)"
+            print(f"  - {t.dir_name}  branch={t.branch}  worktree={wt}")
+        print()
+    else:
+        print("  (no merge targets)")
+        print()
+
+    result = execute_integrate(
+        parent_path,
+        tasks_dir,
+        repo_root,
+        dry_run=dry_run,
+        create_fix_task=not bool(getattr(args, "no_fix_task", False)),
+        skip_verify=bool(getattr(args, "skip_verify", False)),
+    )
+
+    color = Colors.GREEN if result.ok else Colors.RED
+    print(colored(result.message, color))
+    if result.fix_task_dir:
+        print(colored(
+            f"Serial fix task: {result.fix_task_dir} "
+            "(resolve conflict, then re-run integrate)",
+            Colors.YELLOW,
+        ))
+    if result.ok and not dry_run and not result.noop:
+        print(colored(
+            "Parent may now archive (integrate_ok set).",
+            Colors.GREEN,
+        ))
+    return 0 if result.ok else 1
+
+
 # =============================================================================
 # Help
 # =============================================================================
@@ -497,6 +722,8 @@ Usage:
   python3 task.py ready <parent-dir>                 List ready/blocked children (+ isolation)
   python3 task.py drift <parent-dir>                 Warn on json vs ## Dependencies drift
   python3 task.py deps <task-dir>                    Show depends_on + reverse dependents
+  python3 task.py dispatch-ready <parent-dir> [--yes]  Plan/spawn ready-set waves (Phase B/C)
+  python3 task.py integrate <parent-dir> [--dry-run]   Merge worktrees + verify (L4)
   python3 task.py list [--mine] [--status <status>]  List tasks
   python3 task.py list-archive [YYYY-MM]             List archived tasks
 
@@ -521,6 +748,10 @@ Examples:
   python3 task.py remove-subtask parent-task child-task
   python3 task.py ready parent-task                  # Ready/blocked under parent
   python3 task.py drift parent-task                  # Dual-write drift warnings
+  python3 task.py dispatch-ready parent-task         # Dry-run spawn plan
+  python3 task.py dispatch-ready parent-task --yes   # Spawn ready set (xio/channel)
+  python3 task.py integrate parent-task              # Merge worktrees + verify
+  python3 task.py integrate parent-task --dry-run    # Plan integrate only
   python3 task.py deps child-task                    # depends_on + reverse deps
   python3 task.py list                               # List all active tasks
   python3 task.py list --mine                        # List my tasks only
@@ -668,6 +899,40 @@ def main() -> int:
     )
     p_deps.add_argument("task_dir", help="Task directory")
 
+    # dispatch-ready — Phase B/C auto/semi-auto spawn
+    p_dispatch = subparsers.add_parser(
+        "dispatch-ready",
+        help="Plan or spawn workers for the ready set (Phase B/C; default worker=xio)",
+    )
+    p_dispatch.add_argument("parent_dir", help="Parent task directory")
+    p_dispatch.add_argument(
+        "--yes",
+        action="store_true",
+        help="Execute spawns (default is dry-run plan only)",
+    )
+
+    # integrate — Full-form L4 parent merge + verify
+    p_integrate = subparsers.add_parser(
+        "integrate",
+        help="Merge worktree child branches + verify (Full-form L4)",
+    )
+    p_integrate.add_argument("parent_dir", help="Parent task directory")
+    p_integrate.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print plan only; do not merge or write meta",
+    )
+    p_integrate.add_argument(
+        "--no-fix-task",
+        action="store_true",
+        help="On conflict, do not create a serial fix task stub",
+    )
+    p_integrate.add_argument(
+        "--skip-verify",
+        action="store_true",
+        help="Skip parallel.verify_command after merges (not recommended)",
+    )
+
     # list-archive
     p_listarch = subparsers.add_parser("list-archive", help="List archived tasks")
     p_listarch.add_argument("month", nargs="?", help="Month (YYYY-MM)")
@@ -695,6 +960,8 @@ def main() -> int:
         "ready": cmd_ready,
         "drift": cmd_drift,
         "deps": cmd_deps,
+        "dispatch-ready": cmd_dispatch_ready,
+        "integrate": cmd_integrate,
         "list": cmd_list,
         "list-archive": cmd_list_archive,
     }

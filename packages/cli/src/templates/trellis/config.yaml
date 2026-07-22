@@ -97,6 +97,27 @@ channel:
     max_live_workers: 6
 
 #-------------------------------------------------------------------------------
+# Parallel task dispatch (Phase B/C) + integrate (L4)
+#-------------------------------------------------------------------------------
+# Controls `task.py dispatch-ready` and `task.py integrate`.
+# Default is human-confirm (dry-run plan only). Set auto_confirm: true or
+# pass --yes to spawn the ready set. Default worker is xio (Phase C);
+# set worker: channel to force `trellis channel run`. isolation=worktree
+# children require an existing worktree_path on task.json (fail closed).
+# Drift is warn-only unless drift_fail_closed: true.
+#
+# parallel:
+#   auto_confirm: false
+#   drift_fail_closed: false
+#   max_retries: 0
+#   agent: implement
+#   timeout: 30m
+#   worker: xio                 # or channel / claude / codex
+#   worker_fallback: channel   # when xio missing; false/none = fail closed
+#   verify_command: "npm run check"
+#   context_max_chars: 24000
+
+#-------------------------------------------------------------------------------
 # Codex (dispatch behavior)
 #-------------------------------------------------------------------------------
 # Codex-only knob; other platforms ignore it. Default ("inline") makes the

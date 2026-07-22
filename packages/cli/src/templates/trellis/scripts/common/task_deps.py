@@ -6,7 +6,7 @@ Authoritative fields live on task.json:
   isolation: "worktree" | "shared" | unset
 
 Ready / blocked / cycle / drift are computed here; CLI commands in task.py
-are thin wrappers. Phase B auto-spawn is intentionally not implemented.
+are thin wrappers. Phase B spawn orchestration lives in task_dispatch.py.
 """
 
 from __future__ import annotations
@@ -24,6 +24,8 @@ IsolationValue = Literal["worktree", "shared"]
 DONE_STATUSES = frozenset({"completed", "done"})
 # Statuses that may still be dispatched / worked on.
 ACTIONABLE_STATUSES = frozenset({"planning", "pending", "in_progress"})
+# Terminal failure from dispatch-ready — does not unlock dependents.
+FAILED_STATUSES = frozenset({"failed"})
 VALID_ISOLATIONS = frozenset({"worktree", "shared"})
 
 _DEPENDENCIES_HEADING = re.compile(r"^##\s+Dependencies\s*$", re.IGNORECASE | re.MULTILINE)
@@ -287,6 +289,11 @@ def evaluate_ready(parent_dir: Path, tasks_dir: Path) -> ReadyReport:
             if status not in DONE_STATUSES:
                 info.status = "completed"
             info.skip_reason = "already completed"
+            report.skipped.append(info)
+            continue
+
+        if status in FAILED_STATUSES:
+            info.skip_reason = "failed (does not unlock dependents)"
             report.skipped.append(info)
             continue
 
