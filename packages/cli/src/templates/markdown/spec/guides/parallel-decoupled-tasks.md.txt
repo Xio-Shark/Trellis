@@ -48,7 +48,10 @@ And in that child's `prd.md` (or `implement.md`):
 
 Legacy tasks missing these fields ≡ `depends_on: []` and unset isolation (serial behavior unchanged).
 
-`task.py drift <parent>` warns on mismatch. Drift does **not** block `ready` in MVP. json→markdown sync is reserved for a later phase; Phase B may fail-closed on drift before auto spawn.
+`task.py drift <parent>` warns on mismatch. Drift does **not** block `ready`.
+json→markdown sync is reserved for a later phase. Phase B may set
+`parallel.drift_fail_closed: true` so `dispatch-ready --yes` refuses to spawn
+while drift is present.
 
 ---
 
@@ -56,7 +59,7 @@ Legacy tasks missing these fields ≡ `depends_on: []` and unset isolation (seri
 
 | Value | Use when | Parallel rule |
 |-------|----------|---------------|
-| `worktree` | Code / shared types / tests will change | Each worker gets its own worktree/branch |
+| `worktree` | Code / shared types / tests will change | Each worker gets its own worktree/branch; set `worktree_path` before auto-dispatch |
 | `shared` | Docs, research, readonly analysis | Same cwd allowed |
 | unset | Serial or not yet planned | Do not assume parallel safety |
 
@@ -73,50 +76,105 @@ Legacy tasks missing these fields ≡ `depends_on: []` and unset isolation (seri
    ```bash
    python3 ./.trellis/scripts/task.py ready <parent-dir>
    python3 ./.trellis/scripts/task.py drift <parent-dir>
+   python3 ./.trellis/scripts/task.py dispatch-ready <parent-dir>        # dry-run plan
+   python3 ./.trellis/scripts/task.py dispatch-ready <parent-dir> --yes  # spawn after confirm
    ```
-5. MVP: manually spawn channel workers for the ready set (`isolation=worktree` → independent worktree).
-6. When all required children complete → parent integration (merge/check). Conflicts → serial fix; do not pretend parallel succeeded.
+5. For `isolation=worktree`, set an existing `worktree_path` on each child before `--yes`.
+6. When all required children complete → `task.py integrate <parent>` (merge + verify). Conflicts → serial fix; do not pretend parallel succeeded.
 
 ---
 
-## Demo path (MVP A)
+## Demo path (A → B → C → Integrate)
 
 Example: parent with three children
 
-- `child-a`: `depends_on: []`, `isolation: worktree`
-- `child-b`: `depends_on: []`, `isolation: worktree`
+- `child-a`: `depends_on: []`, `isolation: worktree`, `worktree_path: ../wt-a`, `branch: feat/a`
+- `child-b`: `depends_on: []`, `isolation: worktree`, `worktree_path: ../wt-b`, `branch: feat/b`
 - `child-c`: `depends_on: [child-a, child-b]`, `isolation: worktree`
 
-Wave 1: `ready` lists A and B; C is blocked. Human confirms → spawn A and B in separate worktrees.  
-Wave 2: after A and B are completed/archived, `ready` lists C.  
-Finally: parent integrates.
+Wave 1: `ready` / `dispatch-ready` lists A and B; C is blocked.  
+Confirm → `dispatch-ready --yes` spawns A and B via default worker (`xio`, or `channel` fallback) in separate cwds.  
+Wave 2: after A and B complete, dispatcher recomputes and spawns C.  
+Failure: failed child does **not** unlock dependents; parent archive/complete is refused.  
+Integrate: after all required children complete:
 
-Cycle in the parent subgraph → `ready` fails closed (exit non-zero).
+```bash
+python3 ./.trellis/scripts/task.py integrate <parent-dir>          # merge + verify
+python3 ./.trellis/scripts/task.py integrate <parent-dir> --dry-run
+```
+
+Conflict → non-zero exit + optional serial fix task stub; never same-cwd multi-writer force-merge.
+Parent archive requires `meta.integrate_ok` (or noop) when any child used `isolation=worktree`.
+
+Cycle in the parent subgraph → fail closed (exit non-zero).
 
 ---
 
-## CLI reference (MVP A)
+## Phase C — default worker = xio
+
+- Config `parallel.worker` defaults to `xio`. Override with `channel` (or aliases `claude`/`codex`) for `trellis channel run`.
+- Spawn injects **Active task** path plus `prd.md` / `design.md` / `implement.md` / jsonl (truncated by `parallel.context_max_chars`).
+- `isolation=worktree` still requires a pre-existing `worktree_path` (dispatch does not invent worktrees).
+- If `xio` is missing and `parallel.worker_fallback: channel` (default), fall back with a warning.
+- **MergeGate contract**: xiocode MergeGate stays user-ask / never auto-merge. Trellis owns `depends_on`; parent merge is `task.py integrate` (L4), not an xio auto-merge.
+
+---
+
+## Full form — Integrate (L4)
+
+Owns:
+
+- Parent complete gate (required children done + no failed children + integrate when worktree kids exist)
+- `task.py integrate <parent>`: merge child branches into `base_branch`, run `parallel.verify_command`
+- Conflict → abort merge, serial fix guidance / optional fix-task stub
+
+Does **not** own: `dispatch-ready` waves (B) or xio adapter defaults (C).
+
+Parents with no `isolation=worktree` children: integrate is a successful no-op.
+
+---
+
+## CLI reference
 
 ```bash
 python3 ./.trellis/scripts/task.py ready <parent-dir>
-python3 ./.trellis/scripts/task.py drift <parent-dir>   # warn exit may be non-zero; does not block ready
+python3 ./.trellis/scripts/task.py drift <parent-dir>              # warn; may exit non-zero
 python3 ./.trellis/scripts/task.py deps <task-dir>
+python3 ./.trellis/scripts/task.py dispatch-ready <parent-dir>     # dry-run plan (default)
+python3 ./.trellis/scripts/task.py dispatch-ready <parent-dir> --yes
+python3 ./.trellis/scripts/task.py integrate <parent-dir>          # L4 merge + verify
+python3 ./.trellis/scripts/task.py integrate <parent-dir> --dry-run
 ```
 
-Ready predicate: every `depends_on` entry is completed/done/archived; child status is actionable (`planning` / `pending` / `in_progress`); no cycle.
+Ready predicate: every `depends_on` entry is completed/done/archived; child status is actionable (`planning` / `pending` / `in_progress`); no cycle. `failed` children stay skipped and do not unlock dependents.
+
+### Config (`.trellis/config.yaml`)
+
+```yaml
+parallel:
+  auto_confirm: false       # if true, dispatch-ready spawns without --yes
+  drift_fail_closed: false  # if true, --yes refuses when drift is present
+  max_retries: 0            # extra attempts after first failure
+  agent: implement          # channel agent role (when worker=channel)
+  timeout: 30m
+  worker: xio               # Phase C default; set channel to force trellis channel run
+  worker_fallback: channel  # when xio missing; set none/false to fail closed
+  verify_command: "npm run check"  # L4 integrate verify
+  context_max_chars: 24000  # xio -p artifact budget
+```
+
+Tests may set `TRELLIS_DISPATCH_BACKEND=mock` to skip the real `trellis`/`xio` CLI.
 
 ---
 
-## Roadmap (A → B → C → full)
+## Roadmap (A → B → C → Integrate)
 
 | Phase | Capability | Status |
 |-------|------------|--------|
-| **A (MVP)** | Protocol + `ready`/`drift`/`deps` + planning docs; **manual** spawn | This guide |
-| **B** | Auto spawn ready set after human confirm; `dispatch-ready [--yes]` / config `parallel.auto_confirm`; wave recompute; failure does not unlock downstream | Documented / future |
-| **C** | Default worker → `xio` (or profile); worktree/merge aligned with xiocode; Trellis still owns the graph | Documented / future |
-| **Full** | Parent integration gate; conflict degrade to serial; optional drift fail-closed | Documented / future |
-
-`--yes` and markdown sync are **reserved** for Phase B+ — do not fake flags in MVP.
+| **A (MVP)** | Protocol + `ready`/`drift`/`deps` + planning docs; **manual** spawn | Shipped |
+| **B** | Auto spawn ready set after human confirm; `dispatch-ready [--yes]` / config `parallel.auto_confirm`; wave recompute; failure does not unlock downstream; optional drift fail-closed | Shipped |
+| **C** | Default worker → `xio`; context inject; worktree cwd; MergeGate contract aligned; fallback to channel | Shipped |
+| **Full / L4** | Parent `integrate` (merge + verify); conflict → serial fix; archive gate | Shipped |
 
 ---
 
@@ -125,3 +183,4 @@ Ready predicate: every `depends_on` entry is completed/done/archived; child stat
 - Same-cwd multi-writer parallel code edits
 - Claiming perfect automatic decoupling
 - Implementing the DAG engine inside an app worker (e.g. xiocode) — Trellis owns orchestration
+- Auto-resolving all git merge conflicts

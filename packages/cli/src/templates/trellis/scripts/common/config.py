@@ -168,6 +168,20 @@ DEFAULT_SESSION_COMMIT_MESSAGE = "chore: record journal"
 DEFAULT_MAX_JOURNAL_LINES = 2000
 DEFAULT_SESSION_AUTO_COMMIT = True
 DEFAULT_CODEX_DISPATCH_MODE = "inline"
+DEFAULT_PARALLEL_AUTO_CONFIRM = False
+DEFAULT_PARALLEL_DRIFT_FAIL_CLOSED = False
+DEFAULT_PARALLEL_MAX_RETRIES = 0
+DEFAULT_PARALLEL_AGENT = "implement"
+DEFAULT_PARALLEL_TIMEOUT = "30m"
+# Phase C: default dispatch worker. "xio" prefers the xio CLI; "channel"
+# keeps `trellis channel run`. "claude" / "codex" are aliases for channel.
+DEFAULT_PARALLEL_WORKER = "xio"
+# When worker=xio but xio is not on PATH, fall back to this ("" = fail closed).
+DEFAULT_PARALLEL_WORKER_FALLBACK = "channel"
+# Phase L4: project verify after integrating worktree branches.
+DEFAULT_PARALLEL_VERIFY_COMMAND = "npm run check"
+# Max chars of planning artifacts injected into an xio -p prompt.
+DEFAULT_PARALLEL_CONTEXT_MAX_CHARS = 24000
 
 CONFIG_FILE = "config.yaml"
 
@@ -270,6 +284,153 @@ def get_codex_dispatch_mode(repo_root: Path | None = None) -> str:
         file=sys.stderr,
     )
     return DEFAULT_CODEX_DISPATCH_MODE
+
+
+def _get_parallel_section(repo_root: Path | None = None) -> dict:
+    config = _load_config(repo_root)
+    parallel = config.get("parallel")
+    if parallel is None:
+        return {}
+    if not isinstance(parallel, dict):
+        print(
+            f"[WARN] invalid parallel config: {parallel!r}; ignoring",
+            file=sys.stderr,
+        )
+        return {}
+    return parallel
+
+
+def _parse_bool_config(raw: object, default: bool, key: str) -> bool:
+    if isinstance(raw, bool):
+        return raw
+    if raw is None:
+        return default
+    s = str(raw).strip().lower()
+    if s in ("true", "yes", "1", "on"):
+        return True
+    if s in ("false", "no", "0", "off"):
+        return False
+    print(
+        f"[WARN] invalid {key} value: {raw!r}; using {default}",
+        file=sys.stderr,
+    )
+    return default
+
+
+def get_parallel_auto_confirm(repo_root: Path | None = None) -> bool:
+    """Whether dispatch-ready may spawn without ``--yes`` (default False)."""
+    parallel = _get_parallel_section(repo_root)
+    return _parse_bool_config(
+        parallel.get("auto_confirm", DEFAULT_PARALLEL_AUTO_CONFIRM),
+        DEFAULT_PARALLEL_AUTO_CONFIRM,
+        "parallel.auto_confirm",
+    )
+
+
+def get_parallel_drift_fail_closed(repo_root: Path | None = None) -> bool:
+    """When True, dispatch-ready --yes refuses to spawn if drift is present."""
+    parallel = _get_parallel_section(repo_root)
+    return _parse_bool_config(
+        parallel.get("drift_fail_closed", DEFAULT_PARALLEL_DRIFT_FAIL_CLOSED),
+        DEFAULT_PARALLEL_DRIFT_FAIL_CLOSED,
+        "parallel.drift_fail_closed",
+    )
+
+
+def get_parallel_max_retries(repo_root: Path | None = None) -> int:
+    """Extra spawn attempts after the first failure (default 0)."""
+    parallel = _get_parallel_section(repo_root)
+    raw = parallel.get("max_retries", DEFAULT_PARALLEL_MAX_RETRIES)
+    try:
+        value = int(raw)
+        return max(0, value)
+    except (TypeError, ValueError):
+        print(
+            f"[WARN] invalid parallel.max_retries value: {raw!r}; "
+            f"using {DEFAULT_PARALLEL_MAX_RETRIES}",
+            file=sys.stderr,
+        )
+        return DEFAULT_PARALLEL_MAX_RETRIES
+
+
+def get_parallel_agent(repo_root: Path | None = None) -> str:
+    """Channel agent role for dispatch-ready spawns (default implement)."""
+    parallel = _get_parallel_section(repo_root)
+    raw = parallel.get("agent", DEFAULT_PARALLEL_AGENT)
+    name = str(raw).strip() if raw is not None else ""
+    return name or DEFAULT_PARALLEL_AGENT
+
+
+def get_parallel_timeout(repo_root: Path | None = None) -> str:
+    """Per-worker timeout string for channel run (default 30m)."""
+    parallel = _get_parallel_section(repo_root)
+    raw = parallel.get("timeout", DEFAULT_PARALLEL_TIMEOUT)
+    value = str(raw).strip() if raw is not None else ""
+    return value or DEFAULT_PARALLEL_TIMEOUT
+
+
+def _normalize_worker_name(raw: object, default: str) -> str:
+    name = str(raw).strip().lower() if raw is not None else ""
+    if not name:
+        return default
+    # claude/codex → channel (agent role still comes from parallel.agent)
+    if name in ("claude", "codex", "trellis", "channel"):
+        return "channel"
+    if name in ("xio", "xiocode"):
+        return "xio"
+    print(
+        f"[WARN] invalid parallel.worker value: {raw!r}; using {default}",
+        file=sys.stderr,
+    )
+    return default
+
+
+def get_parallel_worker(repo_root: Path | None = None) -> str:
+    """Dispatch worker backend: ``xio`` (default) or ``channel``."""
+    parallel = _get_parallel_section(repo_root)
+    return _normalize_worker_name(
+        parallel.get("worker", DEFAULT_PARALLEL_WORKER),
+        DEFAULT_PARALLEL_WORKER,
+    )
+
+
+def get_parallel_worker_fallback(repo_root: Path | None = None) -> str:
+    """Fallback worker when preferred worker binary is missing (default channel).
+
+    Empty string means fail closed (no fallback).
+    """
+    parallel = _get_parallel_section(repo_root)
+    raw = parallel.get("worker_fallback", DEFAULT_PARALLEL_WORKER_FALLBACK)
+    if raw is None:
+        return DEFAULT_PARALLEL_WORKER_FALLBACK
+    value = str(raw).strip().lower()
+    if value in ("", "none", "off", "false", "0"):
+        return ""
+    return _normalize_worker_name(value, DEFAULT_PARALLEL_WORKER_FALLBACK)
+
+
+def get_parallel_verify_command(repo_root: Path | None = None) -> str:
+    """Shell command run after integrate merges (default ``npm run check``)."""
+    parallel = _get_parallel_section(repo_root)
+    raw = parallel.get("verify_command", DEFAULT_PARALLEL_VERIFY_COMMAND)
+    value = str(raw).strip() if raw is not None else ""
+    return value or DEFAULT_PARALLEL_VERIFY_COMMAND
+
+
+def get_parallel_context_max_chars(repo_root: Path | None = None) -> int:
+    """Max characters of planning artifacts injected into xio prompts."""
+    parallel = _get_parallel_section(repo_root)
+    raw = parallel.get("context_max_chars", DEFAULT_PARALLEL_CONTEXT_MAX_CHARS)
+    try:
+        value = int(raw)
+        return max(1000, value)
+    except (TypeError, ValueError):
+        print(
+            f"[WARN] invalid parallel.context_max_chars value: {raw!r}; "
+            f"using {DEFAULT_PARALLEL_CONTEXT_MAX_CHARS}",
+            file=sys.stderr,
+        )
+        return DEFAULT_PARALLEL_CONTEXT_MAX_CHARS
 
 
 def get_hooks(event: str, repo_root: Path | None = None) -> list[str]:

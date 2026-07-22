@@ -474,6 +474,16 @@ def cmd_archive(args: argparse.Namespace) -> int:
     dir_name = task_dir.name
     task_json_path = task_dir / FILE_TASK_JSON
 
+    # Phase B: parents with a child graph must not complete while any
+    # required child is incomplete or failed.
+    if task_json_path.is_file():
+        from .task_dispatch import parent_may_complete
+
+        ok, reason = parent_may_complete(task_dir, tasks_dir)
+        if not ok:
+            print(colored(f"Error: {reason}", Colors.RED), file=sys.stderr)
+            return 1
+
     # Update status before archiving
     today = datetime.now().strftime("%Y-%m-%d")
     # Names of child task dirs whose task.json gets modified below; passed

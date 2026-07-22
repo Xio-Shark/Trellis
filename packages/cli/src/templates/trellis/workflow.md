@@ -67,10 +67,14 @@ python3 ./.trellis/scripts/task.py set-scope <name> <scope>
 python3 ./.trellis/scripts/task.py add-subtask <parent> <child>
 python3 ./.trellis/scripts/task.py remove-subtask <parent> <child>
 
-# Parallel deps (MVP A — ready set; no auto spawn)
-python3 ./.trellis/scripts/task.py ready <parent>     # ready / blocked + isolation
-python3 ./.trellis/scripts/task.py drift <parent>     # json vs ## Dependencies warn
-python3 ./.trellis/scripts/task.py deps <task>        # depends_on + reverse dependents
+# Parallel deps + Phase B dispatch
+python3 ./.trellis/scripts/task.py ready <parent>            # ready / blocked + isolation
+python3 ./.trellis/scripts/task.py drift <parent>            # json vs ## Dependencies warn
+python3 ./.trellis/scripts/task.py deps <task>               # depends_on + reverse dependents
+python3 ./.trellis/scripts/task.py dispatch-ready <parent>   # dry-run spawn plan (default)
+python3 ./.trellis/scripts/task.py dispatch-ready <parent> --yes  # spawn ready set / waves
+python3 ./.trellis/scripts/task.py integrate <parent>        # L4 merge worktrees + verify
+python3 ./.trellis/scripts/task.py integrate <parent> --dry-run
 
 # PR creation
 python3 ./.trellis/scripts/task.py create-pr [name] [--dry-run]
@@ -188,7 +192,7 @@ python3 ./.trellis/scripts/task.py ready <parent-dir>   # ready / blocked + reas
 python3 ./.trellis/scripts/task.py drift <parent-dir>   # dual-write warnings
 ```
 
-**MVP (A) execution:** human confirms the ready set → manually spawn channel workers (one worktree per `isolation=worktree` child) → parent integrates when children complete. No auto spawn in MVP. Phase B adds `dispatch-ready [--yes]`; Phase C may default workers to xio. Never same-cwd multi-writer.
+**Execution:** human reviews the ready set (`ready` / `dispatch-ready` dry-run) → confirm with `--yes` or `parallel.auto_confirm` → dispatcher spawns ready children via default worker (`xio`, fallback `trellis channel run`; worktree isolation requires existing `worktree_path`) → on success recomputes the next wave; failures do not unlock dependents and block parent complete → after required children finish, `task.py integrate <parent>` merges branches + runs verify (conflict → serial fix). Never same-cwd multi-writer.
 
 See `.trellis/spec/guides/parallel-decoupled-tasks.md` for the planning checklist and A→B→C path.
 
