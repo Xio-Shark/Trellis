@@ -26,6 +26,12 @@ interface PiRunConfig {
   tools?: string[];
 }
 
+interface ContextInjectionLimits {
+  max_file_bytes: number;
+  max_artifact_bytes: number;
+  max_total_bytes: number;
+}
+
 interface PiExtensionInternals {
   normalizeAgent: (agent: string | undefined) => string;
   isTrellisAgent: (root: string, agent: string) => boolean;
@@ -43,6 +49,13 @@ interface PiExtensionInternals {
     registerShortcut?: (key: string, opts: unknown) => void;
     on?: (event: string, handler: (event: unknown, ctx?: unknown) => unknown) => void;
   }) => void;
+  truncateUtf8: (buf: Buffer, cap: number) => Buffer;
+  readContextInjectionLimits: (repoRoot: string) => ContextInjectionLimits;
+  buildContextForTest: (
+    root: string,
+    agent: string,
+    key: string | null,
+  ) => string;
 }
 
 function loadExtensionInternals(cwd = process.cwd()): PiExtensionInternals {
@@ -57,6 +70,9 @@ export {
   cmdHasTrellisCtx,
   shellQuote,
   trellisExtension,
+  truncateUtf8,
+  readContextInjectionLimits,
+  buildContext as buildContextForTest,
 };
 `;
   const compiled = ts.transpileModule(source, {
@@ -585,5 +601,289 @@ fallbackModels:
     expect(extension).toContain("isTrellisAgent(root, agentName)");
     expect(extension).toContain("npm:@tintinweb/pi-subagents");
     expect(extension).toContain("npm:pi-subagents");
+  });
+});
+
+describe("pi extension: context injection limits (issue #441)", () => {
+  const SESSION_KEY = "ctxlimit-session";
+
+  function createRoot(): string {
+    const root = mkdtempSync(join(tmpdir(), "trellis-pi-ctxlimit-"));
+    mkdirSync(join(root, ".pi", "agents"), { recursive: true });
+    writeFileSync(
+      join(root, ".pi", "agents", "trellis-implement.md"),
+      "---\nname: trellis-implement\n---\n# Implement\n",
+    );
+    return root;
+  }
+
+  function activateTask(root: string, taskDirName: string): string {
+    const taskDir = join(root, ".trellis", "tasks", taskDirName);
+    mkdirSync(taskDir, { recursive: true });
+    mkdirSync(join(root, ".trellis", ".runtime", "sessions"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(root, ".trellis", ".runtime", "sessions", `${SESSION_KEY}.json`),
+      JSON.stringify({ current_task: `tasks/${taskDirName}` }),
+    );
+    return taskDir;
+  }
+
+  function writeConfig(root: string, yaml: string): void {
+    writeFileSync(join(root, ".trellis", "config.yaml"), yaml, "utf-8");
+  }
+
+  describe("truncateUtf8", () => {
+    it("leaves data untouched when cap is 0 (unlimited)", () => {
+      const { truncateUtf8 } = loadExtensionInternals();
+      const data = Buffer.from("X".repeat(1000));
+      expect(truncateUtf8(data, 0)).toEqual(data);
+    });
+
+    it("leaves data untouched when data is at or under the cap", () => {
+      const { truncateUtf8 } = loadExtensionInternals();
+      const data = Buffer.from("hello world");
+      expect(truncateUtf8(data, data.length)).toEqual(data);
+      expect(truncateUtf8(data, data.length + 5)).toEqual(data);
+    });
+
+    it("truncates ASCII data exactly at the cap (1 byte over cap)", () => {
+      const { truncateUtf8 } = loadExtensionInternals();
+      const data = Buffer.from("abcdefghij"); // 10 bytes
+      expect(truncateUtf8(data, 9)).toEqual(Buffer.from("abcdefghi"));
+    });
+
+    it("never splits a 2-byte UTF-8 sequence at the boundary (café)", () => {
+      const { truncateUtf8 } = loadExtensionInternals();
+      const data = Buffer.from("café", "utf-8");
+      for (let cap = 0; cap <= data.length; cap++) {
+        const out = truncateUtf8(data, cap);
+        expect(() => {
+          // Buffer#toString silently replaces invalid sequences with U+FFFD;
+          // assert no replacement char appears instead of throwing.
+          const decoded = out.toString("utf-8");
+          if (decoded.includes("�")) throw new Error("invalid utf-8");
+        }).not.toThrow();
+      }
+      expect(truncateUtf8(data, 4).toString("utf-8")).toBe("caf");
+    });
+
+    it("never splits a 3-byte UTF-8 sequence at the boundary (euro sign)", () => {
+      const { truncateUtf8 } = loadExtensionInternals();
+      const data = Buffer.from("x€", "utf-8"); // x + 3-byte euro sign
+      for (let cap = 0; cap <= data.length; cap++) {
+        const out = truncateUtf8(data, cap);
+        expect(out.toString("utf-8")).not.toContain("�");
+      }
+    });
+  });
+
+  describe("readContextInjectionLimits", () => {
+    it("returns built-in defaults when config.yaml has no context_injection section", () => {
+      const root = createRoot();
+      mkdirSync(join(root, ".trellis"), { recursive: true });
+      writeConfig(root, "session_auto_commit: true\n");
+      const { readContextInjectionLimits } = loadExtensionInternals();
+      expect(readContextInjectionLimits(root)).toEqual({
+        max_file_bytes: 32768,
+        max_artifact_bytes: 65536,
+        max_total_bytes: 131072,
+      });
+    });
+
+    it("returns built-in defaults when config.yaml is absent", () => {
+      const root = createRoot();
+      const { readContextInjectionLimits } = loadExtensionInternals();
+      expect(readContextInjectionLimits(root)).toEqual({
+        max_file_bytes: 32768,
+        max_artifact_bytes: 65536,
+        max_total_bytes: 131072,
+      });
+    });
+
+    it("applies explicit overrides for all three keys", () => {
+      const root = createRoot();
+      mkdirSync(join(root, ".trellis"), { recursive: true });
+      writeConfig(
+        root,
+        [
+          "context_injection:",
+          "  max_file_bytes: 100",
+          "  max_artifact_bytes: 200",
+          "  max_total_bytes: 300",
+        ].join("\n"),
+      );
+      const { readContextInjectionLimits } = loadExtensionInternals();
+      expect(readContextInjectionLimits(root)).toEqual({
+        max_file_bytes: 100,
+        max_artifact_bytes: 200,
+        max_total_bytes: 300,
+      });
+    });
+
+    it("0 means unlimited and is preserved as-is (not replaced by default)", () => {
+      const root = createRoot();
+      mkdirSync(join(root, ".trellis"), { recursive: true });
+      writeConfig(
+        root,
+        ["context_injection:", "  max_total_bytes: 0"].join("\n"),
+      );
+      const { readContextInjectionLimits } = loadExtensionInternals();
+      expect(readContextInjectionLimits(root).max_total_bytes).toBe(0);
+    });
+
+    it("falls back to default for a negative value", () => {
+      const root = createRoot();
+      mkdirSync(join(root, ".trellis"), { recursive: true });
+      writeConfig(
+        root,
+        ["context_injection:", "  max_file_bytes: -5"].join("\n"),
+      );
+      const { readContextInjectionLimits } = loadExtensionInternals();
+      expect(readContextInjectionLimits(root).max_file_bytes).toBe(32768);
+    });
+
+    it("falls back to default for a non-integer value", () => {
+      const root = createRoot();
+      mkdirSync(join(root, ".trellis"), { recursive: true });
+      writeConfig(
+        root,
+        ["context_injection:", "  max_artifact_bytes: not-a-number"].join(
+          "\n",
+        ),
+      );
+      const { readContextInjectionLimits } = loadExtensionInternals();
+      expect(readContextInjectionLimits(root).max_artifact_bytes).toBe(65536);
+    });
+  });
+
+  describe("buildContext: per-file and per-artifact caps", () => {
+    it("under-cap content is inlined with no truncation/index notices (golden)", () => {
+      const root = createRoot();
+      const taskDir = activateTask(root, "task-golden");
+      writeFileSync(join(root, "small.md"), "small spec content\n", "utf-8");
+      writeFileSync(
+        join(taskDir, "implement.jsonl"),
+        JSON.stringify({ file: "small.md", reason: "r" }) + "\n",
+        "utf-8",
+      );
+      writeFileSync(join(taskDir, "prd.md"), "prd body\n", "utf-8");
+      const { buildContextForTest } = loadExtensionInternals();
+      const out = buildContextForTest(root, "trellis-implement", SESSION_KEY);
+      expect(out).toContain("=== small.md ===\nsmall spec content");
+      expect(out).toContain("prd body");
+      expect(out).not.toContain("[Trellis: truncated");
+      expect(out).not.toContain("[Trellis: not inlined");
+    });
+
+    it("truncates an oversized jsonl-referenced file at max_file_bytes with a notice", () => {
+      const root = createRoot();
+      const taskDir = activateTask(root, "task-oversize");
+      writeFileSync(join(root, "big.txt"), "A".repeat(2 * 1024 * 1024), "utf-8");
+      writeFileSync(
+        join(taskDir, "implement.jsonl"),
+        JSON.stringify({ file: "big.txt", reason: "big" }) + "\n",
+        "utf-8",
+      );
+      const { buildContextForTest } = loadExtensionInternals();
+      const out = buildContextForTest(root, "trellis-implement", SESSION_KEY);
+      expect(Buffer.byteLength(out, "utf-8")).toBeLessThanOrEqual(
+        128 * 1024 + 1024,
+      );
+      expect(out).toContain(
+        "[Trellis: truncated at 32768 bytes — read big.txt for the full content]",
+      );
+    });
+
+    it("degrades to an index line once the total budget is exhausted (3 files)", () => {
+      const root = createRoot();
+      const taskDir = activateTask(root, "task-total-cap");
+      writeFileSync(join(root, "f1.txt"), "1".repeat(50), "utf-8");
+      writeFileSync(join(root, "f2.txt"), "2".repeat(50), "utf-8");
+      writeFileSync(join(root, "f3.txt"), "3".repeat(50), "utf-8");
+      writeFileSync(
+        join(taskDir, "implement.jsonl"),
+        [
+          JSON.stringify({ file: "f1.txt", reason: "first" }),
+          JSON.stringify({ file: "f2.txt", reason: "second" }),
+          JSON.stringify({ file: "f3.txt", reason: "third" }),
+        ].join("\n") + "\n",
+        "utf-8",
+      );
+      mkdirSync(join(root, ".trellis"), { recursive: true });
+      writeConfig(
+        root,
+        [
+          "context_injection:",
+          "  max_file_bytes: 0",
+          "  max_artifact_bytes: 0",
+          "  max_total_bytes: 120", // fits f1 fully, degrades f2/f3
+        ].join("\n"),
+      );
+      const { buildContextForTest } = loadExtensionInternals();
+      const out = buildContextForTest(root, "trellis-implement", SESSION_KEY);
+      expect(out).toContain("=== f1.txt ===\n" + "1".repeat(50));
+      expect(out).toContain(
+        "[Trellis: not inlined (total context limit reached) — f2.txt (50 bytes): second]",
+      );
+      expect(out).toContain(
+        "[Trellis: not inlined (total context limit reached) — f3.txt (50 bytes): third]",
+      );
+      expect(out).not.toContain("=== f2.txt ===");
+      expect(out).not.toContain("=== f3.txt ===");
+    });
+
+    it("max_total_bytes: 0 restores fully unlimited inlining", () => {
+      const root = createRoot();
+      const taskDir = activateTask(root, "task-unlimited-total");
+      const bigContent = "Z".repeat(5000);
+      writeFileSync(join(root, "big.txt"), bigContent, "utf-8");
+      writeFileSync(
+        join(taskDir, "implement.jsonl"),
+        JSON.stringify({ file: "big.txt", reason: "big" }) + "\n",
+        "utf-8",
+      );
+      mkdirSync(join(root, ".trellis"), { recursive: true });
+      writeConfig(
+        root,
+        [
+          "context_injection:",
+          "  max_file_bytes: 0",
+          "  max_total_bytes: 0",
+        ].join("\n"),
+      );
+      const { buildContextForTest } = loadExtensionInternals();
+      const out = buildContextForTest(root, "trellis-implement", SESSION_KEY);
+      expect(out).toContain("=== big.txt ===\n" + bigContent);
+      expect(out).not.toContain("[Trellis: not inlined");
+    });
+
+    it("artifacts (prd/design/implement.md) obey max_artifact_bytes independently of max_file_bytes", () => {
+      const root = createRoot();
+      const taskDir = activateTask(root, "task-artifact-cap");
+      writeFileSync(join(taskDir, "prd.md"), "P".repeat(1000), "utf-8");
+      mkdirSync(join(root, ".trellis"), { recursive: true });
+      writeConfig(
+        root,
+        [
+          "context_injection:",
+          "  max_file_bytes: 0",
+          "  max_artifact_bytes: 20",
+          "  max_total_bytes: 0",
+        ].join("\n"),
+      );
+      const { buildContextForTest } = loadExtensionInternals();
+      const out = buildContextForTest(root, "trellis-implement", SESSION_KEY);
+      const relTaskDir = "tasks/task-artifact-cap".replace(
+        "tasks/",
+        ".trellis/tasks/",
+      );
+      expect(out).toContain("P".repeat(20));
+      expect(out).not.toContain("P".repeat(21));
+      expect(out).toContain(
+        `[Trellis: truncated at 20 bytes — read ${relTaskDir}/prd.md for the full content]`,
+      );
+    });
   });
 });

@@ -1258,6 +1258,89 @@ The route depends on task intent, artifact presence, and execution mode. Missing
 - **List-context seed**: `task.py list-context` prints "no curated entries yet" for seed-only jsonl.
 - **Artifact gates**: workflow-state, SessionStart, and continue distinguish PRD-only lightweight tasks from complex tasks that still need `design.md` / `implement.md`.
 
+## Context Injection Limits Contract (`context_injection`)
+
+### 1. Scope / Trigger
+
+Sub-agent context injection (hook Python + Pi extension TS) caps how much task
+context is inlined into a sub-agent's first prompt. Added for #441 (task
+`07-22-subagent-context-limits`). Any change to injection formatting, caps, or
+config keys MUST be applied to **both** implementations:
+
+- `packages/cli/src/templates/shared-hooks/inject-subagent-context.py`
+- `packages/cli/src/templates/pi/extensions/trellis/index.ts.txt`
+
+### 2. Signatures
+
+- Python: `common.config.get_context_injection_limits() -> dict[str, int]`,
+  `truncate_utf8(data: bytes, cap: int) -> bytes`
+- TS: `readContextInjectionLimits(repoRoot: string)`, `truncateUtf8(buf: Buffer, cap: number)`
+  (exported for tests via `loadExtensionInternals()` in `pi.test.ts`)
+
+### 3. Contracts
+
+`.trellis/config.yaml` section (ships commented in the template; defaults live in code):
+
+```yaml
+context_injection:
+  max_file_bytes: 32768        # per implement.jsonl / check.jsonl referenced file
+  max_artifact_bytes: 65536    # per task artifact (prd.md / design.md / implement.md)
+  max_total_bytes: 131072      # whole payload; overflow degrades to index lines
+```
+
+- `0` disables that limit; negative / non-int → default + stderr warning.
+- Notice strings (byte-frozen, identical in both implementations):
+  - truncation: `\n[Trellis: truncated at {cap} bytes — read {path} for the full content]`
+  - degradation: `[Trellis: not inlined (total context limit reached) — {path} ({size} bytes): {reason}]`
+- Artifact reasons: `Requirements document` / `Technical design document` / `Execution plan document`.
+- Accounting: `=== path ===` headers and notices count toward `max_total_bytes`.
+  Processing order unchanged: jsonl entries first, then prd → design → implement.md.
+- Truncation is UTF-8-safe: back off over continuation bytes; drop an incomplete lead byte.
+- `task.py validate` emits non-blocking hygiene warnings (yellow, exit code unchanged):
+  code-file extension outside `.trellis/spec/`, `docs/`, `docs-site/`, or the task's
+  own dir; and entries larger than `max_file_bytes`.
+
+### 4. Validation & Error Matrix
+
+- unreadable referenced file → skipped (pre-existing behavior, unchanged)
+- file > `max_file_bytes` → truncated + truncation notice
+- artifact > `max_artifact_bytes` → truncated + truncation notice
+- next block would exceed `max_total_bytes` → index line instead of content
+- invalid config value → default for that key + stderr warning, never a crash
+
+### 5. Good/Base/Bad Cases
+
+- Good: curated spec files of a few KB — output byte-identical to pre-cap behavior.
+- Base: one 2 MiB file → ≤32 KiB inlined + notice; total payload ≤128 KiB.
+- Bad (guarded): setting values via env vars or CLI flags — not supported; config.yaml only.
+
+### 6. Tests Required
+
+- Python: `packages/cli/test/scripts/context-injection-limits.integration.test.ts`
+  (probe-spawned; fixture matrix: at-cap / 1-over / UTF-8 straddle 2-byte & 3-byte /
+  3-file total overflow / `0` disable / config override / golden under-cap / validate warnings).
+- TS: `packages/cli/test/templates/pi.test.ts` `describe("pi extension: context injection limits (issue #441)")`
+  — same matrix, asserts the exact frozen notice strings.
+- Template: `trellis.test.ts` asserts config.yaml's `context_injection` section exists and is fully commented.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+Change a notice string or cap semantics in one implementation only, or account
+only file bodies (not headers/notices) toward the total budget.
+
+#### Correct
+
+Treat the notice strings, key names, ordering, and accounting rules above as a
+frozen cross-implementation contract; change both sides plus both test suites in
+the same commit.
+
+> **Warning**: Pi's jsonl block format converged to the Python format
+> (`=== path ===` headers) in this change — an approved deviation from Pi's old
+> `## file` + `---` format. Directory-type jsonl entries remain Python-only; the
+> Pi extension skips them (pre-existing platform difference).
+
 ## Parent / Child Task Tree Contract
 
 ### Scope / Trigger
