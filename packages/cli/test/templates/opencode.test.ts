@@ -813,4 +813,85 @@ describe("opencode chat.message subagent skip (issue #264)", () => {
     expect(parts[0].text).toContain("<workflow-state>");
     expect(parts[0].text).toContain("user prompt");
   });
+
+  it("inject-workflow-state.js skips injection when the prompt contains the default skip keyword", async () => {
+    const hooks = (await injectWorkflowStatePlugin({
+      directory: dir,
+    })) as ChatMessageHooks;
+    const parts: ChatMessagePart[] = [
+      { type: "text", text: "no-trellis what does this regex do" },
+    ];
+
+    await hooks["chat.message"](
+      { sessionID: "main-session", agent: "build" },
+      { parts },
+    );
+
+    expect(parts).toHaveLength(1);
+    expect(parts[0].text).toBe("no-trellis what does this regex do");
+  });
+
+  it("inject-workflow-state.js does not skip on 'no-trellisfoo' (word-boundary negative)", async () => {
+    const hooks = (await injectWorkflowStatePlugin({
+      directory: dir,
+    })) as ChatMessageHooks;
+    const parts: ChatMessagePart[] = [
+      { type: "text", text: "no-trellisfoo is a strange word" },
+    ];
+
+    await hooks["chat.message"](
+      { sessionID: "main-session", agent: "build" },
+      { parts },
+    );
+
+    expect(parts[0].text).toContain("<workflow-state>");
+  });
+
+  it("inject-workflow-state.js honors a custom prompt_injection.skip_keyword", async () => {
+    writeFileSync(
+      join(dir, ".trellis", "config.yaml"),
+      ["prompt_injection:", '  skip_keyword: "off-topic"'].join("\n"),
+    );
+    const hooks = (await injectWorkflowStatePlugin({
+      directory: dir,
+    })) as ChatMessageHooks;
+
+    const skipped: ChatMessagePart[] = [
+      { type: "text", text: "off-topic question" },
+    ];
+    await hooks["chat.message"](
+      { sessionID: "main-session", agent: "build" },
+      { parts: skipped },
+    );
+    expect(skipped[0].text).toBe("off-topic question");
+
+    const notSkipped: ChatMessagePart[] = [
+      { type: "text", text: "no-trellis question" },
+    ];
+    await hooks["chat.message"](
+      { sessionID: "main-session-2", agent: "build" },
+      { parts: notSkipped },
+    );
+    expect(notSkipped[0].text).toContain("<workflow-state>");
+  });
+
+  it("inject-workflow-state.js disables the escape hatch with skip_keyword: \"\"", async () => {
+    writeFileSync(
+      join(dir, ".trellis", "config.yaml"),
+      ["prompt_injection:", '  skip_keyword: ""'].join("\n"),
+    );
+    const hooks = (await injectWorkflowStatePlugin({
+      directory: dir,
+    })) as ChatMessageHooks;
+    const parts: ChatMessagePart[] = [
+      { type: "text", text: "no-trellis question" },
+    ];
+
+    await hooks["chat.message"](
+      { sessionID: "main-session", agent: "build" },
+      { parts },
+    );
+
+    expect(parts[0].text).toContain("<workflow-state>");
+  });
 });

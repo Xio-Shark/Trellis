@@ -1651,6 +1651,26 @@ below host truncation limits.
 
 A lightweight hook (`shared-hooks/inject-workflow-state.py`) fires on **every user prompt**, emitting a short `<workflow-state>` block reminding the AI of the active task + expected flow. Keep the payload compact and directive; it is injected every turn.
 
+### Skip keyword (`prompt_injection.skip_keyword`, #427)
+
+A user prompt containing the skip keyword (default `no-trellis`) mutes the per-turn
+breadcrumb for that turn only — the hook exits 0 with empty stdout before any task
+resolution or file reads. Contract:
+
+- Match rule (frozen, identical in Python hook and OpenCode plugin):
+  case-insensitive `(?<![\w-])<keyword>(?![\w-])` — `no-trellisfoo`/`foo-no-trellis`
+  do not match; `path/no-trellis.md` does (accepted false-positive).
+- Config: `.trellis/config.yaml` → `prompt_injection.skip_keyword`
+  (ships commented; default in code via `common.config.get_prompt_injection_config()`;
+  quoted `""` explicitly disables the hatch).
+- Scope: per-turn breadcrumb ONLY. `session-start.py`, `inject-subagent-context.py`,
+  and `inject-shell-session-context.py` must never gain keyword handling.
+- Coverage gap: the Pi extension cannot implement this — it has no `input` handler
+  (must not rewrite user text) and its `systemPrompt` must stay byte-identical per
+  turn for provider prefix caching.
+- Dogfood copies to keep patched region-identically: `.claude/hooks/` and
+  `.codex/hooks/` `inject-workflow-state.py`.
+
 ### Single Source of Truth: `workflow.md` Tag Blocks
 
 Breadcrumb text lives in `workflow.md` as `[workflow-state:STATUS]...[/workflow-state:STATUS]` blocks (same tag style as existing `[Platform, ...]` blocks). Users who fork the Trellis workflow edit **only the markdown**; the hook script stays untouched.

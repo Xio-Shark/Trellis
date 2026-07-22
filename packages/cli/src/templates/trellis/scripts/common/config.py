@@ -117,11 +117,12 @@ def _parse_yaml_block(
             key, _, value = stripped.partition(":")
             key = key.strip()
             value = _strip_inline_comment(value).strip()
+            was_quoted = len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'")
             value = _unquote(value)
             current_list = None
 
-            if value:
-                # key: value
+            if value or was_quoted:
+                # key: value (an explicit quoted "" is a value, not "no value")
                 target[key] = value
                 i += 1
             else:
@@ -333,6 +334,36 @@ def get_context_injection_limits(repo_root: Path | None = None) -> dict[str, int
             continue
         result[key] = value
 
+    return result
+
+
+DEFAULT_PROMPT_INJECTION_SKIP_KEYWORD = "no-trellis"
+
+
+def get_prompt_injection_config(repo_root: Path | None = None) -> dict[str, str]:
+    """Return per-turn prompt injection config.
+
+    Reads the ``prompt_injection:`` section of ``.trellis/config.yaml``:
+
+        prompt_injection:
+          skip_keyword: "no-trellis"   # "" disables the escape hatch entirely
+
+    ``skip_keyword`` is the word-boundary, case-insensitive keyword that, when
+    present in the user's prompt, makes the per-turn workflow-state injection
+    emit nothing for that turn. Defaults to ``"no-trellis"``. A non-string
+    value falls back to the default.
+    """
+    defaults = {"skip_keyword": DEFAULT_PROMPT_INJECTION_SKIP_KEYWORD}
+
+    config = _load_config(repo_root)
+    section = config.get("prompt_injection")
+    if not isinstance(section, dict):
+        return defaults
+
+    result = dict(defaults)
+    raw = section.get("skip_keyword", DEFAULT_PROMPT_INJECTION_SKIP_KEYWORD)
+    if isinstance(raw, str):
+        result["skip_keyword"] = raw
     return result
 
 
