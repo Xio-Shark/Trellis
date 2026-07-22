@@ -123,10 +123,10 @@ function setCurrentTask(repo: string, taskName: string): void {
   );
 }
 
-function runAddSession(repo: string, title: string): void {
+function runAddSession(repo: string, title: string, extraArgs: string[] = []): void {
   const r = spawnSync(
     "python3",
-    [".trellis/scripts/add_session.py", "--title", title],
+    [".trellis/scripts/add_session.py", "--title", title, ...extraArgs],
     { cwd: repo, encoding: "utf-8" },
   );
   if (r.status !== 0) {
@@ -182,7 +182,7 @@ describe.skipIf(!hasPython())("add_session.py auto-commit", () => {
     expect(status).toMatch(/\.trellis\/tasks\/task-b\/prd\.md/);
   });
 
-  it("uses explicit fallback text instead of journal placeholders", () => {
+  it("omits Main Changes/Testing/Next Steps sections for a legacy call (#394)", () => {
     makeTask(tmp, "task-a", "task A prd\n");
     setCurrentTask(tmp, "task-a");
     git(tmp, "add", "-A");
@@ -195,15 +195,46 @@ describe.skipIf(!hasPython())("add_session.py auto-commit", () => {
       "utf-8",
     );
 
-    expect(journal).toContain(
-      "- Detailed change bullets were not supplied; see the summary above.",
-    );
-    expect(journal).toContain(
-      "- Validation was not recorded for this session.",
-    );
+    expect(journal).toContain("### Summary");
+    expect(journal).toContain("### Git Commits");
+    expect(journal).toContain("### Status");
+    expect(journal).not.toContain("### Main Changes");
+    expect(journal).not.toContain("### Testing");
+    expect(journal).not.toContain("### Next Steps");
     expect(journal).not.toContain("(Add details)");
     expect(journal).not.toContain("(Add test results)");
     expect(journal).not.toContain("(Add summary)");
+  });
+
+  it("renders bullets for --change/--test/--next-step and keeps the [OK] testing prefix (#394)", () => {
+    makeTask(tmp, "task-a", "task A prd\n");
+    setCurrentTask(tmp, "task-a");
+    git(tmp, "add", "-A");
+    git(tmp, "commit", "-q", "-m", "initial");
+
+    runAddSession(tmp, "structured work", [
+      "--change",
+      "Added feature X",
+      "--change",
+      "Fixed bug Y",
+      "--test",
+      "Ran unit tests",
+      "--next-step",
+      "Ship it",
+    ]);
+
+    const journal = fs.readFileSync(
+      path.join(tmp, ".trellis", "workspace", DEVELOPER, "journal-1.md"),
+      "utf-8",
+    );
+
+    expect(journal).toContain("### Main Changes");
+    expect(journal).toContain("- Added feature X");
+    expect(journal).toContain("- Fixed bug Y");
+    expect(journal).toContain("### Testing");
+    expect(journal).toContain("- [OK] Ran unit tests");
+    expect(journal).toContain("### Next Steps");
+    expect(journal).toContain("- Ship it");
   });
 
   it("falls back to the current checkout branch when task.json branch is stale", () => {

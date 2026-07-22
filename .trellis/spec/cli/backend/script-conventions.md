@@ -1858,3 +1858,21 @@ See `.trellis/scripts/task.py` for a comprehensive example with:
 ## Migration Note
 
 > **Historical Context**: Scripts were migrated from Bash to Python in v0.3.0 for cross-platform compatibility. In v0.5.0, the `multi_agent/` pipeline directory (`plan.py`, `start.py`, `status.py`, etc.) was removed along with `phase.py`, `registry.py`, and `worktree.py` from `common/`. The `_bootstrap.py` shim is no longer needed.
+
+## Structured Session & Task Metadata Flags (2026-07-22)
+
+Contracts added by task `07-22-script-qol-batch` (#394, #402, meta access):
+
+- `add_session.py` accepts repeatable `--change` / `--test` / `--next-step`;
+  each value renders as one bullet (Testing bullets get the `[OK] ` prefix).
+  **Sections with zero values are omitted entirely — never render placeholder
+  text** (`(Add details)` / `(Add test results)` are banned strings; a test
+  greps for them). `--content-file`/`--stdin` remain an alternate Main Changes
+  source when `--change` is absent.
+- `task.py list` renders children indented under their parent; a dangling
+  `parent` ref falls back to flat display (never crash, never hide the task).
+- `task.py create --meta key=value` (repeatable) populates `task.json`'s `meta`
+  object; validation runs BEFORE `mkdir` so malformed input leaves no
+  half-created directory. `task.py set-meta <dir> <key> <value>` sets/overwrites
+  one key on an existing task via the same `resolve_task_dir()` path validation
+  as other subcommands. Values are plain strings (no nesting/coercion).
