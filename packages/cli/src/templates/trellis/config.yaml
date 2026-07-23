@@ -108,6 +108,13 @@ channel:
 # main session. "sub-agent" remains a backwards-compatible alias for "auto".
 # Invalid explicit values safely use inline mode.
 #
+# In "auto" mode, dispatched sub-agents inherit the main session's model
+# unless you pin one. To use a cheaper/faster model for implement/check/
+# research sub-agent work, edit `model` / `model_reasoning_effort` directly
+# on the generated `.codex/agents/trellis-*.toml` files (see the commented
+# hint lines in those files) — there is no config.yaml knob for this,
+# `trellis update` preserves your edits across regeneration.
+#
 # codex:
 #   dispatch_mode: auto  # or "inline"; legacy alias: "sub-agent"
 

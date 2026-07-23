@@ -60,6 +60,7 @@ import {
   isManagedRootDir,
 } from "../configurators/index.js";
 import { replacePythonCommandLiterals } from "../configurators/shared.js";
+import { preserveCodexAgentModelKeys } from "../configurators/codex.js";
 import { pruneOrphanManifestKeys } from "../utils/manifest-prune.js";
 import {
   fetchRegistrySpecTemplates,
@@ -908,6 +909,15 @@ async function collectTemplateFiles(
         );
       }
     }
+  }
+
+  // Users configure sub-agent models by editing `model` /
+  // `model_reasoning_effort` directly on the generated agent tomls. Preserve
+  // those two keys from the on-disk files into the freshly rendered desired
+  // content so a project whose only local edit is these keys is not flagged
+  // as a modified-file conflict by the hash comparison below.
+  if (platforms.has("codex")) {
+    preserveCodexAgentModelKeys(cwd, files);
   }
 
   preserveExistingClaudeStatusLine(cwd, files);
