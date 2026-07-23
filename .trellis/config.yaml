@@ -99,10 +99,21 @@ default_package: cli
 # unless explicitly killed or given `--timeout`).
 # `max_live_workers: 0` disables the spawn-time budget check.
 #
+# `trusted_context_dirs` extends the `--file`/`--jsonl`/`--agent` containment
+# check beyond the worker cwd — useful when `.trellis/tasks` or
+# `.trellis/workspace` is a symlink to an external directory. Realpaths under
+# any listed dir are accepted in addition to cwd.
+# `auto_trust_trellis_symlinks: false` disables the narrow auto-trust of
+# `.trellis/tasks` / `.trellis/workspace` when either is itself a top-level
+# symlink (auto-trust is on by default).
+#
 channel:
   worker_guard:
     idle_timeout: 5m
     max_live_workers: 6
+  # trusted_context_dirs:
+  #   - /work/user/trellis_workspace
+  # auto_trust_trellis_symlinks: false
 
 #-------------------------------------------------------------------------------
 # Codex (dispatch behavior)
