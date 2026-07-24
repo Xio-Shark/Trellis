@@ -34,6 +34,7 @@ vi.mock("node:child_process", () => ({
 import { init } from "../../src/commands/init.js";
 import { uninstall } from "../../src/commands/uninstall.js";
 import { update } from "../../src/commands/update.js";
+import { VERSION } from "../../src/constants/version.js";
 import { loadHashes, saveHashes } from "../../src/utils/template-hash.js";
 import { agentsMdContent } from "../../src/templates/markdown/index.js";
 
@@ -49,6 +50,15 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
     vi.spyOn(console, "log").mockImplementation(noop);
     vi.spyOn(console, "error").mockImplementation(noop);
     vi.mocked(inquirer.prompt).mockResolvedValue({ proceed: true });
+    // update() always hits the npm registry; mock fetch so offline/slow nets
+    // do not hang the R3 prune cases (same pattern as update.integration).
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ version: VERSION }),
+      }),
+    );
     Object.defineProperty(process.stdin, "isTTY", {
       configurable: true,
       value: true,
@@ -58,6 +68,7 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     fs.rmSync(tmpDir, { recursive: true, force: true });
     delete process.env.TRELLIS_ALLOW_HOMEDIR;
   });

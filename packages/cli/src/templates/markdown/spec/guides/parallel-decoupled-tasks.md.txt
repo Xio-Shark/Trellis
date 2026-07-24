@@ -65,21 +65,48 @@ while drift is present.
 
 **Never** same-cwd multi-writer for code tasks.
 
+### write_scope (planning-time conflict guard)
+
+Each code child should declare repo-relative globs in `task.json`:
+
+```json
+"write_scope": ["src/runtime/explore/**", "docs/STATUS.md"]
+```
+
+Dual-write the same list under `## Dependencies`. Rules:
+
+- `isolation=worktree` → non-empty `write_scope` required at `plan-import`
+- Edge-free sibling pairs (neither reaches the other via `depends_on`) with
+  intersecting scopes → **fail-closed** at `plan-import` and again before
+  `dispatch-ready --yes`
+- Intersection is a **conservative approximation** (expand against current repo
+  files + prefix heuristics). May miss files not yet on disk; false positives
+  → narrow globs, add an edge, or merge tasks
+- Config: `parallel.scope_fail_closed` (default `true`; `false` → warn and continue)
+- Legacy tasks without `write_scope` do not fail; worktree dispatch emits a warning
+
 ---
 
 ## Planning checklist
 
 1. Complex multi-deliverable → parent + children.
 2. For each child pair: shared files/types/tests? Yes → edge or merge; No → parallel candidate.
-3. Write `depends_on` + `isolation` to `task.json` and dual-write markdown.
-4. Human reviews parallel groups (default). Then:
+3. Prefer a `parallel-plan.v1` JSON + one-shot import (avoids N manual creates):
+   ```bash
+   python3 ./.trellis/scripts/task.py plan-import <parent-dir> plan.json        # dry-run
+   python3 ./.trellis/scripts/task.py plan-import <parent-dir> plan.json --yes  # materialize
+   ```
+   Import validates schema / slug collisions / missing deps / cycles (fail-closed, zero writes),
+   dual-writes `## Dependencies`, and pre-creates `git worktree` under `.trellis/worktrees/<dir>`
+   for `isolation=worktree` (fills `worktree_path` + `branch`).
+4. Or write `depends_on` + `isolation` to `task.json` and dual-write markdown by hand.
+5. Human reviews parallel groups (default). Then:
    ```bash
    python3 ./.trellis/scripts/task.py ready <parent-dir>
    python3 ./.trellis/scripts/task.py drift <parent-dir>
    python3 ./.trellis/scripts/task.py dispatch-ready <parent-dir>        # dry-run plan
    python3 ./.trellis/scripts/task.py dispatch-ready <parent-dir> --yes  # spawn after confirm
    ```
-5. For `isolation=worktree`, set an existing `worktree_path` on each child before `--yes`.
 6. When all required children complete → `task.py integrate <parent>` (merge + verify). Conflicts → serial fix; do not pretend parallel succeeded.
 
 ---
@@ -140,6 +167,7 @@ Parents with no `isolation=worktree` children: integrate is a successful no-op.
 python3 ./.trellis/scripts/task.py ready <parent-dir>
 python3 ./.trellis/scripts/task.py drift <parent-dir>              # warn; may exit non-zero
 python3 ./.trellis/scripts/task.py deps <task-dir>
+python3 ./.trellis/scripts/task.py plan-import <parent-dir> <plan.json> [--yes]
 python3 ./.trellis/scripts/task.py dispatch-ready <parent-dir>     # dry-run plan (default)
 python3 ./.trellis/scripts/task.py dispatch-ready <parent-dir> --yes
 python3 ./.trellis/scripts/task.py integrate <parent-dir>          # L4 merge + verify
@@ -154,6 +182,8 @@ Ready predicate: every `depends_on` entry is completed/done/archived; child stat
 parallel:
   auto_confirm: false       # if true, dispatch-ready spawns without --yes
   drift_fail_closed: false  # if true, --yes refuses when drift is present
+  scope_fail_closed: true   # if true, --yes refuses on write_scope overlap
+  max_concurrency: 8        # wave spawn cap; 0 = unlimited (legacy)
   max_retries: 0            # extra attempts after first failure
   agent: implement          # channel agent role (when worker=channel)
   timeout: 30m
@@ -175,6 +205,10 @@ Tests may set `TRELLIS_DISPATCH_BACKEND=mock` to skip the real `trellis`/`xio` C
 | **B** | Auto spawn ready set after human confirm; `dispatch-ready [--yes]` / config `parallel.auto_confirm`; wave recompute; failure does not unlock downstream; optional drift fail-closed | Shipped |
 | **C** | Default worker → `xio`; context inject; worktree cwd; MergeGate contract aligned; fallback to channel | Shipped |
 | **Full / L4** | Parent `integrate` (merge + verify); conflict → serial fix; archive gate | Shipped |
+| **plan-import** | `parallel-plan.v1` → batch materialize + worktree pre-create | Shipped (07-21) |
+| **write_scope** | Edge-free sibling overlap fail-closed (conservative) | Shipped (07-21) |
+| **dispatch budget** | `max_concurrency` default **8** (`0`=unlimited); wall_timeout; integrate dry-run handoff | Shipped (07-21) |
+| **xio ultra entry** | ultra → parallel-plan draft + Trellis handoff (no auto-spawn) | Shipped (07-21) |
 
 ---
 

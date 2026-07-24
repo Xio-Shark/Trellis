@@ -71,8 +71,13 @@ python3 ./.trellis/scripts/task.py remove-subtask <parent> <child>
 python3 ./.trellis/scripts/task.py ready <parent>            # ready / blocked + isolation
 python3 ./.trellis/scripts/task.py drift <parent>            # json vs ## Dependencies warn
 python3 ./.trellis/scripts/task.py deps <task>               # depends_on + reverse dependents
+python3 ./.trellis/scripts/task.py plan-import <parent> <plan.json> [--yes]  # parallel-plan.v1 materialize
+python3 ./.trellis/scripts/task.py plan-import <parent> <plan.json>        # dry-run parallel-plan.v1
+python3 ./.trellis/scripts/task.py plan-import <parent> <plan.json> --yes  # materialize + worktrees
 python3 ./.trellis/scripts/task.py dispatch-ready <parent>   # dry-run spawn plan (default)
 python3 ./.trellis/scripts/task.py dispatch-ready <parent> --yes  # spawn ready set / waves
+python3 ./.trellis/scripts/task.py dispatch-ready <parent> --yes --integrate  # waves then real integrate
+python3 ./.trellis/scripts/task.py dispatch-ready <parent> --yes --integrate  # waves + real integrate
 python3 ./.trellis/scripts/task.py integrate <parent>        # L4 merge worktrees + verify
 python3 ./.trellis/scripts/task.py integrate <parent> --dry-run
 
@@ -192,7 +197,7 @@ python3 ./.trellis/scripts/task.py ready <parent-dir>   # ready / blocked + reas
 python3 ./.trellis/scripts/task.py drift <parent-dir>   # dual-write warnings
 ```
 
-**Execution:** human reviews the ready set (`ready` / `dispatch-ready` dry-run) → confirm with `--yes` or `parallel.auto_confirm` → dispatcher spawns ready children via default worker (`xio`, fallback `trellis channel run`; worktree isolation requires existing `worktree_path`) → on success recomputes the next wave; failures do not unlock dependents and block parent complete → after required children finish, `task.py integrate <parent>` merges branches + runs verify (conflict → serial fix). Never same-cwd multi-writer.
+**Execution:** prefer `plan-import` from a `parallel-plan.v1` artifact (or manual dual-write) → human reviews the ready set (`ready` / `dispatch-ready` dry-run) → confirm with `--yes` or `parallel.auto_confirm` → dispatcher spawns ready children via default worker (`xio`, fallback `trellis channel run`; worktree isolation uses pre-created `worktree_path` from plan-import or manual setup; wave concurrency ≤ `parallel.max_concurrency`, default 8) → on success recomputes the next wave; failures do not unlock dependents and block parent complete → all-green auto-prints `integrate` dry-run handoff → `task.py integrate <parent>` (or `dispatch-ready --yes --integrate`) merges branches + runs verify (conflict → serial fix). Never same-cwd multi-writer.
 
 See `.trellis/spec/guides/parallel-decoupled-tasks.md` for the planning checklist and A→B→C path.
 
