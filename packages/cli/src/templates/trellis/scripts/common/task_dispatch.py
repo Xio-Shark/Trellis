@@ -24,7 +24,7 @@ import os
 import shutil
 import subprocess
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -35,8 +35,10 @@ from .config import (
     get_parallel_auto_confirm,
     get_parallel_context_max_chars,
     get_parallel_drift_fail_closed,
+    get_parallel_max_concurrency,
     get_parallel_max_retries,
     get_parallel_timeout,
+    get_parallel_wall_timeout_seconds,
     get_parallel_worker,
     get_parallel_worker_fallback,
 )
@@ -563,13 +565,26 @@ def execute_waves(
     agent = get_parallel_agent(repo_root)
     timeout = get_parallel_timeout(repo_root)
     max_retries = get_parallel_max_retries(repo_root)
+    max_concurrency = get_parallel_max_concurrency(repo_root)
+    wall_seconds = get_parallel_wall_timeout_seconds(repo_root)
     spawn = spawn_fn or select_spawn_fn()
     all_plans: list[WavePlan] = []
     all_results: list[SpawnResult] = []
     wave = 0
     any_failure = False
+    wall_hit = False
+    run_started = time.monotonic()
+    wall_deadline = (run_started + wall_seconds) if wall_seconds else None
 
     while True:
+        if wall_deadline is not None and time.monotonic() >= wall_deadline:
+            wall_hit = True
+            if all_plans:
+                all_plans[-1].warnings.append(
+                    f"wall_timeout reached ({wall_seconds:g}s); stopped new spawns"
+                )
+            break
+
         wave += 1
         plan = plan_wave(parent_dir, tasks_dir, repo_root, wave, agent, timeout)
         all_plans.append(plan)
@@ -601,52 +616,88 @@ def execute_waves(
             any_failure = True
             break
 
-        # Parallel spawn within the wave.
-        futures = {}
-        with ThreadPoolExecutor(max_workers=max(1, len(plan.items))) as pool:
-            for item in plan.items:
-                child_dir = tasks_dir / item.dir_name
-                # Mark in_progress before spawn.
-                write_child_status(child_dir, "in_progress")
-                fut = pool.submit(
-                    run_spawn_with_retries,
-                    item,
-                    child_dir,
-                    repo_root,
-                    spawn,
-                    max_retries,
-                )
-                futures[fut] = item
+        workers = (
+            max(1, len(plan.items))
+            if max_concurrency == 0
+            else max(1, min(len(plan.items), max_concurrency))
+        )
+        queued = max(0, len(plan.items) - workers)
+        plan.warnings.append(
+            f"concurrency cap={max_concurrency or 'unlimited'} "
+            f"workers={workers} queued={queued}"
+        )
 
-            for fut in as_completed(futures):
-                item = futures[fut]
-                child_dir = tasks_dir / item.dir_name
-                try:
-                    result = fut.result()
-                except Exception as exc:  # noqa: BLE001 — surface to dispatcher
-                    result = SpawnResult(
-                        dir_name=item.dir_name,
-                        ok=False,
-                        attempts=1,
-                        message=str(exc),
-                        exit_code=1,
-                    )
-                all_results.append(result)
-                if result.ok:
-                    write_child_status(
-                        child_dir, "completed", attempts=result.attempts
-                    )
-                else:
-                    any_failure = True
-                    write_child_status(
+        pending = list(plan.items)
+        inflight: dict = {}
+        wave_started = time.monotonic()
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            while pending or inflight:
+                if wall_deadline is not None and time.monotonic() >= wall_deadline:
+                    wall_hit = True
+                    # Stop submitting; wait for in-flight to finish.
+                    pending.clear()
+
+                while pending and len(inflight) < workers:
+                    if wall_deadline is not None and time.monotonic() >= wall_deadline:
+                        wall_hit = True
+                        pending.clear()
+                        break
+                    item = pending.pop(0)
+                    child_dir = tasks_dir / item.dir_name
+                    write_child_status(child_dir, "in_progress")
+                    fut = pool.submit(
+                        run_spawn_with_retries,
+                        item,
                         child_dir,
-                        FAILED_STATUS,
-                        error=result.message,
-                        attempts=result.attempts,
+                        repo_root,
+                        spawn,
+                        max_retries,
                     )
+                    inflight[fut] = item
+
+                if not inflight:
+                    break
+
+                done, _ = wait(list(inflight.keys()), return_when=FIRST_COMPLETED)
+                for fut in done:
+                    item = inflight.pop(fut)
+                    child_dir = tasks_dir / item.dir_name
+                    try:
+                        result = fut.result()
+                    except Exception as exc:  # noqa: BLE001 — surface to dispatcher
+                        result = SpawnResult(
+                            dir_name=item.dir_name,
+                            ok=False,
+                            attempts=1,
+                            message=str(exc),
+                            exit_code=1,
+                        )
+                    all_results.append(result)
+                    if result.ok:
+                        write_child_status(
+                            child_dir, "completed", attempts=result.attempts
+                        )
+                    else:
+                        any_failure = True
+                        write_child_status(
+                            child_dir,
+                            FAILED_STATUS,
+                            error=result.message,
+                            attempts=result.attempts,
+                        )
+
+        elapsed = time.monotonic() - wave_started
+        plan.warnings.append(f"wave elapsed={elapsed:.1f}s")
 
         if any_failure:
             # Do not unlock / advance waves after a failure in this wave.
+            break
+
+        if wall_hit:
+            plan.warnings.append(
+                f"wall_timeout reached ({wall_seconds:g}s); not starting further waves"
+            )
             break
 
         # Next wave: recompute ready after successful completions.
@@ -655,7 +706,7 @@ def execute_waves(
             all_plans[-1].warnings.append("stopped after 64 waves (safety cap)")
             break
 
-    exit_code = 1 if any_failure else 0
+    exit_code = 1 if any_failure or wall_hit else 0
     if confirm and any_failure:
         # Ensure parent is not marked completed.
         parent_json = parent_dir / FILE_TASK_JSON
@@ -685,6 +736,36 @@ def check_drift_gate(parent_dir: Path, tasks_dir: Path, repo_root: Path) -> str 
         f"Dependencies drift from task.json: {fields}{more}. "
         "Fix dual-write or set parallel.drift_fail_closed: false."
     )
+
+
+def check_scope_gate(
+    parent_dir: Path,
+    tasks_dir: Path,
+    repo_root: Path,
+) -> tuple[str | None, list[str]]:
+    """Check write_scope conflicts before spawn.
+
+    Returns (error_or_None, warning_lines). When ``scope_fail_closed`` is False,
+    conflicts become warnings and error is None.
+    """
+    from .config import get_parallel_scope_fail_closed
+    from .task_scope import check_parent_write_scopes, format_scope_conflicts
+
+    report = check_parent_write_scopes(parent_dir, tasks_dir, repo_root)
+    lines = format_scope_conflicts(report)
+    warnings = list(report.warnings)
+    if not report.conflicts:
+        return None, warnings
+    if get_parallel_scope_fail_closed(repo_root):
+        detail = "; ".join(lines[:4])
+        more = "" if len(lines) <= 4 else f" (+{len(lines) - 4} more)"
+        return (
+            "write_scope fail-closed: refusing dispatch-ready --yes — "
+            f"{detail}{more}. Fix scopes/edges or set parallel.scope_fail_closed: false.",
+            warnings,
+        )
+    warnings.extend(f"write_scope warn: {line}" for line in lines)
+    return None, warnings
 
 
 def should_auto_confirm(cli_yes: bool, repo_root: Path) -> bool:

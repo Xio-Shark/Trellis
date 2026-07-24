@@ -24,6 +24,7 @@ Usage:
     python3 task.py deps <task-dir>             # Show depends_on + reverse dependents
     python3 task.py dispatch-ready <parent-dir> [--yes]  # Plan / spawn ready-set waves
     python3 task.py integrate <parent-dir> [--dry-run]   # Merge worktrees + verify (L4)
+    python3 task.py plan-import <parent-dir> <plan.json> [--yes]  # Materialize parallel-plan.v1
 """
 
 from __future__ import annotations
@@ -75,12 +76,14 @@ from common.task_deps import (
 )
 from common.task_dispatch import (
     check_drift_gate,
+    check_scope_gate,
     execute_waves,
     parent_may_complete,
     resolve_effective_worker,
     should_auto_confirm,
 )
 from common.task_integrate import execute_integrate, plan_integrate
+from common.task_import import cmd_plan_import
 
 
 # =============================================================================
@@ -323,6 +326,14 @@ def _fmt_isolation(value: str | None) -> str:
     return value if value else "(unset)"
 
 
+def _fmt_write_scope(scopes: list[str] | tuple[str, ...] | None) -> str:
+    if not scopes:
+        return "(none)"
+    if len(scopes) <= 2:
+        return "[" + ", ".join(scopes) + "]"
+    return f"[{scopes[0]}, {scopes[1]}, +{len(scopes) - 2}]"
+
+
 def _fmt_dep_reason(dep_status_name: str | None, location: str) -> str:
     if location == "missing":
         return "missing"
@@ -368,7 +379,8 @@ def cmd_ready(args: argparse.Namespace) -> int:
             f"  - {info.dir_name}  "
             f"[status={info.status}]  "
             f"isolation={_fmt_isolation(info.isolation)}  "
-            f"depends_on=[{deps}]"
+            f"depends_on=[{deps}]  "
+            f"write_scope={_fmt_write_scope(info.write_scope)}"
         )
     print()
 
@@ -379,7 +391,8 @@ def cmd_ready(args: argparse.Namespace) -> int:
         print(
             f"  - {info.dir_name}  "
             f"[status={info.status}]  "
-            f"isolation={_fmt_isolation(info.isolation)}"
+            f"isolation={_fmt_isolation(info.isolation)}  "
+            f"write_scope={_fmt_write_scope(info.write_scope)}"
         )
         for dep in info.blocked_by:
             reason = _fmt_dep_reason(dep.status, dep.location)
@@ -469,12 +482,16 @@ def cmd_deps(args: argparse.Namespace) -> int:
     data = read_json(task_json) or {}
     deps = get_depends_on(data)
     isolation = get_isolation(data)
+    from common.task_scope import get_write_scope
+
+    write_scope = get_write_scope(data)
     tasks_dir = get_tasks_dir(repo_root)
     reverse = reverse_dependents(tasks_dir, task_path.name)
 
     print(colored(f"Dependencies: {task_path.name}", Colors.BLUE))
     print(f"  isolation:  {_fmt_isolation(isolation)}")
     print(f"  depends_on: {deps if deps else '(none)'}")
+    print(f"  write_scope: {write_scope if write_scope else '(none)'}")
     print(f"  depended on by: {reverse if reverse else '(none)'}")
     return 0
 
@@ -589,6 +606,12 @@ def cmd_dispatch_ready(args: argparse.Namespace) -> int:
         if drift_err:
             print(colored(f"Error: {drift_err}", Colors.RED))
             return 1
+        scope_err, scope_warns = check_scope_gate(parent_path, tasks_dir, repo_root)
+        for w in scope_warns:
+            print(colored(f"Warning: {w}", Colors.YELLOW))
+        if scope_err:
+            print(colored(f"Error: {scope_err}", Colors.RED))
+            return 1
 
     exit_code, plans, results = execute_waves(
         parent_path,
@@ -623,13 +646,39 @@ def cmd_dispatch_ready(args: argparse.Namespace) -> int:
         ok_parent, reason = parent_may_complete(parent_path, tasks_dir)
         if not ok_parent:
             print(colored(f"Parent complete gate: {reason}", Colors.YELLOW))
-        elif not any(not r.ok for r in results) and plans and not plans[-1].items:
-            print(colored(
-                "All required ready waves finished; run "
-                f"`task.py integrate {parent_path.name}` before archive "
-                "(MergeGate-aligned).",
-                Colors.GREEN,
-            ))
+
+        all_ok = exit_code == 0 and not any(not r.ok for r in results)
+        if all_ok:
+            print(colored("All required ready waves finished.", Colors.GREEN))
+            print()
+            do_integrate = bool(getattr(args, "integrate", False))
+            if do_integrate:
+                print(colored("Integrate (--integrate):", Colors.BLUE))
+                integ = execute_integrate(
+                    parent_path,
+                    tasks_dir,
+                    repo_root,
+                    dry_run=False,
+                    create_fix_task=not bool(getattr(args, "no_fix_task", False)),
+                    skip_verify=bool(getattr(args, "skip_verify", False)),
+                )
+                color = Colors.GREEN if integ.ok else Colors.RED
+                print(colored(f"  {integ.message}", color))
+                if not integ.ok:
+                    exit_code = 1
+            else:
+                print(colored("Integrate handoff (auto dry-run):", Colors.BLUE))
+                integ_plan = plan_integrate(parent_path, tasks_dir, repo_root)
+                print(f"  targets: {len(integ_plan.targets)}")
+                for t in integ_plan.targets:
+                    print(f"  - {t.dir_name}  branch={t.branch}")
+                if integ_plan.noop_reason:
+                    print(f"  noop: {integ_plan.noop_reason}")
+                print(colored(
+                    f"Next: `task.py integrate {parent_path.name}` "
+                    f"or re-run `dispatch-ready {parent_path.name} --yes --integrate`",
+                    Colors.GREEN,
+                ))
 
     return exit_code
 
@@ -724,6 +773,7 @@ Usage:
   python3 task.py deps <task-dir>                    Show depends_on + reverse dependents
   python3 task.py dispatch-ready <parent-dir> [--yes]  Plan/spawn ready-set waves (Phase B/C)
   python3 task.py integrate <parent-dir> [--dry-run]   Merge worktrees + verify (L4)
+  python3 task.py plan-import <parent> <plan.json> [--yes]  Materialize parallel-plan.v1 children
   python3 task.py list [--mine] [--status <status>]  List tasks
   python3 task.py list-archive [YYYY-MM]             List archived tasks
 
@@ -752,6 +802,8 @@ Examples:
   python3 task.py dispatch-ready parent-task --yes   # Spawn ready set (xio/channel)
   python3 task.py integrate parent-task              # Merge worktrees + verify
   python3 task.py integrate parent-task --dry-run    # Plan integrate only
+  python3 task.py plan-import parent-task plan.json  # Dry-run parallel-plan.v1 import
+  python3 task.py plan-import parent-task plan.json --yes  # Materialize + worktrees
   python3 task.py deps child-task                    # depends_on + reverse deps
   python3 task.py list                               # List all active tasks
   python3 task.py list --mine                        # List my tasks only
@@ -910,6 +962,21 @@ def main() -> int:
         action="store_true",
         help="Execute spawns (default is dry-run plan only)",
     )
+    p_dispatch.add_argument(
+        "--integrate",
+        action="store_true",
+        help="After all-green waves, run real integrate (default: dry-run handoff only)",
+    )
+    p_dispatch.add_argument(
+        "--no-fix-task",
+        action="store_true",
+        help="With --integrate, do not create a serial fix task stub on conflict",
+    )
+    p_dispatch.add_argument(
+        "--skip-verify",
+        action="store_true",
+        help="With --integrate, skip parallel.verify_command after merges",
+    )
 
     # integrate — Full-form L4 parent merge + verify
     p_integrate = subparsers.add_parser(
@@ -931,6 +998,19 @@ def main() -> int:
         "--skip-verify",
         action="store_true",
         help="Skip parallel.verify_command after merges (not recommended)",
+    )
+
+    # plan-import — parallel-plan.v1 batch materialize
+    p_plan_import = subparsers.add_parser(
+        "plan-import",
+        help="Materialize parallel-plan.v1 children under a parent (default dry-run)",
+    )
+    p_plan_import.add_argument("parent_dir", help="Parent task directory")
+    p_plan_import.add_argument("plan_json", help="Path to parallel-plan.v1 JSON")
+    p_plan_import.add_argument(
+        "--yes",
+        action="store_true",
+        help="Execute materialization (default is dry-run plan only)",
     )
 
     # list-archive
@@ -962,6 +1042,7 @@ def main() -> int:
         "deps": cmd_deps,
         "dispatch-ready": cmd_dispatch_ready,
         "integrate": cmd_integrate,
+        "plan-import": cmd_plan_import,
         "list": cmd_list,
         "list-archive": cmd_list_archive,
     }

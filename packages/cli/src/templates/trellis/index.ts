@@ -56,6 +56,8 @@ export const commonTaskDispatch = readTemplate(
 export const commonTaskIntegrate = readTemplate(
   "scripts/common/task_integrate.py",
 );
+export const commonTaskImport = readTemplate("scripts/common/task_import.py");
+export const commonTaskScope = readTemplate("scripts/common/task_scope.py");
 export const commonSessionContext = readTemplate(
   "scripts/common/session_context.py",
 );
@@ -118,6 +120,8 @@ export function getAllScripts(): Map<string, string> {
   scripts.set("common/task_deps.py", commonTaskDeps);
   scripts.set("common/task_dispatch.py", commonTaskDispatch);
   scripts.set("common/task_integrate.py", commonTaskIntegrate);
+  scripts.set("common/task_import.py", commonTaskImport);
+  scripts.set("common/task_scope.py", commonTaskScope);
   scripts.set("common/session_context.py", commonSessionContext);
   scripts.set("common/packages_context.py", commonPackagesContext);
   scripts.set("common/workflow_phase.py", commonWorkflowPhase);

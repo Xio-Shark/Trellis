@@ -7,6 +7,7 @@ Reads settings from .trellis/config.yaml with sensible defaults.
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -182,6 +183,12 @@ DEFAULT_PARALLEL_WORKER_FALLBACK = "channel"
 DEFAULT_PARALLEL_VERIFY_COMMAND = "npm run check"
 # Max chars of planning artifacts injected into an xio -p prompt.
 DEFAULT_PARALLEL_CONTEXT_MAX_CHARS = 24000
+# When True, plan-import / dispatch-ready --yes refuse on write_scope overlap.
+DEFAULT_PARALLEL_SCOPE_FAIL_CLOSED = True
+# Wave concurrency cap for dispatch-ready (0 = unlimited = legacy behaviour).
+DEFAULT_PARALLEL_MAX_CONCURRENCY = 8
+# Optional run-level wall clock budget (None / unset = no limit).
+DEFAULT_PARALLEL_WALL_TIMEOUT: str | None = None
 
 CONFIG_FILE = "config.yaml"
 
@@ -431,6 +438,69 @@ def get_parallel_context_max_chars(repo_root: Path | None = None) -> int:
             file=sys.stderr,
         )
         return DEFAULT_PARALLEL_CONTEXT_MAX_CHARS
+
+
+def get_parallel_scope_fail_closed(repo_root: Path | None = None) -> bool:
+    """When True, write_scope overlap fails closed (plan-import / dispatch)."""
+    parallel = _get_parallel_section(repo_root)
+    return _parse_bool_config(
+        parallel.get("scope_fail_closed", DEFAULT_PARALLEL_SCOPE_FAIL_CLOSED),
+        DEFAULT_PARALLEL_SCOPE_FAIL_CLOSED,
+        "parallel.scope_fail_closed",
+    )
+
+
+def get_parallel_max_concurrency(repo_root: Path | None = None) -> int:
+    """Wave concurrency cap for dispatch-ready (0 = unlimited)."""
+    parallel = _get_parallel_section(repo_root)
+    raw = parallel.get("max_concurrency", DEFAULT_PARALLEL_MAX_CONCURRENCY)
+    try:
+        value = int(raw)
+        return max(0, value)
+    except (TypeError, ValueError):
+        print(
+            f"[WARN] invalid parallel.max_concurrency value: {raw!r}; "
+            f"using {DEFAULT_PARALLEL_MAX_CONCURRENCY}",
+            file=sys.stderr,
+        )
+        return DEFAULT_PARALLEL_MAX_CONCURRENCY
+
+
+def parse_duration_seconds(raw: object) -> float | None:
+    """Parse ``30m`` / ``1h`` / ``90s`` / bare seconds into float seconds.
+
+    Returns None for empty / unset.
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw) if float(raw) > 0 else None
+    s = str(raw).strip().lower()
+    if not s or s in ("none", "off", "false", "0"):
+        return None
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)([smhd]?)", s)
+    if not m:
+        return None
+    value = float(m.group(1))
+    unit = m.group(2) or "s"
+    mult = {"s": 1.0, "m": 60.0, "h": 3600.0, "d": 86400.0}[unit]
+    seconds = value * mult
+    return seconds if seconds > 0 else None
+
+
+def get_parallel_wall_timeout_seconds(repo_root: Path | None = None) -> float | None:
+    """Optional wall-clock budget for an entire dispatch-ready run."""
+    parallel = _get_parallel_section(repo_root)
+    raw = parallel.get("wall_timeout", DEFAULT_PARALLEL_WALL_TIMEOUT)
+    if raw is None or raw == "":
+        return None
+    parsed = parse_duration_seconds(raw)
+    if parsed is None and str(raw).strip():
+        print(
+            f"[WARN] invalid parallel.wall_timeout value: {raw!r}; ignoring",
+            file=sys.stderr,
+        )
+    return parsed
 
 
 def get_hooks(event: str, repo_root: Path | None = None) -> list[str]:

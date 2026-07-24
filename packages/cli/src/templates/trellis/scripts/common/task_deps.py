@@ -37,6 +37,10 @@ _ISOLATION_LINE = re.compile(
     r"isolation\s*:\s*`?([A-Za-z0-9_-]+)`?",
     re.IGNORECASE | re.MULTILINE,
 )
+_WRITE_SCOPE_LINE = re.compile(
+    r"write_scope\s*:\s*(.+)$",
+    re.IGNORECASE | re.MULTILINE,
+)
 _BACKTICK_NAME = re.compile(r"`([^`]+)`")
 _NONE_TOKENS = frozenset({"", "(none)", "none", "_none_", "—", "-", "n/a", "na"})
 
@@ -61,6 +65,7 @@ class ChildReadyInfo:
     ready: bool
     blocked_by: list[DepStatus] = field(default_factory=list)
     skip_reason: str | None = None  # e.g. already completed
+    write_scope: tuple[str, ...] = ()
 
 
 @dataclass
@@ -264,6 +269,9 @@ def evaluate_ready(parent_dir: Path, tasks_dir: Path) -> ReadyReport:
         status = str(data.get("status", "unknown"))
         isolation = get_isolation(data)
         deps = tuple(get_depends_on(data))
+        from .task_scope import get_write_scope
+
+        write_scope = tuple(get_write_scope(data))
         is_archived = (
             not (tasks_dir / child_name).is_dir()
             and find_archived_task(tasks_dir, child_name) is not None
@@ -283,6 +291,7 @@ def evaluate_ready(parent_dir: Path, tasks_dir: Path) -> ReadyReport:
             isolation=isolation,
             depends_on=deps,
             ready=False,
+            write_scope=write_scope,
         )
 
         if status in DONE_STATUSES or is_archived:
@@ -368,6 +377,34 @@ def _parse_isolation_text(text: str) -> str | None | object:
     return value  # preserve unknown for drift comparison
 
 
+def _parse_write_scope_text(text: str) -> list[str] | None | object:
+    """Parse write_scope list from Dependencies section.
+
+    Returns list, empty list for explicit none, or ``_MISSING`` if absent.
+    """
+    m = _WRITE_SCOPE_LINE.search(text)
+    if not m:
+        return _MISSING
+    raw = m.group(1).strip()
+    names = [n.strip() for n in _BACKTICK_NAME.findall(raw) if n.strip()]
+    if names:
+        return names
+    cleaned = raw.strip().rstrip(".")
+    lower = cleaned.lower().strip("`").strip("_").strip()
+    if lower in _NONE_TOKENS or "none" in lower and "," not in raw:
+        if re.fullmatch(r"[\W_]*none[\W_]*", lower) or lower in _NONE_TOKENS:
+            return []
+    parts = re.split(r"[,，]\s*", cleaned)
+    out = []
+    for p in parts:
+        p = p.strip().strip("`").strip()
+        if p.lower() in _NONE_TOKENS:
+            continue
+        if p:
+            out.append(p)
+    return out
+
+
 _MISSING = object()
 
 
@@ -384,12 +421,12 @@ def extract_dependencies_section(md_text: str) -> str | None:
     return rest
 
 
-def parse_markdown_dependencies(task_dir: Path) -> tuple[list[str] | None, object, str | None]:
-    """Read depends_on / isolation projection from prd.md or implement.md.
+def parse_markdown_dependencies(
+    task_dir: Path,
+) -> tuple[list[str] | None, object, object, str | None]:
+    """Read depends_on / isolation / write_scope from prd.md or implement.md.
 
-    Returns (depends_on_or_None, isolation_or_MISSING, source_file).
-    Prefers prd.md, then implement.md. If ## Dependencies is missing in both,
-    returns (None, _MISSING, None).
+    Returns (depends_on_or_None, isolation_or_MISSING, write_scope_or_MISSING, source).
     """
     for name in ("prd.md", "implement.md"):
         path = task_dir / name
@@ -401,8 +438,9 @@ def parse_markdown_dependencies(task_dir: Path) -> tuple[list[str] | None, objec
             continue
         deps = _parse_depends_on_text(section)
         isolation = _parse_isolation_text(section)
-        return deps, isolation, name
-    return None, _MISSING, None
+        write_scope = _parse_write_scope_text(section)
+        return deps, isolation, write_scope, name
+    return None, _MISSING, _MISSING, None
 
 
 def evaluate_drift(parent_dir: Path, tasks_dir: Path) -> DriftReport:
@@ -427,20 +465,24 @@ def evaluate_drift(parent_dir: Path, tasks_dir: Path) -> DriftReport:
         data = read_json(cj) or {}
         json_deps = get_depends_on(data)
         json_iso = get_isolation(data)
+        from .task_scope import get_write_scope
 
-        md_deps, md_iso, source = parse_markdown_dependencies(child_path)
+        json_scope = get_write_scope(data)
+
+        md_deps, md_iso, md_scope, source = parse_markdown_dependencies(child_path)
         if source is None:
             report.warnings.append(
                 f"{child_name}: no ## Dependencies section in prd.md/implement.md"
             )
             # Treat missing section as drift if json has non-default values.
-            if json_deps or json_iso:
+            if json_deps or json_iso or json_scope:
                 report.items.append(
                     DriftItem(
                         child=child_name,
                         field="Dependencies section",
                         json_value=(
-                            f"depends_on={json_deps!r}, isolation={json_iso!r}"
+                            f"depends_on={json_deps!r}, isolation={json_iso!r}, "
+                            f"write_scope={json_scope!r}"
                         ),
                         md_value="(missing section)",
                         source_file=None,
@@ -484,6 +526,29 @@ def evaluate_drift(parent_dir: Path, tasks_dir: Path) -> DriftReport:
                     child=child_name,
                     field="isolation",
                     json_value=repr(json_iso),
+                    md_value="(missing in markdown)",
+                    source_file=source,
+                )
+            )
+
+        if md_scope is not _MISSING:
+            md_scope_list = list(md_scope) if isinstance(md_scope, list) else []
+            if md_scope_list != list(json_scope):
+                report.items.append(
+                    DriftItem(
+                        child=child_name,
+                        field="write_scope",
+                        json_value=repr(json_scope),
+                        md_value=repr(md_scope_list),
+                        source_file=source,
+                    )
+                )
+        elif json_scope:
+            report.items.append(
+                DriftItem(
+                    child=child_name,
+                    field="write_scope",
+                    json_value=repr(json_scope),
                     md_value="(missing in markdown)",
                     source_file=source,
                 )

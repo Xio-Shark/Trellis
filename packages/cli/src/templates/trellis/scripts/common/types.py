@@ -51,6 +51,8 @@ class TaskData(TypedDict, total=False):
     depends_on: list[str]
     # Parallel isolation hint: "worktree" | "shared". Unset = not forced.
     isolation: str
+    # Repo-relative write globs for parallel conflict checks (optional; missing ≡ []).
+    write_scope: list[str]
     relatedFiles: list[str]
     notes: str
     meta: dict
@@ -108,6 +110,14 @@ class TaskInfo:
         if isinstance(value, str) and value.strip() in ("worktree", "shared"):
             return value.strip()
         return None
+
+    @property
+    def write_scope(self) -> tuple[str, ...]:
+        """Repo-relative write globs (empty if unset / legacy)."""
+        raw = self.raw.get("write_scope") or []
+        if not isinstance(raw, list):
+            return ()
+        return tuple(str(x).strip() for x in raw if isinstance(x, str) and str(x).strip())
 
     @property
     def meta(self) -> dict:
