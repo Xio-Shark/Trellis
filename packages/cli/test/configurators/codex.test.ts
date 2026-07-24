@@ -242,8 +242,8 @@ describe("preserveCodexAgentModelKeys", () => {
 describe("codex agent toml templates", () => {
   it("ship commented model hint lines but no live model lines", () => {
     for (const agent of getAllAgents()) {
-      expect(agent.content).toContain('# model = "gpt-5.4"');
-      expect(agent.content).toContain('# model_reasoning_effort = "low"');
+      expect(agent.content).toContain('# model = "gpt-5.6-terra"');
+      expect(agent.content).toContain('# model_reasoning_effort = "high"');
       expect(agent.content).not.toMatch(/^model = "/m);
       expect(agent.content).not.toMatch(/^model_reasoning_effort = "/m);
     }
