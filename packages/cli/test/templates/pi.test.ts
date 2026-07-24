@@ -777,6 +777,91 @@ describe("pi extension: context injection limits (issue #441)", () => {
       expect(out).not.toContain("[Trellis: not inlined");
     });
 
+    it("keeps binary jsonl references as notices even when limits are unlimited", () => {
+      const root = createRoot();
+      const taskDir = activateTask(root, "task-binary-reference");
+      const binary = Buffer.from([
+        0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x41, 0x42,
+      ]);
+      writeFileSync(join(root, "design.png"), binary);
+      writeFileSync(join(root, "invalid.bin"), Buffer.from([0xff, 0xfe, 0xfd]));
+      writeFileSync(
+        join(taskDir, "implement.jsonl"),
+        [
+          JSON.stringify({ file: "design.png", reason: "visual baseline" }),
+          JSON.stringify({ file: "invalid.bin", reason: "legacy export" }),
+        ].join("\n") + "\n",
+        "utf-8",
+      );
+      writeConfig(
+        root,
+        [
+          "context_injection:",
+          "  max_file_bytes: 0",
+          "  max_total_bytes: 0",
+        ].join("\n"),
+      );
+
+      const { buildContextForTest } = loadExtensionInternals();
+      const out = buildContextForTest(root, "trellis-implement", SESSION_KEY);
+
+      expect(out).toContain(
+        "[Trellis: not inlined (binary file) — design.png (10 bytes): visual baseline]",
+      );
+      expect(out).toContain(
+        "[Trellis: not inlined (binary file) — invalid.bin (3 bytes): legacy export]",
+      );
+      expect(out).not.toContain("=== design.png ===");
+      expect(out).not.toContain("=== invalid.bin ===");
+      expect(out).not.toContain("\u0000");
+      expect(out).not.toContain("�");
+    });
+
+    it("does not misclassify legitimate multi-byte UTF-8 content as binary", () => {
+      const root = createRoot();
+      const taskDir = activateTask(root, "task-utf8-not-binary");
+      const multiByteContent =
+        "emoji: 🎉🚀 cjk: 中文测试 bmp: café naïve\n";
+      writeFileSync(join(root, "multibyte.md"), multiByteContent, "utf-8");
+      writeFileSync(
+        join(taskDir, "implement.jsonl"),
+        JSON.stringify({ file: "multibyte.md", reason: "unicode spec" }) +
+          "\n",
+        "utf-8",
+      );
+      writeConfig(root, "");
+
+      const { buildContextForTest } = loadExtensionInternals();
+      const out = buildContextForTest(root, "trellis-implement", SESSION_KEY);
+
+      expect(out).toContain(`=== multibyte.md ===\n${multiByteContent}`);
+      expect(out).not.toContain("[Trellis: not inlined (binary file)");
+    });
+
+    it("classifies a file as binary when binary bytes appear only at the end", () => {
+      const root = createRoot();
+      const taskDir = activateTask(root, "task-text-head-binary-tail");
+      const mixed = Buffer.concat([
+        Buffer.from("looks like a normal text file up front\n", "utf-8"),
+        Buffer.from([0x00, 0xff, 0xfe]),
+      ]);
+      writeFileSync(join(root, "mixed.dat"), mixed);
+      writeFileSync(
+        join(taskDir, "implement.jsonl"),
+        JSON.stringify({ file: "mixed.dat", reason: "mixed content" }) + "\n",
+        "utf-8",
+      );
+      writeConfig(root, "");
+
+      const { buildContextForTest } = loadExtensionInternals();
+      const out = buildContextForTest(root, "trellis-implement", SESSION_KEY);
+
+      expect(out).toContain(
+        `[Trellis: not inlined (binary file) — mixed.dat (${mixed.length} bytes): mixed content]`,
+      );
+      expect(out).not.toContain("=== mixed.dat ===");
+    });
+
     it("truncates an oversized jsonl-referenced file at max_file_bytes with a notice", () => {
       const root = createRoot();
       const taskDir = activateTask(root, "task-oversize");
