@@ -1020,6 +1020,31 @@ describe("update() integration", () => {
     expect(fs.existsSync(targetPath)).toBe(true);
   });
 
+  it("#15a backfills .gitattributes journal merge=union rule when missing (#415)", async () => {
+    await setupProject();
+
+    const gitattributesPath = path.join(tmpDir, ".gitattributes");
+    fs.rmSync(gitattributesPath, { force: true });
+
+    await update({ force: true });
+
+    const content = fs.readFileSync(gitattributesPath, "utf-8");
+    expect(content).toContain(".trellis/workspace/*/journal-*.md merge=union");
+  });
+
+  it("#15b does not duplicate an existing user journal merge=union rule (#415)", async () => {
+    await setupProject();
+
+    const gitattributesPath = path.join(tmpDir, ".gitattributes");
+    const userContent =
+      "# my own rules\n*.png binary\n.trellis/workspace/*/journal-*.md merge=union\n";
+    fs.writeFileSync(gitattributesPath, userContent);
+
+    await update({ force: true });
+
+    expect(fs.readFileSync(gitattributesPath, "utf-8")).toBe(userContent);
+  });
+
   it("#16 config.yaml update.skip prevents file from being updated", async () => {
     await setupProject();
 
