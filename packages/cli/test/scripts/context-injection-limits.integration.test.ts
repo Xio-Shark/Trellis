@@ -23,10 +23,24 @@ const TEMPLATE_SCRIPTS = path.resolve(
   __dirname,
   "../../src/templates/trellis/scripts",
 );
+const TASK_CONTEXT_PATH = path.join(
+  TEMPLATE_SCRIPTS,
+  "common",
+  "task_context.py",
+);
 const HOOK_PATH = path.resolve(
   __dirname,
   "../../src/templates/shared-hooks/inject-subagent-context.py",
 );
+
+describe("task_context.py Python compatibility", () => {
+  it("avoids the nested multiline f-strings rejected by Python 3.9-3.11 (#476)", () => {
+    const source = fs.readFileSync(TASK_CONTEXT_PATH, "utf-8");
+    expect(
+      source.match(/f"[ ]{2}\{colored\(f'[^'\n]*'\s*\n\s*f?'/g) ?? [],
+    ).toHaveLength(0);
+  });
+});
 
 function hasPython(): boolean {
   try {
@@ -612,7 +626,11 @@ print("all-valid")
         );
         const { status, stdout } = runValidate(taskDir);
         expect(status).toBe(0);
-        expect(stdout).toContain("looks like a code file");
+        expect(stdout).toContain(
+          "implement.jsonl:1: Warning: src/index.ts looks like a code file — " +
+            "implement/check.jsonl should reference spec/research docs; " +
+            "agents read code themselves",
+        );
         expect(stdout).toContain("All validations passed");
       });
 
@@ -655,8 +673,11 @@ print("all-valid")
         );
         const { status, stdout } = runValidate(taskDir);
         expect(status).toBe(0);
-        expect(stdout).toContain("oversized.md is 200 bytes");
-        expect(stdout).toContain("context_injection.max_file_bytes (100)");
+        expect(stdout).toContain(
+          "implement.jsonl:1: Warning: oversized.md is 200 bytes, " +
+            "exceeds context_injection.max_file_bytes (100); " +
+            "injection will truncate it",
+        );
       });
 
       it("stays warning-free for a clean, under-cap, spec-only manifest", () => {

@@ -3930,6 +3930,139 @@ print(json.dumps({
     expect(output).not.toContain("session-fallback");
   });
 
+  it("[issue #469] finish removes only the exact matched session file", () => {
+    setupTaskRepo();
+    writeSessionContext("codex_exact", ".trellis/tasks/issue-106");
+    writeSessionContext("codex_thread_sibling", ".trellis/tasks/issue-106");
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    const sessionsDir = path.join(
+      tmpDir,
+      ".trellis",
+      ".runtime",
+      "sessions",
+    );
+
+    const output = execSync(
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} finish`,
+      {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        env: sessionEnv({ CODEX_THREAD_ID: "exact" }),
+      },
+    );
+
+    expect(output).toContain("Source: session:codex_exact");
+    expect(fs.existsSync(path.join(sessionsDir, "codex_exact.json"))).toBe(
+      false,
+    );
+    expect(
+      fs.existsSync(path.join(sessionsDir, "codex_thread_sibling.json")),
+    ).toBe(true);
+  });
+
+  it("[issue #469] finish removes the sole fallback session file", () => {
+    setupTaskRepo();
+    writeSessionContext(
+      "codex_previous-thread",
+      ".trellis/tasks/issue-106",
+    );
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    const fallbackPath = path.join(
+      tmpDir,
+      ".trellis",
+      ".runtime",
+      "sessions",
+      "codex_previous-thread.json",
+    );
+
+    const output = execSync(
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} finish`,
+      {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        env: sessionEnv({ CODEX_THREAD_ID: "current-thread" }),
+      },
+    );
+
+    expect(output).toContain(
+      "Source: session-fallback:codex_previous-thread",
+    );
+    expect(fs.existsSync(fallbackPath)).toBe(false);
+
+    const current = runTaskCurrent({ CODEX_THREAD_ID: "current-thread" });
+    expect(current.status).toBe(1);
+    expect(current.output).toContain("Current task: (none)");
+    expect(current.output).toContain("Source: none");
+  });
+
+  it("[issue #469] finish deletes nothing when fallback resolution is ambiguous", () => {
+    setupTaskRepo();
+    writeSessionContext("codex_thread_a", ".trellis/tasks/issue-106");
+    writeSessionContext("codex_thread_b", ".trellis/tasks/issue-106");
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    const sessionsDir = path.join(
+      tmpDir,
+      ".trellis",
+      ".runtime",
+      "sessions",
+    );
+
+    const output = execSync(
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} finish`,
+      {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        env: sessionEnv({ CODEX_THREAD_ID: "current-thread" }),
+      },
+    );
+
+    expect(output).toContain("No current task set");
+    expect(fs.existsSync(path.join(sessionsDir, "codex_thread_a.json"))).toBe(
+      true,
+    );
+    expect(fs.existsSync(path.join(sessionsDir, "codex_thread_b.json"))).toBe(
+      true,
+    );
+  });
+
+  it("[issue #469] finish preserves a malformed exact session when another session exists", () => {
+    setupTaskRepo();
+    writeProjectFile(
+      path.join(
+        ".trellis",
+        ".runtime",
+        "sessions",
+        "codex_malformed.json",
+      ),
+      "{",
+    );
+    writeSessionContext("codex_other", ".trellis/tasks/issue-106");
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    const sessionsDir = path.join(
+      tmpDir,
+      ".trellis",
+      ".runtime",
+      "sessions",
+    );
+
+    const output = execSync(
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} finish`,
+      {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        env: sessionEnv({ CODEX_THREAD_ID: "malformed" }),
+      },
+    );
+
+    expect(output).toContain("No current task set");
+    expect(fs.existsSync(path.join(sessionsDir, "codex_malformed.json"))).toBe(
+      true,
+    );
+    expect(fs.existsSync(path.join(sessionsDir, "codex_other.json"))).toBe(
+      true,
+    );
+  });
+
   // ------------------------------------------------------------
   // inject-workflow-state.py hook (workflow-enforcement-v2)
   // ------------------------------------------------------------

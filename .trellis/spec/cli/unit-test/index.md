@@ -55,7 +55,7 @@ Do **not** maintain a manual coverage table — always run `pnpm test:coverage` 
 | Stage | What Runs | Rationale |
 |-------|-----------|-----------|
 | **pre-commit** (husky) | `lint-staged` (eslint + prettier) | Keep fast; don't add tests here or developers will skip with `--no-verify` |
-| **CI** (GitHub Actions, PR gate) | `pnpm lint` → `pnpm build` → `pnpm test` | Full suite; ~312 tests run in ~1s, no reason to split |
+| **CI** (GitHub Actions, PR gate) | Pin Python 3.9 → `pnpm typecheck` → `pnpm lint` → `pnpm build` → `pnpm test` | Run the full suite with the minimum supported Python so shipped-script syntax regressions cannot hide behind a newer runner |
 
 **When to reconsider**: If total test time exceeds 5 minutes, split into fast (unit) and slow (integration) stages. Currently unnecessary.
 

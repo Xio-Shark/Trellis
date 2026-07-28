@@ -501,9 +501,13 @@ The native hook path calls this resolver with `platform="codex"`,
 - Implement/check context order is role JSONL, `prd.md`, optional `design.md`,
   then optional `implement.md`. Research receives the resolved `Active task:`
   path and research-only context; it must not read implement/check manifests.
-- Custom Codex role profiles must retain a marker-gated child-side pull path:
-  native injection is preferred, while `Active task:` enables degraded loading
-  when the hook is untrusted or unavailable.
+- Codex may truncate model-visible `SubagentStart.additionalContext`, retain a
+  head/tail preview, and add `Full hook output saved to: <path>`. Custom role
+  profiles must treat this notice as stronger evidence than the marker: read
+  the saved full output first, use the role-specific `Active task:` pull
+  fallback if that read fails, and accept the marker as complete only when no
+  saved-output notice is present. Marker absence without a saved-output notice
+  also uses the pull fallback.
 - Native dispatch (`codex.dispatch_mode: auto`) does not set a model on the
   spawned sub-agent by default — Codex's own precedence (spawn value ->
   `[agents]` default -> parent) means the child **inherits the main
@@ -527,6 +531,10 @@ The native hook path calls this resolver with `platform="codex"`,
 | unknown/missing/malformed parent session | exit successfully with no output |
 | one unrelated runtime session exists | no output; never use sole-session fallback |
 | inherited `TRELLIS_CONTEXT_ID` conflicts with parent session | parent `session_id` wins on this native path |
+| complete output contains marker and no saved-output notice | child uses the injected role context directly |
+| output contains `Full hook output saved to: <path>` | child reads the referenced full output before role work |
+| referenced full-output file cannot be read | child uses its role-specific `Active task:` pull fallback |
+| no saved-output notice and marker is absent | child uses its role-specific `Active task:` pull fallback |
 | stale/missing task, malformed hook JSON, or unexpected error | fail open; Codex still starts the child |
 | non-Trellis `agent_type` | no Trellis output |
 
@@ -534,11 +542,12 @@ The native hook path calls this resolver with `platform="codex"`,
 
 - Good: a parent session dispatches `trellis-implement`; the child receives
   its curated implementation context and does not dispatch another role.
+- Good: Codex truncates a long payload but supplies a saved-output path; the
+  child reads that file before using any marker retained in the head preview.
 - Base: project Hook trust is pending; the child reads the dispatch prompt's
   `Active task:` value and follows the marker-absent pull protocol.
-- Bad: resolving an unknown native parent through `TRELLIS_CONTEXT_ID` or a
-  sole unrelated session. This leaks task context across windows and is
-  forbidden.
+- Bad: a retained marker causes the child to ignore a saved-output notice, or
+  research loads `implement.jsonl` / `check.jsonl`.
 
 #### 6. Tests Required
 
@@ -552,6 +561,9 @@ The native hook path calls this resolver with `platform="codex"`,
   Codex workflow-state banner.
 - Assert `configureCodex()` and `collectPlatformTemplates("codex")` remain
   byte-equivalent and distribute the shared injector.
+- Assert all three generated role profiles place the saved-output notice check
+  before marker handling, fall back when the saved file is unreadable or the
+  marker is absent, and preserve implement/check/research role boundaries.
 
 #### 7. Wrong vs Correct
 
@@ -561,6 +573,12 @@ different parent task.
 
 **Correct:** make the strict native call explicit while preserving the defaults
 for legacy shell, hook, and pull-based consumers.
+
+**Wrong:** treat `<!-- trellis-hook-injected -->` as proof that the entire
+model-visible payload survived host truncation.
+
+**Correct:** let `Full hook output saved to: <path>` take precedence, read that
+file first, and use the role-specific pull fallback only when recovery fails.
 
 ### Step 7: Documentation
 

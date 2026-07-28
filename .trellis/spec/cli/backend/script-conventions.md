@@ -347,7 +347,7 @@ for session/window scoped task state:
 | `resolve_context_key(platform_input, platform)` | Accepts `session_id` / `sessionId` / `sessionID`, Cursor `conversation_id`, and transcript path fallbacks |
 | `resolve_active_task(repo_root, platform_input, platform)` | Returns an `ActiveTask` with `task_path`, `source_type`, `context_key`, and `stale` |
 | `set_active_task(...)` | Writes session runtime state when a context key exists; returns `None` without a context key |
-| `clear_active_task(...)` | Deletes the current session file; returns no active task without a context key |
+| `clear_active_task(...)` | Deletes the session file that supplied the resolved active task; returns no active task without a context key |
 
 `TRELLIS_CONTEXT_ID` is a context-key override for subprocesses. It is not a
 second task pointer and must never store a task path. A plain AI-run shell
@@ -448,9 +448,12 @@ a `.current-task` fallback or a Python hook directory.
   - transcript fallback -> `<platform>_transcript_<sha256-prefix>.json`
 - `TRELLIS_CONTEXT_ID` is already a complete context key. Do not prepend a
   platform name to it.
-- `task.py finish` deletes only the current session file. Without a
-  context key it returns "no current task" and must not delete
-  `.trellis/.current-task`.
+- `task.py finish` deletes only the session file that supplied the resolved
+  active task. For an exact match this is the current context key; for a
+  single-session fallback it is `ActiveTask.context_key` from that fallback.
+  Without a process context key, or when resolution returns no unique active
+  task, it deletes nothing. It must never delete `.trellis/.current-task` or
+  bulk-clear other sessions.
 - `task.py archive <task>` deletes every runtime session file whose
   `current_task` points at the archived task before moving the task directory.
 - Before moving anything, `cmd_archive` (`task_store.py`) calls
@@ -500,7 +503,9 @@ a `.current-task` fallback or a Python hook directory.
 | `list --json` / `list` with a parent whose stored status is `planning` and a child past `planning` | `display_status` (and human list label) shows `"active"`; `task.json.status` on disk stays `planning` |
 | `archive` / `validate` when `task.json.branch` no longer exists locally | Prints a yellow warning; does not block archive or fail validation |
 | stale session task + stale `.current-task` exists | Returns stale session state; no `.current-task` fallback |
-| `finish` with context key and active task | Deletes `.runtime/sessions/<key>.json` |
+| `finish` with an exact context-key match | Deletes only `.runtime/sessions/<exact-key>.json` |
+| `finish` with a missing exact match and one fallback session | Deletes only the fallback file named by the resolved `ActiveTask.context_key` |
+| `finish` with a missing exact match and multiple session files | Returns no current task and deletes nothing |
 | `finish` without context key | Returns no current task; does not delete `.current-task` |
 | `archive` for a task referenced by runtime sessions | Deletes those session files even when `finish` was skipped |
 | `archive` on a name that resolves outside `.trellis/tasks/` (e.g. `archive src` falling back to `repo_root/src`) | Refuses with "refusing to archive ..." and exit 1; source directory is left untouched |
@@ -510,11 +515,18 @@ a `.current-task` fallback or a Python hook directory.
 - Good: Cursor provides `conversation_id`; resolver writes
   `cursor_<conversation-id>.json` and hook/plugin output includes the
   session source (statuslines shorten it to `[session]`).
+- Good: a Codex shell has a new thread id while exactly one older session file
+  supplies the active task; `finish` reports `session-fallback:<old-key>` and
+  deletes that old file.
+- Good: the exact session file is empty or malformed while another session
+  exists; `finish` reports no current task and preserves both files because no
+  unique active task was resolved.
 - Base: A normal shell command has no session env; `task.py create` creates the
   task without `.runtime`, and `task.py start` degrades with a session identity
   hint instead of writing `.current-task`.
-- Bad: `task.py create --no-start` changes an existing session pointer, or any
-  resolver reads/writes `.trellis/.current-task` as an active-task fallback.
+- Bad: `finish` deletes the process-derived key instead of the resolved source
+  key, bulk-clears sessions, or any resolver reads/writes
+  `.trellis/.current-task` as an active-task fallback.
 
 ##### 6. Tests Required
 
@@ -532,6 +544,10 @@ a `.current-task` fallback or a Python hook directory.
 - Hook/statusline/plugin tests proving the resolver source is surfaced.
 - Stale session tests proving no `.current-task` fallback occurs when the session task
   path is stale.
+- Finish regression tests for exact-match deletion, sole-fallback deletion,
+  ambiguous multi-session no-op behavior, and malformed/empty exact-session
+  no-op behavior. Exact-match coverage must prove a sibling session for the
+  same task remains untouched.
 
 ##### 7. Wrong vs Correct
 
@@ -555,6 +571,26 @@ elif resolve_context_key():
         print(f"Activated task for this session: {active.task_path}", file=sys.stderr)
         print(f"Source: {active.source}", file=sys.stderr)
 ```
+
+###### Wrong
+
+```python
+previous = resolve_active_task(repo_root, platform_input, platform)
+context_path = _context_path(repo_root, resolve_context_key(platform_input, platform))
+```
+
+This leaves a sole fallback file active when the process key and resolved
+source key differ.
+
+###### Correct
+
+```python
+previous = resolve_active_task(repo_root, platform_input, platform)
+if previous.context_key:
+    context_path = _context_path(repo_root, previous.context_key)
+```
+
+Deletion ownership follows the resolver result and never guesses another file.
 
 ### `common/types.py` — Typed Data Model
 

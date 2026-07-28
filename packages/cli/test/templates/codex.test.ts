@@ -170,6 +170,18 @@ describe("codex two-channel sub-agent context (native SubagentStart)", () => {
       );
       const content = fs.readFileSync(tomlPath, "utf-8");
 
+      const savedOutputNotice = content.indexOf(
+        "Full hook output saved to: <path>",
+      );
+      const injectionMarker = content.indexOf(
+        "<!-- trellis-hook-injected -->",
+      );
+
+      expect(savedOutputNotice).toBeGreaterThan(-1);
+      expect(injectionMarker).toBeGreaterThan(savedOutputNotice);
+      expect(content).toMatch(/read the referenced\s+file/i);
+      expect(content).toMatch(/referenced file cannot be read/i);
+      expect(content).toMatch(/marker is absent/i);
       expect(content).toContain("<!-- trellis-hook-injected -->");
       expect(content).toContain("Active task: <path>");
       expect(content).not.toContain("[features]");
@@ -177,6 +189,25 @@ describe("codex two-channel sub-agent context (native SubagentStart)", () => {
       expect(content).not.toContain("[features.multi_agent_v2]");
     });
   }
+
+  it("keeps implement and check pull fallbacks role-specific", () => {
+    for (const [name, manifest] of [
+      ["trellis-implement", "implement.jsonl"],
+      ["trellis-check", "check.jsonl"],
+    ] as const) {
+      const tomlPath = path.join(
+        repoRoot,
+        "packages/cli/src/templates/codex/agents",
+        `${name}.toml`,
+      );
+      const content = fs.readFileSync(tomlPath, "utf-8");
+
+      expect(content).toContain(`<path>/${manifest}`);
+      expect(content).toContain("<path>/prd.md");
+      expect(content).toContain("<path>/design.md");
+      expect(content).toContain("<path>/implement.md");
+    }
+  });
 
   it("keeps research task resolution role-isolated from implement/check manifests", () => {
     const researchPath = path.join(

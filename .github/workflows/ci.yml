@@ -36,6 +36,11 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Setup minimum supported Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.9"
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
