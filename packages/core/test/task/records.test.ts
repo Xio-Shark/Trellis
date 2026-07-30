@@ -54,30 +54,6 @@ describe("loadTaskRecord / writeTaskRecord", () => {
     expect(loaded).toEqual(record);
   });
 
-  it("round-trips and preserves an optional workflow selection", () => {
-    const dir = path.join(tmp, "05-13-workflow");
-    writeTaskRecord({
-      taskDir: dir,
-      record: emptyTaskRecord({
-        id: "workflow",
-        name: "workflow",
-        title: "Workflow",
-        workflow: "tdd",
-      }),
-    });
-    expect(loadTaskRecord({ taskDir: dir }).workflow).toBe("tdd");
-
-    writeTaskRecord({
-      taskDir: dir,
-      record: emptyTaskRecord({
-        id: "workflow",
-        name: "workflow",
-        title: "Updated",
-      }),
-    });
-    expect(loadTaskRecord({ taskDir: dir }).workflow).toBe("tdd");
-  });
-
   it("loadTaskRecord rejects incomplete on-disk records instead of defaulting fields", () => {
     const dir = path.join(tmp, "05-13-incomplete");
     fs.mkdirSync(dir, { recursive: true });

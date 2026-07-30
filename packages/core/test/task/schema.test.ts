@@ -71,28 +71,6 @@ describe("taskRecordSchema", () => {
     expect(parsed).not.toBe(input);
   });
 
-  it("parses the optional workflow selection", () => {
-    const parsed = taskRecordSchema.parse({
-      ...emptyTaskRecord(),
-      workflow: "tdd",
-    });
-    expect(parsed.workflow).toBe("tdd");
-    expect(() =>
-      taskRecordSchema.parse({
-        ...emptyTaskRecord(),
-        workflow: 42,
-      }),
-    ).toThrow(/task.workflow must be a string/);
-    for (const workflow of ["", "tdd workflow", "../tdd"]) {
-      expect(() =>
-        taskRecordSchema.parse({
-          ...emptyTaskRecord(),
-          workflow,
-        }),
-      ).toThrow(/task.workflow must match \[A-Za-z0-9_-\]\+/);
-    }
-  });
-
   it("rejects non-object inputs", () => {
     expect(() => taskRecordSchema.parse("nope")).toThrow(/must be a JSON object/);
     expect(() => taskRecordSchema.parse(null)).toThrow();

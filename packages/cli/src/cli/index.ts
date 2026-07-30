@@ -278,10 +278,6 @@ program
     "-n, --create-new",
     "Write .trellis/workflow.md.new instead of replacing the active workflow",
   )
-  .option(
-    "-s, --save <id>",
-    "Save a template to the per-task library (.trellis/workflows/<id>.md) without touching workflow.md",
-  )
   .action(async (options: Record<string, unknown>) => {
     try {
       await runWorkflowCommand({
@@ -290,7 +286,6 @@ program
         list: options.list as boolean | undefined,
         force: options.force as boolean | undefined,
         createNew: options.createNew as boolean | undefined,
-        save: options.save as string | undefined,
       });
     } catch (error) {
       if (error instanceof WorkflowCommandError) {
