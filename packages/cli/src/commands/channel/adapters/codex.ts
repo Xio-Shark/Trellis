@@ -56,6 +56,8 @@ export interface CodexCtx {
   finalMessageSeen: boolean;
   /** Codex may send turn/completed before the final agentMessage item. */
   pendingDone: boolean;
+  /** Prevent duplicate terminal errors when Codex reports one failure twice. */
+  terminalErrorSeen: boolean;
   /** Last-known thread id (used to scope future requests). */
   threadId?: string;
   /** Monotonic outbound id allocator. */
@@ -68,6 +70,7 @@ export function createCodexCtx(): CodexCtx {
     items: new Map(),
     finalMessageSeen: false,
     pendingDone: false,
+    terminalErrorSeen: false,
     nextId: 1,
   };
 }
@@ -241,13 +244,49 @@ function handleNotification(msg: JsonRpcInbound, ctx: CodexCtx): ParseResult {
       return handleItemCompleted(msg, ctx);
     case "item/agentMessage/delta":
       return handleAgentMessageDelta(msg, ctx);
-    case "turn/completed":
+    case "turn/completed": {
+      const turn = isObject(msg.params?.turn) ? msg.params.turn : undefined;
+      if (turn?.status === "failed") {
+        ctx.pendingDone = false;
+        if (ctx.terminalErrorSeen) return { events: [] };
+        ctx.terminalErrorSeen = true;
+        return {
+          events: [
+            {
+              kind: "error",
+              payload: {
+                message: errorMessage(turn.error, "Codex turn failed"),
+              },
+            },
+          ],
+        };
+      }
+      if (ctx.terminalErrorSeen) return { events: [] };
       if (ctx.finalMessageSeen) {
         ctx.pendingDone = false;
         return { events: [{ kind: "done", payload: {} }] };
       }
       ctx.pendingDone = true;
       return { events: [] };
+    }
+    case "error": {
+      const params = msg.params ?? {};
+      const message = errorMessage(params.error, "Codex app-server error");
+      if (params.willRetry === true) {
+        return {
+          events: [
+            {
+              kind: "progress",
+              payload: { detail: { kind: "warning", message } },
+            },
+          ],
+        };
+      }
+      if (ctx.terminalErrorSeen) return { events: [] };
+      ctx.terminalErrorSeen = true;
+      ctx.pendingDone = false;
+      return { events: [{ kind: "error", payload: { message } }] };
+    }
     case "turn/aborted":
       return {
         events: [{ kind: "error", payload: { message: "turn aborted" } }],
@@ -555,6 +594,18 @@ function isObject(x: unknown): x is Record<string, unknown> {
   return typeof x === "object" && x !== null && !Array.isArray(x);
 }
 
+function errorMessage(error: unknown, fallback: string): string {
+  if (typeof error === "string" && error.trim()) return error;
+  if (
+    isObject(error) &&
+    typeof error.message === "string" &&
+    error.message.trim()
+  ) {
+    return error.message;
+  }
+  return fallback;
+}
+
 // ── Outbound helpers ──
 
 export function encodeCodexRequest(
@@ -580,6 +631,7 @@ export function encodeCodexUserMessage(
   }
   ctx.finalMessageSeen = false;
   ctx.pendingDone = false;
+  ctx.terminalErrorSeen = false;
   return encodeCodexRequest(
     ctx,
     "turn/start",
