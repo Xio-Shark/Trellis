@@ -275,7 +275,7 @@ function summaryText(text: string) {
   return `${text.trim().replace(/[。.!?…]+$/u, "")}...`;
 }
 function splitModelThinking(model?: string, fallbackThinking?: string) {
-  const m = model?.match(/^(.*):(off|minimal|low|medium|high|xhigh)$/i);
+  const m = model?.match(/^(.*):(off|minimal|low|medium|high|xhigh|max)$/i);
   return {
     model: m ? m[1] : model,
     thinking: (m?.[2] ?? fallbackThinking)?.toLowerCase(),
@@ -637,12 +637,12 @@ function resolveRunCfg(
   agentCfg: AgentConfig,
   inheritedThinking?: string,
 ): PiRunConfig {
-  const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"];
+  const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
   const normalize = (v: unknown): string | undefined => {
     const s = typeof v === "string" && v.trim() ? v.trim().toLowerCase() : "";
     return THINKING_LEVELS.includes(s) ? s : undefined;
   };
-  const suffixRe = /:(off|minimal|low|medium|high|xhigh)$/i;
+  const suffixRe = /:(off|minimal|low|medium|high|xhigh|max)$/i;
   const inputModel = str(input.model);
   const agentModel = agentCfg.model;
   const rawModel = inputModel ?? agentModel;
@@ -1441,7 +1441,7 @@ export default function trellisExtension(pi: {
           type: "string",
           description:
             "Optional Pi thinking level override for the child sub-agent process.",
-          enum: ["off", "minimal", "low", "medium", "high", "xhigh"],
+          enum: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
         },
       },
     },

@@ -47,6 +47,10 @@ interface PiExtensionInternals {
   isTrellisAgent: (root: string, agent: string) => boolean;
   parseAgentFM: (content: string) => AgentConfig;
   buildPiArgs: (config: PiRunConfig) => string[];
+  splitModelThinking: (
+    model?: string,
+    fallbackThinking?: string,
+  ) => { model?: string; thinking?: string };
   resolveRunCfg: (
     input: { model?: string; thinking?: string },
     agentCfg: AgentConfig,
@@ -76,27 +80,16 @@ interface PiExtensionInternals {
   ) => string;
 }
 
-function loadExtensionInternals(
-  cwd = process.cwd(),
-  env: NodeJS.ProcessEnv = {},
-): PiExtensionInternals {
-  const source = `${getExtensionTemplate()}
+type MaxThinkingInternals = Pick<
+  PiExtensionInternals,
+  "buildPiArgs" | "resolveRunCfg" | "splitModelThinking"
+>;
 
-export {
-  normalizeAgent,
-  isTrellisAgent,
-  parseAgentFM,
-  buildPiArgs,
-  resolveRunCfg,
-  contextModelRef,
-  cmdHasTrellisCtx,
-  shellQuote,
-  trellisExtension,
-  truncateUtf8,
-  readContextInjectionLimits,
-  buildContext as buildContextForTest,
-};
-`;
+function evaluateExtension<T>(
+  source: string,
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+): T {
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
       esModuleInterop: true,
@@ -120,7 +113,46 @@ export {
     require,
   });
   vm.runInContext(compiled, sandbox);
-  return moduleObject.exports as unknown as PiExtensionInternals;
+  return moduleObject.exports as T;
+}
+
+function loadExtensionInternals(
+  cwd = process.cwd(),
+  env: NodeJS.ProcessEnv = {},
+): PiExtensionInternals {
+  const source = `${getExtensionTemplate()}
+
+export {
+  normalizeAgent,
+  isTrellisAgent,
+  parseAgentFM,
+  buildPiArgs,
+  splitModelThinking,
+  resolveRunCfg,
+  contextModelRef,
+  cmdHasTrellisCtx,
+  shellQuote,
+  trellisExtension,
+  truncateUtf8,
+  readContextInjectionLimits,
+  buildContext as buildContextForTest,
+};
+`;
+  return evaluateExtension<PiExtensionInternals>(source, cwd, env);
+}
+
+function loadMaxThinkingInternals(
+  extensionSource: string,
+): MaxThinkingInternals {
+  const source = `${extensionSource}
+
+export { buildPiArgs, resolveRunCfg, splitModelThinking };
+`;
+  return evaluateExtension<MaxThinkingInternals>(
+    source,
+    process.cwd(),
+    {},
+  );
 }
 
 function createMinimalTrellisRoot(): string {
@@ -220,7 +252,7 @@ describe("pi templates", () => {
       'enum: ["single", "parallel", "chain"]',
     );
     expect(extension).toContain(
-      'enum: ["off", "minimal", "low", "medium", "high", "xhigh"]',
+      'enum: ["off", "minimal", "low", "medium", "high", "xhigh", "max"]',
     );
 
     // Dispatch protocol carries the "Active task: <path>" prefix rule.
@@ -550,6 +582,41 @@ fallbackModels:
       "--tools",
       "Read,Write,Bash,find,Grep",
     ]);
+  });
+
+  it("supports max thinking for GPT-5.6 subagents (#470)", () => {
+    const agentCfg: AgentConfig = {
+      model: "openai/gpt-5.6-sol",
+      thinking: "max",
+      fallbackModels: [],
+    };
+    const dogfoodExtension = readFileSync(
+      join(process.cwd(), "..", "..", ".pi", "extensions", "trellis", "index.ts"),
+      "utf-8",
+    );
+
+    for (const extensionSource of [getExtensionTemplate(), dogfoodExtension]) {
+      const { buildPiArgs, resolveRunCfg, splitModelThinking } =
+        loadMaxThinkingInternals(extensionSource);
+      const config = resolveRunCfg({}, agentCfg);
+
+      expect(config).toEqual({
+        model: "openai/gpt-5.6-sol:max",
+        thinking: "max",
+      });
+      expect(buildPiArgs(config)).toEqual([
+        "--mode",
+        "json",
+        "-p",
+        "--no-session",
+        "--model",
+        "openai/gpt-5.6-sol:max",
+      ]);
+      expect(splitModelThinking(config.model)).toEqual({
+        model: "openai/gpt-5.6-sol",
+        thinking: "max",
+      });
+    }
   });
 
   it("inherits the invoking Pi model after per-call and agent defaults", () => {
