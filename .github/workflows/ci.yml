@@ -10,6 +10,7 @@ on:
       - 'pnpm-workspace.yaml'
       - 'package.json'
       - 'marketplace'
+      - '**/*.py'
       - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
@@ -20,6 +21,7 @@ on:
       - 'pnpm-workspace.yaml'
       - 'package.json'
       - 'marketplace'
+      - '**/*.py'
       - '.github/workflows/ci.yml'
 
 jobs:
@@ -41,6 +43,11 @@ jobs:
         with:
           python-version: "3.9"
 
+      - name: Check Python 3.9 syntax
+        run: |
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/trellis-pycache"
+          git ls-files -z --recurse-submodules '*.py' | xargs -0 python -m py_compile
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -51,6 +58,9 @@ jobs:
 
       - name: Typecheck (core + cli)
         run: pnpm typecheck
+
+      - name: Typecheck Python
+        run: pnpm --filter @mindfoldhq/trellis lint:py
 
       - name: Lint (core + cli)
         run: pnpm lint

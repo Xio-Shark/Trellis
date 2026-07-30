@@ -55,7 +55,7 @@ Do **not** maintain a manual coverage table — always run `pnpm test:coverage` 
 | Stage | What Runs | Rationale |
 |-------|-----------|-----------|
 | **pre-commit** (husky) | `lint-staged` (eslint + prettier) | Keep fast; don't add tests here or developers will skip with `--no-verify` |
-| **CI** (GitHub Actions, PR gate) | Pin Python 3.9 → `pnpm typecheck` → `pnpm lint` → `pnpm build` → `pnpm test` | Run the full suite with the minimum supported Python so shipped-script syntax regressions cannot hide behind a newer runner |
+| **CI** (GitHub Actions, PR gate) | Pin Python 3.9 → compile every tracked `.py` file → TypeScript + Python typecheck → `pnpm lint` → `pnpm build` → `pnpm test` | Parse all shipped scripts with the real minimum interpreter before running the suite, then enforce `basedpyright` so syntax and type regressions cannot hide in unexecuted templates |
 
 **When to reconsider**: If total test time exceeds 5 minutes, split into fast (unit) and slow (integration) stages. Currently unnecessary.
 
