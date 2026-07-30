@@ -27,6 +27,21 @@ function runCli(cwd: string, args: string[]) {
   });
 }
 
+function writeTrackedPlatforms(
+  cwd: string,
+  relativePaths: string[],
+): void {
+  const trellisDir = path.join(cwd, ".trellis");
+  fs.mkdirSync(trellisDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(trellisDir, ".template-hashes.json"),
+    JSON.stringify({
+      __version: 2,
+      hashes: Object.fromEntries(relativePaths.map((item) => [item, "hash"])),
+    }),
+  );
+}
+
 describe("trellis platforms (#396)", () => {
   let tmpDir: string;
 
@@ -41,6 +56,10 @@ describe("trellis platforms (#396)", () => {
   it("--json reports configured platforms with id, displayName, configDir", () => {
     fs.mkdirSync(path.join(tmpDir, ".claude"), { recursive: true });
     fs.mkdirSync(path.join(tmpDir, ".cursor"), { recursive: true });
+    writeTrackedPlatforms(tmpDir, [
+      ".claude/commands/trellis/continue.md",
+      ".cursor/commands/trellis-continue.md",
+    ]);
 
     const result = runCli(tmpDir, ["platforms", "--json"]);
 
@@ -69,6 +88,9 @@ describe("trellis platforms (#396)", () => {
 
   it("human output lists configured platforms without --json", () => {
     fs.mkdirSync(path.join(tmpDir, ".claude"), { recursive: true });
+    writeTrackedPlatforms(tmpDir, [
+      ".claude/commands/trellis/continue.md",
+    ]);
 
     const result = runCli(tmpDir, ["platforms"]);
 

@@ -16,6 +16,7 @@ import {
   type AITool,
   type CliFlag,
 } from "../types/ai-tools.js";
+import { loadHashes } from "../utils/template-hash.js";
 
 // Platform configurators
 import { configureClaude } from "./claude.js";
@@ -530,23 +531,44 @@ export const PLATFORM_MANAGED_DIRS = PLATFORM_IDS.flatMap((id) =>
 export const ALL_MANAGED_DIRS = [".trellis", ...new Set(PLATFORM_MANAGED_DIRS)];
 
 /**
- * Detect which platforms are configured by checking for configDir existence.
+ * Detect platforms from Trellis-owned templates, not native config directories.
  *
- * Note: Detection uses only `configDir` (the platform-specific directory),
- * NOT shared layers like `.agents/skills/`. This prevents false positives
- * where a shared directory triggers detection of a specific platform.
+ * A platform directory may predate Trellis. The template hash manifest records
+ * only files Trellis actually wrote, while the platform template registry
+ * supplies each platform's distinct file layout.
  */
 export function getConfiguredPlatforms(cwd: string): Set<AITool> {
   const platforms = new Set<AITool>();
+  const hashes = loadHashes(cwd);
+
   for (const id of PLATFORM_IDS) {
-    if (fs.existsSync(path.join(cwd, AI_TOOLS[id].configDir))) {
+    const configDir = AI_TOOLS[id].configDir;
+    const templates = collectPlatformTemplates(id);
+    const hasTrackedTemplate = [...(templates?.keys() ?? [])].some(
+      (relativePath) =>
+        (relativePath === configDir ||
+          relativePath.startsWith(`${configDir}/`)) &&
+        hashes[relativePath] !== undefined,
+    );
+    if (hasTrackedTemplate) {
       platforms.add(id);
     }
   }
-  // Back-compat: Windsurf was renamed to Devin (config dir .windsurf → .devin).
-  // A pre-rename install with only `.windsurf/workflows/` still counts as Devin
-  // so re-init / update recognize it (and `--migrate` can move it to `.devin/`).
-  if (fs.existsSync(path.join(cwd, ".windsurf", "workflows"))) {
+  // Back-compat: Windsurf was renamed to Devin. Require Trellis ownership or
+  // a Trellis-namespaced workflow so a native Windsurf directory is not enough.
+  const legacyWindsurfRoot = ".windsurf/workflows";
+  const hasTrackedWindsurfTemplate = Object.keys(hashes).some((relativePath) =>
+    relativePath.startsWith(`${legacyWindsurfRoot}/trellis-`),
+  );
+  let hasLegacyWindsurfTemplate = false;
+  try {
+    hasLegacyWindsurfTemplate = fs
+      .readdirSync(path.join(cwd, legacyWindsurfRoot))
+      .some((name) => name.startsWith("trellis-"));
+  } catch {
+    // Missing or unreadable legacy directory is not a configured platform.
+  }
+  if (hasTrackedWindsurfTemplate || hasLegacyWindsurfTemplate) {
     platforms.add("devin");
   }
   return platforms;

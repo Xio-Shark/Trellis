@@ -1521,6 +1521,30 @@ describe("init() integration", () => {
     expect(settings).toHaveProperty("statusLine");
   });
 
+  it("#28a issue #500: reinit configures Claude when native .claude settings already exist", async () => {
+    const nativeSettingsPath = path.join(tmpDir, ".claude", "settings.json");
+    fs.mkdirSync(path.dirname(nativeSettingsPath), { recursive: true });
+    fs.writeFileSync(nativeSettingsPath, '{"permissions":{"allow":[]}}\n');
+
+    await init({ yes: true, codex: true, user: "alice" });
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".claude", "skills", "trellis-meta", "SKILL.md"),
+      ),
+    ).toBe(false);
+
+    await init({ yes: true, claude: true });
+
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".claude", "skills", "trellis-meta", "SKILL.md"),
+      ),
+    ).toBe(true);
+    expect(fs.readFileSync(nativeSettingsPath, "utf-8")).toBe(
+      '{"permissions":{"allow":[]}}\n',
+    );
+  });
+
   it("#29 reinit add-platform: no confirm when claude is already configured", async () => {
     await init({ yes: true, claude: true, user: "alice" });
 

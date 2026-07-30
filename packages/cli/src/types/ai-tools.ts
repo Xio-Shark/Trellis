@@ -564,8 +564,8 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
    * Primary agent path is `.snow/agents/*.md` only (no legacy JSON fragment).
    *
    * CLI flag: `--snow`.
-   * Detection uses configDir `.snow/skills` so bare `.snow/settings.json` is not
-   * a false-positive "configured" project.
+   * Detection requires Trellis-owned template hashes under `.snow/skills`, so
+   * native Snow settings, commands, agents, or skills are not false positives.
    */
   snow: {
     name: "Snow CLI",

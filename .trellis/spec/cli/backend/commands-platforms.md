@@ -16,10 +16,12 @@ trellis platforms [--json]
 Behavior:
 
 - Reads `getConfiguredPlatforms(cwd)` (`configurators/index.ts`) to find every
-  platform whose `configDir` exists at the repo root, then looks up each
-  platform's `displayName` (`AI_TOOLS[id].name`) and `configDir`
-  (`AI_TOOLS[id].configDir`) from the `AI_TOOLS` registry
-  (`types/ai-tools.ts`).
+  platform with at least one Trellis-owned template recorded under its private
+  `configDir`. Native platform directories alone do not count. Template
+  ownership comes from `.trellis/.template-hashes.json`, while each platform's
+  distinct file layout comes from its `collectTemplates()` registry entry.
+  The command then looks up `displayName` (`AI_TOOLS[id].name`) and `configDir`
+  (`AI_TOOLS[id].configDir`) from `types/ai-tools.ts`.
 - `--json` prints `{"platforms": [{id, displayName, configDir}, ...]}` via
   `JSON.stringify(..., null, 2)`.
 - Without `--json`, prints a human list: `  <displayName> (<id>) — <configDir>`
