@@ -30,8 +30,9 @@ export interface WriteTaskRecordOptions {
 /**
  * Read a task.json file and return a canonicalized record.
  *
- * Unknown fields on disk that are not part of the canonical 24-field
- * shape are NOT returned — `loadTaskRecord` is the structured public API.
+ * Unknown fields on disk that are not part of the 24 required fields or
+ * supported optional fields are NOT returned — `loadTaskRecord` is the
+ * structured public API.
  * To preserve unknown fields across a load/write cycle, callers should
  * use {@link writeTaskRecord}, which merges canonical updates on top of
  * the on-disk JSON object instead of overwriting it.
@@ -74,6 +75,9 @@ export function writeTaskRecord(options: WriteTaskRecordOptions): void {
   const recordBag = record as unknown as Record<string, unknown>;
   for (const field of TASK_RECORD_FIELD_ORDER) {
     out[field] = recordBag[field];
+  }
+  if (record.workflow !== undefined) {
+    out.workflow = record.workflow;
   }
   if (existing) {
     for (const key of Object.keys(existing)) {

@@ -1,4 +1,4 @@
-/* global process */
+/* global process, console */
 /**
  * Trellis Workflow State Injection Plugin
  *
@@ -8,7 +8,11 @@
  * <workflow-state> breadcrumb reminding the main AI what task is
  * active and its expected flow. Breadcrumb text is pulled exclusively
  * from the project's workflow.md [workflow-state:STATUS] tag blocks —
- * workflow.md is the single source of truth. There are no fallback
+ * workflow.md is the single source of truth. When the active task's
+ * task.json selects a workflow variant ("workflow": "<id>"), the tag
+ * blocks are read from .trellis/workflows/<id>.md instead (missing
+ * variant file → one stderr warning + fallback to workflow.md; see
+ * resolveWorkflowMd). There are no fallback
  * tables in this plugin: when workflow.md is missing or a tag is
  * absent, the breadcrumb degrades to a generic
  * "Refer to workflow.md for current step." line so users see (and fix)
@@ -23,7 +27,7 @@
  *   - task.json malformed or missing status
  */
 
-import { existsSync, readFileSync } from "fs"
+import { existsSync, readFileSync, statSync } from "fs"
 import { join } from "path"
 import { TrellisContext, debugLog, isTrellisSubagent } from "../lib/trellis-context.js"
 
@@ -107,17 +111,88 @@ function promptHasSkipKeyword(text, keyword) {
   return pattern.test(text)
 }
 
+// Per-task workflow selection (mirrors the Python resolver in
+// .trellis/scripts/common/workflow_selection.py). Ids are restricted to
+// [A-Za-z0-9_-]+ so a task.json value can never traverse outside
+// .trellis/workflows/.
+const WORKFLOW_ID_RE = /^[A-Za-z0-9_-]+$/
+
 /**
- * Parse workflow.md for [workflow-state:STATUS] blocks.
+ * Resolve and read active task state once for the current turn.
+ */
+function resolveActiveTaskState(ctx, platformInput = null) {
+  const active = ctx.getActiveTask(platformInput)
+  const taskRef = active.taskPath
+  if (!taskRef) return null
+  const taskDir = ctx.resolveTaskDir(taskRef)
+  if (active.stale || !taskDir || !existsSync(taskDir)) {
+    return { taskRef, source: active.source, stale: true, data: null }
+  }
+  const taskJsonPath = join(taskDir, "task.json")
+  if (!existsSync(taskJsonPath)) {
+    return { taskRef, source: active.source, stale: false, data: null }
+  }
+  try {
+    return {
+      taskRef,
+      source: active.source,
+      stale: false,
+      data: JSON.parse(readFileSync(taskJsonPath, "utf-8")),
+    }
+  } catch {
+    return { taskRef, source: active.source, stale: false, data: null }
+  }
+}
+
+/**
+ * Resolve which workflow markdown file feeds this turn's breadcrumbs.
  *
- * Returns {status: body}. workflow.md is the single source of truth —
- * there are no fallback tables here. Missing tags (or a missing /
- * unreadable workflow.md) fall back to a generic line in
+ * Rule (identical across all Trellis consumers):
+ * - Active task's task.json has a non-empty string "workflow" field whose
+ *   id matches [A-Za-z0-9_-]+ AND .trellis/workflows/<id>.md is a file →
+ *   use that path.
+ * - Selection present but id invalid / variant file missing → one warning
+ *   line on stderr (never stdout — stdout is hook JSON on other hosts)
+ *   and fall back to the global .trellis/workflow.md.
+ * - No active task / no "workflow" field / anything unreadable → global
+ *   path, silently. Never throws.
+ */
+function resolveWorkflowMd(directory, state) {
+  const globalPath = join(directory, ".trellis", "workflow.md")
+  const data = state?.data
+  if (state?.stale || !data || typeof data !== "object") return globalPath
+  if (!Object.prototype.hasOwnProperty.call(data, "workflow")) return globalPath
+
+  const workflowId = data.workflow
+  if (typeof workflowId !== "string" || !WORKFLOW_ID_RE.test(workflowId)) {
+    console.error(
+      `Warning: active task has invalid workflow id ${JSON.stringify(workflowId)}; using .trellis/workflow.md`,
+    )
+    return globalPath
+  }
+
+  const variantPath = join(directory, ".trellis", "workflows", `${workflowId}.md`)
+  try {
+    if (statSync(variantPath).isFile()) return variantPath
+  } catch {
+    // ENOENT etc. — treated as a missing variant file; warn below.
+  }
+  console.error(
+    `Warning: active task selects workflow ${JSON.stringify(workflowId)} but .trellis/workflows/ has no matching file; using .trellis/workflow.md`,
+  )
+  return globalPath
+}
+
+/**
+ * Parse the resolved workflow markdown for [workflow-state:STATUS] blocks.
+ *
+ * Returns {status: body}. The workflow file is the single source of
+ * truth — there are no fallback tables here. Missing tags (or a missing /
+ * unreadable workflow file) fall back to a generic line in
  * buildBreadcrumb so users see the broken state and fix workflow.md
  * rather than the plugin silently masking it.
  */
-function loadBreadcrumbs(directory) {
-  const workflowPath = join(directory, ".trellis", "workflow.md")
+function loadBreadcrumbs(workflowPath) {
   if (!existsSync(workflowPath)) return {}
   let content
   try {
@@ -137,25 +212,17 @@ function loadBreadcrumbs(directory) {
 /**
  * Get (taskId, status) from active task, or null if no active task.
  */
-function getActiveTask(ctx, platformInput = null) {
-  const active = ctx.getActiveTask(platformInput)
-  const taskRef = active.taskPath
-  if (!taskRef) return null
-  const taskDir = ctx.resolveTaskDir(taskRef)
-  if (active.stale || !taskDir || !existsSync(taskDir)) {
-    return { id: taskRef.split("/").pop(), status: "stale", source: active.source }
+function getActiveTask(state) {
+  if (!state) return null
+  if (state.stale) {
+    return { id: state.taskRef.split("/").pop(), status: "stale", source: state.source }
   }
-  const taskJsonPath = join(taskDir, "task.json")
-  if (!existsSync(taskJsonPath)) return null
-  try {
-    const data = JSON.parse(readFileSync(taskJsonPath, "utf-8"))
-    const status = typeof data.status === "string" ? data.status : ""
-    if (!status) return null
-    const id = data.id || taskRef.split("/").pop()
-    return { id, status, source: active.source }
-  } catch {
-    return null
-  }
+  const data = state.data
+  if (!data || typeof data !== "object") return null
+  const status = typeof data.status === "string" ? data.status : ""
+  if (!status) return null
+  const id = data.id || state.taskRef.split("/").pop()
+  return { id, status, source: state.source }
 }
 
 /**
@@ -214,8 +281,9 @@ export default async ({ directory }) => {
             return
           }
 
-          const templates = loadBreadcrumbs(directory)
-          const task = getActiveTask(ctx, input)
+          const state = resolveActiveTaskState(ctx, input)
+          const templates = loadBreadcrumbs(resolveWorkflowMd(directory, state))
+          const task = getActiveTask(state)
           const breadcrumb = task
             ? buildBreadcrumb(task.id, task.status, templates, task.source)
             : buildBreadcrumb(null, "no_task", templates)

@@ -58,11 +58,57 @@ function setupRepo(tmp: string): void {
   );
 }
 
+function runTaskWorkflow(tmp: string, ...args: string[]) {
+  return spawnSync(
+    "python3",
+    [path.join(tmp, ".trellis", "scripts", "task.py"), "workflow", ...args],
+    {
+      cwd: tmp,
+      encoding: "utf-8",
+      env: { ...process.env, TRELLIS_CONTEXT_ID: "kiro_test-session" },
+    },
+  );
+}
+
+function setupSelectedWorkflow(tmp: string): void {
+  const taskDir = path.join(tmp, ".trellis", "tasks", "demo-task");
+  fs.mkdirSync(taskDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(taskDir, "task.json"),
+    JSON.stringify({
+      id: "demo-task",
+      status: "in_progress",
+    }),
+  );
+  fs.mkdirSync(path.join(tmp, ".trellis", "workflows"), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, ".trellis", "workflows", "tdd.md"),
+    [
+      "# TDD Workflow",
+      "",
+      "## Phase Index",
+      "TDD_SELECTED_PHASE_INDEX",
+      "",
+      "[workflow-state:in_progress]",
+      "TDD_SELECTED_BREADCRUMB",
+      "[/workflow-state:in_progress]",
+      "",
+      "## Phase 1: Plan",
+    ].join("\n"),
+  );
+  const sessionsDir = path.join(tmp, ".trellis", ".runtime", "sessions");
+  fs.mkdirSync(sessionsDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(sessionsDir, "kiro_test-session.json"),
+    JSON.stringify({ current_task: "demo-task" }),
+  );
+}
+
 function runHook(
   tmp: string,
   script: string,
   platformEnvVar: string,
-): { stdout: string; status: number | null } {
+): { stdout: string; stderr: string; status: number | null } {
   const r = spawnSync(
     "python3",
     [path.join(SHARED_HOOKS, script)],
@@ -78,7 +124,7 @@ function runHook(
       env: { ...process.env, [platformEnvVar]: tmp },
     },
   );
-  return { stdout: r.stdout, status: r.status };
+  return { stdout: r.stdout, stderr: r.stderr, status: r.status };
 }
 
 const describeFn = hasPython() ? describe : describe.skip;
@@ -149,5 +195,62 @@ describeFn("Kiro hook output branch", () => {
     expect(parsed.hookSpecificOutput?.additionalContext).toContain(
       "<session-context>",
     );
+  });
+
+  it("uses the active task's selected workflow in per-turn and session-start hooks", () => {
+    setupSelectedWorkflow(tmp);
+    const selected = runTaskWorkflow(tmp, "tdd");
+    expect(selected.status).toBe(0);
+
+    const perTurn = runHook(
+      tmp,
+      "inject-workflow-state.py",
+      "KIRO_PROJECT_DIR",
+    );
+    expect(perTurn.status).toBe(0);
+    expect(perTurn.stdout).toContain("TDD_SELECTED_BREADCRUMB");
+
+    const sessionStart = runHook(tmp, "session-start.py", "KIRO_PROJECT_DIR");
+    expect(sessionStart.status).toBe(0);
+    expect(sessionStart.stdout).toContain("TDD_SELECTED_PHASE_INDEX");
+
+    const cleared = runTaskWorkflow(tmp, "--clear");
+    expect(cleared.status).toBe(0);
+    const task = JSON.parse(
+      fs.readFileSync(
+        path.join(tmp, ".trellis", "tasks", "demo-task", "task.json"),
+        "utf-8",
+      ),
+    ) as Record<string, unknown>;
+    expect(task.workflow).toBeUndefined();
+
+    expect(runTaskWorkflow(tmp, "tdd\n").status).toBe(1);
+  });
+
+  it("warns once for each explicitly present invalid workflow value", () => {
+    setupSelectedWorkflow(tmp);
+    const taskJson = path.join(
+      tmp,
+      ".trellis",
+      "tasks",
+      "demo-task",
+      "task.json",
+    );
+
+    for (const workflow of ["", null, 42]) {
+      fs.writeFileSync(
+        taskJson,
+        JSON.stringify({ id: "demo-task", status: "in_progress", workflow }),
+      );
+      const result = runHook(
+        tmp,
+        "inject-workflow-state.py",
+        "KIRO_PROJECT_DIR",
+      );
+      const warnings = result.stderr.trim().split(/\r?\n/).filter(Boolean);
+      expect(result.status).toBe(0);
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain("invalid workflow id");
+    }
   });
 });

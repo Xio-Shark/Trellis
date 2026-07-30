@@ -2,9 +2,8 @@
  * Canonical task.json shape — single source of truth for Trellis tasks.
  *
  * The runtime Python writer is `.trellis/scripts/common/task_store.py`
- * (`cmd_create`). The 24-field shape and field order below mirror that
- * writer exactly so every TS and Python entry point produces structurally
- * identical task.json files.
+ * (`cmd_create`). The 24 required fields and field order below mirror that
+ * writer exactly; optional feature fields remain absent unless selected.
  *
  * Downstream consumers (CLI bootstrap, migration tooling, external Node
  * services) should depend on this type instead of redefining their own
@@ -35,6 +34,7 @@ export interface TrellisTaskRecord {
   relatedFiles: string[];
   notes: string;
   meta: Record<string, unknown>;
+  workflow?: string;
 }
 
 /**
@@ -102,6 +102,8 @@ const STRING_ARRAY_FIELDS: ReadonlySet<TaskRecordField> = new Set([
   "relatedFiles",
 ]);
 
+const WORKFLOW_ID_RE = /^[A-Za-z0-9_-]+$/;
+
 /**
  * Lightweight runtime schema for {@link TrellisTaskRecord}. Zero-dep on
  * purpose — `taskRecordSchema.parse(input)` returns a canonicalized
@@ -145,6 +147,16 @@ function parseTaskRecord(input: unknown): TrellisTaskRecord {
     }
     const value = (input as Record<string, unknown>)[field];
     assignField(out, field, value);
+  }
+  if ("workflow" in input) {
+    const workflow = input.workflow;
+    if (typeof workflow !== "string") {
+      throw new Error("task.workflow must be a string");
+    }
+    if (!WORKFLOW_ID_RE.test(workflow)) {
+      throw new Error("task.workflow must match [A-Za-z0-9_-]+");
+    }
+    out.workflow = workflow;
   }
   return out;
 }
@@ -191,10 +203,10 @@ function assignField(
 /**
  * Produce a fully-populated canonical-shape {@link TrellisTaskRecord}.
  *
- * All 24 fields are present in canonical order. `overrides` shallow-merges
- * over the defaults — callers supply per-task values (id, name, title,
- * assignee, createdAt, etc.) and leave null-default fields untouched
- * unless they have a real value.
+ * All 24 required fields are present in canonical order. Optional fields
+ * supplied through `overrides` follow them. Callers supply per-task values
+ * (id, name, title, assignee, createdAt, etc.) and leave null-default fields
+ * untouched unless they have a real value.
  */
 export function emptyTaskRecord(
   overrides: Partial<TrellisTaskRecord> = {},
