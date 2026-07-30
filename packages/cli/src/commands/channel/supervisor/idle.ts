@@ -21,7 +21,6 @@ import type { ShutdownController } from "./shutdown.js";
 
 export interface SupervisorIdleProbe {
   isShuttingDown(): boolean;
-  hasTerminalEvent(): boolean;
 }
 
 export interface IdleTimerHandle {
@@ -70,11 +69,7 @@ export function scheduleSupervisorIdleTimer(
   const fire = (): void => {
     timer = undefined;
     if (cancelled) return;
-    if (
-      shutdown.isShuttingDown() ||
-      shutdown.hasTerminalEvent() ||
-      isChildExited()
-    ) {
+    if (shutdown.isShuttingDown() || isChildExited()) {
       return;
     }
     log.write(
