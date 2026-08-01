@@ -453,14 +453,125 @@ describe("pi templates", () => {
     expect(third.message).toBeUndefined();
   });
 
-  it("extension bash tool_call handler prefixes TRELLIS_CONTEXT_ID", () => {
-    const extension = getExtensionTemplate();
+  it("keeps a native Pi session isolated from a foreign context key (#512)", () => {
+    const root = createMinimalTrellisRoot();
+    const taskDir = join(root, ".trellis", "tasks", "foreign-task");
+    const sessionsDir = join(root, ".trellis", ".runtime", "sessions");
+    mkdirSync(taskDir, { recursive: true });
+    mkdirSync(sessionsDir, { recursive: true });
+    writeFileSync(join(taskDir, "prd.md"), "FOREIGN TASK CONTENT");
+    writeFileSync(
+      join(taskDir, "task.json"),
+      JSON.stringify({ id: "foreign-task", status: "in_progress" }),
+    );
+    writeFileSync(
+      join(sessionsDir, "pi_process_foreign.json"),
+      JSON.stringify({ current_task: "tasks/foreign-task" }),
+    );
 
-    // Bash tool calls get TRELLIS_CONTEXT_ID exported in front so spawned
-    // python scripts (e.g. task.py current) inherit session identity.
-    expect(extension).toContain('ev.toolName === "bash"');
-    expect(extension).toContain("export TRELLIS_CONTEXT_ID=");
-    expect(extension).toContain("cmdHasTrellisCtx");
+    try {
+      const { trellisExtension } = loadExtensionInternals(root, {
+        TRELLIS_CONTEXT_ID: "pi_process_foreign",
+      });
+      const handlers = new Map<
+        string,
+        (event: unknown, ctx?: unknown) => unknown
+      >();
+      trellisExtension({
+        registerTool: vi.fn(),
+        registerShortcut: vi.fn(),
+        on(event, handler) {
+          handlers.set(event, handler);
+        },
+      });
+      const ctx = {
+        sessionManager: {
+          sessionId: "native-window-b",
+          getSessionId(this: { sessionId: string }) {
+            return this.sessionId;
+          },
+        },
+        ui: { notify: vi.fn() },
+      };
+
+      handlers.get("session_start")?.({ type: "session_start" }, ctx);
+      const bashEvent = {
+        toolName: "bash",
+        input: { command: "printf safe" },
+      };
+      handlers.get("tool_call")?.(bashEvent, ctx);
+      expect(bashEvent.input.command).toBe(
+        "export TRELLIS_CONTEXT_ID='pi_native-window-b'; printf safe",
+      );
+
+      const collisionKeys = ["native/window", "native:window"].map(
+        (sessionId) => {
+          const collisionHandlers = new Map<
+            string,
+            (event: unknown, ctx?: unknown) => unknown
+          >();
+          loadExtensionInternals(root).trellisExtension({
+            on(event, handler) {
+              collisionHandlers.set(event, handler);
+            },
+          });
+          const event = {
+            toolName: "bash",
+            input: { command: "printf collision" },
+          };
+          collisionHandlers.get("tool_call")?.(event, {
+            sessionManager: { getSessionId: () => sessionId },
+          });
+          return event.input.command.match(
+            /^export TRELLIS_CONTEXT_ID='([^']+)'/,
+          )?.[1];
+        },
+      );
+      expect(collisionKeys[0]).toMatch(/^pi_native_window_[a-f0-9]{24}$/);
+      expect(collisionKeys[1]).toMatch(/^pi_native_window_[a-f0-9]{24}$/);
+      expect(collisionKeys[0]).not.toBe(collisionKeys[1]);
+
+      const beforeAgentStart = handlers.get("before_agent_start")?.(
+        { type: "before_agent_start", systemPrompt: "BASE" },
+        ctx,
+      ) as { systemPrompt?: string; message?: { content?: string } };
+      expect(beforeAgentStart.systemPrompt).not.toContain("FOREIGN TASK CONTENT");
+      expect(beforeAgentStart.message?.content).not.toContain(
+        "FOREIGN TASK CONTENT",
+      );
+
+      const fallbackHandlers = new Map<
+        string,
+        (event: unknown, ctx?: unknown) => unknown
+      >();
+      loadExtensionInternals(root, {
+        TRELLIS_CONTEXT_ID: "pi_process_foreign",
+      }).trellisExtension({
+        on(event, handler) {
+          fallbackHandlers.set(event, handler);
+        },
+      });
+      const firstFallback = {
+        toolName: "bash",
+        input: { command: "printf one" },
+      };
+      const secondFallback = {
+        toolName: "bash",
+        input: { command: "printf two" },
+      };
+      fallbackHandlers.get("tool_call")?.(firstFallback);
+      fallbackHandlers.get("tool_call")?.(secondFallback);
+      const fallbackKey = firstFallback.input.command.match(
+        /^export TRELLIS_CONTEXT_ID='([^']+)'/,
+      )?.[1];
+      expect(fallbackKey).toMatch(/^pi_process_[a-f0-9]{24}$/);
+      expect(fallbackKey).not.toBe("pi_process_foreign");
+      expect(secondFallback.input.command).toContain(
+        `TRELLIS_CONTEXT_ID='${fallbackKey}'`,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("extension tool_result handler marks failed/cancelled subagent runs as errors", () => {
