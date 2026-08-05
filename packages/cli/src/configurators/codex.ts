@@ -3,7 +3,6 @@ import path from "node:path";
 import { AI_TOOLS } from "../types/ai-tools.js";
 import {
   getAllAgents,
-  getAllCodexSkills,
   getAllHooks,
   getConfigTemplate,
   getHooksConfig,
@@ -145,7 +144,7 @@ export function preserveCodexAgentModelKeys(
 /**
  * Configure Codex by writing:
  * - .agents/skills/ — shared skills from common source
- * - .codex/skills/ — Codex-specific skills (platform-specific templates)
+ * - .codex/skills/ — created empty for user-added Codex skills
  * - .codex/agents/, hooks/, hooks.json, config.toml — platform-specific
  */
 export async function configureCodex(cwd: string): Promise<void> {
@@ -164,18 +163,10 @@ export async function configureCodex(cwd: string): Promise<void> {
 
   const codexRoot = path.join(cwd, ".codex");
 
-  // Codex-specific skills (platform-specific) → .codex/skills/
-  const codexSkillsRoot = path.join(codexRoot, "skills");
-  ensureDir(codexSkillsRoot);
-
-  for (const skill of getAllCodexSkills()) {
-    const skillDir = path.join(codexSkillsRoot, skill.name);
-    ensureDir(skillDir);
-    await writeFile(
-      path.join(skillDir, "SKILL.md"),
-      replacePythonCommandLiterals(skill.content),
-    );
-  }
+  // Trellis ships no Codex-specific skills; the workflow skills all land in
+  // .agents/skills/ above, which Codex reads too. The directory is still
+  // created so users have the conventional place for their own Codex skills.
+  ensureDir(path.join(codexRoot, "skills"));
 
   // Custom agents → .codex/agents/
   const codexAgentsRoot = path.join(codexRoot, "agents");

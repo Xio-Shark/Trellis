@@ -65,7 +65,6 @@ import {
 } from "../templates/claude/index.js";
 import {
   getAllAgents as getCodexAgents,
-  getAllCodexSkills as getCodexPlatformSkills,
   getAllHooks as getCodexHooks,
   getConfigTemplate as getCodexConfigTemplate,
   getHooksConfig as getCodexHooksConfig,
@@ -230,9 +229,6 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
         resolveBundledSkills(ctx),
       )) {
         files.set(filePath, content);
-      }
-      for (const skill of getCodexPlatformSkills()) {
-        files.set(`.codex/skills/${skill.name}/SKILL.md`, skill.content);
       }
       for (const agent of getCodexAgents()) {
         files.set(`.codex/agents/${agent.name}.toml`, agent.content);

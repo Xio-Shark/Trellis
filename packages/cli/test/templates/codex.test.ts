@@ -4,7 +4,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   getAllAgents,
-  getAllCodexSkills,
   getConfigTemplate,
   getHooksConfig,
 } from "../../src/templates/codex/index.js";
@@ -88,13 +87,6 @@ describe("codex native sub-agent hooks", () => {
     expect(subagentStart?.hooks[0]?.command).toContain(
       ".codex/hooks/inject-subagent-context.py",
     );
-  });
-});
-
-describe("codex getAllCodexSkills (platform-specific)", () => {
-  it("returns empty after parallel removal", () => {
-    const skills = getAllCodexSkills();
-    expect(skills).toEqual([]);
   });
 });
 
