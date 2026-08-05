@@ -50,35 +50,75 @@ _KNOWN_PLATFORMS = {
     "snow",
 }
 
+# Every name below records how it was checked. Do NOT add a name by analogy
+# with a neighbour: a 2026-08-05 audit of all 21 platforms found 12 of the 21
+# declared names had never existed anywhere — they were pattern-guessed from a
+# `<PLATFORM>_SESSION_ID` shape no vendor agreed to, and the uniformity was the
+# only "evidence" behind them. A platform with no verified name belongs in no
+# table; it resolves through TRELLIS_CONTEXT_ID or its hook/plugin bridge.
 _ENV_SESSION_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("claude", ("CLAUDE_SESSION_ID", "CLAUDE_CODE_SESSION_ID")),
-    ("codex", ("CODEX_SESSION_ID", "CODEX_THREAD_ID")),
-    ("cursor", ("CURSOR_SESSION_ID",)),
-    ("opencode", ("OPENCODE_SESSION_ID", "OPENCODE_SESSIONID", "OPENCODE_RUN_ID")),
+    # REAL, undocumented (verified 2026-08-05 in a live Claude Code 2.1.221 bash
+    # child; absent from code.claude.com/docs/en/env-vars). CLAUDE_SESSION_ID
+    # was removed here — verified absent from that same live environment.
+    ("claude", ("CLAUDE_CODE_SESSION_ID",)),
+    # REAL, undocumented (verified 2026-08-05: injected by codex-cli 0.146.0
+    # into shell children, absent from the parent env; openai/codex#19937).
+    # CODEX_SESSION_ID was removed — absent from a live `codex exec` env.
+    ("codex", ("CODEX_THREAD_ID",)),
+    # REAL but HOOK-SCOPE ONLY (verified 2026-08-05): set by Gemini's
+    # hookRunner.ts. Its shell tool builds the child env in
+    # shellExecutionService.ts and adds only GEMINI_CLI/TERM/PAGER/GIT_PAGER, so
+    # this never reaches a bash child — it resolves only inside a hook process.
     ("gemini", ("GEMINI_SESSION_ID",)),
-    ("droid", ("FACTORY_SESSION_ID", "DROID_SESSION_ID")),
+    # REAL but HOOK-SCOPE ONLY (verified 2026-08-05): docs.qoder.com/zh/
+    # extensions/hooks documents it as injected during hook execution by the
+    # Qoder *IDE plugin*. Absent from the Qoder CLI hook docs and from Lingma.
     ("qoder", ("QODER_SESSION_ID",)),
-    ("codebuddy", ("CODEBUDDY_SESSION_ID",)),
+    # UNVERIFIED (2026-08-05): absent from kiro.dev/docs/hooks/, but Dynatrace
+    # dtctl, oh-my-agent and gastown all key agent detection on it and one notes
+    # it is "set in both interactive and --no-interactive". Kept because that is
+    # absence of evidence, not evidence of absence. To settle: run
+    # `env | grep KIRO` from a Kiro shell-tool call on a machine with Kiro.
     ("kiro", ("KIRO_SESSION_ID",)),
+    # UNVERIFIED (2026-08-05): absent from docs.github.com/en/copilot/reference/
+    # hooks-reference and from the CLI programmatic reference. To settle: run
+    # `copilot help environment` (the authoritative list per those docs) — not
+    # runnable here, the CLI is not installed and copilot-cli ships no source.
     ("copilot", ("COPILOT_SESSION_ID", "COPILOT_SESSIONID")),
-    ("pi", ("PI_SESSION_ID", "PI_SESSIONID")),
-    ("trae", ("TRAE_SESSION_ID",)),
-    # ZCode reuses CLAUDE_SESSION_ID (it does not document a ZCODE_SESSION_ID).
-    # Platform-scoped lookup (_iter_env_keys filters by platform name), so this
-    # only fires when the resolver already detected "zcode" — no collision with
+    # REASONED, UNVERIFIED (2026-08-05): ZCode is closed-source and not
+    # installable here. It mirrors Claude's naming elsewhere (CLAUDE_PLUGIN_ROOT
+    # / CLAUDE_PLUGIN_DATA compat aliases are in its docs), and the previously
+    # declared CLAUDE_SESSION_ID does not exist on Claude Code either — so the
+    # name ZCode would actually reuse is CLAUDE_CODE_SESSION_ID. Try that first,
+    # keep the historical name as a fallback: if neither exists nothing changes.
+    # Platform-scoped lookup (_iter_env_keys filters by platform name), so the
+    # entry only fires once the resolver detected "zcode" — no collision with
     # the claude entry above.
-    ("zcode", ("CLAUDE_SESSION_ID",)),
-    # Snow CLI exports SNOW_SESSION_ID into hook/terminal/sub-agent children.
-    # TRELLIS_CONTEXT_ID remains the preferred override when present.
+    ("zcode", ("CLAUDE_CODE_SESSION_ID", "CLAUDE_SESSION_ID")),
+    # REAL by vendor design (verified 2026-08-05): Snow's sessionIdentityEnv.ts
+    # exports SNOW_SESSION_ID into hook/terminal/sub-agent children and names
+    # Trellis in its source header. TRELLIS_CONTEXT_ID stays the preferred
+    # override — Snow sets that too.
     ("snow", ("SNOW_SESSION_ID",)),
 )
 _ENV_CONVERSATION_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    # REAL in cursor-agent (CLI), undocumented (verified 2026-08-05: the value
+    # matches ~/.cursor/chats/<ws>/<id>). The Cursor *IDE* is unverified — a
+    # 2026-05 forum request for it drew no staff reply. The invented
+    # CURSOR_SESSION_ID was removed from the session table: empty in a live
+    # cursor-agent shell. Cursor's other path is the beforeShellExecution
+    # ticket below (_lookup_cursor_shell_ticket_context_key).
     ("cursor", ("CURSOR_CONVERSATION_ID", "CURSOR_CONVERSATIONID")),
 )
 _ENV_TRANSCRIPT_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("claude", ("CLAUDE_TRANSCRIPT_PATH",)),
-    ("codex", ("CODEX_TRANSCRIPT_PATH",)),
+    # REAL but HOOK-SCOPE ONLY (verified 2026-08-05): documented for Cursor hook
+    # scripts; empty in the agent's own shell env.
     ("cursor", ("CURSOR_TRANSCRIPT_PATH",)),
+    # UNVERIFIED — never researched. The 2026-08-05 audit covered the session
+    # table only, so do not infer these are real *or* fake from that work
+    # (CLAUDE_/CODEX_TRANSCRIPT_PATH were removed because those two *were*
+    # checked: absent from docs and from live envs). To settle each: run
+    # `env | grep _TRANSCRIPT_PATH` inside a hook and inside a shell-tool call.
     ("gemini", ("GEMINI_TRANSCRIPT_PATH",)),
     ("droid", ("FACTORY_TRANSCRIPT_PATH", "DROID_TRANSCRIPT_PATH")),
     ("qoder", ("QODER_TRANSCRIPT_PATH",)),
@@ -90,9 +130,9 @@ _ENV_PLATFORM_ALIASES = {
     "factory-ai": "droid",
     "github-copilot": "copilot",
 }
-# ZCode intentionally reuses CLAUDE_SESSION_ID. Hooks know the host is ZCode,
-# while later shell commands see only the shared env name and resolve it through
-# the Claude entry. Canonicalize both paths to one runtime filename.
+# ZCode intentionally reuses Claude's session env var name. Hooks know the host
+# is ZCode, while later shell commands see only the shared env name and resolve
+# it through the claude entry. Canonicalize both paths to one runtime filename.
 _CONTEXT_KEY_PLATFORM_ALIASES = {
     "zcode": "claude",
 }
@@ -222,6 +262,12 @@ def _iter_env_keys(
     env_keys: tuple[tuple[str, tuple[str, ...]], ...],
     platform_name: str | None,
 ) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """Narrow an env-key table to one platform, or return all of it.
+
+    A platform with no entry yields an empty tuple, and the caller's `for` loop
+    simply does not run. That is the normal case, not an error: platforms with
+    no verified env var name are deliberately absent from these tables.
+    """
     if not platform_name:
         return env_keys
     matched = tuple((name, keys) for name, keys in env_keys if name == platform_name)

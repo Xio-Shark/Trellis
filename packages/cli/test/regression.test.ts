@@ -2522,6 +2522,12 @@ describe("regression: current-task path normalization", () => {
   });
 
   it("[session-current-task] task.py start also uses platform-native session env when available", () => {
+    // Was written against CODEX_SESSION_ID, which the 2026-08-05 env-name audit
+    // proved never existed on any Codex build. Repointed to a name that is
+    // empirically real (CLAUDE_CODE_SESSION_ID, verified in a live Claude Code
+    // bash child) so the test still covers what it was for — the env table
+    // resolving end-to-end through `task.py start` — instead of covering a
+    // fiction. Codex's surviving real name has its own test below.
     setupTaskRepo();
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
 
@@ -2530,17 +2536,17 @@ describe("regression: current-task path normalization", () => {
       {
         cwd: tmpDir,
         encoding: "utf-8",
-        env: sessionEnv({ CODEX_SESSION_ID: "native-a" }),
+        env: sessionEnv({ CLAUDE_CODE_SESSION_ID: "native-a" }),
       },
     );
 
-    expect(output).toContain("Source: session:codex_native-a");
+    expect(output).toContain("Source: session:claude_native-a");
     const contextPath = path.join(
       tmpDir,
       ".trellis",
       ".runtime",
       "sessions",
-      "codex_native-a.json",
+      "claude_native-a.json",
     );
     const context = JSON.parse(fs.readFileSync(contextPath, "utf-8")) as {
       current_task: string;
@@ -2713,7 +2719,15 @@ print(json.dumps({
     expect(context.current_task).toBe(".trellis/tasks/issue-106");
   });
 
-  it("[session-current-task] task.py start uses OpenCode OPENCODE_RUN_ID", () => {
+  it("[session-current-task] task.py start ignores OPENCODE_RUN_ID and enters degraded mode", () => {
+    // Inverted from "uses OPENCODE_RUN_ID" on 2026-08-05. All three declared
+    // OpenCode names (OPENCODE_SESSION_ID / OPENCODE_SESSIONID /
+    // OPENCODE_RUN_ID) are absent from OpenCode 1.18.13's source and from the
+    // 59 OPENCODE_* literals in the shipped 1.17.18 binary; the OpenCode plugin
+    // is what actually carries identity, by prefixing the bash command with
+    // `export TRELLIS_CONTEXT_ID=…` (plugins/inject-subagent-context.js). So
+    // the env-table entry only ever pretended to work, and OpenCode now
+    // degrades honestly — same shape as the Grok case above.
     setupTaskRepo();
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
 
@@ -2726,18 +2740,305 @@ print(json.dumps({
       },
     );
 
-    expect(output).toContain("Source: session:opencode_run-a");
-    const contextPath = path.join(
-      tmpDir,
-      ".trellis",
-      ".runtime",
-      "sessions",
-      "opencode_run-a.json",
+    expect(output).toContain("Session identity not available");
+    expect(output).toContain("degraded");
+    expect(output).not.toContain("session:opencode_run-a");
+    const sessionsDir = path.join(tmpDir, ".trellis", ".runtime", "sessions");
+    expect(fs.existsSync(path.join(sessionsDir, "opencode_run-a.json"))).toBe(
+      false,
     );
-    const context = JSON.parse(fs.readFileSync(contextPath, "utf-8")) as {
-      current_task: string;
-    };
+  });
+
+  it("[session-current-task] the OpenCode plugin's TRELLIS_CONTEXT_ID prefix still activates the task", () => {
+    // The other half of the test above: removing OpenCode from the env table is
+    // only safe because the plugin injects the key into the bash command. This
+    // reproduces exactly what plugins/inject-subagent-context.js prepends.
+    setupTaskRepo();
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+
+    const output = execSync(
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} start ${JSON.stringify(".trellis/tasks/issue-106")}`,
+      {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        env: sessionEnv({ TRELLIS_CONTEXT_ID: "opencode_run-a" }),
+      },
+    );
+
+    expect(output).toContain("Source: session:opencode_run-a");
+    const context = JSON.parse(
+      fs.readFileSync(
+        path.join(
+          tmpDir,
+          ".trellis",
+          ".runtime",
+          "sessions",
+          "opencode_run-a.json",
+        ),
+        "utf-8",
+      ),
+    ) as { current_task: string };
     expect(context.current_task).toBe(".trellis/tasks/issue-106");
+  });
+
+  // ==========================================================================
+  // [env-name-purge] active_task.py's env tables may only name real variables
+  // ==========================================================================
+  // A 2026-08-05 audit checked all 21 platforms against vendor docs, shipped
+  // binaries and live shells (see .trellis/tasks/08-05-session-identity-
+  // propagation/research/platform-session-identity.md). 12 of the 21 declared
+  // session env var names had never existed on any platform — they were
+  // pattern-guessed from a `<PLATFORM>_SESSION_ID` shape no vendor agreed to,
+  // and three of them entered in a single bulk commit with no per-platform
+  // evidence. The tests below exist so that re-adding one by pattern-matching
+  // its neighbours fails loudly instead of shipping as a silent no-op.
+
+  // Runs a probe against the *installed* resolver in tmpDir, with a JSON
+  // payload as argv[1] and the parsed JSON stdout as the result.
+  function runActiveTaskProbe(
+    fileName: string,
+    bodyLines: string[],
+    payload: unknown,
+  ): unknown {
+    writeProjectFile(
+      fileName,
+      [
+        "import json",
+        "import os",
+        "import sys",
+        `sys.path.insert(0, ${JSON.stringify(path.join(tmpDir, ".trellis", "scripts"))})`,
+        "from common.active_task import (",
+        "    _ENV_CONVERSATION_KEYS,",
+        "    _ENV_SESSION_KEYS,",
+        "    _ENV_TRANSCRIPT_KEYS,",
+        "    _iter_env_keys,",
+        "    resolve_context_key,",
+        ")",
+        "",
+        "payload = json.loads(sys.argv[1])",
+        "",
+        "# Hermetic: drop every name the tables know about plus the override, so",
+        "# the host session running this suite (itself an AI CLI) cannot answer",
+        "# for the platform under test.",
+        "for _table in (_ENV_SESSION_KEYS, _ENV_CONVERSATION_KEYS, _ENV_TRANSCRIPT_KEYS):",
+        "    for _entry_name, _entry_keys in _table:",
+        "        for _key in _entry_keys:",
+        "            os.environ.pop(_key, None)",
+        'os.environ.pop("TRELLIS_CONTEXT_ID", None)',
+        ...bodyLines,
+      ].join("\n"),
+    );
+
+    const result = spawnSync(
+      pythonCmd,
+      [path.join(tmpDir, fileName), JSON.stringify(payload)],
+      { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    return JSON.parse(result.stdout);
+  }
+
+  // [platform, env var name] pairs deleted from active_task.py on 2026-08-05.
+  const PURGED_ENV_NAMES: readonly (readonly [string, string])[] = [
+    // Verified absent from a live Claude Code 2.1.221 bash child and from
+    // code.claude.com/docs/en/env-vars. CLAUDE_CODE_SESSION_ID survives.
+    ["claude", "CLAUDE_SESSION_ID"],
+    // Verified absent from a live `codex exec` env. CODEX_THREAD_ID survives.
+    ["codex", "CODEX_SESSION_ID"],
+    // Empty in a live cursor-agent shell. Cursor keeps CURSOR_CONVERSATION_ID
+    // and the beforeShellExecution ticket.
+    ["cursor", "CURSOR_SESSION_ID"],
+    // Zero hits in OpenCode 1.18.13 source; none among the 59 OPENCODE_*
+    // literals in the 1.17.18 binary. The plugin's command prefix is the
+    // real channel.
+    ["opencode", "OPENCODE_SESSION_ID"],
+    ["opencode", "OPENCODE_SESSIONID"],
+    ["opencode", "OPENCODE_RUN_ID"],
+    // Absent from Factory's docs and from droid 0.100.0's binary (the only
+    // SESSION_ID strings in it are OpenSSL error constants).
+    ["droid", "FACTORY_SESSION_ID"],
+    ["droid", "DROID_SESSION_ID"],
+    // Absent from codebuddy.ai's env-vars and hooks references; its hooks get
+    // only CODEBUDDY_PROJECT_DIR / CODEBUDDY_PLUGIN_ROOT / CLAUDE_PROJECT_DIR.
+    ["codebuddy", "CODEBUDDY_SESSION_ID"],
+    // Absent from docs.trae.cn's hook reference; hooks get TRAE_PROJECT_DIR,
+    // CLAUDE_PROJECT_DIR and TRAE_ENV_FILE.
+    ["trae", "TRAE_SESSION_ID"],
+    // Pi builds its bash env as `{...process.env, PATH}` only; no PI_* session
+    // var exists. The Pi extension's `export TRELLIS_CONTEXT_ID=…` command
+    // prefix is the real channel.
+    ["pi", "PI_SESSION_ID"],
+    ["pi", "PI_SESSIONID"],
+    // Transcript-table inventions, both checked: absent from docs and from
+    // live envs.
+    ["claude", "CLAUDE_TRANSCRIPT_PATH"],
+    ["codex", "CODEX_TRANSCRIPT_PATH"],
+  ];
+
+  it("[env-name-purge] a purged env var name resolves no context key for its platform", () => {
+    setupTaskRepo();
+
+    const result = runActiveTaskProbe(
+      "purged-env-names-probe.py",
+      [
+        'value = "purge-probe"',
+        "out = {}",
+        "for platform, name in payload:",
+        "    os.environ.pop(name, None)",
+        "for platform, name in payload:",
+        "    os.environ[name] = value",
+        "    try:",
+        "        out[platform + ':' + name] = {",
+        '            "scoped": resolve_context_key(None, platform=platform),',
+        '            "unscoped": resolve_context_key(),',
+        "        }",
+        "    finally:",
+        "        os.environ.pop(name, None)",
+        "print(json.dumps(out))",
+      ],
+      PURGED_ENV_NAMES,
+    );
+
+    // "scoped" is the hook path (platform already known); "unscoped" is the
+    // bash-child path that scans every entry. Both must come back empty.
+    const expected: Record<
+      string,
+      { scoped: string | null; unscoped: string | null }
+    > = {};
+    for (const [platform, name] of PURGED_ENV_NAMES) {
+      expected[`${platform}:${name}`] = { scoped: null, unscoped: null };
+    }
+    // One deliberate exception: CLAUDE_SESSION_ID is gone from the *claude*
+    // entry but retained as ZCode's fallback, so an unscoped scan still finds
+    // it there — and _CONTEXT_KEY_PLATFORM_ALIASES canonicalizes zcode to
+    // claude, which is why the key reads `claude_`. Deleting it outright would
+    // take away ZCode's only remaining candidate.
+    expected["claude:CLAUDE_SESSION_ID"].unscoped = "claude_purge-probe";
+
+    expect(result).toEqual(expected);
+  });
+
+  it("[env-name-purge] a platform absent from an env table yields no keys and does not raise", () => {
+    // Purging left five platforms with no session-table entry at all. This is
+    // the code path that makes that safe: _iter_env_keys filters by name, so an
+    // absent platform produces an empty tuple and the caller's loop never runs.
+    setupTaskRepo();
+
+    const result = runActiveTaskProbe(
+      "absent-platform-probe.py",
+      [
+        "out = {}",
+        "for platform in payload:",
+        "    out[platform] = {",
+        '        "session": [n for n, _ in _iter_env_keys(_ENV_SESSION_KEYS, platform)],',
+        '        "conversation": [n for n, _ in _iter_env_keys(_ENV_CONVERSATION_KEYS, platform)],',
+        '        "transcript": [n for n, _ in _iter_env_keys(_ENV_TRANSCRIPT_KEYS, platform)],',
+        '        "resolved": resolve_context_key(None, platform=platform),',
+        "    }",
+        "print(json.dumps(out))",
+      ],
+      ["opencode", "pi", "trae", "droid", "codebuddy", "cursor", "no-such-cli"],
+    );
+
+    expect(result).toEqual({
+      // Gone from every table — identity arrives via the plugin/extension
+      // command prefix (opencode, pi) or not at all (trae).
+      opencode: { session: [], conversation: [], transcript: [], resolved: null },
+      pi: { session: [], conversation: [], transcript: [], resolved: null },
+      trae: { session: [], conversation: [], transcript: [], resolved: null },
+      // Session entry gone; their never-researched transcript names stay.
+      droid: {
+        session: [],
+        conversation: [],
+        transcript: ["droid"],
+        resolved: null,
+      },
+      codebuddy: {
+        session: [],
+        conversation: [],
+        transcript: ["codebuddy"],
+        resolved: null,
+      },
+      // Cursor keeps the conversation and transcript rows; its session row is
+      // gone. `resolved` is null because no cursor shell ticket exists here.
+      cursor: {
+        session: [],
+        conversation: ["cursor"],
+        transcript: ["cursor"],
+        resolved: null,
+      },
+      // A platform no table has ever heard of behaves identically.
+      "no-such-cli": {
+        session: [],
+        conversation: [],
+        transcript: [],
+        resolved: null,
+      },
+    });
+  });
+
+  it("[env-name-purge] every surviving env var name still resolves for its platform", () => {
+    // The mirror image of the purge test: proof that the deletions did not
+    // take a working name with them, and that ZCode now prefers Claude Code's
+    // real variable over the historical invented one.
+    setupTaskRepo();
+
+    const result = runActiveTaskProbe(
+      "surviving-env-names-probe.py",
+      [
+        "out = {}",
+        "for label, env, platform in payload:",
+        "    for key in list(env):",
+        "        os.environ[key] = env[key]",
+        "    try:",
+        "        out[label] = resolve_context_key(None, platform=platform)",
+        "    finally:",
+        "        for key in list(env):",
+        "            os.environ.pop(key, None)",
+        "print(json.dumps(out))",
+      ],
+      [
+        ["claude", { CLAUDE_CODE_SESSION_ID: "probe" }, "claude"],
+        ["codex", { CODEX_THREAD_ID: "probe" }, "codex"],
+        ["gemini", { GEMINI_SESSION_ID: "probe" }, "gemini"],
+        ["qoder", { QODER_SESSION_ID: "probe" }, "qoder"],
+        ["kiro", { KIRO_SESSION_ID: "probe" }, "kiro"],
+        ["copilot", { COPILOT_SESSION_ID: "probe" }, "copilot"],
+        ["copilot-alt", { COPILOT_SESSIONID: "probe" }, "copilot"],
+        ["snow", { SNOW_SESSION_ID: "probe" }, "snow"],
+        ["cursor-conversation", { CURSOR_CONVERSATION_ID: "probe" }, "cursor"],
+        ["cursor-transcript", { CURSOR_TRANSCRIPT_PATH: "/tmp/t.md" }, "cursor"],
+        // ZCode: the real Claude Code name, the historical fallback, and both
+        // at once — the last one pins the ordering.
+        ["zcode-real", { CLAUDE_CODE_SESSION_ID: "probe" }, "zcode"],
+        ["zcode-legacy", { CLAUDE_SESSION_ID: "probe" }, "zcode"],
+        [
+          "zcode-prefers-real",
+          { CLAUDE_CODE_SESSION_ID: "real", CLAUDE_SESSION_ID: "legacy" },
+          "zcode",
+        ],
+      ],
+    );
+
+    expect(result).toEqual({
+      claude: "claude_probe",
+      codex: "codex_probe",
+      gemini: "gemini_probe",
+      qoder: "qoder_probe",
+      kiro: "kiro_probe",
+      copilot: "copilot_probe",
+      "copilot-alt": "copilot_probe",
+      snow: "snow_probe",
+      "cursor-conversation": "cursor_probe",
+      "cursor-transcript": expect.stringMatching(
+        /^cursor_transcript_[0-9a-f]{24}$/,
+      ),
+      // zcode keys canonicalize to `claude_` via _CONTEXT_KEY_PLATFORM_ALIASES
+      // so the hook path and the shell path land on the same runtime file.
+      "zcode-real": "claude_probe",
+      "zcode-legacy": "claude_probe",
+      "zcode-prefers-real": "claude_real",
+    });
   });
 
   it("[session-current-task] task.py finish ignores legacy .current-task when no session task is set", () => {
