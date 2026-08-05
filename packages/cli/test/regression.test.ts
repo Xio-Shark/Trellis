@@ -35,7 +35,10 @@ import {
 } from "../src/templates/claude/index.js";
 import { getAllHooks as getCodexHooks } from "../src/templates/codex/index.js";
 import { getAllHooks as getCopilotHooks } from "../src/templates/copilot/index.js";
-import { getSharedHookScripts } from "../src/templates/shared-hooks/index.js";
+import {
+  getSharedHookScripts,
+  SHARED_HOOKS_BY_PLATFORM,
+} from "../src/templates/shared-hooks/index.js";
 import {
   getCommandTemplates,
   getSkillTemplates,
@@ -55,6 +58,7 @@ import {
 import {
   collectPlatformTemplates,
   configurePlatform,
+  resolveCliFlag,
   PLATFORM_IDS,
 } from "../src/configurators/index.js";
 import { setWriteMode } from "../src/utils/file-writer.js";
@@ -3724,8 +3728,11 @@ print(json.dumps({
     expect(JSON.parse(hookOutput) as { permission?: string }).toMatchObject({
       permission: "allow",
     });
+    // Ticket directory renamed cursor-shell -> shell-tickets when the bridge
+    // stopped being Cursor-only. Every Cursor-observable assertion in this
+    // test (permission allow, context key, session file) is unchanged.
     const [ticketName] = fs.readdirSync(
-      path.join(tmpDir, ".trellis", ".runtime", "cursor-shell"),
+      path.join(tmpDir, ".trellis", ".runtime", "shell-tickets"),
     );
     const ticket = JSON.parse(
       fs.readFileSync(
@@ -3733,7 +3740,7 @@ print(json.dumps({
           tmpDir,
           ".trellis",
           ".runtime",
-          "cursor-shell",
+          "shell-tickets",
           ticketName,
         ),
         "utf-8",
@@ -3775,6 +3782,296 @@ print(json.dumps({
     };
     expect(context.current_task).toBe(".trellis/tasks/issue-106");
     expect(context.platform).toBe("cursor");
+  });
+
+  // Every platform that declares the shell-session hook must actually resolve
+  // identity, not merely have the script on disk. Both the platform list and
+  // each platform's hook install path are derived from the registry, so
+  // platform #8 gets this coverage by being added to the table.
+  //
+  // NOTE: none of these hosts is installed in CI. "End to end" here means the
+  // real hook script and the real task.py driven with a simulated payload of
+  // the shape that platform's config subscribes to — not a live CLI.
+  describe("[session-current-task] shell-ticket bridge, per declaring platform", () => {
+    const SHELL_HOOK = "inject-shell-session-context.py";
+    const WORKFLOW_HOOK = "inject-workflow-state.py";
+    const SESSION_START_HOOK = "session-start.py";
+
+    const declaringPlatforms = Object.entries(SHARED_HOOKS_BY_PLATFORM)
+      .filter(([, hooks]) => hooks.includes(SHELL_HOOK))
+      .map(([platform]) => platform);
+
+    function templatesFor(platform: string): Map<string, string> {
+      const tool = resolveCliFlag(platform);
+      if (!tool) throw new Error(`${platform} matches no AI_TOOLS cliFlag`);
+      const files = collectPlatformTemplates(tool);
+      if (!files) throw new Error(`${platform} collects no templates`);
+      return files;
+    }
+
+    function installPath(
+      files: Map<string, string>,
+      hookName: string,
+    ): string | undefined {
+      return [...files.keys()].find((p) => p.endsWith(`/${hookName}`));
+    }
+
+    function requireInstallPath(
+      files: Map<string, string>,
+      hookName: string,
+      platform: string,
+    ): string {
+      const found = installPath(files, hookName);
+      if (!found) {
+        throw new Error(
+          `${platform} declares ${hookName} but installs it nowhere`,
+        );
+      }
+      return found;
+    }
+
+    function writeSharedHook(hookPath: string, hookName: string): void {
+      writeProjectFile(
+        hookPath,
+        expectTemplateContent(
+          getSharedHookScripts().find((h) => h.name === hookName)?.content,
+          hookName,
+        ),
+      );
+    }
+
+    /** sessionEnv() plus a scrub of the <PLATFORM>_PROJECT_DIR family: a dev
+     *  running this suite inside any AI host exports one, and the hooks check
+     *  that family before falling back to their own script path. Matched by
+     *  suffix rather than listed, so a new host cannot quietly break this. */
+    function hookEnv(): NodeJS.ProcessEnv {
+      return Object.fromEntries(
+        Object.entries(sessionEnv()).filter(
+          ([key]) => !key.endsWith("_PROJECT_DIR"),
+        ),
+      );
+    }
+
+    it("at least one platform declares the shell-session hook", () => {
+      // Guards the loop below from silently becoming a no-op.
+      expect(declaringPlatforms.length).toBeGreaterThan(0);
+    });
+
+    for (const platform of declaringPlatforms) {
+      it(`${platform}: hook writes a ticket, task.py start consumes it, the platform's own hook reads the same key`, () => {
+        setupTaskRepo();
+        const files = templatesFor(platform);
+        const hookPath = requireInstallPath(files, SHELL_HOOK, platform);
+        writeSharedHook(hookPath, SHELL_HOOK);
+
+        // Which payload shape to send is read off the config we actually ship
+        // for this platform, not assumed.
+        const registrations = [...files].filter(
+          ([p, c]) => !p.endsWith(".md") && c.includes(`hooks/${SHELL_HOOK}`),
+        );
+        const isShellExecutionEvent = registrations.some(([, c]) =>
+          c.includes("beforeShellExecution"),
+        );
+
+        const sessionId = `e2e-${platform}`;
+        const command = `${pythonCmd} ./.trellis/scripts/task.py start .trellis/tasks/issue-106`;
+        const payload = isShellExecutionEvent
+          ? { session_id: sessionId, cwd: tmpDir, command }
+          : {
+              session_id: sessionId,
+              cwd: tmpDir,
+              tool_name: "Bash",
+              tool_input: { command },
+            };
+
+        const hookOutput = execSync(
+          `${pythonCmd} ${JSON.stringify(path.join(tmpDir, hookPath))}`,
+          {
+            cwd: tmpDir,
+            input: JSON.stringify(payload),
+            encoding: "utf-8",
+            env: hookEnv(),
+          },
+        );
+        // A shell-execution host wants a permission decision; a tool-call host
+        // reads a schema this hook has no opinion on, so it says nothing.
+        if (isShellExecutionEvent) {
+          expect(JSON.parse(hookOutput) as { permission?: string }).toEqual({
+            permission: "allow",
+          });
+        } else {
+          expect(hookOutput.trim()).toBe("");
+        }
+
+        const ticketDir = path.join(
+          tmpDir,
+          ".trellis",
+          ".runtime",
+          "shell-tickets",
+        );
+        const [ticketName] = fs.readdirSync(ticketDir);
+        const ticket = JSON.parse(
+          fs.readFileSync(path.join(ticketDir, ticketName), "utf-8"),
+        ) as { context_key: string };
+        expect(ticket.context_key).toBeTruthy();
+
+        const startOutput = execSync(
+          `${pythonCmd} ${JSON.stringify(path.join(tmpDir, ".trellis", "scripts", "task.py"))} start ${JSON.stringify(".trellis/tasks/issue-106")}`,
+          { cwd: tmpDir, encoding: "utf-8", env: hookEnv() },
+        );
+        expect(startOutput).toContain(`Source: session:${ticket.context_key}`);
+        expect(
+          fs.existsSync(
+            path.join(
+              tmpDir,
+              ".trellis",
+              ".runtime",
+              "sessions",
+              `${ticket.context_key}.json`,
+            ),
+          ),
+        ).toBe(true);
+
+        // A second session file switches off the single-session fallback, so
+        // the platform's own hook can only find the task by computing exactly
+        // the same context key the ticket carried. That agreement is the whole
+        // point: a ticket keyed differently writes a file no hook ever reads.
+        writeSessionContext("decoy_other_window", ".trellis/tasks/issue-106");
+
+        // Whichever context hook this platform ships. The per-turn breadcrumb
+        // names the task directory; session-start names its title.
+        const workflowHookPath = installPath(files, WORKFLOW_HOOK);
+        const contextHook = workflowHookPath
+          ? { path: workflowHookPath, name: WORKFLOW_HOOK, needle: "issue-106" }
+          : {
+              path: requireInstallPath(files, SESSION_START_HOOK, platform),
+              name: SESSION_START_HOOK,
+              needle: "Issue 106 task",
+            };
+        writeSharedHook(contextHook.path, contextHook.name);
+        const contextOutput = execSync(
+          `${pythonCmd} ${JSON.stringify(path.join(tmpDir, contextHook.path))}`,
+          {
+            cwd: tmpDir,
+            input: JSON.stringify({
+              session_id: sessionId,
+              cwd: tmpDir,
+              hook_event_name: "UserPromptSubmit",
+            }),
+            encoding: "utf-8",
+            env: hookEnv(),
+          },
+        );
+        expect(
+          contextOutput,
+          `${platform}'s ${contextHook.name} did not resolve the task the ticket set — its context key disagrees with the ticket's`,
+        ).toContain(contextHook.needle);
+      });
+    }
+
+    it("a ticket from another session never resolves for this one", () => {
+      setupTaskRepo();
+      const platform = declaringPlatforms[0];
+      const files = templatesFor(platform);
+      const hookPath = requireInstallPath(files, SHELL_HOOK, platform);
+      writeSharedHook(hookPath, SHELL_HOOK);
+      const command = `${pythonCmd} ./.trellis/scripts/task.py start .trellis/tasks/issue-106`;
+
+      // Two windows, same repo, same subcommand, both tickets fresh.
+      for (const sessionId of ["window-a", "window-b"]) {
+        execSync(`${pythonCmd} ${JSON.stringify(path.join(tmpDir, hookPath))}`, {
+          cwd: tmpDir,
+          input: JSON.stringify({
+            session_id: sessionId,
+            cwd: tmpDir,
+            tool_name: "Bash",
+            tool_input: { command },
+          }),
+          encoding: "utf-8",
+          env: hookEnv(),
+        });
+      }
+      expect(
+        fs.readdirSync(
+          path.join(tmpDir, ".trellis", ".runtime", "shell-tickets"),
+        ),
+      ).toHaveLength(2);
+
+      const startOutput = execSync(
+        `${pythonCmd} ${JSON.stringify(path.join(tmpDir, ".trellis", "scripts", "task.py"))} start ${JSON.stringify(".trellis/tasks/issue-106")}`,
+        { cwd: tmpDir, encoding: "utf-8", env: hookEnv() },
+      );
+      // Degraded, never a guess: two candidate keys means neither wins.
+      expect(startOutput).not.toContain("Source: session:");
+      expect(
+        fs.existsSync(path.join(tmpDir, ".trellis", ".runtime", "sessions")),
+      ).toBe(false);
+    });
+
+    it("a payload carrying neither command shape is a silent no-op, not an exception", () => {
+      // This hook runs on a pre-tool event. On several hosts a non-zero exit
+      // or a stderr splat blocks the tool call, so an unrecognized payload
+      // must cost nothing.
+      setupTaskRepo();
+      const platform = declaringPlatforms[0];
+      const hookPath = requireInstallPath(
+        templatesFor(platform),
+        SHELL_HOOK,
+        platform,
+      );
+      writeSharedHook(hookPath, SHELL_HOOK);
+
+      const payloads = [
+        JSON.stringify({ session_id: "s", cwd: tmpDir }), // no command at all
+        JSON.stringify({ session_id: "s", cwd: tmpDir, tool_input: "not-a-dict" }),
+        JSON.stringify({ session_id: "s", cwd: tmpDir, tool_input: { file_path: "a.ts" } }),
+        JSON.stringify({ session_id: "s", cwd: tmpDir, tool_input: { command: "git status" } }),
+        JSON.stringify([1, 2, 3]), // valid JSON, wrong root type
+        "not json at all",
+        "",
+      ];
+      for (const input of payloads) {
+        const result = spawnSync(
+          pythonCmd,
+          [path.join(tmpDir, hookPath)],
+          { cwd: tmpDir, input, encoding: "utf-8", env: hookEnv() },
+        );
+        expect(result.status, `payload ${input} should exit 0`).toBe(0);
+        expect(result.stdout.trim(), `payload ${input} should stay quiet`).toBe(
+          "",
+        );
+        expect(result.stderr.trim()).toBe("");
+      }
+      expect(
+        fs.existsSync(path.join(tmpDir, ".trellis", ".runtime", "shell-tickets")),
+      ).toBe(false);
+    });
+
+    it("tickets left in the pre-0.6.13 cursor-shell directory are still honored", () => {
+      // Migration decision: write the new directory, read both. An upgrade
+      // mid-command would otherwise drop one command into degraded mode on
+      // Cursor — the one platform this bridge already worked for.
+      setupTaskRepo();
+      const now = Date.now() / 1000;
+      writeProjectFile(
+        path.join(".trellis", ".runtime", "cursor-shell", "legacy.json"),
+        JSON.stringify({
+          platform: "cursor",
+          context_key: "cursor_legacy-window",
+          cwd: tmpDir,
+          command: "task.py start .trellis/tasks/issue-106",
+          subcommands: [{ name: "start", task_ref: ".trellis/tasks/issue-106" }],
+          created_at_epoch: now,
+          expires_at_epoch: now + 30,
+        }),
+      );
+
+      const startOutput = execSync(
+        `${pythonCmd} ${JSON.stringify(path.join(tmpDir, ".trellis", "scripts", "task.py"))} start ${JSON.stringify(".trellis/tasks/issue-106")}`,
+        { cwd: tmpDir, encoding: "utf-8", env: hookEnv() },
+      );
+      expect(startOutput).toContain("Source: session:cursor_legacy-window");
+    });
   });
 
   it("[session-current-task] Cursor preToolUse injects context for custom Task subagents", () => {

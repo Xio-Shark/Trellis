@@ -23,8 +23,15 @@ DIR_WORKFLOW = ".trellis"
 DIR_TASKS = "tasks"
 DIR_RUNTIME = ".runtime"
 DIR_SESSIONS = "sessions"
-DIR_CURSOR_SHELL = "cursor-shell"
-CURSOR_SHELL_TICKET_TTL_SECONDS = 30
+DIR_SHELL_TICKETS = "shell-tickets"
+# Pre-0.6.13 name, when the bridge was Cursor-only. Still read so a session that
+# was mid-command across an upgrade does not silently degrade; never written.
+# Tickets are 30-second ephemera, so the old directory ages out by itself —
+# there is nothing to migrate, only a glob on a directory that is normally
+# absent. The alternative (ignore it) would land its one lost command on the
+# platform that works today.
+DIR_LEGACY_CURSOR_SHELL_TICKETS = "cursor-shell"
+SHELL_TICKET_TTL_SECONDS = 30
 TASK_SESSION_COMMANDS = {"start", "current", "finish"}
 
 _SESSION_KEYS = ("session_id", "sessionId", "sessionID")
@@ -106,8 +113,8 @@ _ENV_CONVERSATION_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
     # matches ~/.cursor/chats/<ws>/<id>). The Cursor *IDE* is unverified — a
     # 2026-05 forum request for it drew no staff reply. The invented
     # CURSOR_SESSION_ID was removed from the session table: empty in a live
-    # cursor-agent shell. Cursor's other path is the beforeShellExecution
-    # ticket below (_lookup_cursor_shell_ticket_context_key).
+    # cursor-agent shell. Cursor's other path is the shell ticket below
+    # (_lookup_shell_ticket_context_key), which is not Cursor-specific.
     ("cursor", ("CURSOR_CONVERSATION_ID", "CURSOR_CONVERSATIONID")),
 )
 _ENV_TRANSCRIPT_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -135,6 +142,10 @@ _ENV_PLATFORM_ALIASES = {
 # it through the claude entry. Canonicalize both paths to one runtime filename.
 _CONTEXT_KEY_PLATFORM_ALIASES = {
     "zcode": "claude",
+    # Factory Droid's config directory is `.factory/`, so a hook that names its
+    # platform after the directory it was installed in reports "factory". Its
+    # sibling hooks report "droid". One runtime filename either way.
+    "factory": "droid",
 }
 
 
@@ -321,8 +332,12 @@ def _find_repo_root_from_cwd() -> Path | None:
         current = current.parent
 
 
-def _cursor_shell_ticket_dir(repo_root: Path) -> Path:
-    return repo_root / DIR_WORKFLOW / DIR_RUNTIME / DIR_CURSOR_SHELL
+def _shell_ticket_dirs(repo_root: Path) -> tuple[Path, ...]:
+    runtime_dir = repo_root / DIR_WORKFLOW / DIR_RUNTIME
+    return (
+        runtime_dir / DIR_SHELL_TICKETS,
+        runtime_dir / DIR_LEGACY_CURSOR_SHELL_TICKETS,
+    )
 
 
 def _remove_file(path: Path) -> bool:
@@ -380,7 +395,7 @@ def _ticket_is_fresh(ticket: dict[str, Any], ticket_path: Path, now: float) -> b
 
     created_at = ticket.get("created_at_epoch")
     if isinstance(created_at, (int, float)):
-        if now - created_at <= CURSOR_SHELL_TICKET_TTL_SECONDS:
+        if now - created_at <= SHELL_TICKET_TTL_SECONDS:
             return True
         _remove_file(ticket_path)
         return False
@@ -398,13 +413,18 @@ def _ticket_cwd_matches_repo(ticket: dict[str, Any], repo_root: Path) -> bool:
     return True
 
 
-def _matching_cursor_ticket_context_key(
+def _matching_ticket_context_key(
     ticket_path: Path,
     repo_root: Path,
     now: float,
 ) -> str | None:
+    """Accept a ticket on its merits, never on which platform wrote it.
+
+    The `platform` field a ticket carries is debugging metadata; gating on it
+    was what kept this bridge invisible to every platform but Cursor.
+    """
     ticket = _read_json(ticket_path)
-    if ticket is None or ticket.get("platform") != "cursor":
+    if ticket is None:
         return None
     if not _ticket_is_fresh(ticket, ticket_path, now):
         return None
@@ -415,29 +435,30 @@ def _matching_cursor_ticket_context_key(
     return _string_value(ticket.get("context_key"))
 
 
-def _lookup_cursor_shell_ticket_context_key() -> str | None:
-    """Resolve Cursor conversation identity from a short-lived shell ticket.
+def _lookup_shell_ticket_context_key() -> str | None:
+    """Resolve session identity from a short-lived shell ticket.
 
-    Cursor exposes `conversation_id` to `beforeShellExecution`, but does not
-    export it into the shell command environment. The Cursor hook writes a
-    short-lived ticket just before `task.py` runs. We accept a ticket only when
-    the current `task.py` subcommand matches and exactly one fresh context key
-    matches, which avoids cross-window pointer contamination.
+    No researched platform exports its session id into a shell child, but every
+    hook-capable one hands that id to a hook. So the hook that runs just before
+    a shell command writes a ticket, and this reads it back. A ticket counts
+    only when it is fresh, was written for this repo, and matches the `task.py`
+    subcommand now running — and only when exactly one fresh context key
+    matches. Two concurrent windows therefore both degrade rather than one
+    inheriting the other's pointer.
     """
     repo_root = _find_repo_root_from_cwd()
     if repo_root is None:
         return None
 
-    ticket_dir = _cursor_shell_ticket_dir(repo_root)
-    if not ticket_dir.is_dir():
-        return None
-
     now = time.time()
     candidates: set[str] = set()
-    for ticket_path in ticket_dir.glob("*.json"):
-        context_key = _matching_cursor_ticket_context_key(ticket_path, repo_root, now)
-        if context_key:
-            candidates.add(context_key)
+    for ticket_dir in _shell_ticket_dirs(repo_root):
+        if not ticket_dir.is_dir():
+            continue
+        for ticket_path in ticket_dir.glob("*.json"):
+            context_key = _matching_ticket_context_key(ticket_path, repo_root, now)
+            if context_key:
+                candidates.add(context_key)
 
     if len(candidates) == 1:
         return next(iter(candidates))
@@ -481,8 +502,10 @@ def resolve_context_key(
         if env_context_key:
             return env_context_key
 
-    if allow_environment_context and platform_name in (None, "session", "cursor"):
-        return _lookup_cursor_shell_ticket_context_key()
+    # Last in the chain on purpose: a platform that genuinely exports identity
+    # into the shell outranks a ticket, and no platform name gates the lookup.
+    if allow_environment_context:
+        return _lookup_shell_ticket_context_key()
     return None
 
 

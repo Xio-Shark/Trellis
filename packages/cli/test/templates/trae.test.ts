@@ -142,11 +142,26 @@ describe("trae hooks.json registers SessionStart + UserPromptSubmit", () => {
     expect(raw).toContain(".trae/hooks/inject-workflow-state.py");
   });
 
+  it("wires inject-shell-session-context.py under PreToolUse with a Bash matcher", () => {
+    // Trae gives a shell command's session id to hooks only, never to the
+    // command's own environment, so the pre-shell ticket is how `task.py`
+    // learns which session it belongs to. PreToolUse is one of the events
+    // whose matcher Trae honors (see the SessionStart test above).
+    const raw = fs.readFileSync(hooksPath, "utf-8");
+    const parsed = JSON.parse(raw) as { hooks?: Record<string, unknown> };
+    const preToolUseGroups = (
+      parsed.hooks as Record<string, Record<string, unknown>[]>
+    )["PreToolUse"];
+    expect(preToolUseGroups).toHaveLength(1);
+    expect(preToolUseGroups[0].matcher).toBe("Bash");
+    expect(raw).toContain(".trae/hooks/inject-shell-session-context.py");
+  });
+
   it("does not register any other hook events", () => {
     const raw = fs.readFileSync(hooksPath, "utf-8");
     const parsed = JSON.parse(raw) as { hooks?: Record<string, unknown> };
     expect(Object.keys(parsed.hooks ?? {}).sort()).toEqual(
-      ["SessionStart", "UserPromptSubmit"].sort(),
+      ["PreToolUse", "SessionStart", "UserPromptSubmit"].sort(),
     );
   });
 

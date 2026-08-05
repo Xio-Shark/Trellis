@@ -42,6 +42,16 @@
             "timeout": 30
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON_CMD}} .codebuddy/hooks/inject-shell-session-context.py",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [

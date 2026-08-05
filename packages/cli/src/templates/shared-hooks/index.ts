@@ -60,6 +60,19 @@ export type SharedHookPlatform =
  *   SubagentStart `additionalContext` event. Class-2 (pull-based) platforms
  *   such as copilot, gemini, qoder, and trae still load context from a
  *   self-loading agent profile.
+ * - `inject-shell-session-context.py` — platforms with a hook that fires
+ *   *before* a shell command and receives both the session id and the pending
+ *   command. That hook is the only channel by which session identity reaches
+ *   `task.py`, which runs in the shell child: no platform researched exports a
+ *   session id into that child (2026-08-05 audit of 21 platforms). Declaring a
+ *   platform here also requires an entry in its own hook config template —
+ *   `shared-hooks.test.ts` fails the build when the two disagree, because a
+ *   script on disk that nothing invokes is indistinguishable from success.
+ *   Kiro is deliberately absent: its two hook surfaces (CLI agent JSON
+ *   `hooks.{agentSpawn,userPromptSubmit}` and IDE `.kiro.hook` `when.type`)
+ *   publish no pre-tool trigger, and an unknown key in the agent JSON risks
+ *   the whole agent failing to load. Settle it by running Kiro and checking
+ *   its hook trigger list before adding it.
  * - Kiro supports per-turn + spawn hooks on both surfaces (per the official
  *   docs https://kiro.dev/docs/cli/hooks/): the CLI custom agent declares
  *   `hooks.userPromptSubmit` + `hooks.agentSpawn`, and the IDE declares a
@@ -94,16 +107,26 @@ export const SHARED_HOOKS_BY_PLATFORM: Record<
     "inject-subagent-context.py",
   ],
   codex: ["inject-workflow-state.py", "inject-subagent-context.py"],
-  gemini: ["session-start.py", "inject-workflow-state.py"],
-  qoder: ["session-start.py", "inject-workflow-state.py"],
+  gemini: [
+    "session-start.py",
+    "inject-shell-session-context.py",
+    "inject-workflow-state.py",
+  ],
+  qoder: [
+    "session-start.py",
+    "inject-shell-session-context.py",
+    "inject-workflow-state.py",
+  ],
   copilot: ["inject-workflow-state.py"],
   codebuddy: [
     "session-start.py",
+    "inject-shell-session-context.py",
     "inject-workflow-state.py",
     "inject-subagent-context.py",
   ],
   droid: [
     "session-start.py",
+    "inject-shell-session-context.py",
     "inject-workflow-state.py",
     "inject-subagent-context.py",
   ],
@@ -112,9 +135,14 @@ export const SHARED_HOOKS_BY_PLATFORM: Record<
     "inject-workflow-state.py",
     "inject-subagent-context.py",
   ],
-  trae: ["session-start.py", "inject-workflow-state.py"],
+  trae: [
+    "session-start.py",
+    "inject-shell-session-context.py",
+    "inject-workflow-state.py",
+  ],
   zcode: [
     "session-start.py",
+    "inject-shell-session-context.py",
     "inject-workflow-state.py",
     "inject-subagent-context.py",
   ],
