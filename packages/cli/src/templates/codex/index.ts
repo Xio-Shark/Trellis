@@ -5,11 +5,15 @@
  * Do NOT use Trellis project's own .agents/skills or .codex directories
  * (which may be customized).
  *
+ * Workflow skills are NOT stored here. They come from templates/common/ and are
+ * written to .agents/skills/ as trellis-*, which Codex reads alongside
+ * .codex/skills/ (see configurators/codex.ts).
+ *
  * Directory structure:
  *   codex/
  *   ├── agents/         # Project-scoped Codex custom agents (.toml)
- *   ├── codex-skills/   # Codex-specific skills → .codex/skills/
- *   ├── skills/         # Shared skills → .agents/skills/
+ *   ├── hooks/          # Codex hook scripts → .codex/hooks/
+ *   ├── hooks.json      # Codex hook wiring → .codex/hooks.json
  *   └── config.toml     # Project-scoped Codex config
  */
 

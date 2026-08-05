@@ -5008,7 +5008,6 @@ print(len(entries))
     );
     const brainstormFiles = [
       "common/skills/brainstorm.md",
-      "codex/skills/brainstorm/SKILL.md",
       "copilot/prompts/brainstorm.prompt.md",
     ];
 
@@ -5032,7 +5031,6 @@ print(len(entries))
     );
     const brainstormFiles = [
       "common/skills/brainstorm.md",
-      "codex/skills/brainstorm/SKILL.md",
       "copilot/prompts/brainstorm.prompt.md",
     ];
 
@@ -6570,12 +6568,6 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
     // were updated to describe planning-time context curation instead. They must not
     // reference the deleted subcommand.
     const pkgRoot = path.resolve(__dirname, "..");
-    const codexStart = fs.readFileSync(
-      path.join(pkgRoot, "src/templates/codex/skills/start/SKILL.md"),
-      "utf-8",
-    );
-    expect(codexStart).not.toContain("task.py init-context");
-
     const copilotStart = fs.readFileSync(
       path.join(pkgRoot, "src/templates/copilot/prompts/start.prompt.md"),
       "utf-8",

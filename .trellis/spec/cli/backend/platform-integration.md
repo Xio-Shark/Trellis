@@ -1907,12 +1907,6 @@ if (!hadDeveloperFileBefore) {
 
 **Fix**: Always use `src/templates/{platform}/...` as source templates for `init/update`. Do not copy from project runtime directories.
 
-### Codex skill directory exists but `SKILL.md` is missing
-
-**Symptom**: Template loading fails with `ENOENT` when scanning skills.
-
-**Fix**: Keep `src/templates/codex/skills/<skill-name>/SKILL.md` complete; when removing a skill, delete both `SKILL.md` and the directory.
-
 ### EXCLUDE_PATTERNS missing `.js` in configurator
 
 **Symptom**: In production builds (`dist/`), `trellis init` copies compiled `index.js` (and `.js.map`, `.d.ts`) into the user's config directory (e.g., `.gemini/index.js`).

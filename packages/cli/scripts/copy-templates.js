@@ -11,7 +11,7 @@
  * - src/templates/cursor/ - Cursor commands
  * - src/templates/iflow/ - iFlow CLI commands, agents, hooks
  * - src/templates/opencode/ - OpenCode commands, agents, hooks
- * - src/templates/codex/ - Codex skills
+ * - src/templates/codex/ - Codex agents, hooks, config
  * - src/templates/kilo/ - Kilo CLI commands
  * - src/templates/antigravity/ - Antigravity workflows
  * - src/templates/kiro/ - Kiro Code skills
