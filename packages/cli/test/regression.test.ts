@@ -1318,7 +1318,7 @@ describe("regression: agent-session Trellis update hint", () => {
 
   it("keeps the update hint out of JSON, record, packages, and phase paths", () => {
     expect(pythonFunctionBody(commonSessionContext, "output_text")).toContain(
-      "_get_update_hint",
+      "get_update_hint",
     );
     for (const functionName of [
       "get_context_json",
@@ -1329,7 +1329,7 @@ describe("regression: agent-session Trellis update hint", () => {
       expect(
         pythonFunctionBody(commonSessionContext, functionName),
         `${functionName} should not check Trellis updates`,
-      ).not.toContain("_get_update_hint");
+      ).not.toContain("get_update_hint");
     }
     expect(commonGitContext).toContain('if args.mode == "record":');
     expect(commonGitContext).toContain('elif args.mode == "packages":');
@@ -3058,6 +3058,343 @@ print(json.dumps({
     expect(fs.readFileSync(envFile, "utf-8")).toContain(
       "export TRELLIS_CONTEXT_ID=claude_bash-start-a",
     );
+  });
+
+  // ---------------------------------------------------------------------
+  // CLAUDE_ENV_FILE dedup — the file is user-owned and sourced by every
+  // shell, and _persist_context_key_for_bash used to append unconditionally.
+  // Measured on a maintainer machine: 3884 export lines for 27 distinct
+  // values (169 KB, 99.3% redundant). Dedup keys on the LAST matching export
+  // because shell applies later assignments over earlier ones.
+  // ---------------------------------------------------------------------
+
+  function writeClaudeSessionStartHook(): void {
+    writeProjectFile(
+      path.join(".claude", "hooks", "session-start.py"),
+      expectTemplateContent(
+        getSharedHookScripts().find((hook) => hook.name === "session-start.py")
+          ?.content,
+        "claude session-start",
+      ),
+    );
+  }
+
+  function runSessionStart(sessionId: string, envFile: string): void {
+    runPython(
+      path.join(".claude", "hooks", "session-start.py"),
+      JSON.stringify({
+        session_id: sessionId,
+        transcript_path: path.join(tmpDir, "transcript.jsonl"),
+        cwd: tmpDir,
+        hook_event_name: "SessionStart",
+      }),
+      { CLAUDE_ENV_FILE: envFile },
+    );
+  }
+
+  function contextIdExports(envFile: string): string[] {
+    return fs
+      .readFileSync(envFile, "utf-8")
+      .split("\n")
+      .filter((line) => line.startsWith("export TRELLIS_CONTEXT_ID="));
+  }
+
+  it("[env-file-dedup] repeated SessionStarts with the same key append exactly once", () => {
+    setupTaskRepo();
+    writeClaudeSessionStartHook();
+    const envFile = path.join(tmpDir, "claude-env.sh");
+    // The env file belongs to the user — pre-existing content must survive.
+    fs.writeFileSync(envFile, 'export http_proxy="http://127.0.0.1:7890"\n');
+
+    runSessionStart("dedup-a", envFile);
+    runSessionStart("dedup-a", envFile);
+    runSessionStart("dedup-a", envFile);
+
+    expect(contextIdExports(envFile)).toEqual([
+      "export TRELLIS_CONTEXT_ID=claude_dedup-a",
+    ]);
+    expect(fs.readFileSync(envFile, "utf-8")).toContain(
+      'export http_proxy="http://127.0.0.1:7890"',
+    );
+  });
+
+  it("[env-file-dedup] a changed key appends again", () => {
+    setupTaskRepo();
+    writeClaudeSessionStartHook();
+    const envFile = path.join(tmpDir, "claude-env.sh");
+
+    runSessionStart("dedup-a", envFile);
+    runSessionStart("dedup-a", envFile);
+    runSessionStart("dedup-b", envFile);
+    runSessionStart("dedup-b", envFile);
+
+    expect(contextIdExports(envFile)).toEqual([
+      "export TRELLIS_CONTEXT_ID=claude_dedup-a",
+      "export TRELLIS_CONTEXT_ID=claude_dedup-b",
+    ]);
+  });
+
+  it("[env-file-dedup] switching back to an earlier key re-appends (last line wins, not 'appears anywhere')", () => {
+    // A -> B -> A. `claude_dedup-a` is already in the file when the third
+    // SessionStart runs, but the LAST export assigns `claude_dedup-b`, so the
+    // sourced shell would be on B. Skipping here would hand later Bash
+    // commands the wrong session identity.
+    setupTaskRepo();
+    writeClaudeSessionStartHook();
+    const envFile = path.join(tmpDir, "claude-env.sh");
+
+    runSessionStart("dedup-a", envFile);
+    runSessionStart("dedup-b", envFile);
+    runSessionStart("dedup-a", envFile);
+
+    expect(contextIdExports(envFile)).toEqual([
+      "export TRELLIS_CONTEXT_ID=claude_dedup-a",
+      "export TRELLIS_CONTEXT_ID=claude_dedup-b",
+      "export TRELLIS_CONTEXT_ID=claude_dedup-a",
+    ]);
+  });
+
+  it("[env-file-dedup] an unwritable or unreadable CLAUDE_ENV_FILE is a silent no-op", () => {
+    setupTaskRepo();
+    writeClaudeSessionStartHook();
+
+    // Path under a directory that does not exist: both the dedup read and the
+    // append raise OSError. The hook must still emit its payload.
+    const missing = path.join(tmpDir, "no-such-dir", "claude-env.sh");
+    expect(() => runSessionStart("dedup-missing", missing)).not.toThrow();
+    expect(fs.existsSync(missing)).toBe(false);
+
+    // Path pointing at a directory: the dedup read raises OSError on POSIX
+    // (IsADirectoryError) and on Windows (PermissionError).
+    const asDirectory = path.join(tmpDir, "env-dir");
+    fs.mkdirSync(asDirectory);
+    expect(() => runSessionStart("dedup-dir", asDirectory)).not.toThrow();
+    expect(fs.statSync(asDirectory).isDirectory()).toBe(true);
+  });
+
+  it("[env-file-dedup] a non-UTF-8 user env file does not break SessionStart", () => {
+    // UnicodeDecodeError is a ValueError, not an OSError — reading the user's
+    // file without errors="replace" would escape the non-fatal guard.
+    setupTaskRepo();
+    writeClaudeSessionStartHook();
+    const envFile = path.join(tmpDir, "claude-env.sh");
+    fs.writeFileSync(envFile, Buffer.from([0xff, 0xfe, 0x0a]));
+
+    expect(() => runSessionStart("dedup-latin", envFile)).not.toThrow();
+    expect(contextIdExports(envFile)).toEqual([
+      "export TRELLIS_CONTEXT_ID=claude_dedup-latin",
+    ]);
+  });
+
+  // ---------------------------------------------------------------------
+  // SessionStart update reminder. `_get_update_hint` (now public as
+  // `get_update_hint`) computed "Trellis update available: X -> Y, run trellis
+  // update" for months, but its only caller was `output_text()` — the
+  // get_context.py text path. The hook
+  // built its own payload and never went through it, so on hook-driven
+  // platforms the reminder was silent: this repo sat on .trellis/.version
+  // 0.6.2 against an installed 0.6.7 CLI while `.trellis/.runtime/` held six
+  // codex_* update markers and not one claude_* marker. The hint now rides the
+  // <first-reply-notice> block, the payload's existing "say it in the first
+  // visible reply" channel, so it reaches the user and not just the model.
+  //
+  // The fake `trellis` CLI below is a shell script on PATH. Windows
+  // CreateProcess resolves a bare command name against .exe only, so
+  // subprocess.run(["trellis", ...]) would never find a .bat/.cmd shim —
+  // those cases skip there.
+  // ---------------------------------------------------------------------
+
+  const isWindows = process.platform === "win32";
+
+  function writeFakeTrellisCli(body: string): NodeJS.ProcessEnv {
+    const binDir = path.join(tmpDir, "fake-bin");
+    fs.mkdirSync(binDir, { recursive: true });
+    const shimPath = path.join(binDir, "trellis");
+    fs.writeFileSync(shimPath, `#!/bin/sh\n${body}`, "utf-8");
+    fs.chmodSync(shimPath, 0o755);
+    return {
+      PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
+      TRELLIS_FAKE_CALL_LOG: path.join(tmpDir, "trellis-calls.log"),
+    };
+  }
+
+  function trellisCliCallCount(): number {
+    const callLog = path.join(tmpDir, "trellis-calls.log");
+    if (!fs.existsSync(callLog)) {
+      return 0;
+    }
+    return fs.readFileSync(callLog, "utf-8").split("\n").filter(Boolean).length;
+  }
+
+  const REPORTS_0_5_9 = 'echo called >> "$TRELLIS_FAKE_CALL_LOG"\necho 0.5.9\n';
+
+  function sessionStartContext(
+    sessionId: string,
+    envOverrides: NodeJS.ProcessEnv = {},
+  ): string {
+    const raw = runPython(
+      path.join(".claude", "hooks", "session-start.py"),
+      JSON.stringify({
+        session_id: sessionId,
+        transcript_path: path.join(tmpDir, "transcript.jsonl"),
+        cwd: tmpDir,
+        hook_event_name: "SessionStart",
+      }),
+      // Pin CLAUDE_ENV_FILE inside tmpDir: the hook appends the context key to
+      // whatever that variable points at, and a dev running this suite from
+      // inside Claude Code exports their own file.
+      { CLAUDE_ENV_FILE: path.join(tmpDir, "claude-env.sh"), ...envOverrides },
+    );
+    const payload = JSON.parse(raw) as {
+      hookSpecificOutput: { additionalContext: string };
+    };
+    return payload.hookSpecificOutput.additionalContext;
+  }
+
+  function firstReplyNotice(context: string): string {
+    const closingTag = "</first-reply-notice>";
+    const start = context.indexOf("<first-reply-notice>");
+    const end = context.indexOf(closingTag);
+    expect(start, "payload should carry a first-reply notice").toBeGreaterThan(
+      -1,
+    );
+    expect(end).toBeGreaterThan(start);
+    return context.slice(start, end + closingTag.length);
+  }
+
+  // The notice exactly as it shipped before the update reminder existed. A
+  // project that is up to date must still emit these bytes and nothing else —
+  // no empty block, no placeholder line. Comparing two runs of the same build
+  // cannot catch a line that is added unconditionally, so this is pinned.
+  const NOTICE_WITHOUT_UPDATE_HINT = [
+    "<first-reply-notice>",
+    "On the first visible assistant reply in this session, briefly acknowledge that Trellis SessionStart context loaded.",
+    "Choose the acknowledgment language in this order:",
+    "1. Use the language of the user's current request (the user message that triggered this reply).",
+    "2. If that request has no clear natural language, use an explicitly established project communication language.",
+    "3. If neither provides a language, output the language-neutral fallback exactly: `Trellis SessionStart ✓`.",
+    "Continue directly with the user's request after the acknowledgment.",
+    "The acknowledgment must not alter the language used for the remainder of the response.",
+    "This notice is one-shot: do not repeat it after the first visible assistant reply in this session.",
+    "</first-reply-notice>",
+  ].join("\n");
+
+  function updateMarkerPath(sessionId: string): string {
+    return path.join(
+      tmpDir,
+      ".trellis",
+      ".runtime",
+      `update-check-claude_${sessionId}.marker`,
+    );
+  }
+
+  it.skipIf(isWindows)(
+    "[session-update-hint] a stale .trellis/.version reaches the user through the first-reply notice",
+    () => {
+      setupTaskRepo();
+      writeClaudeSessionStartHook();
+      const fakeCli = writeFakeTrellisCli(REPORTS_0_5_9);
+      writeProjectFile(path.join(".trellis", ".version"), "0.5.0\n");
+
+      const context = sessionStartContext("update-stale", fakeCli);
+
+      // Inside the notice, not merely somewhere in the payload: a hint the
+      // assistant is not told to say out loud never reaches the maintainer.
+      expect(firstReplyNotice(context)).toContain(
+        "Trellis update available: 0.5.0 -> 0.5.9, run trellis update",
+      );
+      expect(firstReplyNotice(context)).toContain(
+        "on its own line in that same reply",
+      );
+      expect(trellisCliCallCount()).toBe(1);
+    },
+  );
+
+  it.skipIf(isWindows)(
+    "[session-update-hint] an up-to-date project emits a byte-identical payload",
+    () => {
+      setupTaskRepo();
+      writeClaudeSessionStartHook();
+      const fakeCli = writeFakeTrellisCli(REPORTS_0_5_9);
+
+      // No .trellis/.version: the hint path cannot produce anything, so this
+      // is the payload exactly as it was shipped before the change.
+      const baseline = sessionStartContext("update-baseline", fakeCli);
+
+      writeProjectFile(path.join(".trellis", ".version"), "0.6.0\n");
+      const upToDate = sessionStartContext("update-current", fakeCli);
+
+      expect(baseline).not.toContain("Trellis update available");
+      expect(firstReplyNotice(upToDate)).toBe(NOTICE_WITHOUT_UPDATE_HINT);
+      expect(upToDate).toBe(baseline);
+    },
+  );
+
+  it.skipIf(isWindows)(
+    "[session-update-hint] the once-per-session marker suppresses the second version probe",
+    () => {
+      setupTaskRepo();
+      writeClaudeSessionStartHook();
+      const fakeCli = writeFakeTrellisCli(REPORTS_0_5_9);
+      writeProjectFile(path.join(".trellis", ".version"), "0.5.0\n");
+
+      const first = sessionStartContext("update-marker", fakeCli);
+      // SessionStart also fires on clear/compact within the same session.
+      const second = sessionStartContext("update-marker", fakeCli);
+
+      expect(first).toContain("Trellis update available: 0.5.0 -> 0.5.9");
+      expect(second).not.toContain("Trellis update available");
+      expect(trellisCliCallCount()).toBe(1);
+      // The marker is keyed by the identity the hook resolved from stdin, not
+      // by session_context's TERM_SESSION_ID / ppid fallback — the latter is a
+      // terminal window, which would mute the reminder for every later session
+      // opened in it.
+      expect(fs.existsSync(updateMarkerPath("update-marker"))).toBe(true);
+    },
+  );
+
+  it.skipIf(isWindows)(
+    "[session-update-hint] a failing or hanging trellis CLI stays silent and leaves the check for the next session",
+    () => {
+      setupTaskRepo();
+      writeClaudeSessionStartHook();
+      writeProjectFile(path.join(".trellis", ".version"), "0.5.0\n");
+
+      const failing = writeFakeTrellisCli(
+        'echo called >> "$TRELLIS_FAKE_CALL_LOG"\necho boom >&2\nexit 1\n',
+      );
+      const afterFailure = sessionStartContext("update-fail", failing);
+
+      // Hangs well past the hint path's 1s subprocess timeout.
+      const hanging = writeFakeTrellisCli(
+        'echo called >> "$TRELLIS_FAKE_CALL_LOG"\nsleep 5\n',
+      );
+      const afterTimeout = sessionStartContext("update-hang", hanging);
+
+      for (const context of [afterFailure, afterTimeout]) {
+        expect(context).not.toContain("Trellis update available");
+        expect(context).toContain("<first-reply-notice>");
+        expect(context).toContain("<task-status>");
+      }
+      // A probe that never produced an answer must not burn the marker.
+      expect(fs.existsSync(updateMarkerPath("update-fail"))).toBe(false);
+      expect(fs.existsSync(updateMarkerPath("update-hang"))).toBe(false);
+    },
+  );
+
+  it("[session-update-hint] an unreadable .trellis/.version leaves SessionStart working and silent", () => {
+    setupTaskRepo();
+    writeClaudeSessionStartHook();
+    // A directory where the version file belongs: read_text raises OSError
+    // (IsADirectoryError on POSIX, PermissionError on Windows) before the hint
+    // path ever reaches `trellis --version`.
+    fs.mkdirSync(path.join(tmpDir, ".trellis", ".version"));
+
+    const context = sessionStartContext("update-unreadable");
+
+    expect(context).not.toContain("Trellis update available");
+    expect(context).toContain("<first-reply-notice>");
+    expect(context).toContain("<task-status>");
   });
 
   it("[session-current-task] Cursor beforeShellExecution bridges conversation_id into task.py shell commands", () => {
@@ -8578,4 +8915,73 @@ describe("regression: safe auto-commit when .trellis/ is gitignored (0.5.10 → 
     // Falls back to true → auto-commit happens.
     expect(stderr).toContain("Auto-committed");
   });
+});
+
+// =============================================================================
+// regression: dogfood ↔ shipped Python script parity
+// =============================================================================
+
+describe("regression: .trellis/scripts stays byte-identical to templates/trellis/scripts", () => {
+  // `.trellis/scripts/` is Trellis's own dogfood copy;
+  // `packages/cli/src/templates/trellis/scripts/` is what ships to users.
+  // They are two physical copies of the same 28 files and nothing enforced
+  // parity, so one-sided edits landed silently — PR #390 changed the template's
+  // `common/session_context.py` upgrade hint and left the dogfood copy on the
+  // old wording for a month. This test turns that whole class of drift into a
+  // build failure.
+  const __dirnameParity = path.dirname(fileURLToPath(import.meta.url));
+  const parityRepoRoot = path.resolve(__dirnameParity, "../../..");
+  const dogfoodScriptsRoot = path.join(parityRepoRoot, ".trellis", "scripts");
+  const templateScriptsRoot = path.join(
+    parityRepoRoot,
+    "packages/cli/src/templates/trellis/scripts",
+  );
+
+  function listPyFiles(root: string): string[] {
+    const found: string[] = [];
+    function walk(dir: string, prefix: string): void {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isDirectory()) {
+          if (entry.name === "__pycache__") continue;
+          walk(path.join(dir, entry.name), `${prefix}${entry.name}/`);
+        } else if (entry.name.endsWith(".py")) {
+          found.push(`${prefix}${entry.name}`);
+        }
+      }
+    }
+    walk(root, "");
+    return found.sort();
+  }
+
+  const templateFiles = listPyFiles(templateScriptsRoot);
+
+  it("both trees hold the same set of .py files", () => {
+    const dogfoodFiles = listPyFiles(dogfoodScriptsRoot);
+    expect(
+      dogfoodFiles,
+      "`.trellis/scripts/` and `packages/cli/src/templates/trellis/scripts/` " +
+        "must hold the same .py files — a script added to (or deleted from) " +
+        "one tree must be mirrored in the other.",
+    ).toEqual(templateFiles);
+  });
+
+  for (const relativePath of templateFiles) {
+    it(`${relativePath} is byte-identical in both trees`, () => {
+      const dogfoodPath = path.join(dogfoodScriptsRoot, relativePath);
+      expect(
+        fs.existsSync(dogfoodPath),
+        `.trellis/scripts/${relativePath} is missing (template has it)`,
+      ).toBe(true);
+      const dogfoodBytes = fs.readFileSync(dogfoodPath);
+      const templateBytes = fs.readFileSync(
+        path.join(templateScriptsRoot, relativePath),
+      );
+      expect(
+        dogfoodBytes.equals(templateBytes),
+        `.trellis/scripts/${relativePath} has drifted from ` +
+          `packages/cli/src/templates/trellis/scripts/${relativePath}. ` +
+          `Edit both copies, never one.`,
+      ).toBe(true);
+    });
+  }
 });
