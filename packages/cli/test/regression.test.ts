@@ -4598,7 +4598,13 @@ print(json.dumps({
     expect(active.stale).toBe(false);
   });
 
-  it("[session-current-task] OpenCode resolver prefers OPENCODE_RUN_ID over plugin sessionID", () => {
+  it("[session-current-task] OpenCode resolver ignores OPENCODE_RUN_ID and uses the plugin sessionID", () => {
+    // Inverted from "prefers OPENCODE_RUN_ID" on 2026-08-06, matching the
+    // Python-side inversion in `PURGED_ENV_NAMES` and in "task.py start
+    // ignores OPENCODE_RUN_ID". The name is absent from OpenCode 1.18.13's
+    // source and from the 1.17.18 binary (82 OPENCODE_* literals, no RUN_ID),
+    // so the only way it was ever set was a stray host-shell export — which
+    // hijacked the resolver rather than helping it.
     setupTaskRepo();
     writeProjectFile(
       path.join(".trellis", "tasks", "opencode-run-task", "task.json"),
@@ -4642,8 +4648,8 @@ print(json.dumps({
         sessionID: "oc-a",
       });
 
-      expect(active.source).toBe("session:opencode_run-a");
-      expect(active.taskPath).toBe(".trellis/tasks/opencode-run-task");
+      expect(active.source).toBe("session:opencode_oc-a");
+      expect(active.taskPath).toBe(".trellis/tasks/issue-106");
       expect(active.stale).toBe(false);
     } finally {
       if (previous === undefined) {

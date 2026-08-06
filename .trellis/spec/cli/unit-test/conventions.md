@@ -28,22 +28,25 @@
 
 `test/setup.ts` is registered via `setupFiles` in `vitest.config.ts` and
 unconditionally `delete`s a list of env vars before any test loads. The list is
-currently 11 entries in three groups, and each group exists for a *different*
+currently 10 entries in three groups, and each group exists for a *different*
 reason — which is what makes the "when to extend" rule easy to get wrong.
 
 **Group 1 — vars production resolvers honor as a user override.**
 
 ```ts
 delete process.env.TRELLIS_CONTEXT_ID;
-delete process.env.OPENCODE_RUN_ID;
 ```
 
-`TrellisContext.getContextKey` treats both as highest-priority overrides —
+`TrellisContext.getContextKey` treats it as the highest-priority override —
 production behavior, by design. When the suite runs inside a Claude Code or
-OpenCode session they leak in from the parent shell and hijack the resolver,
+OpenCode session it leaks in from the parent shell and hijacks the resolver,
 ignoring the test's mocked `platformInput`. Symptom: a test expecting
 `opencode_oc-a` receives `claude_<host-session-id>`, failing deterministically
 only on dev machines.
+
+`OPENCODE_RUN_ID` used to sit in this group. The JS branch that read it was
+removed on 2026-08-06 (no OpenCode version sets the name), so it is no longer a
+resolver override and the scrub went with it.
 
 **Group 2 — vars a hook *writes to*.**
 

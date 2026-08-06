@@ -431,19 +431,18 @@ signal emits the `export` prefix. Existing explicit-assignment dedupe tests
 must continue to cover POSIX, `env ... TRELLIS_CONTEXT_ID=...`, and PowerShell
 forms.
 
-> **`OPENCODE_RUN_ID` is a live inconsistency, not a supported input.** The JS
-> resolver still prefers it over the plugin's own `sessionID`
-> (`templates/opencode/lib/trellis-context.js:339`, test-locked by
-> `regression.test.ts` "OpenCode resolver prefers OPENCODE_RUN_ID over plugin
-> sessionID"), while the Python side removed it and now degrades honestly
-> (`regression.test.ts` "task.py start ignores OPENCODE_RUN_ID"). The name was
-> real on OpenCode ~1.14.x — observed live in an `opencode run` bash child
-> alongside `OPENCODE_PID` / `OPENCODE_PROCESS_ROLE` — and is absent from
-> OpenCode 1.17.18's binary, which carries 84 other `OPENCODE_*` names but
-> neither `OPENCODE_RUN_ID` nor `PROCESS_ROLE`. So the JS branch is inert on
-> currently shipping OpenCode rather than wrong: it changes which key the
-> plugin computes, and both sides key off that same computed value through the
-> command prefix. Do not treat it as a precedent for adding env names.
+> **`OPENCODE_RUN_ID` is not an input on either side.** It was real on OpenCode
+> ~1.14.x — observed live in an `opencode run` bash child alongside
+> `OPENCODE_PID` / `OPENCODE_PROCESS_ROLE` — and upstream dropped it: the
+> 1.17.18 binary carries 82 other `OPENCODE_*` names but neither
+> `OPENCODE_RUN_ID` nor `PROCESS_ROLE`, and 1.18.13's source has zero hits.
+> Python purged it on 2026-08-05 (`PURGED_ENV_NAMES`); the JS resolver's branch
+> went on 2026-08-06. Both sides are now test-locked to ignore it
+> (`regression.test.ts` "task.py start ignores OPENCODE_RUN_ID" and "OpenCode
+> resolver ignores OPENCODE_RUN_ID and uses the plugin sessionID"). The one
+> place it ever fired was a stray host-shell export hijacking a resolver, which
+> is why `test/setup.ts` had to scrub it. Do not treat it as a precedent for
+> adding env names.
 
 Pi Agent exposes its real session identity through the extension context, not
 through ordinary Bash environment. The generated `.pi/extensions/trellis/index.ts`

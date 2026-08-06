@@ -108,7 +108,7 @@ The internal `mapLegacyToolToCopilot` table is the source of truth for the mappi
 
 A platform used to be described twice: `configure<Platform>()` wrote its files to disk and `collectTemplates` returned the same set as a map for `trellis update` to diff. Two descriptions of one thing disagree eventually, and a one-sided edit ships silently — 0.5.5 wrote `.agents/skills/trellis-start/SKILL.md` from `configureCodex` with no matching `collectTemplates` entry, so upgraders' `trellis update` deleted the old skill dir and never regenerated the new one (`migrations/manifests/0.5.7.json`).
 
-There is now exactly one description. This section is the contract for it, and it is a *code-spec* trigger on two counts: three exported write helpers (`writeSkills`, `writeAgents`, `writeSharedHooks`) were deleted, and the init/update agreement is a cross-layer contract enforced by a test rather than by types.
+There is now exactly one description. This section is the contract for it, and it is a *code-spec* trigger on two counts: the per-category write helpers that let a configurator enumerate files a second time were deleted, and the init/update agreement is a cross-layer contract enforced by a test rather than by types.
 
 ### 2. Signatures
 
@@ -409,7 +409,7 @@ Correct: edit `SKILL_DESCRIPTIONS` in `configurators/shared.ts` to add the new e
 Wrong:
 
 ```typescript
-// In configureGemini, by hand
+// In collectGeminiTemplates, by hand
 for (const agent of agents) {
   agent.content = injectPullBasedPreludeMarkdown(agent.content, "implement");
 }
