@@ -19,9 +19,7 @@
  * Agents are written without class-2 pull-based prelude (hook inject is primary).
  */
 
-import path from "node:path";
 import { AI_TOOLS } from "../types/ai-tools.js";
-import { ensureDir, writeFile } from "../utils/file-writer.js";
 import {
   getAllAgents,
   getAllHooks,
@@ -32,8 +30,6 @@ import {
   resolveAllAsSkills,
   resolveBundledSkills,
   resolveCommands,
-  writeSkills,
-  writeAgents,
   replacePythonCommandLiterals,
 } from "./shared.js";
 
@@ -69,8 +65,7 @@ function collectSnowStaticFiles(): Map<string, string> {
 }
 
 /**
- * Collect all Snow template files for `trellis update` diff tracking.
- * Must stay in sync with `configureSnow`.
+ * The Snow CLI file set — written at init and diffed by `trellis update`.
  */
 export function collectSnowTemplates(): Map<string, string> {
   const config = AI_TOOLS.snow;
@@ -104,43 +99,4 @@ export function collectSnowTemplates(): Map<string, string> {
   }
 
   return files;
-}
-
-/**
- * Configure Snow CLI at init time: write skills, prompt commands, agents,
- * inject hooks, and operator guide.
- */
-export async function configureSnow(cwd: string): Promise<void> {
-  const config = AI_TOOLS.snow;
-  const ctx = config.templateContext;
-
-  await writeSkills(
-    path.join(cwd, ".snow", "skills"),
-    resolveAllAsSkills(ctx),
-    resolveBundledSkills(ctx),
-  );
-
-  const commandsDir = path.join(cwd, ".snow", "commands");
-  ensureDir(commandsDir);
-  for (const cmd of resolveCommands(ctx)) {
-    const body = replacePythonCommandLiterals(cmd.content);
-    await writeFile(
-      path.join(commandsDir, `trellis-${cmd.name}.json`),
-      buildSnowCommandJson(cmd.name, body),
-    );
-  }
-
-  // class-1: no applyPullBasedPreludeMarkdown (hook inject is primary)
-  await writeAgents(path.join(cwd, ".snow", "agents"), getAllAgents());
-
-  const hooksDir = path.join(cwd, ".snow", "hooks");
-  ensureDir(hooksDir);
-  for (const hook of getAllHooks()) {
-    await writeFile(
-      path.join(hooksDir, hook.targetPath),
-      replacePythonCommandLiterals(hook.content),
-    );
-  }
-
-  await writeFile(path.join(cwd, ".snow", "SNOW.md"), getSnowGuide());
 }

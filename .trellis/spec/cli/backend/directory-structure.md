@@ -145,16 +145,35 @@ Shared logic belongs in `packages/core/src/` when it is useful outside terminal 
 
 ### Configurator Pattern
 
-Configurators use `cpSync` for direct directory copy (dogfooding):
+A configurator exports **one** function: `collect<Platform>Templates()`,
+returning `Map<relPath, content>` — the single description of what that
+platform installs. `configure` is derived from it in the registry.
 
 ```typescript
 // configurators/cursor.ts
-export async function configureCursor(cwd: string): Promise<void> {
-  const sourcePath = getCursorSourcePath(); // dist/.cursor/ or .cursor/
-  const destPath = path.join(cwd, ".cursor");
-  cpSync(sourcePath, destPath, { recursive: true });
+export function collectCursorTemplates(): Map<string, string> {
+  const files = collectBothTemplates(
+    AI_TOOLS.cursor.templateContext,
+    (n) => `.cursor/commands/trellis-${n}.md`,
+    ".cursor/skills",
+  );
+  for (const agent of getAllAgents()) {
+    files.set(`.cursor/agents/${agent.name}.md`, agent.content);
+  }
+  for (const [k, v] of collectSharedHooks(".cursor/hooks", "cursor")) {
+    files.set(k, v);
+  }
+  files.set(".cursor/hooks.json", resolvePlaceholders(getHooksConfig()));
+  return files;
 }
+
+// configurators/index.ts
+cursor: fromTemplates(collectCursorTemplates),
 ```
+
+Full contract — map key/value rules, the three platforms that also need a
+`configure`, and the parity oracle — in `configurator-shared.md` →
+"Template maps".
 
 ### Template Extraction
 
@@ -386,7 +405,7 @@ Packages that received a remote template download (tracked via `remoteSpecPackag
 ### DO
 
 - Dogfood from project's own config files when possible
-- Use `cpSync` for copying entire directories
+- Describe a platform's file set exactly once, in its `collect<Platform>Templates()`
 - Keep generic templates in `src/templates/markdown/`
 - Use `.md.txt` or `.yaml.txt` for template files
 - Update dogfooding sources (`.cursor/`, `.claude/`, `.trellis/scripts/`) when making changes

@@ -18,7 +18,6 @@
  * files are written and the agent prompts ship as skills.
  */
 
-import path from "node:path";
 import { AI_TOOLS } from "../types/ai-tools.js";
 import { getAllAgents } from "../templates/kimi/index.js";
 import {
@@ -27,7 +26,6 @@ import {
   resolveAllAsSkills,
   resolveBundledSkills,
   resolveSkillsNeutral,
-  writeSkills,
   type AgentContent,
 } from "./shared.js";
 
@@ -58,8 +56,7 @@ function resolveKimiAgentSkills(): AgentContent[] {
 }
 
 /**
- * Collect all Kimi template files for `trellis update` diff tracking.
- * Must stay in sync with `configureKimi`.
+ * The Kimi Code file set — written at init and diffed by `trellis update`.
  */
 export function collectKimiTemplates(): Map<string, string> {
   const ctx = AI_TOOLS.kimi.templateContext;
@@ -84,26 +81,4 @@ export function collectKimiTemplates(): Map<string, string> {
   }
 
   return files;
-}
-
-/**
- * Configure Kimi Code at init time: write shared + Kimi-private skills.
- */
-export async function configureKimi(cwd: string): Promise<void> {
-  const config = AI_TOOLS.kimi;
-  const ctx = config.templateContext;
-
-  // 1. Workflow + bundled skills → shared `.agents/skills/` (see
-  //    collectKimiTemplates for the neutrality rule).
-  await writeSkills(
-    path.join(cwd, ".agents", "skills"),
-    resolveSkillsNeutral(ctx),
-    resolveBundledSkills(ctx),
-  );
-
-  // 2. Commands-as-skills + Trellis agent prompts → `.kimi-code/skills/`.
-  await writeSkills(path.join(cwd, config.configDir, "skills"), [
-    ...resolveKimiCommandSkills(),
-    ...resolveKimiAgentSkills(),
-  ]);
 }

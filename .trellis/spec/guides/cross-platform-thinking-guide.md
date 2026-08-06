@@ -132,6 +132,8 @@ A path string has two distinct roles. **Treat them differently.**
 
 **Single source of truth**: `packages/cli/src/utils/posix.ts` exports `toPosix(p)`. Don't sprinkle `replaceAll('\\', '/')` at every `path.join` site — apply `toPosix` **once at the boundary**: collector exit (Map key entering hash dictionary) or write-time (`saveHashes` before `JSON.stringify`).
 
+**This rule is now load-bearing for writes too**, not just for hash lookups: `writeTemplateMap` (`configurators/shared.ts:560`) reconstructs the target path by splitting the map key on `/`. A backslashed key would write one file named `a\b\c.md` instead of three nested directories.
+
 ```typescript
 // BAD - logical key carries OS-native separator
 function collectTemplates(): Map<string, string> {
@@ -340,7 +342,7 @@ result = subprocess.run(
 When making platform-related changes, check **all these locations**:
 
 ### Commands / Skills Sync
-- [ ] New command/skill added to ALL platforms (claude, cursor, iflow, codex, and any new platform)
+- [ ] New command/skill added to ALL platforms — the list is `PLATFORM_IDS` in `configurators/index.ts`, not a remembered set
 - [ ] Each platform's test file updated with new entry in `EXPECTED_COMMAND_NAMES` / `EXPECTED_SKILL_NAMES`
 - [ ] Platform-integration spec's required command table updated if adding a new required command
 - [ ] Command format matches platform convention (see `platform-integration.md` → Command Format by Platform)
@@ -530,6 +532,10 @@ subprocess.run(["./script.py"])  # FileNotFoundError
 src/templates/script.py  ← Updated
 .trellis/scripts/script.py  ← Forgot to sync!
 ```
+
+No longer silent: a `.py` byte difference between the two trees fails the
+test suite. See `cli/backend/script-conventions.md` → "Two script trees, one
+content".
 
 ### 4. "Python 3 is always python3"
 

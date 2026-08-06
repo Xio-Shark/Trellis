@@ -12,9 +12,7 @@
  *   the workspace hook registration
  */
 
-import path from "node:path";
 import { AI_TOOLS } from "../types/ai-tools.js";
-import { ensureDir, writeFile } from "../utils/file-writer.js";
 import { getAllAgents, getHooksConfig } from "../templates/zcode/index.js";
 import { getSharedHookScriptsForPlatform } from "../templates/shared-hooks/index.js";
 import {
@@ -23,17 +21,14 @@ import {
   resolveCommands,
   resolvePlaceholders,
   resolveSkills,
-  writeSkills,
-  writeAgents,
-  writeSharedHooks,
+  writeTemplateMap,
 } from "./shared.js";
 
 /** Shared hooks directory written for ZCode (mirrors the configure path). */
 const ZCODE_HOOKS_DIR = ".zcode/hooks";
 
 /**
- * Collect all ZCode template files for `trellis update` diff tracking.
- * Must stay in sync with `configureZcode`.
+ * The ZCode file set — written at init and diffed by `trellis update`.
  */
 export function collectZcodeTemplates(): Map<string, string> {
   const config = AI_TOOLS.zcode;
@@ -60,8 +55,7 @@ export function collectZcodeTemplates(): Map<string, string> {
   }
 
   // 4. Shared hook scripts → .zcode/hooks/.
-  //    Content is platform-independent (no placeholders), written as-is so the
-  //    hash matches what writeSharedHooks installs.
+  //    Content is platform-independent (no placeholders), collected as-is.
   for (const hook of getSharedHookScriptsForPlatform("zcode")) {
     files.set(`${ZCODE_HOOKS_DIR}/${hook.name}`, hook.content);
   }
@@ -76,39 +70,11 @@ export function collectZcodeTemplates(): Map<string, string> {
 }
 
 /**
- * Configure ZCode at init time: write private skills, commands, sub-agents,
- * shared hooks, and the workspace hook config.
+ * Configure ZCode at init time: write the collected file set, then the one
+ * thing a `Map<path, content>` cannot carry — a console notice.
  */
 export async function configureZcode(cwd: string): Promise<void> {
-  const config = AI_TOOLS.zcode;
-  const ctx = config.templateContext;
-  const zcodeRoot = path.join(cwd, ".zcode");
-
-  // 1. ZCode-private workflow and bundled skills → .zcode/skills/.
-  await writeSkills(
-    path.join(zcodeRoot, "skills"),
-    resolveSkills(ctx),
-    resolveBundledSkills(ctx),
-  );
-
-  // 2. Commands → .zcode/commands/trellis/
-  const commandsDir = path.join(zcodeRoot, "commands", "trellis");
-  ensureDir(commandsDir);
-  for (const cmd of resolveCommands(ctx)) {
-    await writeFile(path.join(commandsDir, `${cmd.name}.md`), cmd.content);
-  }
-
-  // 3. Sub-agents → .zcode/agents/ (hook-inject; templates carry fallback).
-  await writeAgents(path.join(zcodeRoot, "agents"), getAllAgents());
-
-  // 4. Shared hooks → .zcode/hooks/
-  await writeSharedHooks(path.join(zcodeRoot, "hooks"), "zcode");
-
-  // 5. Workspace hook config → .zcode/config.json
-  await writeFile(
-    path.join(zcodeRoot, "config.json"),
-    resolvePlaceholders(getHooksConfig().content),
-  );
+  await writeTemplateMap(cwd, collectZcodeTemplates());
 
   // ZCode loads hook config at session start and does NOT hot-reload it, so
   // users must open a new session for these hooks to fire. Mirrors the Codex

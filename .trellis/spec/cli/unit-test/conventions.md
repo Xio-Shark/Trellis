@@ -24,23 +24,69 @@
 
 ## Test Isolation
 
-### Strip host-shell session env vars at process start
+### Strip host-shell env vars at process start
 
-Several Trellis modules (e.g. `OpenCodeContext.getContextKey`, `TrellisContext.getActiveTask`) consult `process.env.TRELLIS_CONTEXT_ID` and `process.env.OPENCODE_RUN_ID` as **highest-priority overrides** — production behavior, by design.
+`test/setup.ts` is registered via `setupFiles` in `vitest.config.ts` and
+unconditionally `delete`s a list of env vars before any test loads. The list is
+currently 11 entries in three groups, and each group exists for a *different*
+reason — which is what makes the "when to extend" rule easy to get wrong.
 
-When tests run inside a Claude Code or OpenCode session, those env vars leak from the parent shell into the vitest process and **hijack the resolver**, ignoring the test's mocked `platformInput`. Symptom: tests expecting a derived `opencode_oc-a` contextKey receive `claude_<host-session-id>` instead, failing deterministically only on dev machines.
-
-**Convention**: `test/setup.ts` is registered via `setupFiles` in `vitest.config.ts` and unconditionally `delete`s these env vars before any test loads:
+**Group 1 — vars production resolvers honor as a user override.**
 
 ```ts
-// test/setup.ts
 delete process.env.TRELLIS_CONTEXT_ID;
 delete process.env.OPENCODE_RUN_ID;
 ```
 
-**When to extend**: any new env var that production resolvers honor as a user override, AND that the dev's host shell may export, must be added to `test/setup.ts`. Do NOT fix this in production code by ignoring the env var — the override is a real feature for end users.
+`TrellisContext.getContextKey` treats both as highest-priority overrides —
+production behavior, by design. When the suite runs inside a Claude Code or
+OpenCode session they leak in from the parent shell and hijack the resolver,
+ignoring the test's mocked `platformInput`. Symptom: a test expecting
+`opencode_oc-a` receives `claude_<host-session-id>`, failing deterministically
+only on dev machines.
 
-**When NOT to use**: tests that *intentionally* exercise the env-override path should set the env explicitly inside the test (`process.env.X = "..."` in a `beforeEach` and restore in `afterEach`).
+**Group 2 — vars a hook *writes to*.**
+
+```ts
+delete process.env.CLAUDE_ENV_FILE;
+```
+
+Not an override at all. `shared-hooks/session-start.py` **appends** `export
+TRELLIS_CONTEXT_ID=…` to whatever this points at, so a dev running the suite
+inside a Claude Code session wrote fixture keys (`claude_session-a` and
+friends) into their own real shell setup file. The damage is outside the repo,
+which is why no test failure ever surfaced it.
+
+**Group 3 — vars that redirect a script at the wrong repo.**
+
+```ts
+delete process.env.CLAUDE_PROJECT_DIR;
+delete process.env.QODER_PROJECT_DIR;
+delete process.env.CODEBUDDY_PROJECT_DIR;
+delete process.env.FACTORY_PROJECT_DIR;
+delete process.env.CURSOR_PROJECT_DIR;
+delete process.env.GEMINI_PROJECT_DIR;
+delete process.env.KIRO_PROJECT_DIR;
+delete process.env.COPILOT_PROJECT_DIR;
+```
+
+`session-start.py` prefers `*_PROJECT_DIR` over the JSON payload's `cwd` and
+over `process.cwd()`. Left set, a hook under test reads the **real** repo's
+`.trellis/` instead of the test tmpdir — so the assertions run against the
+maintainer's own tasks.
+
+**When to extend** — any of the three triggers, not just the first:
+
+1. A production resolver honors it as a user override.
+2. A script under test **writes** to the path it names.
+3. It redirects a script's notion of "which repo am I in".
+
+Do NOT fix any of these in production code by ignoring the env var — for
+groups 1 and 3 the behavior is a real feature for end users.
+
+**When NOT to use**: tests that *intentionally* exercise the env-override path
+should set the env explicitly inside the test (`process.env.X = "..."` in a
+`beforeEach`, restored in `afterEach`).
 
 ---
 
@@ -68,7 +114,7 @@ delete process.env.OPENCODE_RUN_ID;
 | Change Type | What to Update |
 |-------------|----------------|
 | New command/skill added to a platform | Add to `EXPECTED_COMMAND_NAMES` / `EXPECTED_SKILL_NAMES` in that platform's test file |
-| New command added to ANY platform | Add to ALL platform test files (claude, cursor, iflow, codex) — see platform-integration spec for required command list |
+| New command added to ANY platform | Add to every affected file under `test/templates/` — see platform-integration spec for the required command list |
 
 ### Decision flow
 

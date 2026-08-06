@@ -43,6 +43,8 @@ import {
   resolveSkills,
   wrapWithCommandFrontmatter,
   replacePythonCommandLiterals,
+  setResolvedPythonCommand,
+  resetResolvedPythonCommand,
 } from "../../src/configurators/shared.js";
 
 const BUNDLED_SKILL_NAMES = [
@@ -66,6 +68,91 @@ const SPEC_BOOTSTRAP_REFERENCE = path.join(
 
 function readConfiguredFile(root: string, relativePath: string): string {
   return fs.readFileSync(path.join(root, ...relativePath.split("/")), "utf-8");
+}
+
+// =============================================================================
+// configure ⟷ collectTemplates parity oracle
+//
+// `collectTemplates` is the single description of a platform's file set;
+// `configure` writes it. Both directions must hold, and only the forward one
+// ("every collected file is on disk") used to be asserted — which is how
+// 0.5.5 shipped `.agents/skills/trellis-start/SKILL.md` from `configureCodex`
+// with no matching `collectTemplates` entry, leaving upgraders without the
+// file after `trellis update` (see manifests/0.5.7.json).
+// =============================================================================
+
+/**
+ * Paths `configure` writes on purpose that `collectTemplates` does not
+ * describe. Exactly one, and it is deliberate.
+ *
+ * `.claude/hooks/statusline.py` is written only by
+ * `trellis init --with-statusline`. Keeping it out of `collectTemplates` is
+ * intentional and separately locked by regression.test.ts
+ * "[statusline-opt-in] statusline.py is not in claude's collected templates":
+ * `analyzeChanges()` classifies a collected-but-absent file as a new file and
+ * would force-install the statusline onto projects that opted out.
+ *
+ * Known consequence, documented but deliberately NOT fixed here (see
+ * `.trellis/tasks/08-06-converge-platform-templates/research/configure-vs-collect-inventory.md`):
+ * init records the file in `.template-hashes.json`, then
+ * `pruneOrphanManifestKeys` drops it as an orphan because it is in neither
+ * `collectTemplates` nor a migration — so an opted-in user's `statusline.py`
+ * is frozen after their first `trellis update` and is left behind by
+ * `trellis uninstall`.
+ */
+const CONFIGURE_ONLY_PATHS = new Set([".claude/hooks/statusline.py"]);
+
+/**
+ * Directories `configure` creates with no file underneath. A
+ * `Map<path, content>` cannot express an empty directory, so each one is
+ * named here against the platform that needs it.
+ */
+const CONFIGURE_ONLY_EMPTY_DIRS: Partial<Record<(typeof PLATFORM_IDS)[number], string[]>> =
+  {
+    // Trellis ships no Codex-specific skills (they all land in
+    // `.agents/skills/`, which Codex reads too). The directory is still
+    // created so users have the conventional place for their own.
+    codex: [".codex/skills"],
+  };
+
+/** Every file under `root`, as POSIX paths relative to `root`. */
+function walkFiles(root: string, rel = ""): string[] {
+  const found: string[] = [];
+  const absDir = rel ? path.join(root, ...rel.split("/")) : root;
+  for (const entry of fs.readdirSync(absDir, { withFileTypes: true })) {
+    const relEntry = rel ? `${rel}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      found.push(...walkFiles(root, relEntry));
+    } else {
+      found.push(relEntry);
+    }
+  }
+  return found;
+}
+
+/** Directories under `root` with no file anywhere beneath them. */
+function walkEmptyDirs(root: string, rel = ""): string[] {
+  const found: string[] = [];
+  const absDir = rel ? path.join(root, ...rel.split("/")) : root;
+  for (const entry of fs.readdirSync(absDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const relEntry = rel ? `${rel}/${entry.name}` : entry.name;
+    if (walkFiles(root, relEntry).length === 0) {
+      found.push(relEntry);
+    } else {
+      found.push(...walkEmptyDirs(root, relEntry));
+    }
+  }
+  return found;
+}
+
+/** Snapshot every file under `root` as path → content. */
+function snapshotDir(root: string): Map<string, string> {
+  const snapshot = new Map<string, string>();
+  for (const relPath of walkFiles(root)) {
+    snapshot.set(relPath, readConfiguredFile(root, relPath));
+  }
+  return snapshot;
 }
 
 // =============================================================================
@@ -207,6 +294,112 @@ describe("configurePlatform", () => {
         fs.rmSync(platformDir, { recursive: true, force: true });
       }
     }
+  });
+
+  it("configurePlatform writes no file collectTemplates does not describe, for every platform", async () => {
+    // The reverse of the assertion above. Without it, "configure writes a file
+    // collectTemplates forgot" passes the suite silently — the exact failure
+    // mode that shipped in 0.5.5 (codex trellis-start).
+    for (const id of PLATFORM_IDS) {
+      const platformDir = fs.mkdtempSync(
+        path.join(os.tmpdir(), `trellis-reverse-${id}-`),
+      );
+      try {
+        await configurePlatform(id, platformDir);
+        const templates = collectPlatformTemplates(id);
+        if (!templates) {
+          throw new Error(`${id} did not expose template tracking`);
+        }
+
+        const undescribed = walkFiles(platformDir).filter(
+          (relPath) =>
+            !templates.has(relPath) && !CONFIGURE_ONLY_PATHS.has(relPath),
+        );
+        expect(
+          undescribed,
+          `${id} wrote files that collectTemplates does not describe`,
+        ).toEqual([]);
+
+        expect(
+          walkEmptyDirs(platformDir),
+          `${id} created empty directories not named in CONFIGURE_ONLY_EMPTY_DIRS`,
+        ).toEqual(CONFIGURE_ONLY_EMPTY_DIRS[id] ?? []);
+
+        // Idempotency: init runs configure, update runs collectTemplates, and
+        // re-running init must not accumulate or rewrite anything.
+        const first = snapshotDir(platformDir);
+        await configurePlatform(id, platformDir);
+        expect(snapshotDir(platformDir), `${id} is not idempotent`).toEqual(
+          first,
+        );
+      } finally {
+        fs.rmSync(platformDir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("configurePlatform and collectTemplates agree under Windows python rendering", async () => {
+    // `collectPlatformTemplates` rewrites python3 → python for the whole map in
+    // one place; `configure` has to reach the same bytes. A site that writes
+    // raw content is invisible on macOS/Linux, where the rewrite is a no-op.
+    setResolvedPythonCommand("python");
+    try {
+      for (const id of PLATFORM_IDS) {
+        const platformDir = fs.mkdtempSync(
+          path.join(os.tmpdir(), `trellis-win-${id}-`),
+        );
+        try {
+          await configurePlatform(id, platformDir);
+          const templates = collectPlatformTemplates(id);
+          if (!templates) {
+            throw new Error(`${id} did not expose template tracking`);
+          }
+
+          const onDisk = walkFiles(platformDir);
+          expect(
+            onDisk.filter(
+              (relPath) =>
+                !templates.has(relPath) && !CONFIGURE_ONLY_PATHS.has(relPath),
+            ),
+            `${id} wrote undescribed files under Windows rendering`,
+          ).toEqual([]);
+
+          for (const [relativePath, expectedContent] of templates) {
+            expect(
+              onDisk.includes(relativePath),
+              `${id} should write ${relativePath}`,
+            ).toBe(true);
+            expect(
+              readConfiguredFile(platformDir, relativePath),
+              `${id}: ${relativePath} differs under Windows rendering`,
+            ).toBe(expectedContent);
+          }
+        } finally {
+          fs.rmSync(platformDir, { recursive: true, force: true });
+        }
+      }
+    } finally {
+      resetResolvedPythonCommand();
+    }
+  });
+
+  it("configurePlatform('claude-code', --with-statusline) writes exactly one undescribed file", async () => {
+    // The one named exemption, exercised. `--with-statusline` is the only opt-in
+    // that adds a file `collectTemplates` does not describe; if it ever adds a
+    // second, CONFIGURE_ONLY_PATHS has to grow and say why.
+    await configurePlatform("claude-code", tmpDir, { withStatusline: true });
+    const templates = collectPlatformTemplates("claude-code");
+    if (!templates) {
+      throw new Error("claude-code did not expose template tracking");
+    }
+
+    const undescribed = walkFiles(tmpDir).filter(
+      (relPath) => !templates.has(relPath),
+    );
+    expect(undescribed).toEqual([...CONFIGURE_ONLY_PATHS]);
+    expect(readConfiguredFile(tmpDir, ".claude/hooks/statusline.py")).toBe(
+      replacePythonCommandLiterals(getStatuslineHook()),
+    );
   });
 
   it("configurePlatform('codex') writes shared skill templates from common source", async () => {

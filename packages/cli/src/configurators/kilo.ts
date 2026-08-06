@@ -1,30 +1,15 @@
-import path from "node:path";
 import { AI_TOOLS } from "../types/ai-tools.js";
-import { ensureDir, writeFile } from "../utils/file-writer.js";
-import {
-  resolveBundledSkills,
-  resolveCommands,
-  resolveSkills,
-  writeSkills,
-} from "./shared.js";
+import { collectBothTemplates } from "./shared.js";
 
 /**
- * Configure Kilo CLI:
+ * The Kilo CLI file set — written at init and diffed by `trellis update`.
  * - workflows/ — start + finish-work as slash commands
  * - skills/trellis-{name}/SKILL.md — auto-triggered skills from `common/skills/`
  */
-export async function configureKilo(cwd: string): Promise<void> {
-  const ctx = AI_TOOLS.kilo.templateContext;
-
-  const workflowsDir = path.join(cwd, ".kilocode", "workflows");
-  ensureDir(workflowsDir);
-  for (const cmd of resolveCommands(ctx)) {
-    await writeFile(path.join(workflowsDir, `${cmd.name}.md`), cmd.content);
-  }
-
-  await writeSkills(
-    path.join(cwd, ".kilocode", "skills"),
-    resolveSkills(ctx),
-    resolveBundledSkills(ctx),
+export function collectKiloTemplates(): Map<string, string> {
+  return collectBothTemplates(
+    AI_TOOLS.kilo.templateContext,
+    (n) => `.kilocode/workflows/${n}.md`,
+    ".kilocode/skills",
   );
 }

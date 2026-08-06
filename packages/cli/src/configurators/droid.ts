@@ -1,48 +1,35 @@
-import path from "node:path";
 import { AI_TOOLS } from "../types/ai-tools.js";
-import { ensureDir, writeFile } from "../utils/file-writer.js";
 import {
   resolvePlaceholders,
-  resolveCommands,
-  resolveSkills,
-  resolveBundledSkills,
-  writeSkills,
-  writeAgents,
-  writeSharedHooks,
+  collectBothTemplates,
+  collectSharedHooks,
 } from "./shared.js";
 import { getAllDroids, getSettingsTemplate } from "../templates/droid/index.js";
 
 /**
- * Configure Factory Droid:
+ * The Factory Droid file set — written at init and diffed by `trellis update`.
  * - commands/trellis/ — start + finish-work as slash commands
  * - skills/trellis-{name}/SKILL.md — auto-triggered skills from `common/skills/`
  * - droids/{name}.md — sub-agent definitions (Droid calls them "droids")
  * - hooks/*.py — shared hook scripts
  * - settings.json — hook configuration
  */
-export async function configureDroid(cwd: string): Promise<void> {
-  const config = AI_TOOLS.droid;
-  const ctx = config.templateContext;
-  const configRoot = path.join(cwd, config.configDir);
-
-  // Commands
-  const commandsDir = path.join(configRoot, "commands", "trellis");
-  ensureDir(commandsDir);
-  for (const cmd of resolveCommands(ctx)) {
-    await writeFile(path.join(commandsDir, `${cmd.name}.md`), cmd.content);
-  }
-
-  await writeSkills(
-    path.join(configRoot, "skills"),
-    resolveSkills(ctx),
-    resolveBundledSkills(ctx),
+export function collectDroidTemplates(): Map<string, string> {
+  const files = collectBothTemplates(
+    AI_TOOLS.droid.templateContext,
+    (n) => `.factory/commands/trellis/${n}.md`,
+    ".factory/skills",
   );
-  await writeAgents(path.join(configRoot, "droids"), getAllDroids());
-  await writeSharedHooks(path.join(configRoot, "hooks"), "droid");
-
+  for (const droid of getAllDroids()) {
+    files.set(`.factory/droids/${droid.name}.md`, droid.content);
+  }
+  for (const [k, v] of collectSharedHooks(".factory/hooks", "droid")) {
+    files.set(k, v);
+  }
   const settings = getSettingsTemplate();
-  await writeFile(
-    path.join(configRoot, settings.targetPath),
+  files.set(
+    `.factory/${settings.targetPath}`,
     resolvePlaceholders(settings.content),
   );
+  return files;
 }

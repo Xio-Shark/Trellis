@@ -7,14 +7,15 @@ import {
   getConfigTemplate,
   getHooksConfig,
 } from "../templates/codex/index.js";
-import { ensureDir, writeFile } from "../utils/file-writer.js";
+import { ensureDir } from "../utils/file-writer.js";
 import {
   resolvePlaceholders,
   resolveAllAsSkillsNeutral,
   resolveBundledSkills,
-  writeSkills,
-  writeSharedHooks,
-  replacePythonCommandLiterals,
+  collectSkillTemplates,
+  collectSharedHooks,
+  renderTemplateMap,
+  writeTemplateMap,
 } from "./shared.js";
 
 /**
@@ -142,74 +143,67 @@ export function preserveCodexAgentModelKeys(
 }
 
 /**
- * Configure Codex by writing:
- * - .agents/skills/ — shared skills from common source
- * - .codex/skills/ — created empty for user-added Codex skills
- * - .codex/agents/, hooks/, hooks.json, config.toml — platform-specific
+ * The Codex file set — written at init and diffed by `trellis update`.
+ * - .agents/skills/ — shared skills from common source, rendered with the
+ *   neutral placeholder resolver so the auto-triggered skill templates from
+ *   `common/skills/` are byte-identical regardless of which platform writes
+ *   them (Gemini CLI 0.40+ and Pi target `.agents/skills/` too, and
+ *   last-writer-wins is only safe when both writers produce identical output).
+ * - .codex/agents/ — custom agent profiles. Native Codex SubagentStart hooks
+ *   push role-specific context; each profile also carries a marker-gated pull
+ *   fallback for untrusted or unavailable hooks, so no unconditional prelude.
+ * - .codex/hooks/, hooks.json — hooks.json registers UserPromptSubmit for the
+ *   main session; SubagentStart is registered for role-specific shared context.
+ * - .codex/config.toml — platform config.
+ */
+export function collectCodexTemplates(): Map<string, string> {
+  const files = new Map<string, string>();
+  const ctx = AI_TOOLS.codex.templateContext;
+
+  for (const [filePath, content] of collectSkillTemplates(
+    ".agents/skills",
+    resolveAllAsSkillsNeutral(ctx),
+    resolveBundledSkills(ctx),
+  )) {
+    files.set(filePath, content);
+  }
+  for (const agent of getAllAgents()) {
+    files.set(`.codex/agents/${agent.name}.toml`, agent.content);
+  }
+  for (const hook of getAllHooks()) {
+    files.set(`.codex/hooks/${hook.name}`, hook.content);
+  }
+  // Shared hooks (inject-workflow-state.py + native SubagentStart context).
+  for (const [k, v] of collectSharedHooks(".codex/hooks", "codex")) {
+    files.set(k, v);
+  }
+  files.set(".codex/hooks.json", resolvePlaceholders(getHooksConfig()));
+  const config = getConfigTemplate();
+  files.set(`.codex/${config.targetPath}`, config.content);
+
+  return files;
+}
+
+/**
+ * Configure Codex by writing `collectCodexTemplates`, plus the one piece of
+ * behavior a `Map<path, content>` cannot carry.
  */
 export async function configureCodex(cwd: string): Promise<void> {
-  // Shared skills from common source → .agents/skills/
-  // Uses the neutral placeholder resolver so the auto-triggered skill templates
-  // from `common/skills/` render to the
-  // same bytes regardless of which platform writes them — required because
-  // Gemini CLI 0.40+ also targets `.agents/skills/` (last-writer-wins is
-  // safe when both writers produce identical output).
-  const sharedSkillsRoot = path.join(cwd, ".agents", "skills");
-  await writeSkills(
-    sharedSkillsRoot,
-    resolveAllAsSkillsNeutral(AI_TOOLS.codex.templateContext),
-    resolveBundledSkills(AI_TOOLS.codex.templateContext),
-  );
+  // Build map → post-process map → write. Rendered up front so the preserved
+  // user keys are grafted onto exactly the bytes `trellis update` compares
+  // against — update.ts runs preserveCodexAgentModelKeys over its already
+  // rendered map too, and the two must agree. writeTemplateMap re-renders,
+  // which is a no-op (replacePythonCommandLiterals is idempotent).
+  const files = renderTemplateMap(collectCodexTemplates());
+  preserveCodexAgentModelKeys(cwd, files);
+  await writeTemplateMap(cwd, files);
 
-  const codexRoot = path.join(cwd, ".codex");
-
-  // Trellis ships no Codex-specific skills; the workflow skills all land in
-  // .agents/skills/ above, which Codex reads too. The directory is still
-  // created so users have the conventional place for their own Codex skills.
-  ensureDir(path.join(codexRoot, "skills"));
-
-  // Custom agents → .codex/agents/
-  const codexAgentsRoot = path.join(codexRoot, "agents");
-  ensureDir(codexAgentsRoot);
-
-  // Native Codex SubagentStart hooks push role-specific context. Each agent
-  // also carries a marker-gated pull fallback for untrusted or unavailable
-  // hooks, so install the source profiles without an unconditional prelude.
-  // Preserve any user-set `model` / `model_reasoning_effort` keys from the
-  // existing on-disk files before overwriting with the fresh render.
-  const agentTomls = new Map<string, string>();
-  for (const agent of getAllAgents()) {
-    agentTomls.set(
-      `.codex/agents/${agent.name}.toml`,
-      replacePythonCommandLiterals(agent.content),
-    );
-  }
-  preserveCodexAgentModelKeys(cwd, agentTomls);
-  for (const [relPath, content] of agentTomls) {
-    await writeFile(path.join(cwd, relPath), content);
-  }
-
-  // Hooks → .codex/hooks/
-  const hooksDir = path.join(codexRoot, "hooks");
-  ensureDir(hooksDir);
-
-  // Codex-specific hook files. hooks.json registers UserPromptSubmit for the
-  // main session; SubagentStart is registered for role-specific shared context.
-  for (const hook of getAllHooks()) {
-    await writeFile(
-      path.join(hooksDir, hook.name),
-      replacePythonCommandLiterals(hook.content),
-    );
-  }
-
-  // Shared main-session workflow state plus native SubagentStart context.
-  await writeSharedHooks(hooksDir, "codex");
-
-  // Hooks config → .codex/hooks.json
-  await writeFile(
-    path.join(codexRoot, "hooks.json"),
-    resolvePlaceholders(getHooksConfig()),
-  );
+  // RESIDUAL — not expressible as a path→content pair: a directory with no
+  // files in it. Trellis ships no Codex-specific skills (the workflow skills
+  // all land in .agents/skills/, which Codex reads too), but users need the
+  // conventional place for their own, and manifest-prune.ts treats
+  // `.codex/skills/<custom>/` as user-owned data the manifest must not claim.
+  ensureDir(path.join(cwd, ".codex", "skills"));
 
   // NOTE: Codex hooks require `features.hooks = true` in the user's
   // ~/.codex/config.toml (Codex 0.129+). The legacy `features.codex_hooks = true`
@@ -230,11 +224,4 @@ export async function configureCodex(cwd: string): Promise<void> {
         "See Trellis docs for details.\n",
     );
   }
-
-  // Config → .codex/config.toml
-  const config = getConfigTemplate();
-  await writeFile(
-    path.join(codexRoot, config.targetPath),
-    replacePythonCommandLiterals(config.content),
-  );
 }

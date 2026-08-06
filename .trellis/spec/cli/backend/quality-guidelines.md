@@ -403,13 +403,13 @@ When a CLI has both explicit flags (`--tool`) and convenience flags (`-y`), expl
 ```typescript
 // Bad: -y overrides explicit flags
 if (options.yes) {
-  tools = ["cursor", "claude"]; // Ignores --iflow, --opencode!
-} else if (options.cursor || options.iflow) {
+  tools = ["cursor", "claude"]; // Ignores --codex, --opencode!
+} else if (options.cursor || options.codex) {
   // Build from flags...
 }
 
 // Good: Check explicit flags first
-const hasExplicitTools = options.cursor || options.iflow || options.opencode;
+const hasExplicitTools = options.cursor || options.codex || options.opencode;
 if (hasExplicitTools) {
   // Build from explicit flags (works with or without -y)
 } else if (options.yes) {
@@ -502,14 +502,14 @@ When handling multiple similar options, use arrays with metadata instead of repe
 // Bad: Repetitive if-else
 if (options.cursor) tools.push("cursor");
 if (options.claude) tools.push("claude");
-if (options.iflow) tools.push("iflow");
+if (options.codex) tools.push("codex");
 // ... repeated logic, easy to miss one
 
 // Good: Data-driven approach
 const TOOLS = [
   { key: "cursor", name: "Cursor", defaultChecked: true },
   { key: "claude", name: "Claude Code", defaultChecked: true },
-  { key: "iflow", name: "iFlow CLI", defaultChecked: false },
+  { key: "codex", name: "Codex", defaultChecked: false },
 ] as const;
 
 // Single source of truth for:

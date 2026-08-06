@@ -45,8 +45,8 @@ export type SharedHookPlatform =
 
 /**
  * Which shared hooks each platform actually invokes. Single source of truth
- * for shared-hook distribution — both `writeSharedHooks` (runtime install)
- * and `collectSharedHooks` (`trellis update` diff) read from this table.
+ * for shared-hook distribution — `collectSharedHooks` reads this table, and
+ * both `trellis init` and `trellis update` consume the map it returns.
  *
  * Routing rules encoded here:
  * - `session-start.py` — shipped by every platform with a SessionStart
@@ -167,8 +167,8 @@ export function getSharedHookScripts(): HookScript[] {
 
 /**
  * Get the shared hook scripts that a given platform actually registers.
- * Drives both `writeSharedHooks` and `collectSharedHooks` so distribution
- * never drifts from the per-platform capability declared above.
+ * Drives `collectSharedHooks` so distribution never drifts from the
+ * per-platform capability declared above.
  */
 export function getSharedHookScriptsForPlatform(
   platform: SharedHookPlatform,

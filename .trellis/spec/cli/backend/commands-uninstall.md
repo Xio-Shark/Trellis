@@ -167,7 +167,7 @@ Returns `{ deletedFiles, modifiedFiles, deletedDirs }` for the green summary lin
 | `.trellis/spec/` | Removed (managed via `update.skip` semantics during `update`, but uninstall removes everything). |
 | `.trellis/tasks/` | Removed (user data). |
 | `.trellis/workspace/` | Removed (user journal). |
-| `.trellis/runtime/` | Removed (session state). |
+| `.trellis/.runtime/` | Removed (session state). |
 | `.trellis/config.yaml` | Removed (user config). |
 | `.trellis/.developer` | Removed. |
 | `.trellis/.current-task` | Removed. |

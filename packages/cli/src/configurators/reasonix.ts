@@ -11,20 +11,16 @@
  * frontmatter so Reasonix spawns them as isolated subagent loops.
  */
 
-import path from "node:path";
 import { AI_TOOLS } from "../types/ai-tools.js";
-import { ensureDir, writeFile } from "../utils/file-writer.js";
 import { getAllAgents } from "../templates/reasonix/index.js";
 import {
   collectSkillTemplates,
   resolveAllAsSkills,
   resolveBundledSkills,
-  writeSkills,
 } from "./shared.js";
 
 /**
- * Collect all Reasonix template files for `trellis update` diff tracking.
- * Must stay in sync with `configureReasonix`.
+ * The Reasonix file set — written at init and diffed by `trellis update`.
  */
 export function collectReasonixTemplates(): Map<string, string> {
   const config = AI_TOOLS.reasonix;
@@ -52,28 +48,4 @@ export function collectReasonixTemplates(): Map<string, string> {
   }
 
   return files;
-}
-
-/**
- * Configure Reasonix at init time: write workflow skills + subagent skills
- * to `.reasonix/skills/`.
- */
-export async function configureReasonix(cwd: string): Promise<void> {
-  const config = AI_TOOLS.reasonix;
-  const ctx = config.templateContext;
-  const skillsRoot = path.join(cwd, config.configDir, "skills");
-
-  // Subagent skill names that replace common-skill equivalents.
-  const agentNames = new Set(getAllAgents().map((a) => a.name));
-
-  // Write workflow skills, filtering out any that have subagent equivalents.
-  const skills = resolveAllAsSkills(ctx).filter((s) => !agentNames.has(s.name));
-  await writeSkills(skillsRoot, skills, resolveBundledSkills(ctx));
-
-  // Subagent skills with runAs: subagent frontmatter
-  for (const agent of getAllAgents()) {
-    const agentDir = path.join(skillsRoot, agent.name);
-    ensureDir(agentDir);
-    await writeFile(path.join(agentDir, "SKILL.md"), agent.content);
-  }
 }

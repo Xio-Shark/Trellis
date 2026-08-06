@@ -47,6 +47,83 @@ All workflow scripts target **Python 3.9+** for cross-platform compatibility (ma
 
 ---
 
+## Two script trees, one content
+
+### 1. Scope / Trigger
+
+Every file above exists **twice**: `.trellis/scripts/**` is Trellis's own
+dogfood copy, `packages/cli/src/templates/trellis/scripts/**` is what ships to
+users. Two physical copies of one thing drift, and this pair did: PR #390
+changed the `trellis upgrade` → `update` hint in the template copy only, and
+the dogfood copy sat on the old wording for a month.
+
+That is now a build failure. It is written here because until 2026-08-06 three
+specs described this pair with three different rules and none named a test.
+
+### 2. Signatures
+
+No API — the contract is a test, `regression.test.ts` → `describe("regression:
+.trellis/scripts stays byte-identical to templates/trellis/scripts")`.
+
+```ts
+function listPyFiles(root: string): string[]   // recursive, skips __pycache__, sorted
+```
+
+### 3. Contracts
+
+- **Identical path sets.** `listPyFiles()` over both roots must produce the same array. A script added to or deleted from one tree must be mirrored in the other.
+- **Byte-identical content.** One test case per `.py` file, `Buffer.equals`. Not a text diff — line endings and trailing whitespace count.
+- The file list is derived from the filesystem at describe-time, so a new script is covered the moment it is added. Never hard-code it.
+- Scope is **`.py` files only**, by construction: `listPyFiles` filters on the extension. *Open question, deliberately unresolved:* whether non-`.py` files under the two trees should also be required to match. Today there are none — both trees are pure Python — so nothing is being ignored. If a non-`.py` file is ever added to either tree, decide the rule then rather than assuming this test covers it.
+- Direction is irrelevant to the test. `guides/code-reuse-thinking-guide.md` documents a one-way `rsync` (`.trellis/scripts/` → template) as the convenient way to restore parity; the test only cares that they end up equal.
+
+### 4. Validation & Error Matrix
+
+| Condition | Failure |
+| --- | --- |
+| A `.py` file exists in one tree only | "both trees hold the same set of .py files" — the array compare shows exactly which |
+| Contents differ by any byte | "`<path>` has drifted … Edit both copies, never one." |
+| `__pycache__` present in either tree | Skipped — not a failure |
+| Someone edits `packages/cli/dist/**` instead | Not covered; `dist/` is generated. Never hand-edit it |
+
+### 5. Good / Base / Bad Cases
+
+- **Good** — a fix to `common/active_task.py` is applied to both paths in one commit; the suite stays green.
+- **Base** — a new script `common/foo.py` is added to both trees. No test edit is needed; the derived list picks it up.
+- **Bad** — "the dogfood copy has local drift, so I'll apply the edit surgically and keep the drift." There is no such thing as acceptable drift here any more; that instruction now breaks CI.
+
+### 6. Tests Required
+
+Already present and self-extending. When you touch either tree, the assertion
+point is the whole-tree comparison — do not add per-file tests of your own.
+Confirm locally with:
+
+```bash
+diff -rq .trellis/scripts packages/cli/src/templates/trellis/scripts -x __pycache__
+```
+
+Silent output means parity.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```bash
+# edit only the copy you happened to open
+$EDITOR packages/cli/src/templates/trellis/scripts/common/session_context.py
+```
+
+#### Correct
+
+```bash
+$EDITOR .trellis/scripts/common/session_context.py
+rsync -av --delete --exclude='__pycache__' \
+  .trellis/scripts/ packages/cli/src/templates/trellis/scripts/
+diff -rq .trellis/scripts packages/cli/src/templates/trellis/scripts -x __pycache__
+```
+
+---
+
 ## Script Types
 
 ### Library Modules (`common/*.py`)
@@ -188,6 +265,13 @@ Use this contract when a generated `.trellis/scripts/` module performs an
 advisory check during hook/session context generation, such as checking whether
 a Trellis update is available. These checks must never block context output.
 
+The names below are placeholders for the pattern. The one live instance is
+`session_context.py:get_update_hint` — **public**, with two callers in
+different layers (`get_context.py` text mode and `shared-hooks/session-start.py`),
+and it takes an optional `context_key`. Its full contract, including how the
+result reaches the user, is in `platform-integration.md` → "SessionStart update
+reminder".
+
 #### 2. Signatures
 
 ```python
@@ -205,7 +289,12 @@ def _mark_attempted(repo_root: Path) -> bool: ...
   text=True, encoding="utf-8", errors="replace",
   timeout=<short timeout>)`.
 - Marker files live under `.trellis/.runtime/` and are keyed by the current
-  Trellis session identity when available.
+  Trellis session identity when available. A caller that has already resolved
+  session identity (a hook reading it from stdin) **passes it in** rather than
+  letting the module re-resolve: the module's own fallback chain ends at
+  `TERM_SESSION_ID`, which identifies a terminal *window*, so a
+  once-per-session marker keyed on it would mute the check for every later
+  session opened in that window.
 - Marker writes are best-effort: failure to write must not fail context output.
 
 #### 4. Validation & Error Matrix
@@ -231,8 +320,10 @@ def _mark_attempted(repo_root: Path) -> bool: ...
 - Equal/newer current project version prints no hint.
 - Failed lookup prints no hint and does not burn the once-per-session marker.
 - Existing `trellis --version` update output is parsed and normalized.
-- Non-default modes (`--json`, record, packages, phase) do not call the
-  advisory check.
+- Non-default modes of the *text-mode CLI caller* (`--json`, record, packages,
+  phase) do not call the advisory check. This is a property of that caller, not
+  of the check — a second caller (the SessionStart hook) legitimately invokes it
+  outside `get_context.py` entirely.
 
 #### 7. Wrong vs Correct
 
@@ -334,13 +425,20 @@ All current-task consumers must use the active task resolver instead of reading
 `.trellis/.current-task` directly. The resolver is the single source of truth
 for session/window scoped task state:
 
-1. Derive a context key from platform input, `TRELLIS_CONTEXT_ID`, a
-   platform-native session environment variable when the host exports one, or
-   a Cursor shell ticket for a matching AI-run `task.py` command.
+1. Derive a context key, in this order (`resolve_context_key`, `:468-509`):
+   `TRELLIS_CONTEXT_ID`; then session / conversation / transcript ids from the
+   hook payload; then a platform-native session environment variable for the
+   detected platform; then a shell ticket for a matching AI-run `task.py`
+   command.
 2. Read `.trellis/.runtime/sessions/<session-key>.json`.
 3. If no context key or no session task is present, return no active task.
 4. If a session task exists but the task directory is stale, return stale
    session state.
+
+The env branch is the exception, not a peer alternative. **No researched
+platform exports a session id into a shell child** (2026-08-05 audit of all 21;
+`inject-shell-session-context.py:3-8`, `active_task.py:59-64`), so for most
+platforms the ticket — checked *last* — is the path that actually fires.
 
 | Function | Purpose |
 |----------|---------|
@@ -359,8 +457,8 @@ how to provide a session runtime. For Claude Code, SessionStart receives
 there so later Bash tools inherit the same session identity. For OpenCode,
 `tool.execute.before` must prefix Bash commands with
 `TRELLIS_CONTEXT_ID` from plugin session identity when the command does not
-already set it, because some TUI sessions do not expose `OPENCODE_RUN_ID` to
-Bash. The prefix must match the host shell: use
+already set it, because OpenCode exports no session identity into a
+shell child at all. The prefix must match the host shell: use
 `export TRELLIS_CONTEXT_ID=<context-key>;` for POSIX shells and
 `$env:TRELLIS_CONTEXT_ID = '<context-key>';` for Windows PowerShell. Keep the
 assignment before the user's command so compound commands like
@@ -371,14 +469,8 @@ parse POSIX syntax, so OpenCode must treat `MSYSTEM`, `MINGW_PREFIX`,
 `OSTYPE=msys|mingw|cygwin`, `SHELL=...bash`, or `OPENCODE_GIT_BASH_PATH` as
 POSIX-shell signals and use the PowerShell prefix only when no such signal is
 present.
-For Cursor, `session-start.py` is not a reliable shell environment bridge.
-Instead, `inject-shell-session-context.py` must run on `beforeShellExecution`
-and write a short-lived `.trellis/.runtime/cursor-shell/*.json` ticket for
-matching `task.py start/current/finish` commands. The active task resolver may
-consume the ticket only when no env identity exists, the current `task.py`
-subcommand matches the ticket, the ticket is fresh, and exactly one context key
-matches. This keeps Cursor task state per conversation without accepting a
-global pointer.
+`session-start.py` is not a reliable shell environment bridge on any platform.
+The general mechanism is the shell ticket — see "Shell-ticket bridge" below.
 For Pi Agent, the generated TypeScript extension must read the real session id
 from `ctx.sessionManager.getSessionId()` and mutate Bash tool calls in
 `tool_call` by prefixing `export TRELLIS_CONTEXT_ID=<context-key>;`. The Python
@@ -440,12 +532,27 @@ a `.current-task` fallback or a Python hook directory.
   created lazily by the JSON write path.
 - Context filenames are derived from the resolved context key:
   - `TRELLIS_CONTEXT_ID=session-demo` -> `session-demo.json`
-  - `CODEX_SESSION_ID=native-a` -> `codex_native-a.json`
+  - `CLAUDE_CODE_SESSION_ID=cc-a` -> `claude_cc-a.json`
   - `CODEX_THREAD_ID=thread-a` -> `codex_thread-a.json`
-  - `OPENCODE_RUN_ID=run-a` -> `opencode_run-a.json`
-  - OpenCode plugin `sessionID=oc-a` -> `opencode_oc-a.json`
-  - `CURSOR_SESSION_ID=cursor-a` -> `cursor_cursor-a.json`
+  - `CURSOR_CONVERSATION_ID=conv-a` -> `cursor_conv-a.json` (`_context_key`
+    ignores the session/conversation distinction; only `transcript` changes the
+    shape)
+  - OpenCode plugin `sessionID=oc-a` -> `opencode_oc-a.json` (via the plugin's
+    `TRELLIS_CONTEXT_ID` prefix — OpenCode has no env-table entry)
+  - shell ticket -> whatever key the writing hook computed, unchanged
   - transcript fallback -> `<platform>_transcript_<sha256-prefix>.json`
+
+  Only names that appear in `active_task.py`'s env tables, **for the platform
+  the resolver detected**, can produce a filename this way. Twelve names were
+  removed on 2026-08-05 as names no vendor ever set (`CODEX_SESSION_ID`,
+  `CURSOR_SESSION_ID`, `OPENCODE_RUN_ID`, `PI_SESSION_ID` … — the full list is
+  `PURGED_ENV_NAMES` in `regression.test.ts`) and resolve nothing for the
+  platform they were removed from. Platform scoping matters here:
+  `CLAUDE_SESSION_ID` was deleted from the **claude** entry but survives as
+  ZCode's second-choice fallback, so it still resolves in a zcode-detected
+  session — and yields `claude_<id>`, because `_CONTEXT_KEY_PLATFORM_ALIASES`
+  maps `zcode` → `claude` so both paths of a ZCode session land on one runtime
+  filename.
 - `TRELLIS_CONTEXT_ID` is already a complete context key. Do not prepend a
   platform name to it.
 - `task.py finish` deletes only the session file that supplied the resolved
@@ -591,6 +698,292 @@ if previous.context_key:
 ```
 
 Deletion ownership follows the resolver result and never guesses another file.
+
+#### Shell-ticket bridge
+
+##### 1. Scope / Trigger
+
+Cross-layer contract: session identity has to cross from a hook process (which
+has it) into a shell child (which does not). This is now the primary identity
+path for seven platforms, and it was written down nowhere as a general rule —
+only as "what Cursor does".
+
+The premise, from a 2026-08-05 audit of all 21 platforms: **no researched
+platform exports a session id into its shell tool's child process, but every
+hook-capable one puts that id on hook stdin.** So the hook that fires just
+before a shell command writes a ticket, and `task.py` reads it back.
+
+##### 2. Signatures
+
+```python
+# templates/shared-hooks/inject-shell-session-context.py — the writer
+def _pending_shell_command(hook_input: dict) -> tuple[str, dict | None]
+def _host_platform_name() -> str | None
+def _extract_task_subcommands(command: str) -> list[dict[str, str]]
+
+# common/active_task.py — the reader
+def _lookup_shell_ticket_context_key() -> str | None   # :438
+```
+
+Ticket path: `.trellis/.runtime/shell-tickets/<epoch-ms>-<sha256-16>.json`.
+
+##### 3. Contracts
+
+**Registration.** `inject-shell-session-context.py` is registered on whichever
+pre-shell event the host publishes: Cursor's `beforeShellExecution`,
+Claude-shaped `PreToolUse`, Gemini's `BeforeTool`. `_pending_shell_command` is
+the only place that knows about payload variation — it reads `command` at the
+top level (shell-execution shape) or `tool_input.command` / `toolInput.command`
+(tool-call shape). It is an ordered fallback, not a platform switch; a fourth
+shape extends the same function.
+
+**Response envelope.** A shell-execution host gets `{"permission": "allow"}` back
+so Cursor does not re-prompt for a command Trellis itself asked for. Tool-call
+hosts read a different response schema and get no answer at all, rather than a
+key they would have to ignore.
+
+**The context key comes from the install directory, not a platform table.**
+`_host_platform_name()` returns the deepest dotted path segment of `sys.argv[0]`
+(`.cursor/hooks/` → `cursor`, `.factory/hooks/` → `factory`). This matters more
+than it looks: the ticket's context key must equal the one that platform's
+*other* hooks compute. Get it wrong and `task.py start` writes a session file no
+later hook ever reads — which half-works behind the single-session fallback and
+breaks silently the moment a second window is open.
+
+**Ticket payload** — `platform`, `context_key`, `conversation_id`, `session_id`,
+`generation_id`, `cwd`, `command`, `subcommands`, `created_at_epoch`,
+`expires_at_epoch`. The `platform` field is debugging metadata **only**; gating
+acceptance on it is exactly what kept this bridge invisible to every platform
+but Cursor.
+
+**Four acceptance conditions**, all required (`_matching_ticket_context_key`):
+
+1. Fresh — within `SHELL_TICKET_TTL_SECONDS` (30 s).
+2. Written for this repo — the ticket's `cwd` resolves inside `repo_root`.
+3. The `task.py` subcommand now running matches one the ticket recorded (only
+   `start` / `current` / `finish` are ticketed at all).
+4. **Exactly one** matching context key across all ticket dirs. Two concurrent
+   windows therefore both degrade rather than one inheriting the other's
+   pointer.
+
+**Ordering.** The ticket is checked **last**, after the env tables, and is not
+gated on platform name (`active_task.py:505-508`). A platform that genuinely
+exports identity into the shell outranks a ticket written on its behalf.
+
+**Two directories are read, one is written.** `shell-tickets/` is current;
+`cursor-shell/` is the pre-0.6.13 name from when the bridge was Cursor-only. It
+is still read so a command already in flight across an upgrade does not
+silently degrade, and it is never written. There is nothing to migrate —
+tickets are 30-second ephemera, so the old directory ages out by itself; the
+cost is a glob on a directory that is normally absent, and the alternative
+(ignore it) would land its one lost command on the platform this already worked
+for.
+
+##### 4. Validation & Error Matrix
+
+| Condition | Behavior |
+| --- | --- |
+| `TRELLIS_HOOKS=0` or `TRELLIS_DISABLE_HOOKS=1` | Hook exits 0, writes nothing |
+| stdin is not JSON, or not an object | Treated as `{}`; no command found; no-op |
+| Payload has no recognizable command | `("", None)` → `main()` no-ops |
+| Command contains no `task.py start/current/finish` | No ticket written |
+| `shlex.split` raises on an unbalanced quote | No subcommands → no ticket |
+| Hook payload carries no session/conversation/transcript id | No context key → no ticket |
+| Ticket older than 30 s | Rejected on read; also unlinked by the next write's sweep |
+| Ticket `cwd` outside this repo | Rejected |
+| Subcommand mismatch | Rejected |
+| Two or more distinct fresh context keys match | **All** rejected — degrade, never guess |
+
+##### 5. Good / Base / Bad Cases
+
+- **Good** — one Cursor window, AI runs `python3 .trellis/scripts/task.py start .trellis/tasks/x`. `beforeShellExecution` writes a ticket keyed `cursor_<conversation-id>`; `task.py` finds exactly one and writes `cursor_<conversation-id>.json`. Every later hook in that conversation reads the same file.
+- **Base** — the platform has a real session env var (Codex `CODEX_THREAD_ID`). The env branch wins before the ticket is ever consulted; the ticket, if written, simply expires.
+- **Bad** — two windows on the same repo both about to run `task.py current`. Two fresh keys match, the resolver returns `None`, and both degrade. That is the designed outcome: a wrong pointer is worse than no pointer.
+
+##### 6. Tests Required
+
+- Ticket accepted: assert the resolved context key equals the one the hook computed, not merely that *a* key resolved.
+- Each rejection condition separately — stale, wrong repo, wrong subcommand, two-candidates. Assertion point is `resolve_context_key() is None`, plus the absence of a session file.
+- Payload-shape coverage: top-level `command` and both `tool_input` casings, asserting the response envelope differs (`{"permission": "allow"}` vs nothing).
+- `_host_platform_name` against an argv under `.cursor/hooks/` and under `.factory/hooks/` — the value ends up in the runtime filename, so it is user-visible.
+- Legacy `cursor-shell/` still read.
+
+##### 7. Wrong vs Correct
+
+###### Wrong
+
+```python
+if ticket.get("platform") != platform_name:
+    continue          # gate on who wrote it
+```
+
+This is what made the bridge Cursor-only. A ticket's provenance says nothing about whether it describes *this* command.
+
+###### Correct
+
+```python
+if not _ticket_is_fresh(ticket, ticket_path, now): return None
+if not _ticket_cwd_matches_repo(ticket, repo_root): return None
+if not _pending_ticket_matches_args(ticket, repo_root): return None
+return _string_value(ticket.get("context_key"))
+```
+
+Accept a ticket on its merits — fresh, right repo, right subcommand — and let the "exactly one" rule handle ambiguity.
+
+#### Session env var names carry their provenance
+
+##### 1. Scope / Trigger
+
+Env wiring: `active_task.py`'s three env tables are the only place Trellis
+claims a vendor sets a particular variable. On 2026-08-05 an audit of all 21
+platforms deleted **12 of the 21 declared names** — none had ever existed on any
+platform. They had been pattern-guessed from a `<PLATFORM>_SESSION_ID` shape no
+vendor agreed to, and the uniformity of the table was their only "evidence".
+
+The rule that came out of it currently lives as a code comment
+(`active_task.py:59-64`). It is written here so it survives the next person who
+adds a platform from the spec rather than from the code.
+
+##### 2. Signatures
+
+```python
+_ENV_SESSION_KEYS:      tuple[tuple[str, tuple[str, ...]], ...]   # :66
+_ENV_CONVERSATION_KEYS: tuple[tuple[str, tuple[str, ...]], ...]   # :111
+_ENV_TRANSCRIPT_KEYS:   tuple[tuple[str, tuple[str, ...]], ...]   # :120
+```
+
+Each entry is `(platform_name, (env_var, ...))`. Lookup is platform-scoped —
+`_iter_env_keys` filters by the detected platform, which is why ZCode may list
+`CLAUDE_CODE_SESSION_ID` without colliding with the claude entry.
+
+##### 3. Contracts
+
+Every name carries a comment recording **how it was checked**, in one of four
+grades:
+
+| Grade | What it means | What must be in the comment |
+| --- | --- | --- |
+| REAL-verified | Observed set, first-hand | Date, product version, and where it was observed |
+| REAL but HOOK-SCOPE ONLY | Set for hook processes, absent from the shell child | The same, plus which surface it is absent from. This decides whether `task.py` can ever see it |
+| UNVERIFIED | Plausible, unconfirmed | The exact probe that would settle it, runnable by someone with the product |
+| unchecked | Never researched | Say so explicitly |
+
+- **Do not add a name by analogy with a neighbour.** Table uniformity is not evidence.
+- **A platform with no verified name belongs in no table.** It resolves through `TRELLIS_CONTEXT_ID` or its hook/plugin bridge, and that is a working configuration — Grok, Kimi, OpenCode and Pi all live there.
+- **Do not delete an UNVERIFIED name to tidy up.** Absence of evidence is not evidence of absence, and removing a live name breaks that platform silently. Either run the probe or leave it.
+- `_ENV_TRANSCRIPT_KEYS` is the *unchecked* table. The 2026-08-05 audit covered the session table only, so do not infer its entries are real **or** fake from that work.
+
+##### 4. Validation & Error Matrix
+
+| Condition | Result |
+| --- | --- |
+| Name is set and platform matches | Context key `{platform}_{sanitized-value}` |
+| Name is set but platform does not match | Ignored — `_iter_env_keys` never yields the entry |
+| Name is unset or whitespace | Falls through to the next name, then the next table, then the shell ticket |
+| Name was never real (the removed twelve) | Resolves nothing; the platform degrades with "Session identity not available" |
+
+`regression.test.ts` `PURGED_ENV_NAMES` locks the twelve deleted pairs: setting
+any of them must resolve **no** context key for its platform.
+
+##### 5. Good / Base / Bad Cases
+
+- **Good** — Snow. `sessionIdentityEnv.ts` exports `SNOW_SESSION_ID` into hook, terminal and sub-agent children, and names Trellis in its source header. Verified by reading the vendor's source; the comment says so.
+- **Base** — Kiro. `KIRO_SESSION_ID` is absent from the official docs, but three independent third-party tools key agent detection on it. Kept, marked UNVERIFIED, with the settling probe written down (`env | grep KIRO` from a Kiro shell-tool call).
+- **Bad** — the removed `PI_SESSION_ID` / `PI_SESSIONID`. Pi builds its bash env as `{...process.env, PATH}` only; no `PI_*` session var exists anywhere. The entry looked like the others and worked never.
+
+##### 6. Tests Required
+
+- One assertion per purged name: it resolves no context key for its platform. Assertion point is the resolver output, not the table contents.
+- For each surviving name, a positive case producing the expected runtime filename.
+- Platform scoping: the ZCode entry must not fire in a claude-detected session and vice versa.
+
+##### 7. Wrong vs Correct
+
+###### Wrong
+
+```python
+("trae", ("TRAE_SESSION_ID",)),   # every other platform has one
+```
+
+###### Correct
+
+```python
+# UNVERIFIED (2026-08-05): absent from docs.trae.cn's hook reference; hooks get
+# TRAE_PROJECT_DIR, CLAUDE_PROJECT_DIR and TRAE_ENV_FILE. To settle: run
+# `env | grep TRAE` from a Trae shell-tool call.
+```
+
+— or, as actually happened here, no entry at all. Trae resolves through its
+shell ticket.
+
+#### `CLAUDE_ENV_FILE` append is deduped on the *last* matching export
+
+##### 1. Scope / Trigger
+
+Infra wiring into a **user-owned** file. Claude Code's SessionStart passes
+`CLAUDE_ENV_FILE`; Trellis appends `export TRELLIS_CONTEXT_ID=<context-key>`
+there so later Bash tools inherit the session identity. The append rule was
+stated with no bound, and unbounded it produced 3 933 lines for 27 distinct
+values on one maintainer's machine — in a file the shell sources for every
+command.
+
+##### 2. Signatures
+
+```python
+# templates/shared-hooks/session-start.py
+def _last_context_key_export(env_file: str) -> str | None   # :302
+```
+
+##### 3. Contracts
+
+- Append only when `_last_context_key_export(env_file) != export_line`.
+- **"Last matching line", not "appears anywhere".** The shell applies later assignments over earlier ones, so an A → B → A switch *must* re-append; a contains-check would leave the shell on B.
+- The value is `shlex.quote`d.
+- Read with `errors="replace"`. A user env file with non-UTF-8 bytes would otherwise raise `UnicodeDecodeError`, which is a `ValueError` — **not** an `OSError` — and would escape the caller's non-fatal `except OSError` guard.
+- A missing file means "no previous export"; the caller creates it.
+- The whole bridge is optional: any `OSError` is swallowed and SessionStart continues.
+
+##### 4. Validation & Error Matrix
+
+| Condition | Behavior |
+| --- | --- |
+| No `CLAUDE_ENV_FILE` in env | No-op |
+| File absent | Created with one export line |
+| Last export line already equals the new one | No append |
+| Last export line differs (including an earlier-but-not-last match) | Append |
+| File unreadable or unwritable | Silent no-op |
+| File contains non-UTF-8 bytes | Read with replacement; append proceeds |
+
+##### 5. Good / Base / Bad Cases
+
+- **Good** — ten SessionStarts in one session (clear, compact, resume) leave exactly one export line.
+- **Base** — the user switches windows: key A, then B, then back to A. Three lines, and the shell ends on A. Correct, and the reason the rule is "last" rather than "anywhere".
+- **Bad** — unconditional append. Thousands of lines in a file sourced on every command, all but the last one dead.
+
+##### 6. Tests Required
+
+`regression.test.ts` `[env-file-dedup]`, five cases: repeated same key appends once; a changed key appends again; switching back to an earlier key re-appends (this is the one a contains-check fails); an unwritable or unreadable file is a silent no-op; a non-UTF-8 file does not break SessionStart. Assertion point is the file's line count and its **last** line, not set membership.
+
+##### 7. Wrong vs Correct
+
+###### Wrong
+
+```python
+if export_line in Path(env_file).read_text():
+    return
+```
+
+Two bugs in one line: `in` matches anywhere, so an A → B → A switch never
+re-appends and the shell stays on B; and `read_text()` raises
+`UnicodeDecodeError` on a non-UTF-8 user file, which the caller's `except
+OSError` does not catch.
+
+###### Correct
+
+```python
+if _last_context_key_export(env_file) == export_line:
+    return
+```
 
 ### `common/types.py` — Typed Data Model
 

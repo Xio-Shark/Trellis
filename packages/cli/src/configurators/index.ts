@@ -4,8 +4,10 @@
  * All platform-specific lists (backup dirs, template dirs, configured platforms, etc.)
  * are derived from AI_TOOLS in types/ai-tools.ts. Adding a new platform requires:
  * 1. Adding to AI_TOOLS (data)
- * 2. Adding to PLATFORM_FUNCTIONS below (behavior)
- * 3. Creating the configurator file + template directory
+ * 2. Creating `configurators/<platform>.ts` with a `collect<Platform>Templates()`
+ *    that returns the platform's file set — the one place it is described
+ * 3. Adding to PLATFORM_FUNCTIONS below, normally `fromTemplates(collect…)`
+ * 4. Creating the template directory
  */
 
 import fs from "node:fs";
@@ -18,95 +20,36 @@ import {
 } from "../types/ai-tools.js";
 import { loadHashes } from "../utils/template-hash.js";
 
-// Platform configurators
-import { configureClaude } from "./claude.js";
-import { configureCursor } from "./cursor.js";
-import { configureOpenCode, collectOpenCodeTemplates } from "./opencode.js";
-import { configureCodex } from "./codex.js";
-import { configureKilo } from "./kilo.js";
-import { configureKiro } from "./kiro.js";
-import { configureGemini } from "./gemini.js";
-import { configureAntigravity } from "./antigravity.js";
-import { configureDevin } from "./devin.js";
-import { configureQoder } from "./qoder.js";
-import { configureCodebuddy } from "./codebuddy.js";
-import { configureCopilot } from "./copilot.js";
-import { configureDroid } from "./droid.js";
-import { configurePi, collectPiTemplates } from "./pi.js";
-import { configureReasonix, collectReasonixTemplates } from "./reasonix.js";
-import { configureZcode, collectZcodeTemplates } from "./zcode.js";
-import { configureTrae } from "./trae.js";
-import { configureOmp, collectOmpTemplates } from "./omp.js";
-import { configureGrok, collectGrokTemplates } from "./grok.js";
-import { configureKimi, collectKimiTemplates } from "./kimi.js";
-import { configureSnow, collectSnowTemplates } from "./snow.js";
+// Platform file sets — each `collect*Templates` is the single description of
+// what its platform installs, and lives next to any residual behavior.
+import { collectClaudeTemplates, configureClaude } from "./claude.js";
+import { collectCursorTemplates } from "./cursor.js";
+import { collectOpenCodeTemplates } from "./opencode.js";
+import { collectCodexTemplates, configureCodex } from "./codex.js";
+import { collectKiloTemplates } from "./kilo.js";
+import { collectKiroTemplates } from "./kiro.js";
+import { collectGeminiTemplates } from "./gemini.js";
+import { collectAntigravityTemplates } from "./antigravity.js";
+import { collectDevinTemplates } from "./devin.js";
+import { collectQoderTemplates } from "./qoder.js";
+import { collectCodebuddyTemplates } from "./codebuddy.js";
+import { collectCopilotTemplates } from "./copilot.js";
+import { collectDroidTemplates } from "./droid.js";
+import { collectPiTemplates } from "./pi.js";
+import { collectReasonixTemplates } from "./reasonix.js";
+import { collectZcodeTemplates, configureZcode } from "./zcode.js";
+import { collectTraeTemplates } from "./trae.js";
+import { collectOmpTemplates } from "./omp.js";
+import { collectGrokTemplates } from "./grok.js";
+import { collectKimiTemplates } from "./kimi.js";
+import { collectSnowTemplates } from "./snow.js";
 
 // Shared utilities
 import {
-  replacePythonCommandLiterals,
-  resolvePlaceholders,
-  resolveAllAsSkills,
-  resolveAllAsSkillsNeutral,
-  resolveBundledSkills,
-  resolveCommands,
-  resolveSkills,
-  resolveSkillsNeutral,
-  wrapWithCommandFrontmatter,
-  collectSkillTemplates,
-  applyPullBasedPreludeMarkdown,
-  normalizeCopilotMarkdownAgents,
+  renderTemplateMap,
+  writeTemplateMap,
   type PlatformConfigureOptions,
 } from "./shared.js";
-
-// Platform-specific template content (hooks, agents, settings — NOT commands/skills)
-import {
-  getAllAgents as getClaudeAgents,
-  getSettingsTemplate as getClaudeSettings,
-} from "../templates/claude/index.js";
-import {
-  getAllAgents as getCodexAgents,
-  getAllHooks as getCodexHooks,
-  getConfigTemplate as getCodexConfigTemplate,
-  getHooksConfig as getCodexHooksConfig,
-} from "../templates/codex/index.js";
-import {
-  getAllHooks as getCopilotHooks,
-  getCopilotInstructions,
-  getHooksConfig as getCopilotHooksConfig,
-  COPILOT_INSTRUCTIONS_PATH,
-} from "../templates/copilot/index.js";
-import {
-  getAllAgents as getQoderAgents,
-  getSettingsTemplate as getQoderSettings,
-} from "../templates/qoder/index.js";
-import {
-  getAllAgents as getTraeAgents,
-  getSettingsTemplate as getTraeSettings,
-} from "../templates/trae/index.js";
-import {
-  getAllAgents as getCodebuddyAgents,
-  getSettingsTemplate as getCodebuddySettings,
-} from "../templates/codebuddy/index.js";
-import {
-  getAllDroids as getDroidDroids,
-  getSettingsTemplate as getDroidSettings,
-} from "../templates/droid/index.js";
-import {
-  getAllAgents as getCursorAgents,
-  getHooksConfig as getCursorHooksConfig,
-} from "../templates/cursor/index.js";
-import {
-  getAllAgents as getGeminiAgents,
-  getSettingsTemplate as getGeminiSettings,
-} from "../templates/gemini/index.js";
-import {
-  getAllAgents as getKiroAgents,
-  getIdeHooks as getKiroIdeHooks,
-} from "../templates/kiro/index.js";
-import {
-  getSharedHookScriptsForPlatform,
-  type SharedHookPlatform,
-} from "../templates/shared-hooks/index.js";
 
 // =============================================================================
 // Platform Functions Registry
@@ -120,392 +63,49 @@ interface PlatformFunctions {
 }
 
 /**
- * Platform functions registry — maps each AITool to its behavior.
- * When adding a new platform, add an entry here.
+ * Registry entry for a platform whose configuration is exactly "write these
+ * files": `configure` is derived from `collectTemplates`, so the file set is
+ * described once and `trellis init` and `trellis update` cannot disagree
+ * about it.
+ *
+ * The three platforms that also do something a `Map<path, content>` cannot
+ * express (claude-code, codex, zcode) spell out both fields and keep that
+ * behavior inline in their own configurator.
  */
-/** Helper: collect the shared hook scripts that `platform` actually
- *  registers. Keyed off SHARED_HOOKS_BY_PLATFORM so runtime install
- *  (writeSharedHooks) and update diff (collectSharedHooks) never drift.
- */
-function collectSharedHooks(
-  hooksPath: string,
-  platform: SharedHookPlatform,
-): Map<string, string> {
-  const files = new Map<string, string>();
-  for (const hook of getSharedHookScriptsForPlatform(platform)) {
-    files.set(`${hooksPath}/${hook.name}`, hook.content);
-  }
-  return files;
-}
-
-/** Apply python3→python replacement to all content in a template map. */
-function replaceInMap(map: Map<string, string>): Map<string, string> {
-  const result = new Map<string, string>();
-  for (const [key, content] of map) {
-    result.set(key, replacePythonCommandLiterals(content));
-  }
-  return result;
-}
-
-/** Helper: collect commands + skills for "both" platforms */
-function collectBothTemplates(
-  ctx: import("../types/ai-tools.js").TemplateContext,
-  cmdPath: (name: string) => string,
-  skillRoot: string,
-  wrapCmd?: (filePath: string, content: string) => string,
-): Map<string, string> {
-  const files = new Map<string, string>();
-  for (const cmd of resolveCommands(ctx)) {
-    const filePath = cmdPath(cmd.name);
-    files.set(filePath, wrapCmd ? wrapCmd(filePath, cmd.content) : cmd.content);
-  }
-  for (const [filePath, content] of collectSkillTemplates(
-    skillRoot,
-    resolveSkills(ctx),
-    resolveBundledSkills(ctx),
-  )) {
-    files.set(filePath, content);
-  }
-  return files;
+function fromTemplates(
+  collectTemplates: () => Map<string, string>,
+): PlatformFunctions {
+  return {
+    configure: (cwd) => writeTemplateMap(cwd, collectTemplates()),
+    collectTemplates,
+  };
 }
 
 const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
   "claude-code": {
     configure: configureClaude,
-    collectTemplates: () => {
-      const ctx = AI_TOOLS["claude-code"].templateContext;
-      const files = collectBothTemplates(
-        ctx,
-        (n) => `.claude/commands/trellis/${n}.md`,
-        ".claude/skills",
-      );
-      for (const agent of getClaudeAgents()) {
-        files.set(`.claude/agents/${agent.name}.md`, agent.content);
-      }
-      for (const [k, v] of collectSharedHooks(".claude/hooks", "claude")) {
-        files.set(k, v);
-      }
-      const settings = getClaudeSettings();
-      files.set(
-        `.claude/${settings.targetPath}`,
-        resolvePlaceholders(settings.content),
-      );
-      return files;
-    },
+    collectTemplates: collectClaudeTemplates,
   },
-  cursor: {
-    configure: configureCursor,
-    collectTemplates: () => {
-      const files = collectBothTemplates(
-        AI_TOOLS.cursor.templateContext,
-        (n) => `.cursor/commands/trellis-${n}.md`,
-        ".cursor/skills",
-      );
-      for (const agent of getCursorAgents()) {
-        files.set(`.cursor/agents/${agent.name}.md`, agent.content);
-      }
-      for (const [k, v] of collectSharedHooks(".cursor/hooks", "cursor")) {
-        files.set(k, v);
-      }
-      files.set(
-        ".cursor/hooks.json",
-        resolvePlaceholders(getCursorHooksConfig()),
-      );
-      return files;
-    },
-  },
-  opencode: {
-    configure: configureOpenCode,
-    collectTemplates: () => collectOpenCodeTemplates(),
-  },
-  codex: {
-    configure: configureCodex,
-    collectTemplates: () => {
-      const files = new Map<string, string>();
-      const ctx = AI_TOOLS.codex.templateContext;
-      for (const [filePath, content] of collectSkillTemplates(
-        ".agents/skills",
-        resolveAllAsSkillsNeutral(ctx),
-        resolveBundledSkills(ctx),
-      )) {
-        files.set(filePath, content);
-      }
-      for (const agent of getCodexAgents()) {
-        files.set(`.codex/agents/${agent.name}.toml`, agent.content);
-      }
-      for (const hook of getCodexHooks()) {
-        files.set(`.codex/hooks/${hook.name}`, hook.content);
-      }
-      // Shared hooks (inject-workflow-state.py only) — mirror configureCodex
-      for (const [k, v] of collectSharedHooks(".codex/hooks", "codex")) {
-        files.set(k, v);
-      }
-      files.set(
-        ".codex/hooks.json",
-        resolvePlaceholders(getCodexHooksConfig()),
-      );
-      const config = getCodexConfigTemplate();
-      files.set(`.codex/${config.targetPath}`, config.content);
-      return files;
-    },
-  },
-  kilo: {
-    configure: configureKilo,
-    collectTemplates: () =>
-      collectBothTemplates(
-        AI_TOOLS.kilo.templateContext,
-        (n) => `.kilocode/workflows/${n}.md`,
-        ".kilocode/skills",
-      ),
-  },
-  kiro: {
-    configure: configureKiro,
-    collectTemplates: () => {
-      const files = new Map<string, string>();
-      const ctx = AI_TOOLS.kiro.templateContext;
-      for (const [filePath, content] of collectSkillTemplates(
-        ".kiro/skills",
-        resolveAllAsSkills(ctx),
-        resolveBundledSkills(ctx),
-      )) {
-        files.set(filePath, content);
-      }
-      for (const agent of getKiroAgents()) {
-        files.set(
-          `.kiro/agents/${agent.name}.json`,
-          resolvePlaceholders(agent.content),
-        );
-      }
-      for (const [k, v] of collectSharedHooks(".kiro/hooks", "kiro")) {
-        files.set(k, v);
-      }
-      for (const hook of getKiroIdeHooks()) {
-        files.set(
-          `.kiro/hooks/${hook.name}`,
-          resolvePlaceholders(hook.content),
-        );
-      }
-      return files;
-    },
-  },
-  gemini: {
-    configure: configureGemini,
-    collectTemplates: () => {
-      const ctx = AI_TOOLS.gemini.templateContext;
-      const files = new Map<string, string>();
-      for (const cmd of resolveCommands(ctx)) {
-        const toml = `description = "Trellis: ${cmd.name}"\n\nprompt = """\n${cmd.content}\n"""\n`;
-        files.set(`.gemini/commands/trellis/${cmd.name}.toml`, toml);
-      }
-      // Shared skills written to `.agents/skills/` (Gemini CLI 0.40+ workspace
-      // alias). Neutral resolver keeps content byte-identical to Codex's writes
-      // for the same skill names.
-      for (const [filePath, content] of collectSkillTemplates(
-        ".agents/skills",
-        resolveSkillsNeutral(ctx),
-        resolveBundledSkills(ctx),
-      )) {
-        files.set(filePath, content);
-      }
-      for (const agent of applyPullBasedPreludeMarkdown(getGeminiAgents())) {
-        files.set(`.gemini/agents/${agent.name}.md`, agent.content);
-      }
-      for (const [k, v] of collectSharedHooks(".gemini/hooks", "gemini")) {
-        files.set(k, v);
-      }
-      files.set(
-        ".gemini/settings.json",
-        resolvePlaceholders(getGeminiSettings()),
-      );
-      return files;
-    },
-  },
-  antigravity: {
-    configure: configureAntigravity,
-    collectTemplates: () =>
-      collectBothTemplates(
-        AI_TOOLS.antigravity.templateContext,
-        (n) => `.agent/workflows/${n}.md`,
-        ".agent/skills",
-      ),
-  },
-  devin: {
-    configure: configureDevin,
-    collectTemplates: () =>
-      collectBothTemplates(
-        AI_TOOLS.devin.templateContext,
-        (n) => `.devin/workflows/trellis-${n}.md`,
-        ".devin/skills",
-      ),
-  },
-  qoder: {
-    configure: configureQoder,
-    collectTemplates: () => {
-      const files = collectBothTemplates(
-        AI_TOOLS.qoder.templateContext,
-        (n) => `.qoder/commands/trellis-${n}.md`,
-        ".qoder/skills",
-        (filePath, content) => {
-          const name = path.basename(filePath, ".md");
-          return wrapWithCommandFrontmatter(name, content);
-        },
-      );
-      for (const agent of applyPullBasedPreludeMarkdown(getQoderAgents())) {
-        files.set(`.qoder/agents/${agent.name}.md`, agent.content);
-      }
-      for (const [k, v] of collectSharedHooks(".qoder/hooks", "qoder")) {
-        files.set(k, v);
-      }
-      const settings = getQoderSettings();
-      files.set(
-        `.qoder/${settings.targetPath}`,
-        resolvePlaceholders(settings.content),
-      );
-      return files;
-    },
-  },
-  codebuddy: {
-    configure: configureCodebuddy,
-    collectTemplates: () => {
-      const files = collectBothTemplates(
-        AI_TOOLS.codebuddy.templateContext,
-        (n) => `.codebuddy/commands/trellis/${n}.md`,
-        ".codebuddy/skills",
-      );
-      for (const agent of getCodebuddyAgents()) {
-        files.set(`.codebuddy/agents/${agent.name}.md`, agent.content);
-      }
-      for (const [k, v] of collectSharedHooks(
-        ".codebuddy/hooks",
-        "codebuddy",
-      )) {
-        files.set(k, v);
-      }
-      const settings = getCodebuddySettings();
-      files.set(
-        `.codebuddy/${settings.targetPath}`,
-        resolvePlaceholders(settings.content),
-      );
-      return files;
-    },
-  },
-  copilot: {
-    configure: configureCopilot,
-    collectTemplates: () => {
-      const ctx = AI_TOOLS.copilot.templateContext;
-      const files = new Map<string, string>();
-      for (const cmd of resolveCommands(ctx)) {
-        files.set(`.github/prompts/${cmd.name}.prompt.md`, cmd.content);
-      }
-      for (const [filePath, content] of collectSkillTemplates(
-        ".github/skills",
-        resolveSkills(ctx),
-        resolveBundledSkills(ctx),
-      )) {
-        files.set(filePath, content);
-      }
-      // Copilot's own session-start hook
-      for (const hook of getCopilotHooks()) {
-        files.set(`.github/copilot/hooks/${hook.name}`, hook.content);
-      }
-      // Shared hooks (inject-workflow-state.py only). Copilot bundles its own
-      // session-start.py above; sub-agent context is pull-based (class-2).
-      for (const [k, v] of collectSharedHooks(
-        ".github/copilot/hooks",
-        "copilot",
-      )) {
-        files.set(k, v);
-      }
-      // Agents: reuse Cursor content + prepend pull-based prelude, then
-      // normalize Cursor's Claude-style tools frontmatter for Copilot.
-      for (const agent of applyPullBasedPreludeMarkdown(
-        normalizeCopilotMarkdownAgents(getCursorAgents()),
-      )) {
-        files.set(`.github/agents/${agent.name}.agent.md`, agent.content);
-      }
-      files.set(COPILOT_INSTRUCTIONS_PATH, getCopilotInstructions());
-      const hooksConfig = resolvePlaceholders(getCopilotHooksConfig());
-      files.set(".github/copilot/hooks.json", hooksConfig);
-      files.set(".github/hooks/trellis.json", hooksConfig);
-      return files;
-    },
-  },
-  droid: {
-    configure: configureDroid,
-    collectTemplates: () => {
-      const files = collectBothTemplates(
-        AI_TOOLS.droid.templateContext,
-        (n) => `.factory/commands/trellis/${n}.md`,
-        ".factory/skills",
-      );
-      for (const droid of getDroidDroids()) {
-        files.set(`.factory/droids/${droid.name}.md`, droid.content);
-      }
-      for (const [k, v] of collectSharedHooks(".factory/hooks", "droid")) {
-        files.set(k, v);
-      }
-      const settings = getDroidSettings();
-      files.set(
-        `.factory/${settings.targetPath}`,
-        resolvePlaceholders(settings.content),
-      );
-      return files;
-    },
-  },
-  pi: {
-    configure: configurePi,
-    collectTemplates: () => collectPiTemplates(),
-  },
-  reasonix: {
-    configure: configureReasonix,
-    collectTemplates: () => collectReasonixTemplates(),
-  },
-  zcode: {
-    configure: configureZcode,
-    collectTemplates: () => collectZcodeTemplates(),
-  },
-  trae: {
-    configure: configureTrae,
-    collectTemplates: () => {
-      const files = collectBothTemplates(
-        AI_TOOLS.trae.templateContext,
-        (n) => `.trae/commands/trellis-${n}.md`,
-        ".trae/skills",
-        (filePath, content) => {
-          const name = path.basename(filePath, ".md");
-          return wrapWithCommandFrontmatter(name, content);
-        },
-      );
-      for (const agent of applyPullBasedPreludeMarkdown(getTraeAgents())) {
-        files.set(`.trae/agents/${agent.name}.md`, agent.content);
-      }
-      for (const [k, v] of collectSharedHooks(".trae/hooks", "trae")) {
-        files.set(k, v);
-      }
-      const settings = getTraeSettings();
-      files.set(
-        `.trae/${settings.targetPath}`,
-        resolvePlaceholders(settings.content),
-      );
-      return files;
-    },
-  },
-  omp: {
-    configure: configureOmp,
-    collectTemplates: () => collectOmpTemplates(),
-  },
-  grok: {
-    configure: configureGrok,
-    collectTemplates: () => collectGrokTemplates(),
-  },
-  kimi: {
-    configure: configureKimi,
-    collectTemplates: () => collectKimiTemplates(),
-  },
-  snow: {
-    configure: configureSnow,
-    collectTemplates: () => collectSnowTemplates(),
-  },
+  cursor: fromTemplates(collectCursorTemplates),
+  opencode: fromTemplates(collectOpenCodeTemplates),
+  codex: { configure: configureCodex, collectTemplates: collectCodexTemplates },
+  kilo: fromTemplates(collectKiloTemplates),
+  kiro: fromTemplates(collectKiroTemplates),
+  gemini: fromTemplates(collectGeminiTemplates),
+  antigravity: fromTemplates(collectAntigravityTemplates),
+  devin: fromTemplates(collectDevinTemplates),
+  qoder: fromTemplates(collectQoderTemplates),
+  codebuddy: fromTemplates(collectCodebuddyTemplates),
+  copilot: fromTemplates(collectCopilotTemplates),
+  droid: fromTemplates(collectDroidTemplates),
+  pi: fromTemplates(collectPiTemplates),
+  reasonix: fromTemplates(collectReasonixTemplates),
+  zcode: { configure: configureZcode, collectTemplates: collectZcodeTemplates },
+  trae: fromTemplates(collectTraeTemplates),
+  omp: fromTemplates(collectOmpTemplates),
+  grok: fromTemplates(collectGrokTemplates),
+  kimi: fromTemplates(collectKimiTemplates),
+  snow: fromTemplates(collectSnowTemplates),
 };
 
 // =============================================================================
@@ -621,7 +221,7 @@ export function collectPlatformTemplates(
   platformId: AITool,
 ): Map<string, string> | undefined {
   const map = PLATFORM_FUNCTIONS[platformId].collectTemplates?.();
-  return map ? replaceInMap(map) : map;
+  return map ? renderTemplateMap(map) : map;
 }
 
 /**
