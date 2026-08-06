@@ -153,7 +153,10 @@ describe("trae hooks.json registers SessionStart + UserPromptSubmit", () => {
       parsed.hooks as Record<string, Record<string, unknown>[]>
     )["PreToolUse"];
     expect(preToolUseGroups).toHaveLength(1);
-    expect(preToolUseGroups[0].matcher).toBe("Bash");
+    // Trae's IDE names its shell tool `RunCommand`, not `Bash` — a `Bash`-only
+    // matcher never fired. `Bash` is kept in the alternation because matcher is
+    // a regex on every surface and dropping it would be an untested narrowing.
+    expect(preToolUseGroups[0].matcher).toBe("RunCommand|Bash");
     expect(raw).toContain(".trae/hooks/inject-shell-session-context.py");
   });
 

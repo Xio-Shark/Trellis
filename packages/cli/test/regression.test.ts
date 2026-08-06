@@ -9589,3 +9589,45 @@ describe("regression: .trellis/scripts stays byte-identical to templates/trellis
     });
   }
 });
+
+describe("regression: compat alias must not win platform detection", () => {
+  // CodeBuddy, ZCode and Trae all set CLAUDE_PROJECT_DIR beside their own
+  // variable. `_detect_platform` walks the map in insertion order, so a
+  // CLAUDE_PROJECT_DIR entry placed before the vendor keys detects every one
+  // of those hosts as `claude`. The context key then becomes
+  // `claude_<their-session-id>`, which never matches the session file
+  // `task.py start` wrote under the host's real name — every turn reports
+  // no_task while the pointer sits on disk.
+  //
+  // Observed on CodeBuddy IDE 4.10.4: `codebuddy_ae54840e….json` in
+  // .trellis/.runtime/sessions/ next to `update-check-claude_ae54840e….marker`
+  // — same session id, two different platform prefixes.
+  const HOOKS_WITH_DETECTION = [
+    "inject-workflow-state.py",
+    "session-start.py",
+  ];
+
+  for (const hook of HOOKS_WITH_DETECTION) {
+    it(`${hook} checks CLAUDE_PROJECT_DIR after every vendor key`, () => {
+      const source = fs.readFileSync(
+        path.join(
+          path.resolve(__dirname, ".."),
+          "src/templates/shared-hooks",
+          hook,
+        ),
+        "utf-8",
+      );
+      const block = /env_map\s*=\s*\{([\s\S]*?)\}/.exec(source);
+      expect(block, `${hook}: no env_map found`).not.toBeNull();
+
+      const keys = [...(block?.[1] ?? "").matchAll(/"([A-Z_]+_PROJECT_DIR)"/g)]
+        .map((m) => m[1]);
+      expect(keys.length).toBeGreaterThan(3);
+      expect(
+        keys.indexOf("CLAUDE_PROJECT_DIR"),
+        `${hook}: CLAUDE_PROJECT_DIR is a compat alias several hosts also set; ` +
+          `it must be checked last or they are all detected as claude`,
+      ).toBe(keys.length - 1);
+    });
+  }
+});
