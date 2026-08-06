@@ -127,8 +127,31 @@ fatal: Fetched in submodule path '<name>', but it did not contain <SHA>. Direct 
 This is per-submodule. Pushing `docs-site` but forgetting `marketplace` (or vice versa) still fails. Verify all submodules before `pnpm release`:
 
 ```bash
-git submodule foreach 'sha=$(git rev-parse HEAD); git ls-remote origin $sha | grep -q $sha && echo "ok $name" || echo "FAIL $name $sha not on remote"'
+git submodule foreach 'git fetch origin -q; sha=$(git rev-parse HEAD); \
+  git merge-base --is-ancestor $sha origin/main \
+    && echo "ok $name" || echo "FAIL $name $sha not on remote"'
 ```
+
+### Don't: test submodule reachability with `ls-remote`
+
+**Problem**:
+
+```bash
+git submodule foreach 'sha=$(git rev-parse HEAD); git ls-remote origin $sha | grep -q $sha && ...'
+```
+
+**Why it's bad**: `ls-remote` matches **ref names**, not commits. It finds a SHA
+only when that SHA is itself a branch or tag tip. A submodule pointer at any
+earlier commit on `main` — which is the normal case, since pointers are bumped
+after the submodule moves on — reports `FAIL` while CI fetches it without
+trouble. Observed 2026-08-06 while preparing v0.6.13: both submodules reported
+`FAIL`, both were reachable.
+
+A check that fails on healthy input is worse than no check. It trains you to
+ignore it, which is how the v0.6.4 incident below happens a second time.
+
+**Instead**: fetch, then ask whether the SHA is an ancestor of the remote branch
+— that is the same question CI answers when it materialises the pointer.
 
 Any `FAIL` line means: `cd <submodule> && git checkout -B main && git push origin main` before tagging. If the tag was already pushed when you discover the miss, recover by pushing the submodule then re-running the failed CI jobs (`gh run rerun <id> --failed`) — no new tag is needed.
 
