@@ -1,0 +1,9 @@
+{
+  "version": "0.6.13",
+  "description": "Session identity now works on six more platforms; stops writing to your shell setup file on every session",
+  "breaking": false,
+  "recommendMigrate": false,
+  "changelog": "**Bug Fixes:**\n- fix(hooks): On Gemini CLI, Qoder, CodeBuddy, Factory Droid, Trae and ZCode, starting a task did not stick. The task was created, but every later turn still said no task was active. Starting a task now works on these platforms.\n- fix(hooks): Each new session added one line to the file named by `CLAUDE_ENV_FILE` and never removed the old ones. On one machine that file had grown to 3,933 lines, and the shell reads it before every command. Trellis now writes the line only when the value changed.\n- fix(hooks): When your project files are older than the installed Trellis, the session start now tells you to run `trellis update`. This notice already existed, but you only saw it if you ran `get_context.py` yourself.\n- fix(scripts): ZCode sessions now read the session id from the variable ZCode actually sets.\n- fix(templates): On Windows, the files written for Snow CLI, GitHub Copilot and Reasonix said `python3`, which is not a command on Windows. They now say `python`, matching every other file.\n- fix(skills): The `trellis-meta` skill's architecture notes described three functions that no longer exist, and listed 15 of the 21 platforms. An AI reading them would explain the wrong path for how files are written. Corrected against the real platform list.",
+  "migrations": [],
+  "notes": []
+}
