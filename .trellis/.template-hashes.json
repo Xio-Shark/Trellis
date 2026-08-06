@@ -219,6 +219,7 @@
     ".codex/hooks/inject-subagent-context.py": "abffa237eb53f87ae6ffa434063b46b03d58a36a84cdb8fe88bfc5f243aab609",
     ".pi/prompts/trellis-start.md": "28af1eb6645d8b517cf705277d8405370b712926e6b01667d6698564002c6a9d",
     ".opencode/lib/session-utils.js": "86c1c8897f5d291f7d29e942384d7cbe8fb5454c928f6e30803069a4d52393bf",
-    ".codex/agents/trellis-research.toml": "4435ce73197ba1d29d40359a3279b6423f7e4f559a449f934c016808090066c4"
+    ".codex/agents/trellis-research.toml": "4435ce73197ba1d29d40359a3279b6423f7e4f559a449f934c016808090066c4",
+    ".cursor/hooks/inject-shell-session-context.py": "e92f3864c7eb18d4450f1016daaab0f48225dff9b557992cecbe6fe762d69356"
   }
 }
