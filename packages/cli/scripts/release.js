@@ -64,8 +64,63 @@ function docsGuard(type) {
   }
 }
 
-function pushTarget(type) {
-  return type === "beta" || type === "rc" ? "HEAD" : "main";
+const PRERELEASE_TYPES = new Set(["beta", "rc"]);
+
+function currentBranch() {
+  return output("git rev-parse --abbrev-ref HEAD");
+}
+
+/**
+ * Refuse to release from a branch whose name does not match the release type.
+ *
+ * Both push forms used here are silent when the branch is wrong, which is why
+ * this runs before any commit or tag:
+ *
+ * - Stable pushed `main`, meaning the *local main ref*. Releasing from any
+ *   other branch pushed an unchanged `main` while still publishing the tag —
+ *   the tag exists, the code never lands.
+ * - Prerelease pushed `HEAD`, which git resolves to a remote branch of the
+ *   same name. Releasing from a sync or topic branch created that branch on
+ *   the remote and left the real release line without its version bump, so
+ *   the next release from it computed the wrong next version. Hit for real on
+ *   v0.7.0-beta.2, released from `sync/v0.7-beta-0.6.13`.
+ */
+function assertBranchMatchesType(type, branch) {
+  if (branch === "HEAD") {
+    fail("detached HEAD: check out the release branch before releasing");
+  }
+  if (PRERELEASE_TYPES.has(type)) {
+    if (branch === "main") {
+      fail(`${type} releases do not come from main (on "${branch}")`);
+    }
+    return;
+  }
+  if (branch !== "main") {
+    fail(
+      `${type} releases come from main, not "${branch}". ` +
+        `Merge this branch into main first, or use release:beta / release:rc.`,
+    );
+  }
+}
+
+/**
+ * Confirm the tag commit is reachable from the branch we just pushed.
+ *
+ * The push itself exits 0 in the failure modes above, so success is only
+ * observable after the fact.
+ */
+function assertPushLanded(branch, tag) {
+  run("git fetch origin --quiet");
+  try {
+    run(`git merge-base --is-ancestor "${tag}" "origin/${branch}"`, {
+      capture: true,
+    });
+  } catch {
+    fail(
+      `tag ${tag} is not reachable from origin/${branch} after push. ` +
+        `The tag may already be published — inspect before re-running.`,
+    );
+  }
 }
 
 function main() {
@@ -73,6 +128,10 @@ function main() {
   if (!RELEASE_TYPES.has(type)) {
     fail(`usage: release.js <patch|minor|major|beta|rc|promote>`);
   }
+
+  const branch = currentBranch();
+  assertBranchMatchesType(type, branch);
+  console.log(`releasing ${type} from branch "${branch}"`);
 
   run("node scripts/check-manifest-continuity.js");
   docsGuard(type);
@@ -93,7 +152,11 @@ function main() {
   run("git add package.json ../core/package.json");
   run(`git commit -m "${version}"`);
   run(`git tag "v${version}"`);
-  run(`git push origin ${pushTarget(type)} --tags`);
+  // Push HEAD to the branch we are actually on, by name. `HEAD` alone relies
+  // on the remote having a same-named branch, and a bare `main` pushes the
+  // local main ref regardless of where the release commit lives.
+  run(`git push origin "HEAD:${branch}" --tags`);
+  assertPushLanded(branch, `v${version}`);
 }
 
 main();
