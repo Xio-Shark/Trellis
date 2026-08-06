@@ -1,0 +1,9 @@
+{
+  "version": "0.6.14",
+  "description": "Hooks work on hosts that set CLAUDE_PROJECT_DIR; mem recovers conversations hidden by compaction",
+  "breaking": false,
+  "recommendMigrate": false,
+  "changelog": "**Bug Fixes:**\n- fix(hooks): CodeBuddy, ZCode and Trae set `CLAUDE_PROJECT_DIR` beside their own variable, so `_detect_platform` resolved all three to `claude` and looked for `sessions/claude_<id>.json` while `task.py start` had written `sessions/<host>_<id>.json`. Every turn reported `no_task` with the pointer on disk. The alias is now checked last.\n- fix(hooks): the shared hooks trusted the payload's `cwd`. CodeBuddy IDE 4.10.4 reports `\"/\"` on every event, so they found no `.trellis` and returned silently. They now fall back to their own working directory.\n- fix(hooks): the shell ticket recorded the payload's `cwd`, and the consumer rejects a ticket whose cwd is outside the repo — a ticket written correctly was discarded on arrival. It now records the resolved project root.\n- fix(hooks): widened PreToolUse matchers for IDE tool names: codebuddy `execute_command|Bash|PowerShell` and `task|Task`, trae `RunCommand|Bash`, qoder `Bash|run_in_terminal`.\n\n**Enhancements:**\n- feat(mem): `trellis mem` recovers conversation turns hidden behind compaction on Claude, Codex, Pi and ZCode. `extract` on a twice-compacted Codex session goes from 2 turns to 18. Compaction is marked in the output instead of replacing what came before.\n- feat(mem): Grok sessions are readable via `--platform grok`.\n- feat(mem): sessions whose content cannot be recovered say so — Codex encrypts inter-agent payloads, and Grok archives pre-compaction turns as rendered markdown.",
+  "migrations": [],
+  "notes": ""
+}
