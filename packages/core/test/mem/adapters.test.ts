@@ -68,6 +68,12 @@ const { claudeProjectDirFromCwd } =
   await import("../../src/mem/internal/paths.js");
 const { codexListSessions, codexExtractDialogue, codexSearch } =
   await import("../../src/mem/adapters/codex.js");
+const {
+  grokListSessions,
+  grokExtractDialogue,
+  grokSearch,
+  collectGrokTurnsAndEvents,
+} = await import("../../src/mem/adapters/grok.js");
 const { opencodeListSessions, opencodeExtractDialogue, opencodeSearch } =
   await import("../../src/mem/adapters/opencode.js");
 const { piListSessions, piExtractDialogue, piSearch } =
@@ -93,6 +99,7 @@ function mkFilter(overrides: Partial<MemFilter> = {}): MemFilter {
 
 const CLAUDE_PROJECTS = nodePath.join(fakeHome, ".claude", "projects");
 const CODEX_SESSIONS = nodePath.join(fakeHome, ".codex", "sessions");
+const GROK_SESSIONS = nodePath.join(fakeHome, ".grok", "sessions");
 const PI_SESSIONS = nodePath.join(fakeHome, ".pi", "agent", "sessions");
 
 function writeJsonl(file: string, lines: readonly unknown[]): void {
@@ -348,7 +355,7 @@ describe("claudeListSessions / claudeExtractDialogue", () => {
     expect(turns[1]).toEqual({ role: "assistant", text: "real answer" });
   });
 
-  it("extractDialogue collapses pre-compact turns into a single [compact summary] turn", () => {
+  it("extractDialogue keeps pre-compact turns and marks the boundary", () => {
     writeJsonl(sessionFile, [
       {
         type: "user",
@@ -380,10 +387,41 @@ describe("claudeListSessions / claudeExtractDialogue", () => {
     expect(s).toBeDefined();
     if (!s) return;
     const turns = claudeExtractDialogue(s);
-    expect(turns.map((t) => t.text)).toEqual([
-      "[compact summary]\nsummary of the previous conversation",
-      "post-compact question",
+    expect(turns.map((t) => t.kind ?? "turn")).toEqual([
+      "turn",
+      "turn",
+      "marker",
+      "turn",
     ]);
+    expect(turns[0]).toEqual({ role: "user", text: "first turn" });
+    expect(turns[1]).toEqual({ role: "assistant", text: "first answer" });
+    expect(turns[2]?.text).toContain("[compaction boundary]");
+    expect(turns[2]?.text).toContain("summary of the previous conversation");
+    expect(turns[3]).toEqual({ role: "user", text: "post-compact question" });
+  });
+
+  it("the compact summary is marker content, never a searchable turn", () => {
+    writeJsonl(sessionFile, [
+      {
+        type: "user",
+        cwd: projectCwd,
+        timestamp: "2026-04-15T10:00:00Z",
+        message: { role: "user", content: "we talked about widgets" },
+      },
+      {
+        type: "user",
+        isCompactSummary: true,
+        message: { role: "user", content: "the user asked about widgets" },
+      },
+    ]);
+    const s = claudeListSessions(mkFilter()).find((x) => x.id === sessionId);
+    expect(s).toBeDefined();
+    if (!s) return;
+    // "widgets" appears in the real turn and again in the summary; only the
+    // real turn may be counted, and the marker is out of the denominator.
+    const hit = claudeSearch(s, "widgets");
+    expect(hit.count).toBe(1);
+    expect(hit.totalTurns).toBe(1);
   });
 
   it("drops AGENTS.md preamble turns from the user side", () => {
@@ -601,7 +639,7 @@ describe("codexListSessions / codexExtractDialogue", () => {
     ]);
   });
 
-  it("extractDialogue rebuilds turn list from a `compacted` event's replacement_history", () => {
+  it("extractDialogue keeps pre-compact turns and recovers what only replacement_history holds", () => {
     writeJsonl(sessionFile, [
       {
         timestamp: "2026-04-15T10:00:00Z",
@@ -623,7 +661,13 @@ describe("codexListSessions / codexExtractDialogue", () => {
             {
               type: "message",
               role: "user",
-              content: [{ type: "input_text", text: "summary of earlier" }],
+              content: [{ type: "input_text", text: "only in retained history" }],
+            },
+            // Already collected above — must not be duplicated.
+            {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: "pre-compact turn" }],
             },
           ],
         },
@@ -640,10 +684,95 @@ describe("codexListSessions / codexExtractDialogue", () => {
     const s = codexListSessions(mkFilter()).find((x) => x.id === sessionId);
     expect(s).toBeDefined();
     if (!s) return;
-    expect(codexExtractDialogue(s).map((t) => t.text)).toEqual([
-      "[compact]\nsummary of earlier",
+    const turns = codexExtractDialogue(s);
+    expect(turns.map((t) => t.text)).toEqual([
+      "only in retained history",
+      "pre-compact turn",
+      turns[2]?.text ?? "",
       "post-compact turn",
     ]);
+    expect(turns[2]?.kind).toBe("marker");
+    expect(turns[2]?.text).toContain("[compaction boundary]");
+  });
+
+  it("a replacement_history that only repeats the pool adds no phantom turns", () => {
+    const message = (text: string): Record<string, unknown> => ({
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text }],
+    });
+    writeJsonl(sessionFile, [
+      {
+        timestamp: "2026-04-15T10:00:00Z",
+        payload: { id: sessionId, cwd: projectCwd },
+      },
+      { timestamp: "2026-04-15T10:00:01Z", payload: message("ok") },
+      { timestamp: "2026-04-15T10:00:02Z", payload: message("ok") },
+      {
+        timestamp: "2026-04-15T10:00:03Z",
+        type: "compacted",
+        payload: { replacement_history: [message("ok"), message("ok")] },
+      },
+    ]);
+    const s = codexListSessions(mkFilter()).find((x) => x.id === sessionId);
+    expect(s).toBeDefined();
+    if (!s) return;
+    const turns = codexExtractDialogue(s);
+    // Two real "ok" turns survive as two; the two retained copies are dropped.
+    expect(turns.filter((t) => t.kind !== "marker").map((t) => t.text)).toEqual([
+      "ok",
+      "ok",
+    ]);
+  });
+
+  it("recovers a FINAL_ANSWER inter-agent envelope and reports encrypted ones", () => {
+    writeJsonl(sessionFile, [
+      {
+        timestamp: "2026-04-15T10:00:00Z",
+        payload: { id: sessionId, cwd: projectCwd },
+      },
+      {
+        timestamp: "2026-04-15T10:00:01Z",
+        type: "response_item",
+        payload: {
+          type: "agent_message",
+          author: "/root",
+          recipient: "/root/child",
+          content: [
+            {
+              type: "input_text",
+              text: "Message Type: NEW_TASK\nTask name: /root/child\nSender: /root\nPayload:\n",
+            },
+            { type: "encrypted_content", encrypted_content: "gAAAAA" },
+          ],
+        },
+      },
+      {
+        timestamp: "2026-04-15T10:00:02Z",
+        type: "response_item",
+        payload: {
+          type: "agent_message",
+          author: "/root/child",
+          recipient: "/root",
+          content: [
+            {
+              type: "input_text",
+              text: "Message Type: FINAL_ANSWER\nTask name: /root/child\nSender: /root/child\nPayload:\nthe sub-agent's report",
+            },
+          ],
+        },
+      },
+    ]);
+    const s = codexListSessions(mkFilter()).find((x) => x.id === sessionId);
+    expect(s).toBeDefined();
+    if (!s) return;
+    const warnings: { code: string; message: string }[] = [];
+    const turns = codexExtractDialogue(s, warnings);
+    expect(turns).toEqual([
+      { role: "assistant", text: "the sub-agent's report" },
+    ]);
+    expect(warnings.map((w) => w.code)).toEqual(["codex-inter-agent-encrypted"]);
+    expect(warnings[0]?.message).toContain("1 inter-agent message payload");
   });
 
   it("extractDialogue drops bootstrap (large INSTRUCTIONS) user turn", () => {
@@ -699,6 +828,202 @@ describe("codexListSessions / codexExtractDialogue", () => {
     const hit = codexSearch(s, "memory");
     expect(hit.userCount).toBe(1);
     expect(hit.count).toBe(1);
+  });
+});
+
+// =============================================================================
+// Grok adapter
+// =============================================================================
+
+describe("grokListSessions / grokExtractDialogue", () => {
+  const projectCwd = "/tmp/grok-project";
+  const sessionId = "019f0000-grok-session";
+  const sessionDir = nodePath.join(
+    GROK_SESSIONS,
+    encodeURIComponent(projectCwd),
+    sessionId,
+  );
+  const chatFile = nodePath.join(sessionDir, "chat_history.jsonl");
+
+  afterEach(() => {
+    rimraf(nodePath.join(fakeHome, ".grok"));
+  });
+
+  function writeSession(events: readonly unknown[]): void {
+    writeJsonl(chatFile, events);
+    writeJson(nodePath.join(sessionDir, "summary.json"), {
+      info: { id: sessionId, cwd: projectCwd },
+      session_summary: "Grok fixture session",
+      created_at: "2026-07-24T16:33:44.000Z",
+      updated_at: "2026-07-24T17:34:41.000Z",
+    });
+  }
+
+  function findSession(
+    f: Partial<MemFilter> = {},
+  ): ReturnType<typeof grokListSessions>[number] | undefined {
+    return grokListSessions(mkFilter(f)).find((x) => x.id === sessionId);
+  }
+
+  it("reads id / cwd / title / timestamps from summary.json", () => {
+    writeSession([{ type: "user", content: [{ type: "text", text: "hi" }] }]);
+    const s = findSession();
+    expect(s).toMatchObject({
+      platform: "grok",
+      id: sessionId,
+      cwd: projectCwd,
+      title: "Grok fixture session",
+      created: "2026-07-24T16:33:44.000Z",
+      updated: "2026-07-24T17:34:41.000Z",
+      filePath: chatFile,
+    });
+  });
+
+  it("scopes by cwd decoded from the project dir name", () => {
+    writeSession([{ type: "user", content: [{ type: "text", text: "hi" }] }]);
+    expect(findSession({ cwd: projectCwd })).toBeDefined();
+    expect(findSession({ cwd: "/tmp/some-other-project" })).toBeUndefined();
+  });
+
+  it("falls back to the dir names when summary.json is missing", () => {
+    writeJsonl(chatFile, [
+      { type: "user", content: [{ type: "text", text: "hi" }] },
+    ]);
+    const s = findSession({ cwd: projectCwd });
+    expect(s).toMatchObject({ id: sessionId, cwd: projectCwd });
+    expect(s?.title).toBeUndefined();
+  });
+
+  it("keeps user + assistant turns and drops reasoning / tool / system noise", () => {
+    writeSession([
+      { type: "system", content: "you are grok" },
+      { type: "user", content: [{ type: "text", text: "real question" }] },
+      { type: "reasoning", summary: [], encrypted_content: "xxx" },
+      { type: "assistant", content: "real answer", tool_calls: [] },
+      { type: "tool_result", content: "tool output", tool_call_id: "c1" },
+      { type: "backend_tool_call", kind: "x" },
+    ]);
+    const s = findSession();
+    expect(s).toBeDefined();
+    if (!s) return;
+    expect(grokExtractDialogue(s)).toEqual([
+      { role: "user", text: "real question" },
+      { role: "assistant", text: "real answer" },
+    ]);
+  });
+
+  it("drops synthetic user events that are injected context, not speech", () => {
+    writeSession([
+      {
+        type: "user",
+        synthetic_reason: "system_reminder",
+        content: [{ type: "text", text: "injected reminder" }],
+      },
+      {
+        type: "user",
+        synthetic_reason: "project_instructions",
+        content: [{ type: "text", text: "injected instructions" }],
+      },
+      {
+        type: "user",
+        synthetic_reason: "task_completed",
+        content: [{ type: "text", text: "background task done" }],
+      },
+      {
+        type: "user",
+        prompt_index: 0,
+        content: [{ type: "text", text: "what the user typed" }],
+      },
+    ]);
+    const s = findSession();
+    expect(s).toBeDefined();
+    if (!s) return;
+    expect(grokExtractDialogue(s)).toEqual([
+      { role: "user", text: "what the user typed" },
+    ]);
+    expect(grokSearch(s, "injected").count).toBe(0);
+  });
+
+  it("marks a compaction boundary and says the earlier turns are unrecoverable", () => {
+    writeSession([
+      {
+        type: "user",
+        synthetic_reason: "compaction_meta",
+        content: [{ type: "text", text: "summary of the earlier session" }],
+      },
+      { type: "user", content: [{ type: "text", text: "carry on" }] },
+      { type: "assistant", content: "will do" },
+    ]);
+    const s = findSession();
+    expect(s).toBeDefined();
+    if (!s) return;
+    const warnings: { code: string; message: string }[] = [];
+    const turns = grokExtractDialogue(s, warnings);
+    expect(turns.map((t) => t.kind ?? "turn")).toEqual([
+      "marker",
+      "turn",
+      "turn",
+    ]);
+    expect(turns[0]?.text).toContain("[compaction boundary]");
+    expect(turns[0]?.text).toContain("summary of the earlier session");
+    expect(warnings.map((w) => w.code)).toEqual([
+      "grok-compaction-unrecoverable",
+    ]);
+    expect(warnings[0]?.message).toContain("cannot be recovered");
+    // The marker's summary text must not be searchable dialogue.
+    expect(grokSearch(s, "summary of the earlier session").count).toBe(0);
+    expect(grokSearch(s, "carry on").totalTurns).toBe(2);
+  });
+
+  it("recovers task.py boundaries from run_terminal_command tool calls", () => {
+    writeSession([
+      { type: "user", content: [{ type: "text", text: "start a task" }] },
+      {
+        type: "assistant",
+        content: "creating",
+        tool_calls: [
+          {
+            id: "c1",
+            name: "run_terminal_command",
+            arguments: JSON.stringify({
+              command:
+                "python3 ./.trellis/scripts/task.py create --slug grok-task",
+              description: "create",
+            }),
+          },
+        ],
+      },
+      {
+        type: "assistant",
+        content: "starting",
+        tool_calls: [
+          {
+            id: "c2",
+            name: "run_terminal_command",
+            arguments: JSON.stringify({
+              command:
+                "python3 ./.trellis/scripts/task.py start .trellis/tasks/07-24-grok-task",
+            }),
+          },
+        ],
+      },
+    ]);
+    const s = findSession();
+    expect(s).toBeDefined();
+    if (!s) return;
+    const { turns, events } = collectGrokTurnsAndEvents(s);
+    expect(turns).toHaveLength(3);
+    expect(events.map((e) => e.action)).toEqual(["create", "start"]);
+    expect(events[0]).toMatchObject({ slug: "grok-task", turnIndex: 1 });
+    expect(events[1]?.turnIndex).toBe(2);
+  });
+
+  it("ignores session dirs with no chat history", () => {
+    nodeFs.mkdirSync(
+      nodePath.join(GROK_SESSIONS, encodeURIComponent(projectCwd), "empty-one"),
+      { recursive: true },
+    );
+    expect(grokListSessions(mkFilter())).toEqual([]);
   });
 });
 
@@ -969,7 +1294,7 @@ describe("piListSessions / piExtractDialogue", () => {
     expect(piSearch(s, "abandoned-only").count).toBe(0);
   });
 
-  it("compaction emits summary first and excludes discarded pre-compaction dialogue", () => {
+  it("compaction keeps the whole active branch and marks the boundary in place", () => {
     writeJsonl(sessionFile, [
       {
         type: "session",
@@ -1018,12 +1343,18 @@ describe("piListSessions / piExtractDialogue", () => {
     );
     expect(s).toBeDefined();
     if (!s) return;
-    expect(piExtractDialogue(s).map((t) => t.text)).toEqual([
-      "[compact summary]\ncompact summary",
+    const turns = piExtractDialogue(s);
+    expect(turns.map((t) => t.text)).toEqual([
+      "discarded pre compact secret",
       "kept context",
+      turns[2]?.text ?? "",
       "post compact answer",
     ]);
-    expect(piSearch(s, "discarded").count).toBe(0);
+    expect(turns[2]?.kind).toBe("marker");
+    expect(turns[2]?.text).toContain("[compaction boundary]");
+    expect(turns[2]?.text).toContain("compact summary");
+    // Pi kept the entry on the active branch, so recall finds it again.
+    expect(piSearch(s, "discarded").count).toBe(1);
   });
 });
 
@@ -1391,7 +1722,7 @@ describe.skipIf(!ZCODE_PY)("zcodeListSessions / zcodeExtractDialogue", () => {
     expect(turns).toEqual([{ role: "assistant", text: "first\n\nsecond" }]);
   });
 
-  it("uses the latest compaction summary and drops pre-compaction turns/events", () => {
+  it("keeps pre-compaction turns/events and marks the summary message", () => {
     buildZcodeDb({
       sessions: [
         { id: "s1", directory: "/p", time_created: 1, time_updated: 2 },
@@ -1498,21 +1829,29 @@ describe.skipIf(!ZCODE_PY)("zcodeListSessions / zcodeExtractDialogue", () => {
       id: "s1",
       filePath: ZCODE_DB,
     };
-    expect(zcodeExtractDialogue(session)).toEqual([
-      { role: "user", text: "[compact summary]\nsummary of earlier work" },
-      { role: "assistant", text: "after compact retained" },
-    ]);
-    expect(zcodeSearch(session, "old-secret").count).toBe(0);
-
-    const { events, turns } = collectZcodeTurnsAndEvents(session);
-    expect(turns.map((t) => t.text)).toEqual([
-      "[compact summary]\nsummary of earlier work",
+    const extracted = zcodeExtractDialogue(session);
+    expect(extracted.map((t) => t.text)).toEqual([
+      "old-secret should disappear",
+      extracted[1]?.text ?? "",
       "after compact retained",
     ]);
-    expect(events).toHaveLength(1);
-    expect(events[0]?.action).toBe("start");
-    expect(events[0]?.taskDir).toContain("new-task");
-    expect(events[0]?.turnIndex).toBe(2);
+    expect(extracted[1]?.kind).toBe("marker");
+    expect(extracted[1]?.text).toContain("[compaction boundary]");
+    expect(extracted[1]?.text).toContain("summary of earlier work");
+    // The summarized rows are still in the database, so recall finds them.
+    expect(zcodeSearch(session, "old-secret").count).toBe(1);
+    // The marker is out of the search denominator: 2 dialogue turns, not 3.
+    expect(zcodeSearch(session, "old-secret").totalTurns).toBe(2);
+
+    const { events, turns } = collectZcodeTurnsAndEvents(session);
+    expect(turns).toHaveLength(3);
+    // Both task.py boundaries are visible again, and their turn indices point
+    // at turns that are still in the pool.
+    expect(events.map((e) => e.action)).toEqual(["create", "start"]);
+    expect(events[0]?.slug).toBe("old-task");
+    expect(events[0]?.turnIndex).toBe(1);
+    expect(events[1]?.taskDir).toContain("new-task");
+    expect(events[1]?.turnIndex).toBe(3);
   });
 
   it("degrades to [] when the db file is corrupt", () => {

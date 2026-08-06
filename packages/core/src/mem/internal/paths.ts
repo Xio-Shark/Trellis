@@ -16,6 +16,10 @@ export const CODEX_SESSIONS = path.join(HOME, ".codex", "sessions");
 /** ZCode (Zhipu) persisted-session SQLite store. The companion `-wal` file is
  * auto-detected by the readonly parser. */
 export const ZCODE_DB = path.join(HOME, ".zcode", "cli", "db", "db.sqlite");
+/** Grok CLI session root: `<cwd url-encoded>/<session-id>/chat_history.jsonl`.
+ * The sibling `session_search.sqlite` is a search index only and is not read —
+ * this adapter needs no database and adds no dependency. */
+export const GROK_SESSIONS = path.join(HOME, ".grok", "sessions");
 
 function expandHome(p: string): string {
   if (p === "~") return HOME;
@@ -53,6 +57,22 @@ function readPiSettingsSessionDir(settingsFile: string): string | undefined {
  * `/Users/x/.codex/...` → `-Users-x--codex-...`, `snap_note` → `snap-note`. */
 export function claudeProjectDirFromCwd(cwd: string): string {
   return path.join(CLAUDE_PROJECTS, cwd.replace(/[/\\:_.]/g, "-"));
+}
+
+/** Grok names each project dir with the URL-encoded absolute cwd, e.g.
+ * `/Users/x/proj` → `%2FUsers%2Fx%2Fproj`. */
+export function grokProjectDirFromCwd(cwd: string): string {
+  return path.join(GROK_SESSIONS, encodeURIComponent(path.resolve(cwd)));
+}
+
+/** Inverse of {@link grokProjectDirFromCwd}. Returns `undefined` when the name
+ * is not valid percent-encoding rather than throwing on a stray `%`. */
+export function grokCwdFromProjectDir(dirName: string): string | undefined {
+  try {
+    return decodeURIComponent(dirName);
+  } catch {
+    return undefined;
+  }
 }
 
 /** Pi encodes a cwd as `--<resolved-cwd-with-separators-as-dashes>--`. */

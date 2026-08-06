@@ -34,7 +34,14 @@ export function listMemProjects(
         cwd: s.cwd,
         last_active: ts,
         sessions: 0,
-        by_platform: { claude: 0, codex: 0, opencode: 0, pi: 0, zcode: 0 },
+        by_platform: {
+          claude: 0,
+          codex: 0,
+          grok: 0,
+          opencode: 0,
+          pi: 0,
+          zcode: 0,
+        },
       };
       byCwd.set(s.cwd, agg);
     }

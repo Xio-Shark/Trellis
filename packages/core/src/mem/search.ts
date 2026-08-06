@@ -46,6 +46,13 @@ export function chunkAround(
  * total occurrence count across all tokens within matching turns. Excerpts are
  * paragraph-aligned chunks around each hit, deduped by chunk start; user-role
  * chunks are listed before assistant chunks.
+ *
+ * Compaction-boundary markers are skipped for both the hit counts and
+ * `totalTurns`. Since the pool now holds the pre-compaction turns themselves,
+ * the platform's summary sitting in the marker restates them — scoring both
+ * would count one topic twice. Duplicate *dialogue* is deduped where it is
+ * produced (the adapters), not here: two identical turns a user really sent are
+ * two turns.
  */
 export function searchInDialogue(
   turns: readonly DialogueTurn[],
@@ -53,13 +60,14 @@ export function searchInDialogue(
   maxExcerpts = 3,
   chunkChars = 400,
 ): SearchHit {
+  const dialogue = turns.filter((t) => t.kind !== "marker");
   const tokens = kw.toLowerCase().split(/\s+/).filter(Boolean);
   if (tokens.length === 0) {
     return {
       count: 0,
       userCount: 0,
       asstCount: 0,
-      totalTurns: turns.length,
+      totalTurns: dialogue.length,
       excerpts: [],
     };
   }
@@ -69,7 +77,7 @@ export function searchInDialogue(
   const userExcerpts: SearchExcerpt[] = [];
   const asstExcerpts: SearchExcerpt[] = [];
 
-  for (const t of turns) {
+  for (const t of dialogue) {
     const hay = t.text.toLowerCase();
     if (!tokens.every((tok) => hay.includes(tok))) continue;
 
@@ -134,7 +142,7 @@ export function searchInDialogue(
     count: userCount + asstCount,
     userCount,
     asstCount,
-    totalTurns: turns.length,
+    totalTurns: dialogue.length,
     excerpts,
   };
 }

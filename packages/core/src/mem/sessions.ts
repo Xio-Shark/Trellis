@@ -17,6 +17,12 @@ import {
   collectCodexTurnsAndEvents,
 } from "./adapters/codex.js";
 import {
+  collectGrokTurnsAndEvents,
+  grokExtractDialogue,
+  grokListSessions,
+  grokSearch,
+} from "./adapters/grok.js";
+import {
   opencodeExtractDialogue,
   opencodeListSessions,
   opencodeSearch,
@@ -92,6 +98,8 @@ export function listAll(
     all.push(...claudeListSessions(f));
   if (f.platform === "all" || f.platform === "codex")
     all.push(...codexListSessions(f));
+  if (f.platform === "all" || f.platform === "grok")
+    all.push(...grokListSessions(f));
   if (f.platform === "all" || f.platform === "opencode")
     all.push(...opencodeListSessions(f));
   if (f.platform === "all" || f.platform === "pi")
@@ -112,7 +120,9 @@ function extractDialogue(
     case "claude":
       return claudeExtractDialogue(s);
     case "codex":
-      return codexExtractDialogue(s);
+      return codexExtractDialogue(s, warnings);
+    case "grok":
+      return grokExtractDialogue(s, warnings);
     case "opencode":
       return opencodeExtractDialogue(s);
     case "pi":
@@ -132,6 +142,8 @@ function searchSession(
       return claudeSearch(s, kw);
     case "codex":
       return codexSearch(s, kw);
+    case "grok":
+      return grokSearch(s, kw);
     case "opencode":
       return opencodeSearch(kw);
     case "pi":
@@ -152,7 +164,9 @@ function collectTurnsAndEvents(
     case "claude":
       return collectClaudeTurnsAndEvents(s);
     case "codex":
-      return collectCodexTurnsAndEvents(s);
+      return collectCodexTurnsAndEvents(s, warnings);
+    case "grok":
+      return collectGrokTurnsAndEvents(s, warnings);
     case "opencode":
       return { turns: opencodeExtractDialogue(s), events: [] };
     case "pi":
@@ -220,8 +234,8 @@ interface PhaseSlice {
   warnings: MemWarning[];
 }
 
-/** Slice cleaned dialogue by phase. Claude / Codex / Pi have native boundary
- * detection; OpenCode degrades to "all turns + warning". */
+/** Slice cleaned dialogue by phase. Claude / Codex / Grok / Pi / ZCode have
+ * native boundary detection; OpenCode degrades to "all turns + warning". */
 function sliceMemPhase(
   s: MemSessionInfo,
   phase: MemPhase,
@@ -302,8 +316,8 @@ function sliceMemPhase(
 
 // ---------- public API ----------
 
-/** List session metadata across Claude / Codex / OpenCode / Pi, sorted by
- * recency and capped at the filter's `limit` (default 50). */
+/** List session metadata across Claude / Codex / Grok / OpenCode / Pi / ZCode,
+ * sorted by recency and capped at the filter's `limit` (default 50). */
 export function listMemSessions(
   options?: ListMemSessionsOptions,
 ): MemSessionInfo[] {

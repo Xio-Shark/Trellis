@@ -23,7 +23,11 @@
 
 import * as fs from "node:fs";
 
-import { stripInjectionTags, isBootstrapTurn } from "../dialogue.js";
+import {
+  compactionBoundaryTurn,
+  stripInjectionTags,
+  isBootstrapTurn,
+} from "../dialogue.js";
 import { inRangeOverlap, sameProject } from "../filter.js";
 import {
   openSqliteReadOnly,
@@ -335,11 +339,6 @@ function readSessionMessages(
   };
 }
 
-interface EffectiveZcodeMessages {
-  messages: ZcodeMessageRow[];
-  compactSummaryMessageId?: string;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -367,43 +366,35 @@ function compactionMarkerSummaryId(
  * - a summary message carrying text plus a `compaction` part with
  *   `tail_start_id` / `compactBoundary`
  *
- * The effective conversation starts at the latest summary message. Earlier
- * messages were summarized and must not leak into extract/search/phase slicing.
+ * Those say where ZCode cut its own context. The summarized messages are still
+ * rows in the same database, so extraction keeps them and renders each summary
+ * message as a boundary marker in place.
  */
-function effectiveMessagesForSession(
+function compactSummaryMessageIds(
   messages: readonly ZcodeMessageRow[],
   partsByMsg: Map<string, ZcodePartRow[]>,
-): EffectiveZcodeMessages {
-  let startIndex = 0;
-  let compactSummaryMessageId: string | undefined;
+): Set<string> {
+  const summaryIds = new Set<string>();
   const markerSummaryIds = new Set<string>();
 
-  for (const [index, msg] of messages.entries()) {
-    if (markerSummaryIds.has(msg.id)) {
-      startIndex = index;
-      compactSummaryMessageId = msg.id;
-    }
+  for (const msg of messages) {
+    if (markerSummaryIds.has(msg.id)) summaryIds.add(msg.id);
     for (const part of partsByMsg.get(msg.id) ?? []) {
       const markerSummaryId = compactionMarkerSummaryId(part.data);
       if (markerSummaryId) markerSummaryIds.add(markerSummaryId);
       if (isCompactionSummaryPart(part.data)) {
-        startIndex = index;
-        compactSummaryMessageId = msg.id;
+        summaryIds.add(msg.id);
         break;
       }
     }
   }
-
-  return {
-    messages: messages.slice(startIndex),
-    compactSummaryMessageId,
-  };
+  return summaryIds;
 }
 
 function buildTextTurn(
   msg: ZcodeMessageRow,
   parts: readonly ZcodePartRow[],
-  compactSummaryMessageId: string | undefined,
+  compactSummaryIds: ReadonlySet<string>,
 ): DialogueTurn | null {
   const collected: string[] = [];
   let totalRaw = 0;
@@ -418,11 +409,14 @@ function buildTextTurn(
   if (!collected.length) return null;
 
   const merged = collected.join("\n\n");
-  const isCompactSummary = msg.id === compactSummaryMessageId;
-  if (!isCompactSummary && isBootstrapTurn(merged, totalRaw)) return null;
-
-  const text = isCompactSummary ? `[compact summary]\n${merged}` : merged;
-  return text.trim() ? { role: msg.role, text } : null;
+  if (compactSummaryIds.has(msg.id)) {
+    return compactionBoundaryTurn(
+      "context compacted here; the turns above are still in the ZCode database",
+      merged,
+    );
+  }
+  if (isBootstrapTurn(merged, totalRaw)) return null;
+  return merged.trim() ? { role: msg.role, text: merged } : null;
 }
 
 // ---------- list ----------
@@ -514,12 +508,12 @@ export function zcodeExtractDialogue(
     s.id,
     warnings,
   );
-  const effective = effectiveMessagesForSession(messages, partsByMsg);
+  const summaryIds = compactSummaryMessageIds(messages, partsByMsg);
   const turns: DialogueTurn[] = [];
 
-  for (const msg of effective.messages) {
+  for (const msg of messages) {
     const parts = partsByMsg.get(msg.id) ?? [];
-    const turn = buildTextTurn(msg, parts, effective.compactSummaryMessageId);
+    const turn = buildTextTurn(msg, parts, summaryIds);
     if (turn) turns.push(turn);
   }
   return turns;
@@ -542,10 +536,10 @@ export function zcodeSearch(
  * for each event is the turn count at the time the tool ran.
  *
  * Compaction: ZCode writes a summary message with a `compaction` part carrying
- * `tail_start_id` / `compactBoundary`; earlier messages are replaced by that
- * summary. We slice to the latest summary message before collecting turns and
- * task events, so stale pre-compaction `task.py` boundaries do not leak into
- * phase slicing.
+ * `tail_start_id` / `compactBoundary`. The summarized messages remain in the
+ * database, so they stay in the turn pool and the summary message becomes a
+ * boundary marker — `task.py` boundaries from before a compaction keep pointing
+ * at turns that are still there.
  *
  * turnIndex note (differs slightly from claude/codex): in ZCode a message's
  * text parts and tool parts are siblings within one message. This loop pushes
@@ -570,15 +564,15 @@ export function collectZcodeTurnsAndEvents(
     s.id,
     warnings,
   );
-  const effective = effectiveMessagesForSession(messages, partsByMsg);
+  const summaryIds = compactSummaryMessageIds(messages, partsByMsg);
   const turns: DialogueTurn[] = [];
   const events: TaskPyEvent[] = [];
 
-  for (const msg of effective.messages) {
+  for (const msg of messages) {
     const parts = partsByMsg.get(msg.id) ?? [];
     // First emit any text the message produced (so turnIndex reflects turns
     // accumulated so far before tool events are recorded).
-    const turn = buildTextTurn(msg, parts, effective.compactSummaryMessageId);
+    const turn = buildTextTurn(msg, parts, summaryIds);
     if (turn) turns.push(turn);
 
     // Then scan for Bash tool parts carrying task.py commands.
