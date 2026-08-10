@@ -4163,6 +4163,27 @@ print(json.dumps({
         2,
       ),
     );
+    // Decoy: CodeBuddy exports CLAUDE_PROJECT_DIR as a compatibility alias
+    // alongside its own variable, so a hook that probes the alias first
+    // resolves the key `claude_parent-a` and reads THIS pointer instead. Both
+    // files use the same session id on purpose — that is what the real host
+    // produces, and it is why the collision is invisible without a decoy.
+    writeProjectFile(
+      path.join(".trellis", "tasks", "issue-999", "prd.md"),
+      "# Wrong task\n\nTOKEN_WRONG_TASK_MUST_NOT_APPEAR\n",
+    );
+    writeProjectFile(
+      path.join(".trellis", ".runtime", "sessions", "claude_parent-a.json"),
+      JSON.stringify(
+        {
+          current_task: ".trellis/tasks/issue-999",
+          current_run: null,
+          platform: "claude",
+        },
+        null,
+        2,
+      ),
+    );
 
     const unicodePrompt =
       "检查测试质量。\n第二行 TOKEN_CODEBUDDY_HOOK_TEST";
@@ -4178,10 +4199,11 @@ print(json.dumps({
         session_id: "parent-a",
         cwd: tmpDir,
       }),
-      // Platform detection reads the .codebuddy path from argv[0] when the
-      // script runs directly; the CODEBUDDY_PROJECT_DIR override keeps the
-      // test hermetic and matches what CodeBuddy exports into hook children.
-      { CODEBUDDY_PROJECT_DIR: tmpDir },
+      // Both variables are set, as CodeBuddy really does. Setting only
+      // CODEBUDDY_PROJECT_DIR would keep the test hermetic but let a wrong
+      // probe order pass, which is how the ordering bug survived here after
+      // it was fixed in the other two shared hooks.
+      { CODEBUDDY_PROJECT_DIR: tmpDir, CLAUDE_PROJECT_DIR: tmpDir },
     );
 
     const parsed = JSON.parse(hookOutput) as {
@@ -4195,6 +4217,7 @@ print(json.dumps({
     expect(prompt).toContain(
       "=== .trellis/tasks/issue-106/prd.md (Requirements) ===",
     );
+    expect(prompt).not.toContain("TOKEN_WRONG_TASK_MUST_NOT_APPEAR");
     expect(prompt).toContain(unicodePrompt);
     expect(parsed.hookSpecificOutput?.updatedInput?.prompt).toBe(prompt);
   });
