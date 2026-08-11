@@ -106,7 +106,7 @@
     ".claude/hooks/inject-workflow-state.py": "89cef2b197dd61a731b946114207d2601b240058941ccf28622ee211d9c62eb3",
     ".agents/skills/trellis-brainstorm/SKILL.md": "219f99c61e59aa9af4642c0ec96ceec72c915f6757572760ba69dee951b05eb1",
     ".agents/skills/trellis-update-spec/SKILL.md": "003ce08a3404aeb50998029392c4d4e57b626edf526d3ebd585032bb92dcbb96",
-    ".codex/agents/trellis-check.toml": "79070c63fa404fc53061cca5194bf66db839132b67a57b9c8d6a295037ba7308",
+    ".codex/agents/trellis-check.toml": "206fd96a8aa17e95ed344cc435661d597093ece571671f298ca64490422fffe0",
     ".codex/agents/trellis-implement.toml": "388fb8f39797e0ee6cf4db447c859c79b4ac15f531f7e1e3c68c1d1d71a1c188",
     ".pi/agents/trellis-check.md": "90cb6be87ded80d2b02de24a77988ec63778a9ec4050101627e9435d43f2e02b",
     ".pi/agents/trellis-implement.md": "b522ec21a409e7bee3dfc9255826ca338beb43f4e7c6fe3cf079c4180f218e17",
@@ -220,6 +220,14 @@
     ".pi/prompts/trellis-start.md": "28af1eb6645d8b517cf705277d8405370b712926e6b01667d6698564002c6a9d",
     ".opencode/lib/session-utils.js": "86c1c8897f5d291f7d29e942384d7cbe8fb5454c928f6e30803069a4d52393bf",
     ".codex/agents/trellis-research.toml": "4435ce73197ba1d29d40359a3279b6423f7e4f559a449f934c016808090066c4",
-    ".cursor/hooks/inject-shell-session-context.py": "45a8b060c68b04d2d92bf0b8d5626651f490bd05a314a6af52179515a07d8d06"
+    ".cursor/hooks/inject-shell-session-context.py": "45a8b060c68b04d2d92bf0b8d5626651f490bd05a314a6af52179515a07d8d06",
+    ".claude/skills/trellis-before-dev/SKILL.md": "00c9d1c83bc318e91b27a019bc954c2957cfad907ff20d854b596f16cad2c0f3",
+    ".claude/skills/trellis-check/SKILL.md": "dfb0600e95c19c7a83200465b6a92a5514ec9778ba4083efa881bed541cc74a8",
+    ".cursor/skills/trellis-before-dev/SKILL.md": "00c9d1c83bc318e91b27a019bc954c2957cfad907ff20d854b596f16cad2c0f3",
+    ".cursor/skills/trellis-check/SKILL.md": "dfb0600e95c19c7a83200465b6a92a5514ec9778ba4083efa881bed541cc74a8",
+    ".opencode/skills/trellis-before-dev/SKILL.md": "00c9d1c83bc318e91b27a019bc954c2957cfad907ff20d854b596f16cad2c0f3",
+    ".opencode/skills/trellis-check/SKILL.md": "dfb0600e95c19c7a83200465b6a92a5514ec9778ba4083efa881bed541cc74a8",
+    ".agents/skills/trellis-before-dev/SKILL.md": "00c9d1c83bc318e91b27a019bc954c2957cfad907ff20d854b596f16cad2c0f3",
+    ".agents/skills/trellis-check/SKILL.md": "dfb0600e95c19c7a83200465b6a92a5514ec9778ba4083efa881bed541cc74a8"
   }
 }
