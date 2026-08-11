@@ -189,19 +189,39 @@ def normalize_task_ref(task_ref: str) -> str:
 
 
 def resolve_task_ref(task_ref: str, repo_root: Path) -> Path | None:
-    """Resolve a task ref to an absolute task directory."""
+    """Resolve a task ref to an absolute task directory inside the repo.
+
+    Mirrors `paths.resolve_task_ref` (same containment check). Duplicated
+    rather than imported because this module is loaded standalone — hooks add
+    it to `sys.path` directly — so it stays zero-relative-import on purpose.
+    """
     normalized = normalize_task_ref(task_ref)
     if not normalized:
         return None
 
     path_obj = Path(normalized)
     if path_obj.is_absolute():
-        return path_obj
+        candidate = path_obj
+    elif normalized.startswith(f"{DIR_WORKFLOW}/"):
+        candidate = repo_root / path_obj
+    else:
+        candidate = repo_root / DIR_WORKFLOW / DIR_TASKS / path_obj
 
-    if normalized.startswith(f"{DIR_WORKFLOW}/"):
-        return repo_root / path_obj
+    # Both sides are resolved because repo_root itself may sit behind a
+    # symlink (/tmp on macOS does), and resolve() is what collapses `..`
+    # instead of leaving it for a lexical relative_to() to wave through.
+    try:
+        resolved = candidate.resolve()
+        root = repo_root.resolve()
+    except OSError:
+        return None
 
-    return repo_root / DIR_WORKFLOW / DIR_TASKS / path_obj
+    try:
+        resolved.relative_to(root)
+    except ValueError:
+        return None
+
+    return resolved
 
 
 def _runtime_sessions_dir(repo_root: Path) -> Path:
@@ -537,9 +557,13 @@ def _canonical_task_ref(task_path: str, repo_root: Path) -> str | None:
     if full_path is None or not full_path.is_dir():
         return None
     try:
-        return full_path.relative_to(repo_root).as_posix()
+        return full_path.relative_to(repo_root.resolve()).as_posix()
     except ValueError:
-        return str(full_path)
+        # resolve_task_ref already refused everything outside the repo, so this
+        # is unreachable. Refuse rather than fall back to an absolute path —
+        # that fallback is how an out-of-repo ref used to reach the session
+        # pointer and get replayed on every later turn.
+        return None
 
 
 def _active_from_ref(

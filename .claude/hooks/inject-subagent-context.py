@@ -1093,8 +1093,21 @@ def main():
     if subagent_type in AGENTS_REQUIRE_TASK:
         if not task_dir:
             sys.exit(0)
-        # Check if task directory exists
-        task_dir_full = os.path.join(repo_root, task_dir)
+        # Contain the pointer before reading anything through it. `task.py` now
+        # refuses to store a ref that leaves the repo, but a session file
+        # written before that fix can still hold one, and `trellis update`
+        # does not rewrite session files — so a poisoned pointer outlives the
+        # upgrade that closed the writer. This is the last hop before the
+        # task's prd.md/design.md reach the model prompt, so it checks again.
+        try:
+            root_real = os.path.realpath(repo_root)
+            task_dir_full = os.path.realpath(os.path.join(repo_root, task_dir))
+            # ValueError on Windows when the two sit on different drives; that
+            # is outside the repo by definition, so it fails closed below.
+            if os.path.commonpath([root_real, task_dir_full]) != root_real:
+                sys.exit(0)
+        except (OSError, ValueError):
+            sys.exit(0)
         if not os.path.exists(task_dir_full):
             sys.exit(0)
 
