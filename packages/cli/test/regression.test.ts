@@ -6771,7 +6771,8 @@ print(len(entries))
         "  'codex_inline': resolve_effective_platform('codex', {'codex': {'dispatch_mode': 'inline'}}),",
         "  'codex_invalid_mode': resolve_effective_platform('codex', {'codex': {'dispatch_mode': 'invalid'}}),",
         "  'codex_invalid_config': resolve_effective_platform('codex', {'codex': True}),",
-        "  'claude_passthrough': resolve_effective_platform('claude', {'codex': {'dispatch_mode': 'inline'}}),",
+        "  'cursor_passthrough': resolve_effective_platform('cursor', {'codex': {'dispatch_mode': 'inline'}}),",
+        "  'claude_label': resolve_effective_platform('claude', {'codex': {'dispatch_mode': 'inline'}}),",
         "}",
         "print(json.dumps(result))",
       ].join("\n"),
@@ -6794,8 +6795,12 @@ print(len(entries))
     expect(result.codex_invalid_mode).toBe("codex-inline");
     // A malformed codex section must match config.py's safe inline fallback.
     expect(result.codex_invalid_config).toBe("codex-inline");
-    // Non-codex platforms ignore the codex.dispatch_mode setting.
-    expect(result.claude_passthrough).toBe("claude");
+    // Non-codex platforms ignore the codex.dispatch_mode setting. cursor has no
+    // marker-label alias, so it is the pure passthrough case.
+    expect(result.cursor_passthrough).toBe("cursor");
+    // claude does have one: its marker label in workflow.md is "Claude Code",
+    // and resolving to the bare id used to strip its routing blocks silently.
+    expect(result.claude_label).toBe("Claude Code");
   });
 
   it("[issue-codex-dispatch-mode] codex hook injects <codex-mode> banner reflecting dispatch_mode", () => {
