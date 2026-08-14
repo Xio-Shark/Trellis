@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import os from "node:os";
 import vm from "node:vm";
 import ts from "typescript";
 import {
@@ -17,6 +18,7 @@ const templateDir = path.resolve(__dirname, "../../src/templates/omp");
 type OmpEventHandler = (event: unknown, ctx?: unknown) => unknown;
 type OmpExtension = (pi: {
   on: (event: string, handler: OmpEventHandler) => void;
+  sendMessage?: (message: unknown) => Promise<void>;
 }) => void;
 
 function loadOmpExtension(): OmpExtension {
@@ -177,6 +179,82 @@ describe("omp templates", () => {
     // Agent-type-specific jsonl selection
     expect(extension).toContain("implement.jsonl");
     expect(extension).toContain("check.jsonl");
+  });
+
+  it("deduplicates files referenced by both main-session manifests", async () => {
+    const projectRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), "trellis-omp-dedupe-"),
+    );
+    const taskDir = path.join(projectRoot, ".trellis", "tasks", "demo-task");
+    const sessionDir = path.join(
+      projectRoot,
+      ".trellis",
+      ".runtime",
+      "sessions",
+    );
+    const sharedFile = path.join(projectRoot, "docs", "shared.md");
+    const checkOnlyFile = path.join(projectRoot, "docs", "check-only.md");
+    const contextKey = "omp_session_dedupe";
+    const taskRef = ".trellis/tasks/demo-task";
+    const messages: { customType?: string; content?: string }[] = [];
+
+    try {
+      fs.mkdirSync(path.join(taskDir, "research"), { recursive: true });
+      fs.mkdirSync(sessionDir, { recursive: true });
+      fs.mkdirSync(path.dirname(sharedFile), { recursive: true });
+      fs.writeFileSync(
+        path.join(taskDir, "task.json"),
+        JSON.stringify({
+          title: "OMP context dedupe",
+          status: "in_progress",
+        }),
+      );
+      fs.writeFileSync(sharedFile, "shared context body");
+      fs.writeFileSync(checkOnlyFile, "check-only context body");
+      fs.writeFileSync(
+        path.join(taskDir, "implement.jsonl"),
+        `${JSON.stringify({ file: "docs/shared.md" })}\n`,
+      );
+      fs.writeFileSync(
+        path.join(taskDir, "check.jsonl"),
+        `${JSON.stringify({ file: "./docs/../docs/shared.md" })}\n${JSON.stringify({ file: "docs/check-only.md" })}\n`,
+      );
+      fs.writeFileSync(
+        path.join(sessionDir, `${contextKey}.json`),
+        JSON.stringify({ current_task: taskRef }),
+      );
+
+      const handlers = new Map<string, OmpEventHandler>();
+      loadOmpExtension()({
+        on: (event, handler) => handlers.set(event, handler),
+        sendMessage: async (message) =>
+          messages.push(message as { customType?: string; content?: string }),
+      });
+      const sessionStart = handlers.get("session_start");
+      if (!sessionStart)
+        throw new Error("OMP extension did not register session_start");
+
+      await sessionStart(
+        {},
+        {
+          cwd: projectRoot,
+          sessionManager: { getSessionId: () => "session/dedupe" },
+          ui: { notify: () => undefined },
+        },
+      );
+
+      const taskContext = messages.find(
+        (message) => message.customType === "trellis-task-context",
+      );
+      expect(taskContext?.content).toContain("## implement.jsonl");
+      expect(taskContext?.content).toContain("## check.jsonl");
+      expect(taskContext?.content?.match(/shared context body/g)).toHaveLength(
+        1,
+      );
+      expect(taskContext?.content).toContain("check-only context body");
+    } finally {
+      fs.rmSync(projectRoot, { recursive: true, force: true });
+    }
   });
 
   it("no settings.json or Python hooks exist in the template directory", () => {

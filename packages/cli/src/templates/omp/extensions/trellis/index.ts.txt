@@ -309,6 +309,10 @@ function buildTaskContext(projectRoot: string, taskDir: string, agentType?: Agen
       jsonlNames = ["implement.jsonl", "check.jsonl"]; // main session: all
    }
 
+   // A file may be referenced by both manifests. Use the resolved real path so
+   // relative aliases and symlinked paths cannot consume the context budget twice.
+   const includedPaths = new Set<string>();
+
    for (const jsonlName of jsonlNames) {
       const jsonlPath = join(taskDir, jsonlName);
       if (!existsSync(jsonlPath)) continue;
@@ -330,9 +334,11 @@ function buildTaskContext(projectRoot: string, taskDir: string, agentType?: Agen
             if (!file) continue;
             const targetPath = resolveProjectFile(projectRoot, file, trustedRoots);
             if (!targetPath) continue;
+            if (includedPaths.has(targetPath)) continue;
             let content = "";
             try { content = readFileSync(targetPath, "utf-8"); } catch { }
             if (content.trim()) {
+               includedPaths.add(targetPath);
                fileChunks.push(`### ${file}\n\n${content.trim()}`);
             }
          } catch {
