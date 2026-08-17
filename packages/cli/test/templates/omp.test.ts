@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
@@ -252,6 +253,74 @@ describe("omp templates", () => {
         1,
       );
       expect(taskContext?.content).toContain("check-only context body");
+    } finally {
+      fs.rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("refreshes task context when a referenced file changes mid-session", async () => {
+    const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-omp-refresh-"));
+    const taskDir = path.join(projectRoot, ".trellis", "tasks", "demo-task");
+    const sessionsDir = path.join(projectRoot, ".trellis", ".runtime", "sessions");
+    const referencedFile = path.join(projectRoot, "docs", "changing.md");
+    const messages: { customType?: string; content?: string }[] = [];
+
+    try {
+      fs.mkdirSync(taskDir, { recursive: true });
+      fs.mkdirSync(sessionsDir, { recursive: true });
+      fs.mkdirSync(path.dirname(referencedFile), { recursive: true });
+      fs.writeFileSync(path.join(taskDir, "task.json"), JSON.stringify({ status: "in_progress" }));
+      fs.writeFileSync(referencedFile, "old context body");
+      fs.writeFileSync(
+        path.join(taskDir, "implement.jsonl"),
+        `${JSON.stringify({ file: "docs/changing.md" })}\n${JSON.stringify({ file: "docs/created-later.md" })}\n`,
+      );
+      fs.writeFileSync(
+        path.join(sessionsDir, "omp_session_refresh.json"),
+        JSON.stringify({ current_task: ".trellis/tasks/demo-task" }),
+      );
+
+      const handlers = new Map<string, OmpEventHandler>();
+      loadOmpExtension()({
+        on: (event, handler) => handlers.set(event, handler),
+        sendMessage: async (message) => messages.push(message as { customType?: string; content?: string }),
+      });
+      const sessionStart = handlers.get("session_start");
+      const context = handlers.get("context");
+      if (!sessionStart || !context) throw new Error("OMP extension did not register required handlers");
+      const ctx = {
+        cwd: projectRoot,
+        sessionManager: { getSessionId: () => "session/refresh" },
+        ui: { notify: () => undefined },
+      };
+
+      await sessionStart({}, ctx);
+      const initial = messages.find((message) => message.customType === "trellis-task-context");
+      expect(initial?.content).toContain("old context body");
+      expect(initial?.content).not.toContain("created later body");
+
+      fs.writeFileSync(referencedFile, "new context body with changed size");
+      fs.writeFileSync(path.join(projectRoot, "docs", "created-later.md"), "created later body");
+      const result = await context(
+        {
+          messages: [
+            { role: "custom", customType: "trellis-task-context", content: initial?.content },
+            { role: "custom", customType: "trellis-workflow-state", content: "workflow" },
+          ],
+        },
+        ctx,
+      ) as { messages?: { customType?: string; content?: string }[] } | undefined;
+
+      const refreshed = result?.messages?.filter(
+        (message) => message.customType === "trellis-task-context",
+      ) ?? [];
+      expect(refreshed).toHaveLength(1);
+      expect(refreshed[0]?.content).toContain("new context body with changed size");
+      expect(refreshed[0]?.content).toContain("created later body");
+      expect(refreshed[0]?.content).not.toContain("old context body");
+
+      const unchanged = await context({ messages: result?.messages }, ctx);
+      expect(unchanged).toBeUndefined();
     } finally {
       fs.rmSync(projectRoot, { recursive: true, force: true });
     }

@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
-import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { join, dirname, isAbsolute, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -282,6 +282,49 @@ function buildSessionContext(projectRoot: string, contextKey: string | null): st
 
 type AgentType = "trellis-implement" | "trellis-check" | "trellis-research" | null;
 
+function taskContextJsonlNames(agentType?: AgentType): string[] {
+   if (agentType === "trellis-implement") return ["implement.jsonl"];
+   if (agentType === "trellis-check") return ["check.jsonl"];
+   if (agentType === "trellis-research") return [];
+   return ["implement.jsonl", "check.jsonl"];
+}
+
+function taskContextInputPaths(projectRoot: string, taskDir: string, agentType?: AgentType): string[] {
+   const trustedRoots = resolveTrustedRoots(projectRoot);
+   const paths = new Set<string>([join(taskDir, "prd.md"), join(taskDir, "info.md")]);
+   for (const jsonlName of taskContextJsonlNames(agentType)) {
+      const jsonlPath = join(taskDir, jsonlName);
+      paths.add(jsonlPath);
+      if (!existsSync(jsonlPath)) continue;
+      let lines: string[];
+      try { lines = readFileSync(jsonlPath, "utf-8").split(/\r?\n/); } catch { continue; }
+      for (const line of lines) {
+         try {
+            const row = JSON.parse(line.trim()) as Record<string, unknown>;
+            const file = typeof row.file === "string" ? row.file.trim() : "";
+            const candidatePath = file ? resolve(projectRoot, file) : "";
+            if (candidatePath && isInsideRoot(resolve(projectRoot), candidatePath)) paths.add(candidatePath);
+            const targetPath = file ? resolveProjectFile(projectRoot, file, trustedRoots) : null;
+            if (targetPath) paths.add(targetPath);
+         } catch {
+            // Seed rows and malformed lines do not contribute referenced files.
+         }
+      }
+   }
+   return [...paths];
+}
+
+function taskContextSignature(projectRoot: string, taskDir: string, agentType?: AgentType): string {
+   return taskContextInputPaths(projectRoot, taskDir, agentType).map((filePath) => {
+      try {
+         const stat = statSync(filePath);
+         return `${filePath}:${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`;
+      } catch {
+         return `${filePath}:missing`;
+      }
+   }).join("\n");
+}
+
 function buildTaskContext(projectRoot: string, taskDir: string, agentType?: AgentType): string {
    const parts: string[] = [];
    // Resolved once per call (not per referenced file) — avoids re-parsing
@@ -298,16 +341,7 @@ function buildTaskContext(projectRoot: string, taskDir: string, agentType?: Agen
    if (info.trim()) parts.push(`## Info\n\n${info.trim()}`);
 
    // Determine which jsonl files to read based on agent type
-   let jsonlNames: string[];
-   if (agentType === "trellis-implement") {
-      jsonlNames = ["implement.jsonl"];
-   } else if (agentType === "trellis-check") {
-      jsonlNames = ["check.jsonl"];
-   } else if (agentType === "trellis-research") {
-      jsonlNames = []; // research agent gets only prd + info
-   } else {
-      jsonlNames = ["implement.jsonl", "check.jsonl"]; // main session: all
-   }
+   const jsonlNames = taskContextJsonlNames(agentType);
 
    // A file may be referenced by both manifests. Use the resolved real path so
    // relative aliases and symlinked paths cannot consume the context budget twice.
@@ -443,6 +477,14 @@ function detectAgentType(): AgentType {
    return null;
 }
 
+interface TaskContextCache {
+   projectRoot: string;
+   taskDir: string;
+   agentType: AgentType;
+   signature: string;
+   content: string;
+}
+
 // ---------------------------------------------------------------------------
 // Extension entry point
 // ---------------------------------------------------------------------------
@@ -452,6 +494,7 @@ export default function(pi: ExtensionAPI): void {
    const turnCache = new TurnContextCache();
    const agentType = detectAgentType();
    const isSubAgent = agentType !== null;
+   let taskContextCache: TaskContextCache | null = null;
 
    // Tracks compaction boundaries — context handler skips scanning when no
    // compaction has occurred since last injection.
@@ -464,6 +507,16 @@ export default function(pi: ExtensionAPI): void {
       return key;
    };
 
+   const getTaskContext = (taskDir: string, root: string): string => {
+      const signature = taskContextSignature(root, taskDir, agentType);
+      if (taskContextCache?.projectRoot === root && taskContextCache.taskDir === taskDir && taskContextCache.agentType === agentType && taskContextCache.signature === signature) {
+         return taskContextCache.content;
+      }
+      const content = buildTaskContext(root, taskDir, agentType);
+      taskContextCache = { projectRoot: root, taskDir, agentType, signature, content };
+      return content;
+   };
+
    pi.on("session_start", async (_event, ctx) => {
       projectRoot = findProjectRoot(ctx.cwd);
       const contextKey = rememberContextKey(ctx);
@@ -474,7 +527,7 @@ export default function(pi: ExtensionAPI): void {
          // Sub-agent: inject precise task context once
          const { taskDir } = resolveActiveTaskStatus(projectRoot, contextKey);
          if (taskDir) {
-            const taskContext = buildTaskContext(projectRoot, taskDir, agentType);
+            const taskContext = getTaskContext(taskDir, projectRoot);
             if (taskContext) {
                await pi.sendMessage({
                   customType: "trellis-task-context",
@@ -496,7 +549,7 @@ export default function(pi: ExtensionAPI): void {
 
          const { taskDir } = resolveActiveTaskStatus(projectRoot, contextKey);
          if (taskDir) {
-            const taskContext = buildTaskContext(projectRoot, taskDir);
+            const taskContext = getTaskContext(taskDir, projectRoot);
             if (taskContext) {
                await pi.sendMessage({
                   customType: "trellis-task-context",
@@ -541,25 +594,49 @@ export default function(pi: ExtensionAPI): void {
       if (!projectRoot) return;
       const contextKey = rememberContextKey(ctx);
 
-      // Fast path: no compaction since last injection — message is still present
-      if (lastInjectionTs > lastCompactionTs) return;
+      const messages = event.messages as { role?: string; customType?: string; content?: string }[];
+      const { taskDir } = resolveActiveTaskStatus(projectRoot, contextKey);
+      const currentTaskContext = taskDir ? getTaskContext(taskDir, projectRoot) : "";
+      const taskContextIndexes = messages
+         .map((message, index) => message.customType === "trellis-task-context" ? index : -1)
+         .filter((index) => index >= 0);
+      const existingTaskContext = taskContextIndexes.length > 0
+         ? messages[taskContextIndexes[0]]?.content ?? ""
+         : "";
+      const taskContextChanged = existingTaskContext !== currentTaskContext || taskContextIndexes.length > 1;
+      let projectedMessages = messages;
+      if (taskContextChanged) {
+         const replacement = currentTaskContext
+            ? { role: "custom" as const, customType: "trellis-task-context", content: currentTaskContext, display: false, timestamp: Date.now() }
+            : null;
+         let replaced = false;
+         projectedMessages = messages.flatMap((message) => {
+            if (message.customType !== "trellis-task-context") return [message];
+            if (replaced || !replacement) return [];
+            replaced = true;
+            return [replacement];
+         });
+         if (replacement && !replaced) projectedMessages.push(replacement);
+      }
+
+      // Fast path: no task change and no compaction — all persisted context is current.
+      if (!taskContextChanged && lastInjectionTs > lastCompactionTs) return;
 
       const cached = turnCache.get(projectRoot, contextKey);
-      if (!cached.workflowMsg) return;
+      if (!cached.workflowMsg) return taskContextChanged ? { messages: projectedMessages } : undefined;
 
       // Post-compaction: reverse-scan to confirm absence before injecting
-      const messages = event.messages as { role?: string; customType?: string }[];
-      for (let i = messages.length - 1; i >= 0; i--) {
-         if (messages[i].role === "custom" && messages[i].customType === "trellis-workflow-state") {
+      for (let i = projectedMessages.length - 1; i >= 0; i--) {
+         if (projectedMessages[i].role === "custom" && projectedMessages[i].customType === "trellis-workflow-state") {
             lastInjectionTs = Date.now();
-            return;
+            return taskContextChanged ? { messages: projectedMessages } : undefined;
          }
       }
 
       lastInjectionTs = Date.now();
       return {
          messages: [
-            ...event.messages,
+            ...projectedMessages,
             {
                role: "custom" as const,
                customType: "trellis-workflow-state",
