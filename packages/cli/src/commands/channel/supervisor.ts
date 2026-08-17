@@ -22,6 +22,7 @@ import {
   type InboxPolicy,
 } from "@mindfoldhq/trellis-core/channel";
 
+import { shouldUseSystemPromptFile } from "./adapters/claude.js";
 import type { CodexSandboxMode } from "./adapters/codex.js";
 import { getAdapter, type Provider } from "./adapters/index.js";
 import { appendEvent } from "./store/events.js";
@@ -40,7 +41,10 @@ export interface SupervisorConfig {
   provider: Provider;
   cwd: string;
   /** Combined worker system prompt: channel protocol prefix + agent body.
-   *  Injected via Claude `--append-system-prompt` or Codex `developerInstructions`.
+   *  Injected via Claude `--append-system-prompt(-file)` or Codex
+   *  `developerInstructions`. The supervisor also persists it to
+   *  `<worker>.system-prompt.md` and exposes the path as
+   *  `view.systemPromptFile` so adapters can avoid OS argv-length limits.
    *  No "initial user prompt" — the worker stays idle until the first
    *  inbox `send --to <worker>` arrives. */
   systemPrompt: string;
@@ -188,10 +192,29 @@ export async function runSupervisor(
   // ── adapter selection ──
   const adapter = getAdapter(config.provider);
   const adapterCtx = adapter.createCtx();
+  // Persist an oversized system prompt to the worker dir and hand adapters a
+  // file path. Inlining a large prompt (agent body + injected --file/--jsonl
+  // context) on the worker command line breaks spawn(): Windows CreateProcess
+  // caps the command line at 32,767 chars and fails with a silent-to-the-user
+  // ENAMETOOLONG. Prompts within the inline budget stay on the argv flag so
+  // Claude Code installs older than v2.0.34 (no --append-system-prompt-file)
+  // keep working exactly as before; adapters that do support a file-based
+  // prompt flag (claude: --append-system-prompt-file) prefer it.
+  let systemPromptFile: string | undefined;
+  if (shouldUseSystemPromptFile(config.systemPrompt)) {
+    systemPromptFile = workerFile(
+      channelName,
+      workerName,
+      "system-prompt.md",
+      project,
+    );
+    fs.writeFileSync(systemPromptFile, config.systemPrompt);
+  }
   const view = {
     resume: config.resume,
     model: config.model,
     systemPrompt: config.systemPrompt,
+    ...(systemPromptFile ? { systemPromptFile } : {}),
     cwd: config.cwd,
     sandbox: config.sandbox,
   };
@@ -529,10 +552,14 @@ async function cleanup(channelName: string, workerName: string): Promise<void> {
   // Keep `log` (forensic), `session-id` / `thread-id` (future resume).
   // `inbox-cursor` is kept so a respawn (same worker name without
   // killing the channel) doesn't replay messages.
+  // `system-prompt.md` may carry a large injected context; a respawn rewrites
+  // it from config when needed, so it is removed unconditionally (also when
+  // the current run inlined the prompt and would otherwise leave a stale one).
   for (const suffix of [
     "pid",
     "worker-pid",
     "config",
+    "system-prompt.md",
     "spawnlock",
     "shutdown-reason",
     "reservation",
