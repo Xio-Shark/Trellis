@@ -5468,6 +5468,77 @@ print(json.dumps({
     );
   });
 
+  it("reports task_error when task.json is malformed", () => {
+    setupTaskRepo();
+    writeSessionContext("session_workflow-a", ".trellis/tasks/issue-106");
+    writeWorkflowStateHook();
+    writeWorkflowMd(
+      "[workflow-state:no_task]\n" +
+        "No active task.\n" +
+        "[/workflow-state:no_task]\n" +
+        "[workflow-state:task_error]\n" +
+        "Repair the active task record before continuing.\n" +
+        "[/workflow-state:task_error]\n",
+    );
+    writeProjectFile(
+      path.join(".trellis", "tasks", "issue-106", "task.json"),
+      "{not-json\n",
+    );
+
+    const output = runInjectWorkflowState();
+    const parsed = JSON.parse(output) as {
+      hookSpecificOutput: { additionalContext: string };
+    };
+    const context = parsed.hookSpecificOutput.additionalContext;
+    expect(context).toContain("Task: issue-106 (task_error)");
+    expect(context).toContain("Repair the active task record before continuing.");
+    expect(context).not.toContain("Status: no_task");
+  });
+
+  it("reports task_error when task.json has no usable status", () => {
+    setupTaskRepo();
+    writeSessionContext("session_workflow-a", ".trellis/tasks/issue-106");
+    writeWorkflowStateHook();
+    writeWorkflowMd(
+      "[workflow-state:no_task]\nNo active task.\n[/workflow-state:no_task]\n",
+    );
+    writeProjectFile(
+      path.join(".trellis", "tasks", "issue-106", "task.json"),
+      JSON.stringify({ title: "Missing status" }),
+    );
+
+    const output = runInjectWorkflowState();
+    const parsed = JSON.parse(output) as {
+      hookSpecificOutput: { additionalContext: string };
+    };
+    const context = parsed.hookSpecificOutput.additionalContext;
+    expect(context).toContain("Task: issue-106 (task_error)");
+    expect(context).toContain("Refer to workflow.md for current step.");
+    expect(context).not.toContain("Status: no_task");
+  });
+
+  it("reports task_error when task.json is not an object", () => {
+    setupTaskRepo();
+    writeSessionContext("session_workflow-a", ".trellis/tasks/issue-106");
+    writeWorkflowStateHook();
+    writeWorkflowMd(
+      "[workflow-state:task_error]\nRepair the active task record before continuing.\n[/workflow-state:task_error]\n",
+    );
+    writeProjectFile(
+      path.join(".trellis", "tasks", "issue-106", "task.json"),
+      "[]",
+    );
+
+    const output = runInjectWorkflowState();
+    const parsed = JSON.parse(output) as {
+      hookSpecificOutput: { additionalContext: string };
+    };
+    const context = parsed.hookSpecificOutput.additionalContext;
+    expect(context).toContain("Task: issue-106 (task_error)");
+    expect(context).toContain("Repair the active task record before continuing.");
+    expect(context).not.toContain("Status: no_task");
+  });
+
   it("[#240] Codex workflow-state output starts with codex mode, not generic sub-agent notice", () => {
     setupTaskRepo();
     writeProjectFile(

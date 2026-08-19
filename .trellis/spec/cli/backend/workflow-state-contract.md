@@ -72,7 +72,10 @@ Both regexes MUST use the `\1` backreference variant — `[workflow-state:([A-Za
 3. It calls `common.active_task.resolve_active_task()` to look up the
    per-session active task. If absent → status is the pseudo `no_task`. If
    the pointer is stale (task dir deleted) → status is `stale_<source_type>`.
-4. Otherwise it reads `task.json.status` from the resolved task directory.
+4. Otherwise it reads `task.json.status` from the resolved task directory. If
+   the task directory exists but `task.json` is missing, malformed, or has no
+   usable status, the hook emits the `task_error` pseudo-status and keeps the
+   task directory name in the breadcrumb header.
 5. It opens `.trellis/workflow.md` and parses every `[workflow-state:STATUS]`
    block.
 6. Codex may map `planning` / `in_progress` to `planning-inline` /
@@ -293,6 +296,7 @@ Which breadcrumbs actually fire in normal flow:
 | Status | Reachability | Notes |
 |--------|--------------|-------|
 | `no_task` | ✅ reachable | Pseudo-status; emitted when `resolve_active_task()` returns no pointer. |
+| `task_error` | ✅ reachable | Pseudo-status; emitted when a session task pointer resolves to a directory whose `task.json` cannot be read or has no usable `status`. |
 | `planning` | ✅ reachable | After `cmd_create` (which now auto-sets the session pointer when available) and before `cmd_start`. `planning-inline` is the Codex inline-mode breadcrumb body for the same task status. |
 | `in_progress` | ✅ reachable | After `cmd_start`, until `cmd_archive`. `in_progress-inline` is the Codex inline-mode breadcrumb body for the same task status. |
 | `completed` | ❌ DEAD in normal flow | `cmd_archive` writes `status="completed"` and immediately moves the task dir to `archive/`. The session-pointer cleanup in `clear_task_from_sessions` runs before the move, so the resolver loses the pointer in the same call. The block body in workflow.md is preserved for a future status-transition redesign (e.g. an explicit `in_progress → completed` command) but no current code path produces it. |
