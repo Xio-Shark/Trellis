@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
-import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
-import { join, dirname, isAbsolute, relative, resolve } from "node:path";
+import { closeSync, existsSync, fstatSync, lstatSync, openSync, readFileSync, readdirSync, realpathSync, statSync, readSync } from "node:fs";
+import { join, dirname, basename, isAbsolute, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 
@@ -175,6 +175,26 @@ function resolveProjectFile(
    }
 }
 
+function displayProjectPath(projectRoot: string, filePath: string, taskDir?: string): string {
+   const direct = relative(projectRoot, filePath).split("\\").join("/");
+   if (direct && !direct.startsWith("../") && !isAbsolute(direct)) return direct;
+   if (taskDir) {
+      const taskRelative = relative(projectRoot, taskDir).split("\\").join("/");
+      const taskLabel = taskRelative && !taskRelative.startsWith("../") && !isAbsolute(taskRelative)
+         ? taskRelative
+         : `.trellis/tasks/${basename(taskDir)}`;
+      const withinTask = relative(taskDir, filePath).split("\\").join("/");
+      if (withinTask && !withinTask.startsWith("../") && !isAbsolute(withinTask)) {
+         return `${taskLabel}/${withinTask}`;
+      }
+   }
+   try {
+      return relative(realpathSync(projectRoot), realpathSync(filePath)).split("\\").join("/");
+   } catch {
+      return relative(projectRoot, filePath).split("\\").join("/");
+   }
+}
+
 // ---------------------------------------------------------------------------
 // Active task resolution
 // ---------------------------------------------------------------------------
@@ -291,13 +311,17 @@ function taskContextJsonlNames(agentType?: AgentType): string[] {
 
 function taskContextInputPaths(projectRoot: string, taskDir: string, agentType?: AgentType): string[] {
    const trustedRoots = resolveTrustedRoots(projectRoot);
-   const paths = new Set<string>([join(taskDir, "prd.md"), join(taskDir, "info.md")]);
+   const paths = new Set<string>([
+      join(projectRoot, ".trellis", "config.yaml"),
+      join(taskDir, "prd.md"),
+      join(taskDir, "info.md"),
+   ]);
    for (const jsonlName of taskContextJsonlNames(agentType)) {
       const jsonlPath = join(taskDir, jsonlName);
       paths.add(jsonlPath);
       if (!existsSync(jsonlPath)) continue;
-      let lines: string[];
-      try { lines = readFileSync(jsonlPath, "utf-8").split(/\r?\n/); } catch { continue; }
+      const displayPath = displayProjectPath(projectRoot, jsonlPath, taskDir);
+      const { lines } = readJsonlLines(jsonlPath, displayPath);
       for (const line of lines) {
          try {
             const row = JSON.parse(line.trim()) as Record<string, unknown>;
@@ -325,20 +349,310 @@ function taskContextSignature(projectRoot: string, taskDir: string, agentType?: 
    }).join("\n");
 }
 
+interface ContextInjectionLimits {
+   max_file_bytes: number;
+   max_artifact_bytes: number;
+   max_total_bytes: number;
+}
+
+const DEFAULT_CONTEXT_INJECTION_LIMITS: ContextInjectionLimits = {
+   max_file_bytes: 32768,
+   max_artifact_bytes: 65536,
+   max_total_bytes: 131072,
+};
+const MAX_JSONL_BYTES = 1024 * 1024;
+
+function stripInlineComment(value: string): string {
+   let quote: string | null = null;
+   for (let i = 0; i < value.length; i++) {
+      const char = value[i];
+      if (quote) {
+         if (char === quote) quote = null;
+         continue;
+      }
+      if (char === "'" || char === '"') {
+         quote = char;
+         continue;
+      }
+      if (char === "#" && (i === 0 || /\s/.test(value[i - 1]!))) {
+         return value.slice(0, i);
+      }
+   }
+   return value;
+}
+
+function unquoteYaml(value: string): string {
+   return value.length >= 2 && value[0] === value[value.length - 1] &&
+      (value[0] === "'" || value[0] === '"')
+      ? value.slice(1, -1)
+      : value;
+}
+
+function readContextInjectionLimits(projectRoot: string): ContextInjectionLimits {
+   const limits = { ...DEFAULT_CONTEXT_INJECTION_LIMITS };
+   let config = "";
+   try { config = readFileSync(join(projectRoot, ".trellis", "config.yaml"), "utf-8"); } catch { return limits; }
+
+   let inSection = false;
+   let sectionIndent = -1;
+   for (const rawLine of config.split(/\r?\n/)) {
+      const trimmed = rawLine.trim();
+      if (!inSection) {
+         if (/^context_injection\s*:\s*(#.*)?$/.test(trimmed)) {
+            inSection = true;
+            sectionIndent = rawLine.length - rawLine.trimStart().length;
+         }
+         continue;
+      }
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const indent = rawLine.length - rawLine.trimStart().length;
+      if (indent <= sectionIndent) break;
+      const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$/);
+      if (!match || !(match[1] in limits)) continue;
+      const rawValue = unquoteYaml(stripInlineComment(match[2]!).trim()).trim();
+      if (!/^\d+$/.test(rawValue)) continue;
+      (limits as unknown as Record<string, number>)[match[1]!] = Number.parseInt(rawValue, 10);
+   }
+   return limits;
+}
+
+class ContextBudget {
+   private totalBytesUsed: number;
+   private terminalSummaryEmitted = false;
+   private stopped = false;
+   constructor(private readonly maxTotalBytes: number, initialUsed = 0) {
+      this.totalBytesUsed = initialUsed;
+   }
+
+   get used(): number {
+      return this.totalBytesUsed;
+   }
+
+   hasRoom(bytes: number): boolean {
+      return !this.stopped && (this.maxTotalBytes <= 0 || this.totalBytesUsed + bytes <= this.maxTotalBytes);
+   }
+
+   emit(text: string): string | null {
+      const bytes = Buffer.byteLength(text, "utf-8");
+      if (!this.hasRoom(bytes)) return null;
+      this.totalBytesUsed += bytes;
+      return text;
+   }
+
+   emitCandidate(primary: string | null, fallback: string | null): string | null {
+      if (primary !== null) {
+         const direct = this.emit(primary);
+         if (direct !== null) return direct;
+      }
+      if (fallback !== null) {
+         const notice = this.emit(fallback);
+         if (notice !== null) return notice;
+      }
+      return this.emitTerminalSummary();
+   }
+
+   private emitTerminalSummary(): string | null {
+      if (this.terminalSummaryEmitted) return null;
+      this.terminalSummaryEmitted = true;
+      this.stopped = true;
+      const summary = "[Trellis: context limit reached; omitted entries remain authoritative on disk and require_read paths above.]";
+      if (this.maxTotalBytes <= 0) {
+         this.totalBytesUsed += Buffer.byteLength(summary, "utf-8");
+         return summary;
+      }
+      const remaining = this.maxTotalBytes - this.totalBytesUsed;
+      if (remaining <= 0) return null;
+      const bounded = truncateUtf8(Buffer.from(summary, "utf-8"), remaining).toString("utf-8");
+      this.totalBytesUsed += Buffer.byteLength(bounded, "utf-8");
+      return bounded;
+   }
+}
+
+type Utf8Status = "valid" | "incomplete" | "invalid";
+
+function utf8Status(data: Buffer): Utf8Status {
+   for (let index = 0; index < data.length; index++) {
+      const lead = data[index]!;
+      if (lead <= 0x7f) continue;
+
+      let length: number;
+      let secondMin = 0x80;
+      let secondMax = 0xbf;
+      if (lead >= 0xc2 && lead <= 0xdf) length = 2;
+      else if (lead >= 0xe0 && lead <= 0xef) {
+         length = 3;
+         if (lead === 0xe0) secondMin = 0xa0;
+         if (lead === 0xed) secondMax = 0x9f;
+      } else if (lead >= 0xf0 && lead <= 0xf4) {
+         length = 4;
+         if (lead === 0xf0) secondMin = 0x90;
+         if (lead === 0xf4) secondMax = 0x8f;
+      } else return "invalid";
+
+      if (index + length > data.length) {
+         for (let tail = index + 1; tail < data.length; tail++) {
+            const min = tail === index + 1 ? secondMin : 0x80;
+            const max = tail === index + 1 ? secondMax : 0xbf;
+            if (data[tail]! < min || data[tail]! > max) return "invalid";
+         }
+         return "incomplete";
+      }
+      const second = data[index + 1]!;
+      if (second < secondMin || second > secondMax) return "invalid";
+      for (let continuation = index + 2; continuation < index + length; continuation++) {
+         const byte = data[continuation]!;
+         if (byte < 0x80 || byte > 0xbf) return "invalid";
+      }
+      index += length - 1;
+   }
+   return "valid";
+}
+
+function truncateUtf8(data: Buffer, cap: number): Buffer {
+   if (cap <= 0 || data.length <= cap) return data;
+   if (utf8Status(data.subarray(0, cap)) === "valid") return data.subarray(0, cap);
+   // A bounded read has already been validated as a complete UTF-8 stream.
+   // Only its final, incomplete code point may make the cap prefix invalid.
+   for (let end = cap - 1; end >= Math.max(0, cap - 4); end--) {
+      const candidate = data.subarray(0, end);
+      if (utf8Status(candidate) === "valid") return candidate;
+   }
+   return Buffer.alloc(0);
+}
+
+function isUtf8(data: Buffer): boolean {
+   return utf8Status(data) === "valid";
+}
+
+function readFilePrefix(filePath: string, maxBytes: number): { data: Buffer; size: number } | null {
+   let fd: number | null = null;
+   try {
+      fd = openSync(filePath, "r");
+      if (maxBytes <= 0) {
+         const data = readFileSync(fd);
+         return { data, size: fstatSync(fd).size };
+      }
+      // Read a few extra bytes so a UTF-8 sequence crossing the cap can be
+      // validated before truncateUtf8 removes its incomplete suffix. The
+      // descriptor keeps the read bounded if the path is replaced or grows.
+      const data = Buffer.allocUnsafe(maxBytes + 4);
+      const bytesRead = readFully(fd, data);
+      return { data: data.subarray(0, bytesRead), size: fstatSync(fd).size };
+   } catch {
+      return null;
+   } finally {
+      if (fd !== null) closeSync(fd);
+   }
+}
+
+function readFully(fd: number, buffer: Buffer): number {
+   let total = 0;
+   while (total < buffer.length) {
+      const bytesRead = readSync(fd, buffer, total, buffer.length - total, total);
+      if (bytesRead === 0) break;
+      total += bytesRead;
+   }
+   return total;
+}
+
+function omittedNotice(file: string, size: number | null, reason: string): string {
+   const sizeText = size === null ? "unknown bytes" : `${size} bytes`;
+   return `### ${file} [omitted]\n\n[Trellis: omitted (${reason}) — ${file} (${sizeText}); required_read: ${file}]`;
+}
+
+interface MaterializedFile {
+   block: string | null;
+   notice: string;
+}
+
+function materialize(
+   targetPath: string,
+   displayPath: string,
+   reason: string,
+   maxBytes: number,
+   kind: "file" | "artifact",
+): MaterializedFile {
+   const file = readFilePrefix(targetPath, maxBytes);
+   if (!file) {
+      return { block: null, notice: omittedNotice(displayPath, null, `${kind} is missing or unreadable`) };
+   }
+   const { data, size } = file;
+   const encodingStatus = utf8Status(data);
+   if (data.includes(0) || encodingStatus === "invalid" || (encodingStatus === "incomplete" && size <= data.length)) {
+      return { block: null, notice: omittedNotice(displayPath, size, `binary or non-UTF-8 ${kind}: ${reason}`) };
+   }
+   const truncated = truncateUtf8(data, maxBytes);
+   let content = truncated.toString("utf-8");
+   let status: "inline" | "truncated" = "inline";
+   if (truncated.length < size) {
+      status = "truncated";
+      content += `\n[Trellis: truncated at ${maxBytes} bytes — read ${displayPath} for the full content]`;
+   }
+   return {
+      block: `### ${displayPath} [${status}]\n\n${content}`,
+      notice: omittedNotice(displayPath, size, `total context limit reached: ${reason}`),
+   };
+}
+
+function readJsonlLines(jsonlPath: string, displayPath: string): { lines: string[]; omitted: string | null } {
+   let fd: number | null = null;
+   try {
+      fd = openSync(jsonlPath, "r");
+      const data = Buffer.allocUnsafe(MAX_JSONL_BYTES + 1);
+      const bytesRead = readFully(fd, data);
+      const size = fstatSync(fd).size;
+      if (bytesRead > MAX_JSONL_BYTES || size > MAX_JSONL_BYTES) {
+         return {
+            lines: [],
+            omitted: omittedNotice(displayPath, size, `manifest exceeds ${MAX_JSONL_BYTES} byte parse limit`),
+         };
+      }
+      const content = data.subarray(0, bytesRead);
+      if (!isUtf8(content)) {
+         return { lines: [], omitted: omittedNotice(displayPath, size, "manifest is not valid UTF-8") };
+      }
+      return { lines: content.toString("utf-8").split(/\r?\n/), omitted: null };
+   } catch {
+      return { lines: [], omitted: omittedNotice(displayPath, null, "manifest is missing or unreadable") };
+   } finally {
+      if (fd !== null) closeSync(fd);
+   }
+}
+
 function buildTaskContext(projectRoot: string, taskDir: string, agentType?: AgentType): string {
    const parts: string[] = [];
    // Resolved once per call (not per referenced file) — avoids re-parsing
    // config.yaml for every jsonl row.
    const trustedRoots = resolveTrustedRoots(projectRoot);
+   const limits = readContextInjectionLimits(projectRoot);
+   const prefix = "<task-context>\nContext is bounded by .trellis/config.yaml. Files marked [truncated] or [omitted] remain authoritative on disk; use their required_read path before relying on missing detail.\n\n";
+   const suffix = "\n</task-context>";
+   const wrapperBytes = Buffer.byteLength(prefix + suffix, "utf-8");
+   if (limits.max_total_bytes > 0 && limits.max_total_bytes < wrapperBytes) return "";
+   const budget = new ContextBudget(limits.max_total_bytes, wrapperBytes);
+
+   const appendCandidate = (primary: string | null, fallback: string | null = null): void => {
+      const separator = parts.length > 0 ? "\n\n" : "";
+      const output = budget.emitCandidate(
+         primary === null ? null : separator + primary,
+         fallback === null ? null : separator + fallback,
+      );
+      if (output !== null) parts.push(output);
+   };
 
    // prd.md and info.md — always included
-   let prd = "";
-   try { prd = readFileSync(join(taskDir, "prd.md"), "utf-8"); } catch { }
-   if (prd.trim()) parts.push(`## PRD\n\n${prd.trim()}`);
-
-   let info = "";
-   try { info = readFileSync(join(taskDir, "info.md"), "utf-8"); } catch { }
-   if (info.trim()) parts.push(`## Info\n\n${info.trim()}`);
+   const prdPath = join(taskDir, "prd.md");
+   const relativePrdPath = displayProjectPath(projectRoot, prdPath, taskDir);
+   if (existsSync(prdPath)) {
+      const artifact = materialize(prdPath, relativePrdPath, "Requirements document", limits.max_artifact_bytes, "artifact");
+      appendCandidate(artifact.block, artifact.notice);
+   }
+   const infoPath = join(taskDir, "info.md");
+   const relativeInfoPath = displayProjectPath(projectRoot, infoPath, taskDir);
+   if (existsSync(infoPath)) {
+      const artifact = materialize(infoPath, relativeInfoPath, "Task information", limits.max_artifact_bytes, "artifact");
+      appendCandidate(artifact.block, artifact.notice);
+   }
 
    // Determine which jsonl files to read based on agent type
    const jsonlNames = taskContextJsonlNames(agentType);
@@ -351,15 +665,16 @@ function buildTaskContext(projectRoot: string, taskDir: string, agentType?: Agen
       const jsonlPath = join(taskDir, jsonlName);
       if (!existsSync(jsonlPath)) continue;
 
-      let lines: string[];
-      try {
-         lines = readFileSync(jsonlPath, "utf-8").split(/\r?\n/);
-      } catch {
+      const relativeJsonlPath = displayProjectPath(projectRoot, jsonlPath, taskDir);
+      const manifest = readJsonlLines(jsonlPath, relativeJsonlPath);
+      if (manifest.omitted) {
+         appendCandidate(`## ${jsonlName}\n\n${manifest.omitted}`);
          continue;
       }
 
       const fileChunks: string[] = [];
-      for (const line of lines) {
+      let sectionHeaderEmitted = false;
+      for (const line of manifest.lines) {
          const trimmed = line.trim();
          if (!trimmed) continue;
          try {
@@ -369,25 +684,34 @@ function buildTaskContext(projectRoot: string, taskDir: string, agentType?: Agen
             const targetPath = resolveProjectFile(projectRoot, file, trustedRoots);
             if (!targetPath) continue;
             if (includedPaths.has(targetPath)) continue;
-            let content = "";
-            try { content = readFileSync(targetPath, "utf-8"); } catch { }
-            if (content.trim()) {
-               includedPaths.add(targetPath);
-               fileChunks.push(`### ${file}\n\n${content.trim()}`);
+            includedPaths.add(targetPath);
+            const materialized = materialize(targetPath, file, typeof row.reason === "string" ? row.reason : "-", limits.max_file_bytes, "file");
+            const sectionPrefix = sectionHeaderEmitted
+               ? "\n\n---\n\n"
+               : `${parts.length > 0 ? "\n\n" : ""}## ${jsonlName}\n\n`;
+            const output = budget.emitCandidate(
+               materialized.block === null ? null : `${sectionPrefix}${materialized.block}`,
+               `${sectionPrefix}${materialized.notice}`,
+            );
+            if (output !== null) {
+               fileChunks.push(output);
+               sectionHeaderEmitted = true;
             }
          } catch {
             // seed rows and malformed lines are non-fatal
          }
       }
 
-      if (fileChunks.length > 0) {
-         parts.push(`## ${jsonlName}\n\n${fileChunks.join("\n\n---\n\n")}`);
-      }
+      if (fileChunks.length > 0) parts.push(fileChunks.join(""));
    }
 
-   return parts.length > 0
-      ? `<task-context>\n${parts.join("\n\n")}\n</task-context>`
-      : "";
+   if (parts.length === 0) return "";
+   const context = `${prefix}${parts.join("")}${suffix}`;
+   if (limits.max_total_bytes <= 0 || Buffer.byteLength(context, "utf-8") <= limits.max_total_bytes) return context;
+   const suffixBytes = Buffer.byteLength(suffix, "utf-8");
+   const bodyLimit = Math.max(0, limits.max_total_bytes - suffixBytes);
+   const body = truncateUtf8(Buffer.from(`${prefix}${parts.join("")}`, "utf-8"), bodyLimit).toString("utf-8");
+   return `${body}${suffix}`;
 }
 
 // ---------------------------------------------------------------------------
