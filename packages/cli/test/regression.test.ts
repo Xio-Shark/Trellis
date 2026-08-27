@@ -1241,6 +1241,33 @@ describe("regression: JSON read/write failure reporting", () => {
     expect(r.stderr).toContain("not valid UTF-8 text");
   });
 
+  it("[audit] validate reports a non-string `file` instead of crashing on it", () => {
+    // A truthy non-string (e.g. {"file": 1}) reached path joining and raised
+    // TypeError, so validation crashed on the very row it exists to report.
+    expect(
+      runTask([
+        "create",
+        "Typed",
+        "--description",
+        "regression fixture",
+        "--slug",
+        "typed",
+        "--no-start",
+      ]).status,
+    ).toBe(0);
+    const name = `${datePrefix}-typed`;
+    fs.writeFileSync(
+      path.join(path.dirname(taskJsonPath(name)), "implement.jsonl"),
+      `${JSON.stringify({ file: 1, reason: "numeric path" })}\n`,
+      "utf-8",
+    );
+
+    const r = runTask(["validate", name]);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).not.toContain("Traceback");
+    expect(r.stdout).toContain("`file` must be a string path");
+  });
+
   it.skipIf(!canProvokePermissionFailure)(
     "[audit] set-meta on an unreadable task.json reports permissions, not a parse error",
     () => {
@@ -1431,7 +1458,7 @@ describe("regression: JSON read/write failure reporting", () => {
     expect(r.stderr).toContain("not valid JSON");
   });
 
-  it("[audit] start still activates a task with a corrupt task.json but says why the status stayed", () => {
+  it("[audit] start still activates a task with a corrupt task.json but says why status and branch stayed", () => {
     const env = { TRELLIS_CONTEXT_ID: "json-io-start" };
     expect(
       runTask(
@@ -1456,7 +1483,7 @@ describe("regression: JSON read/write failure reporting", () => {
     expect(r.stdout).toContain("Current task set to");
     // Observable: without this the absent status line reads as "not in planning".
     expect(r.stderr).toContain("not valid JSON");
-    expect(r.stderr).toContain("status not updated");
+    expect(r.stderr).toContain("task.json not updated");
   });
 
   it("[audit] current --json carries a read-failure signal and stays silent when healthy", () => {
@@ -6236,6 +6263,31 @@ print(json.dumps({
     );
   });
 
+  it("[audit] a non-UTF-8 session file degrades to no active task", () => {
+    // The tolerant `read_json` caught FileNotFoundError / JSONDecodeError /
+    // OSError. UnicodeDecodeError is none of those, so a session file that is
+    // not UTF-8 raised straight out of a read whose whole contract is to
+    // return None, and the hook path failed instead of degrading.
+    setupTaskRepo();
+    const sessionsDir = path.join(tmpDir, ".trellis", ".runtime", "sessions");
+    fs.mkdirSync(sessionsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(sessionsDir, "codex_binary.json"),
+      Buffer.from([0x7b, 0x22, 0xff, 0x22, 0x7d]),
+    );
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+
+    const proc = spawnSync(pythonCmd, [taskScriptPath, "finish"], {
+      cwd: tmpDir,
+      encoding: "utf-8",
+      env: sessionEnv({ CODEX_THREAD_ID: "binary" }),
+    });
+
+    expect(proc.stderr ?? "").not.toContain("UnicodeDecodeError");
+    expect(proc.status).toBe(0);
+    expect(proc.stdout).toContain("No current task set");
+  });
+
   // ------------------------------------------------------------
   // inject-workflow-state.py hook (workflow-enforcement-v2)
   // ------------------------------------------------------------
@@ -6703,15 +6755,16 @@ print(json.dumps({
     expect(fs.existsSync(path.join(taskDir, "check.jsonl"))).toBe(false);
   });
 
-  it("[init-context-removal] task.py create seeds jsonl when a sub-agent platform dir exists", () => {
+  it("[validation-preflight] task.py create writes EMPTY jsonl when a sub-agent platform dir exists", () => {
     setupTaskRepo();
     // Simulate a Claude Code install
     fs.mkdirSync(path.join(tmpDir, ".claude"), { recursive: true });
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
-    execSync(
+    const output = execSync(
       `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "seeded task" --description "regression fixture" --slug seeded-task --assignee test-dev`,
-      { cwd: tmpDir, encoding: "utf-8" },
+      { cwd: tmpDir, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
     );
+    expect(output).toBeDefined();
     const tasksDir = path.join(tmpDir, ".trellis", "tasks");
     const newDirs = fs
       .readdirSync(tasksDir)
@@ -6722,17 +6775,38 @@ print(json.dumps({
     for (const jsonlName of ["implement.jsonl", "check.jsonl"]) {
       const jsonlPath = path.join(taskDir, jsonlName);
       expect(fs.existsSync(jsonlPath), `${jsonlName} should exist`).toBe(true);
-      const content = fs.readFileSync(jsonlPath, "utf-8").trim();
-      // One line of self-describing seed with `_example` and no `file` field.
-      const lines = content.split("\n");
-      expect(lines.length).toBe(1);
-      const row = JSON.parse(lines[0]) as Record<string, unknown>;
-      expect(row._example).toBeDefined();
-      expect(row.file).toBeUndefined();
+      // Empty on create — a placeholder row would pass validate locally and
+      // then fail PR preflight as unresolved scaffolding.
+      expect(fs.readFileSync(jsonlPath, "utf-8"), jsonlName).toBe("");
     }
   });
 
-  it("[grok] task.py create seeds jsonl when Grok is the only sub-agent platform", () => {
+  it("[validation-preflight] task.py create prints jsonl curation instructions instead of writing them into the files", () => {
+    setupTaskRepo();
+    fs.mkdirSync(path.join(tmpDir, ".claude"), { recursive: true });
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    const result = spawnSync(
+      pythonCmd,
+      [
+        taskScriptPath,
+        "create",
+        "curation hint task",
+        "--description",
+        "regression fixture",
+        "--slug",
+        "curation-hint-task",
+        "--assignee",
+        "test-dev",
+      ],
+      { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
+    );
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain("Curate implement.jsonl / check.jsonl");
+    expect(result.stderr).toContain('{"file": "<path>", "reason": "<why>"}');
+    expect(result.stderr).toContain("get_context.py --mode packages");
+  });
+
+  it("[grok] task.py create creates empty jsonl when Grok is the only sub-agent platform", () => {
     setupTaskRepo();
     fs.mkdirSync(path.join(tmpDir, ".grok"), { recursive: true });
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
@@ -6751,15 +6825,11 @@ print(json.dumps({
     for (const jsonlName of ["implement.jsonl", "check.jsonl"]) {
       const jsonlPath = path.join(taskDir, jsonlName);
       expect(fs.existsSync(jsonlPath), `${jsonlName} should exist`).toBe(true);
-      const seed = JSON.parse(
-        fs.readFileSync(jsonlPath, "utf-8").trim(),
-      ) as Record<string, unknown>;
-      expect(seed).toHaveProperty("_example");
-      expect(seed).not.toHaveProperty("file");
+      expect(fs.readFileSync(jsonlPath, "utf-8"), jsonlName).toBe("");
     }
   });
 
-  it("[kimi] task.py create seeds jsonl when Kimi is the only sub-agent platform", () => {
+  it("[kimi] task.py create creates empty jsonl when Kimi is the only sub-agent platform", () => {
     setupTaskRepo();
     fs.mkdirSync(path.join(tmpDir, ".kimi-code"), { recursive: true });
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
@@ -6778,11 +6848,7 @@ print(json.dumps({
     for (const jsonlName of ["implement.jsonl", "check.jsonl"]) {
       const jsonlPath = path.join(taskDir, jsonlName);
       expect(fs.existsSync(jsonlPath), `${jsonlName} should exist`).toBe(true);
-      const seed = JSON.parse(
-        fs.readFileSync(jsonlPath, "utf-8").trim(),
-      ) as Record<string, unknown>;
-      expect(seed).toHaveProperty("_example");
-      expect(seed).not.toHaveProperty("file");
+      expect(fs.readFileSync(jsonlPath, "utf-8"), jsonlName).toBe("");
     }
   });
 
@@ -6808,7 +6874,7 @@ print(json.dumps({
     expect(fs.existsSync(path.join(taskDir, "check.jsonl"))).toBe(false);
   });
 
-  it("[issue-373] task.py create seeds jsonl when Codex explicitly uses sub-agent dispatch", () => {
+  it("[issue-373] task.py create creates empty jsonl when Codex explicitly uses sub-agent dispatch", () => {
     setupTaskRepo();
     fs.mkdirSync(path.join(tmpDir, ".codex"), { recursive: true });
     writeProjectFile(
@@ -6830,11 +6896,9 @@ print(json.dumps({
         .find((d) => d.includes("codex-subagent-task")) as string,
     );
     for (const jsonlName of ["implement.jsonl", "check.jsonl"]) {
-      const row = JSON.parse(
-        fs.readFileSync(path.join(taskDir, jsonlName), "utf-8").trim(),
-      ) as Record<string, unknown>;
-      expect(row._example).toBeDefined();
-      expect(row.file).toBeUndefined();
+      const jsonlPath = path.join(taskDir, jsonlName);
+      expect(fs.existsSync(jsonlPath), `${jsonlName} should exist`).toBe(true);
+      expect(fs.readFileSync(jsonlPath, "utf-8"), jsonlName).toBe("");
     }
   });
 
@@ -6899,7 +6963,7 @@ print(len(entries))
     expect(result.trim()).toBe("0");
   });
 
-  it("[init-context-removal] task.py validate treats seed-only jsonl as 0 errors", () => {
+  it("[validation-preflight] task.py validate passes for a freshly created task (empty manifests)", () => {
     setupTaskRepo();
     fs.mkdirSync(path.join(tmpDir, ".claude"), { recursive: true });
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
@@ -6921,7 +6985,165 @@ print(len(entries))
     expect(result).toContain("All validations passed");
   });
 
-  it("[init-context-removal] task.py list-context prints 'no curated entries yet' for seed-only jsonl", () => {
+  describe("[validation-preflight] task.py validate vs PR preflight contract", () => {
+    // Each case writes the manifests directly, then runs the real validator.
+    // Create → validate must never produce a task that validates locally and
+    // then trips PR preflight's `_example` scaffolding rule.
+    const placeholderRow =
+      '{"_example": "Fill with {\\"file\\": \\"<path>\\", \\"reason\\": \\"<why>\\"}."}\n';
+
+    function validateWith(
+      implementContent: string,
+      checkContent: string,
+    ): ReturnType<typeof spawnSync> {
+      setupTaskRepo();
+      const taskDir = path.join(tmpDir, ".trellis", "tasks", "issue-106");
+      fs.writeFileSync(
+        path.join(taskDir, "implement.jsonl"),
+        implementContent,
+        "utf-8",
+      );
+      fs.writeFileSync(
+        path.join(taskDir, "check.jsonl"),
+        checkContent,
+        "utf-8",
+      );
+      const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+      return spawnSync(
+        pythonCmd,
+        [taskScriptPath, "validate", ".trellis/tasks/issue-106"],
+        { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
+      );
+    }
+
+    it("rejects a placeholder-only implement.jsonl with file, line, and remediation", () => {
+      const result = validateWith(placeholderRow, "");
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain("implement.jsonl:1: Placeholder `_example` row");
+      expect(result.stdout).toContain(
+        '{"file": "<path>", "reason": "<why>"}',
+      );
+      expect(result.stdout).toContain("Validation failed (1 errors)");
+    });
+
+    it("rejects a placeholder row in check.jsonl too", () => {
+      const result = validateWith("", placeholderRow);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain("check.jsonl:1: Placeholder `_example` row");
+    });
+
+    it("rejects a placeholder row that sits alongside curated entries", () => {
+      const result = validateWith(
+        `${placeholderRow}{"file":".trellis/spec/guides/index.md","reason":"guideline"}\n`,
+        "",
+      );
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain("implement.jsonl:1: Placeholder `_example` row");
+      expect(result.stdout).toContain("Validation failed (1 errors)");
+    });
+
+    it("passes for empty manifests", () => {
+      const result = validateWith("", "");
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("All validations passed");
+    });
+
+    it("passes for curated entries pointing at real files", () => {
+      setupTaskRepo();
+      const taskDir = path.join(tmpDir, ".trellis", "tasks", "issue-106");
+      const curated =
+        '{"file":".trellis/spec/guides/index.md","reason":"guideline"}\n';
+      fs.writeFileSync(path.join(taskDir, "implement.jsonl"), curated, "utf-8");
+      fs.writeFileSync(path.join(taskDir, "check.jsonl"), curated, "utf-8");
+      const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+      const result = spawnSync(
+        pythonCmd,
+        [taskScriptPath, "validate", ".trellis/tasks/issue-106"],
+        { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
+      );
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("All validations passed");
+    });
+
+    it("still rejects malformed JSON lines", () => {
+      const result = validateWith("{not json\n", "");
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain("implement.jsonl:1: Invalid JSON");
+    });
+
+    it("reports a non-object row instead of crashing on it", () => {
+      // Valid JSON, wrong shape — the row must be an error with a line
+      // number, not an AttributeError traceback out of `data.get`.
+      const result = validateWith('"just a string"\n[1, 2]\nnull\n', "");
+      expect(result.status).toBe(1);
+      expect(result.stderr).not.toContain("Traceback");
+      for (const line of [1, 2, 3]) {
+        expect(result.stdout).toContain(
+          `implement.jsonl:${line}: Expected a JSON object`,
+        );
+      }
+      expect(result.stdout).toContain("Validation failed (3 errors)");
+    });
+
+    it("list-context skips non-object rows instead of crashing on them", () => {
+      // Same wrong-shape rows as the validate case above — list-context is a
+      // read-only listing, so it skips them and still lists curated entries.
+      setupTaskRepo();
+      const taskDir = path.join(tmpDir, ".trellis", "tasks", "issue-106");
+      fs.writeFileSync(
+        path.join(taskDir, "implement.jsonl"),
+        '"just a string"\n[1, 2]\nnull\n{"file":".trellis/spec/guides/index.md","reason":"guideline"}\n',
+        "utf-8",
+      );
+      fs.writeFileSync(path.join(taskDir, "check.jsonl"), "", "utf-8");
+      const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+      const result = spawnSync(
+        pythonCmd,
+        [taskScriptPath, "list-context", ".trellis/tasks/issue-106"],
+        { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
+      );
+      expect(result.status).toBe(0);
+      expect(result.stderr).not.toContain("Traceback");
+      expect(result.stdout).toContain(".trellis/spec/guides/index.md");
+    });
+
+    it("rejects a placeholder row inside an archived task", () => {
+      setupTaskRepo();
+      const archivedDir = path.join(
+        tmpDir,
+        ".trellis",
+        "tasks",
+        "archive",
+        "2026-07",
+        "07-01-archived-task",
+      );
+      fs.mkdirSync(archivedDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(archivedDir, "task.json"),
+        JSON.stringify({ title: "Archived", status: "completed" }, null, 2),
+      );
+      fs.writeFileSync(
+        path.join(archivedDir, "implement.jsonl"),
+        placeholderRow,
+        "utf-8",
+      );
+      fs.writeFileSync(path.join(archivedDir, "check.jsonl"), "", "utf-8");
+      const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+      const result = spawnSync(
+        pythonCmd,
+        [
+          taskScriptPath,
+          "validate",
+          ".trellis/tasks/archive/2026-07/07-01-archived-task",
+        ],
+        { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
+      );
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain("implement.jsonl:1: Placeholder `_example` row");
+    });
+  });
+
+  it("[init-context-removal] task.py list-context prints 'no curated entries yet' for uncurated jsonl", () => {
     setupTaskRepo();
     fs.mkdirSync(path.join(tmpDir, ".claude"), { recursive: true });
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
@@ -8216,6 +8438,212 @@ print(len(entries))
       "recorded branch 'task/deleted-branch-does-not-exist' no longer exists locally",
     );
   });
+
+  // --- Branch metadata recorded at start, validated at archive -------------
+
+  function initTaskGitRepo(branch: string, withRemote = false): void {
+    execSync(`git init -q -b ${branch}`, { cwd: tmpDir });
+    execSync("git config user.email test@example.com", { cwd: tmpDir });
+    execSync("git config user.name Test", { cwd: tmpDir });
+    execSync("git add -A", { cwd: tmpDir });
+    execSync("git commit -q -m init", { cwd: tmpDir });
+    if (withRemote) {
+      // Never contacted: only `git remote` (the PR-backed predicate) reads it.
+      execSync("git remote add origin https://example.invalid/repo.git", {
+        cwd: tmpDir,
+      });
+    }
+  }
+
+  function patchIssue106Task(fields: Record<string, unknown>): string {
+    const taskJsonPath = path.join(
+      tmpDir,
+      ".trellis",
+      "tasks",
+      "issue-106",
+      "task.json",
+    );
+    const data = JSON.parse(fs.readFileSync(taskJsonPath, "utf-8"));
+    fs.writeFileSync(
+      taskJsonPath,
+      JSON.stringify({ ...data, ...fields }, null, 2),
+    );
+    return taskJsonPath;
+  }
+
+  function readIssue106Task(): { branch: string | null; status: string } {
+    return JSON.parse(
+      fs.readFileSync(
+        path.join(tmpDir, ".trellis", "tasks", "issue-106", "task.json"),
+        "utf-8",
+      ),
+    );
+  }
+
+  it("[issue-399.3] task.py start records the checked-out branch when none is set", () => {
+    setupTaskRepo();
+    initTaskGitRepo("main");
+    execSync("git checkout -q -b feature/record-me", { cwd: tmpDir });
+    patchIssue106Task({ status: "planning", branch: null, base_branch: "main" });
+
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    const result = spawnSync(
+      pythonCmd,
+      [taskScriptPath, "start", ".trellis/tasks/issue-106"],
+      {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        env: sessionEnv({ TRELLIS_CONTEXT_ID: "start-branch-session" }),
+      },
+    );
+
+    expect(result.stdout).toContain("Branch recorded: feature/record-me");
+    expect(readIssue106Task()).toMatchObject({
+      branch: "feature/record-me",
+      status: "in_progress",
+    });
+  });
+
+  it("[issue-399.3] task.py start does not clobber an explicitly set branch", () => {
+    setupTaskRepo();
+    initTaskGitRepo("main");
+    execSync("git checkout -q -b feature/current", { cwd: tmpDir });
+    patchIssue106Task({
+      status: "planning",
+      branch: "task/set-by-hand",
+      base_branch: "main",
+    });
+
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    const result = spawnSync(
+      pythonCmd,
+      [taskScriptPath, "start", ".trellis/tasks/issue-106"],
+      {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        env: sessionEnv({ TRELLIS_CONTEXT_ID: "start-noclobber-session" }),
+      },
+    );
+
+    expect(result.stdout).not.toContain("Branch recorded");
+    expect(readIssue106Task().branch).toBe("task/set-by-hand");
+  });
+
+  it("[issue-399.3] task.py start on a detached HEAD notes the skip and still starts", () => {
+    setupTaskRepo();
+    initTaskGitRepo("main");
+    execSync("git checkout -q --detach", { cwd: tmpDir });
+    patchIssue106Task({ status: "planning", branch: null, base_branch: "main" });
+
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    const result = spawnSync(
+      pythonCmd,
+      [taskScriptPath, "start", ".trellis/tasks/issue-106"],
+      {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        env: sessionEnv({ TRELLIS_CONTEXT_ID: "start-detached-session" }),
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain("no checked-out branch");
+    expect(readIssue106Task()).toMatchObject({
+      branch: null,
+      status: "in_progress",
+    });
+  });
+
+  it("[issue-399.3] task.py archive refuses a PR-backed task with no recorded branch", () => {
+    setupTaskRepo();
+    initTaskGitRepo("main", true);
+    patchIssue106Task({ branch: null, base_branch: "main" });
+
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    const result = spawnSync(
+      pythonCmd,
+      [taskScriptPath, "archive", ".trellis/tasks/issue-106", "--no-commit"],
+      { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("no branch is recorded");
+    expect(result.stderr).toContain("task.py set-branch");
+    expect(result.stderr).toContain("--skip-branch-validation");
+    // Refused before any mutation: the task stays put, still un-completed.
+    expect(
+      fs.existsSync(path.join(tmpDir, ".trellis", "tasks", "issue-106")),
+    ).toBe(true);
+    expect(readIssue106Task().status).toBe("in_progress");
+  });
+
+  it("[issue-399.3] task.py archive refuses a task whose branch equals its base_branch", () => {
+    setupTaskRepo();
+    initTaskGitRepo("main", true);
+    patchIssue106Task({ branch: "main", base_branch: "main" });
+
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    const result = spawnSync(
+      pythonCmd,
+      [taskScriptPath, "archive", ".trellis/tasks/issue-106", "--no-commit"],
+      { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("branch and base_branch are both 'main'");
+    expect(result.stderr).toContain("task.py set-base-branch");
+    expect(
+      fs.existsSync(path.join(tmpDir, ".trellis", "tasks", "issue-106")),
+    ).toBe(true);
+  });
+
+  it("[issue-399.3] task.py archive --skip-branch-validation archives despite missing branch metadata", () => {
+    setupTaskRepo();
+    initTaskGitRepo("main", true);
+    patchIssue106Task({ branch: null, base_branch: "main" });
+
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    const result = spawnSync(
+      pythonCmd,
+      [
+        taskScriptPath,
+        "archive",
+        ".trellis/tasks/issue-106",
+        "--no-commit",
+        "--skip-branch-validation",
+      ],
+      { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
+    );
+
+    expect(result.status).toBe(0);
+    expect(
+      fs.existsSync(path.join(tmpDir, ".trellis", "tasks", "issue-106")),
+    ).toBe(false);
+  });
+
+  it("[issue-399.3] task.py archive still only warns when a PR-backed branch was merged and deleted", () => {
+    setupTaskRepo();
+    initTaskGitRepo("main", true);
+    patchIssue106Task({
+      branch: "feature/merged-and-deleted",
+      base_branch: "main",
+    });
+
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    const result = spawnSync(
+      pythonCmd,
+      [taskScriptPath, "archive", ".trellis/tasks/issue-106", "--no-commit"],
+      { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain(
+      "recorded branch 'feature/merged-and-deleted' no longer exists locally",
+    );
+    expect(
+      fs.existsSync(path.join(tmpDir, ".trellis", "tasks", "issue-106")),
+    ).toBe(false);
+  });
 });
 
 describe("regression: backslash in markdown templates (beta.12)", () => {
@@ -8619,7 +9047,7 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
     expect(taskContext as string).toMatch(/def cmd_list_context\b/);
   });
 
-  it("[init-context-removal] task_store.cmd_create seeds jsonl for sub-agent platforms", () => {
+  it("[init-context-removal] task_store.cmd_create creates jsonl for sub-agent platforms", () => {
     const taskStore = getAllScripts().get("common/task_store.py");
     expect(taskStore).toBeDefined();
     // Sub-agent platform probe.
@@ -8635,12 +9063,21 @@ describe("regression: cli_adapter platform support (beta.9, beta.13, beta.16)", 
       'get_codex_dispatch_mode(repo_root) == "auto"',
     );
     expect(commonConfig).toContain("def get_codex_dispatch_mode");
-    // Seed row is self-describing and has no `file` field (so consumers skip
-    // it naturally).
-    expect(taskStore as string).toMatch(/_write_seed_jsonl/);
-    expect(taskStore as string).toContain('"_example"');
-    // cmd_create calls into the seed path.
+    // Manifests are created empty — no placeholder row that PR preflight
+    // would later reject as unresolved scaffolding.
+    expect(taskStore as string).not.toMatch(/_write_seed_jsonl/);
+    expect(taskStore as string).not.toContain("_example");
+    expect(taskStore as string).toContain(
+      'jsonl_path.write_text("", encoding="utf-8")',
+    );
+    // cmd_create calls into the jsonl-creation path.
     expect(taskStore as string).toMatch(/_has_subagent_platform\(repo_root\)/);
+
+    // The validator is the second half of the contract: placeholder rows left
+    // by older versions are a hard error, not a silently skipped comment.
+    const taskContext = getAllScripts().get("common/task_context.py");
+    expect(taskContext as string).toContain('"_example" in data');
+    expect(taskContext as string).toContain("Placeholder `_example` row");
   });
 
   // Regression for 04-22-migrate-flow-bugs Bug C: breaking releases must
@@ -11212,4 +11649,602 @@ describe("regression: compat alias must not win platform detection", () => {
       ).toBe(keys.length - 1);
     });
   }
+});
+
+describe("regression: task.py rename rewrites every reference in one pass", () => {
+  // Renaming a task used to be a hand-edited multi-file operation (directory
+  // name, task.json identity fields, parent/children back-references, jsonl
+  // context paths), and a partial hand-rename left dangling references that
+  // preflight gates reject later.
+  const pyCmd = process.platform === "win32" ? "python" : "python3";
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  const now = new Date();
+  const datePrefix = `${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const yearMonth = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-task-rename-"));
+    for (const [rel, content] of getAllScripts()) {
+      const abs = path.join(tmpDir, ".trellis", "scripts", rel);
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      fs.writeFileSync(abs, content, "utf-8");
+    }
+    fs.writeFileSync(
+      path.join(tmpDir, ".trellis", ".developer"),
+      "name=test-dev\ninitialized_at=2026-08-09T00:00:00\n",
+    );
+    fs.mkdirSync(taskDir("archive"), { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function runTask(...args: string[]): {
+    status: number | null;
+    stdout: string;
+    stderr: string;
+  } {
+    const proc = spawnSync(
+      pyCmd,
+      [path.join(".trellis", "scripts", "task.py"), ...args],
+      { cwd: tmpDir, encoding: "utf-8" },
+    );
+    return {
+      status: proc.status,
+      stdout: proc.stdout ?? "",
+      stderr: proc.stderr ?? "",
+    };
+  }
+
+  function taskDir(...segments: string[]): string {
+    return path.join(tmpDir, ".trellis", "tasks", ...segments);
+  }
+
+  function readTaskJson(name: string): Record<string, unknown> {
+    return JSON.parse(
+      fs.readFileSync(path.join(taskDir(name), "task.json"), "utf-8"),
+    ) as Record<string, unknown>;
+  }
+
+  function create(slug: string, parent?: string): string {
+    const args = [
+      "create",
+      slug,
+      "--description",
+      "rename fixture",
+      "--slug",
+      slug,
+      "--no-start",
+    ];
+    if (parent) args.push("--parent", parent);
+    const r = runTask(...args);
+    expect(r.status, r.stderr).toBe(0);
+    return `${datePrefix}-${slug}`;
+  }
+
+  /** Every `<file>:<line>` under .trellis/tasks/ that still names `taskName`. */
+  function scanForName(taskName: string): string[] {
+    const pattern = new RegExp(`(?<![0-9A-Za-z_-])${taskName}(?![0-9A-Za-z_-])`);
+    const hits: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const abs = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(abs);
+          if (pattern.test(entry.name)) hits.push(`${abs}/ (directory name)`);
+          continue;
+        }
+        const lines = fs.readFileSync(abs, "utf-8").split("\n");
+        lines.forEach((line, index) => {
+          if (pattern.test(line)) hits.push(`${abs}:${index + 1}`);
+        });
+      }
+    };
+    walk(taskDir());
+    return hits;
+  }
+
+  it("[task-rename] a task with a parent and two children leaves no dangling reference", () => {
+    const parent = create("mum");
+    const target = create("target", parent);
+    const childA = create("kid-a", target);
+    const childB = create("kid-b", target);
+
+    const r = runTask("rename", target, "renamed");
+    expect(r.status, r.stderr).toBe(0);
+
+    const renamed = `${datePrefix}-renamed`;
+    expect(fs.existsSync(taskDir(target))).toBe(false);
+    expect(fs.existsSync(taskDir(renamed))).toBe(true);
+
+    // Identity fields carry the bare slug; back-references carry the full
+    // directory name.
+    expect(readTaskJson(renamed).id).toBe("renamed");
+    expect(readTaskJson(renamed).name).toBe("renamed");
+    expect(readTaskJson(renamed).parent).toBe(parent);
+    expect(readTaskJson(parent).children).toEqual([renamed]);
+    expect(readTaskJson(childA).parent).toBe(renamed);
+    expect(readTaskJson(childB).parent).toBe(renamed);
+
+    expect(scanForName(target)).toEqual([]);
+  });
+
+  it("[task-rename] legacy subtasks back-references are rewritten too", () => {
+    const parent = create("mum");
+    const target = create("target", parent);
+
+    const parentJson = readTaskJson(parent);
+    parentJson.subtasks = [target];
+    fs.writeFileSync(
+      path.join(taskDir(parent), "task.json"),
+      JSON.stringify(parentJson, null, 2) + "\n",
+    );
+
+    const r = runTask("rename", target, "renamed");
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stdout).toContain("subtasks[0]");
+    expect(readTaskJson(parent).subtasks).toEqual([`${datePrefix}-renamed`]);
+    expect(scanForName(target)).toEqual([]);
+  });
+
+  it("[task-rename] --dry-run prints the change set it would apply, and writes nothing", () => {
+    const parent = create("mum");
+    const target = create("target", parent);
+    create("kid", target);
+    fs.writeFileSync(
+      path.join(taskDir(target), "implement.jsonl"),
+      `{"file": ".trellis/tasks/${target}/research.md", "reason": "findings"}\n`,
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, ".trellis", "workflow.md"),
+      `The plan is tracked in ${target}.\n`,
+    );
+
+    const dry = runTask("rename", target, "renamed", "--dry-run");
+    expect(dry.status, dry.stderr).toBe(0);
+    expect(dry.stderr).toContain("Dry run: nothing was written");
+    expect(fs.existsSync(taskDir(target))).toBe(true);
+    expect(fs.existsSync(taskDir(`${datePrefix}-renamed`))).toBe(false);
+    expect(readTaskJson(target).id).toBe("target");
+    expect(readTaskJson(parent).children).toEqual([target]);
+
+    const applied = runTask("rename", target, "renamed");
+    expect(applied.status, applied.stderr).toBe(0);
+
+    // The whole point of the dry run: what it printed is what the real run did.
+    expect(applied.stdout).toBe(dry.stdout);
+    expect(dry.stdout).toContain(
+      `dir: .trellis/tasks/${target} -> .trellis/tasks/${datePrefix}-renamed`,
+    );
+    expect(dry.stdout).toContain("task.json: id: target -> renamed");
+    expect(dry.stdout).toContain(
+      `backref: .trellis/tasks/${parent}/task.json: children[0]: ${target} -> ${datePrefix}-renamed`,
+    );
+    expect(dry.stdout).toContain(
+      `jsonl: .trellis/tasks/${target}/implement.jsonl:1:`,
+    );
+    // References outside the task dir are reported, never rewritten.
+    expect(dry.stdout).toContain(
+      "reported (not rewritten): .trellis/workflow.md:1",
+    );
+    expect(
+      fs.readFileSync(path.join(tmpDir, ".trellis", "workflow.md"), "utf-8"),
+    ).toContain(target);
+  });
+
+  it("[task-rename] jsonl paths under the task dir move, a sibling's do not", () => {
+    const target = create("target");
+    const sibling = create("target-other");
+    fs.writeFileSync(
+      path.join(taskDir(target), "check.jsonl"),
+      [
+        `{"file": ".trellis/tasks/${target}/research.md", "reason": "findings"}`,
+        `{"file": ".trellis/spec/guides/style.md", "reason": "spec"}`,
+        `{"file": ".trellis/tasks/${sibling}/notes.md", "reason": "sibling"}`,
+        "",
+      ].join("\n"),
+    );
+
+    expect(runTask("rename", target, "renamed").status).toBe(0);
+
+    const renamed = `${datePrefix}-renamed`;
+    const after = fs.readFileSync(
+      path.join(taskDir(renamed), "check.jsonl"),
+      "utf-8",
+    );
+    expect(after).toContain(`".trellis/tasks/${renamed}/research.md"`);
+    expect(after).toContain('".trellis/spec/guides/style.md"');
+    // `target` is a prefix of `target-other`; the sibling must survive intact.
+    expect(after).toContain(`".trellis/tasks/${sibling}/notes.md"`);
+  });
+
+  it("[task-rename] refuses an existing destination, an archived name, a bad slug and an unknown task", () => {
+    const other = create("other");
+    const target = create("target");
+
+    const occupied = runTask("rename", target, "other");
+    expect(occupied.status).not.toBe(0);
+    expect(occupied.stderr).toContain(`Task already exists: ${other}`);
+    expect(fs.existsSync(taskDir(target))).toBe(true);
+
+    fs.mkdirSync(taskDir("archive", yearMonth, `${datePrefix}-gone`), {
+      recursive: true,
+    });
+    const archived = runTask("rename", target, "gone");
+    expect(archived.status).not.toBe(0);
+    expect(archived.stderr).toContain(
+      `Task already archived: ${datePrefix}-gone`,
+    );
+
+    const badSlug = runTask("rename", target, "../evil");
+    expect(badSlug.status).not.toBe(0);
+    expect(badSlug.stderr).toContain("must be a plain name");
+
+    const unknown = runTask("rename", "no-such-task", "renamed");
+    expect(unknown.status).not.toBe(0);
+
+    // Every refusal is pre-flight: the task is still exactly where it was.
+    expect(fs.existsSync(taskDir(target))).toBe(true);
+    expect(readTaskJson(target).id).toBe("target");
+  });
+
+  it("[task-rename] refuses a slug carrying a date prefix, normalizing only its own", () => {
+    const target = create("target");
+
+    const wrongDate = runTask("rename", target, "01-02-renamed");
+    expect(wrongDate.status).not.toBe(0);
+    expect(wrongDate.stderr).toContain("keeps the task's own creation date");
+
+    // The task's own prefix pasted back in is a slip, not a request for
+    // MM-DD-MM-DD-slug (the create-side bug in #377).
+    const ownDate = runTask("rename", target, `${datePrefix}-renamed`);
+    expect(ownDate.status, ownDate.stderr).toBe(0);
+    expect(ownDate.stderr).toContain("should not include the MM-DD prefix");
+    expect(fs.existsSync(taskDir(`${datePrefix}-renamed`))).toBe(true);
+  });
+
+  it("[task-rename] moves an active-task session pointer to the new name", () => {
+    // Rename is the one lifecycle step where the task survives under a new
+    // name. Session pointers used to keep naming the old directory, so the
+    // very next turn resolved the active task as stale/missing.
+    const target = create("target");
+    const other = create("bystander");
+    const sessionsDir = path.join(tmpDir, ".trellis", ".runtime", "sessions");
+    fs.mkdirSync(sessionsDir, { recursive: true });
+    const sessionFile = path.join(sessionsDir, "sess-a.json");
+    const bystanderFile = path.join(sessionsDir, "sess-b.json");
+    fs.writeFileSync(
+      sessionFile,
+      JSON.stringify({ current_task: `.trellis/tasks/${target}` }),
+      "utf-8",
+    );
+    fs.writeFileSync(
+      bystanderFile,
+      JSON.stringify({ current_task: `.trellis/tasks/${other}` }),
+      "utf-8",
+    );
+
+    const r = runTask("rename", target, "renamed");
+    expect(r.status, r.stderr).toBe(0);
+
+    const renamed = `${datePrefix}-renamed`;
+    expect(
+      JSON.parse(fs.readFileSync(sessionFile, "utf-8")).current_task,
+    ).toBe(`.trellis/tasks/${renamed}`);
+    // A session on a different task is left exactly as it was.
+    expect(
+      JSON.parse(fs.readFileSync(bystanderFile, "utf-8")).current_task,
+    ).toBe(`.trellis/tasks/${other}`);
+  });
+
+  it("[task-rename] refuses to rename an archived task", () => {
+    const target = create("target");
+    expect(runTask("archive", target, "--no-commit").status).toBe(0);
+
+    const r = runTask(
+      "rename",
+      path.posix.join(".trellis", "tasks", "archive", yearMonth, target),
+      "renamed",
+    );
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("is not an active task under");
+    expect(
+      fs.existsSync(taskDir("archive", yearMonth, target, "task.json")),
+    ).toBe(true);
+  });
+});
+
+describe("regression: a linked worktree inherits developer identity", () => {
+  // `.trellis/.developer` is gitignored (it carries a personal identity), so a
+  // fresh `git worktree add` used to start with no identity at all and every
+  // task.py command failed with "No developer set" until init_developer.py was
+  // re-run per worktree — which blocks worktree-per-worker parallel runs.
+  const pyCmd = process.platform === "win32" ? "python" : "python3";
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  const now = new Date();
+  const datePrefix = `${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  let tmpDir: string;
+  let mainDir: string;
+  let worktreeDir: string;
+
+  function git(cwd: string, ...args: string[]): void {
+    const proc = spawnSync("git", args, { cwd, encoding: "utf-8" });
+    if (proc.status !== 0) {
+      throw new Error(`git ${args.join(" ")} failed: ${proc.stderr}`);
+    }
+  }
+
+  function writeScripts(root: string): void {
+    for (const [rel, content] of getAllScripts()) {
+      const abs = path.join(root, ".trellis", "scripts", rel);
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      fs.writeFileSync(abs, content, "utf-8");
+    }
+  }
+
+  /** A committed repo at `mainDir` plus a linked worktree at `worktreeDir`. */
+  function buildRepo(developerName: string | null): void {
+    writeScripts(mainDir);
+    fs.writeFileSync(
+      path.join(mainDir, ".gitignore"),
+      ".trellis/.developer\n",
+      "utf-8",
+    );
+    if (developerName !== null) {
+      fs.writeFileSync(
+        path.join(mainDir, ".trellis", ".developer"),
+        `name=${developerName}\ninitialized_at=2026-08-09T00:00:00\n`,
+        "utf-8",
+      );
+    }
+    git(mainDir, "init", "-q", "-b", "main", ".");
+    git(mainDir, "config", "user.email", "test@example.com");
+    git(mainDir, "config", "user.name", "test");
+    git(mainDir, "add", "-A");
+    git(mainDir, "commit", "-qm", "init");
+    git(mainDir, "worktree", "add", "-q", worktreeDir, "-b", "wt");
+  }
+
+  function runTask(
+    cwd: string,
+    args: string[],
+    envOverrides: NodeJS.ProcessEnv = {},
+  ): { status: number | null; stdout: string; stderr: string } {
+    const env = { ...process.env, ...envOverrides };
+    // Inherited identity must come from the repo, never from the environment
+    // of the machine running the suite.
+    if (envOverrides.TRELLIS_DEVELOPER === undefined) {
+      delete env.TRELLIS_DEVELOPER;
+    }
+    const proc = spawnSync(
+      pyCmd,
+      [path.join(cwd, ".trellis", "scripts", "task.py"), ...args],
+      { cwd, encoding: "utf-8", env },
+    );
+    return {
+      status: proc.status,
+      stdout: proc.stdout ?? "",
+      stderr: proc.stderr ?? "",
+    };
+  }
+
+  function createTask(
+    cwd: string,
+    slug: string,
+    extraArgs: string[] = [],
+    envOverrides: NodeJS.ProcessEnv = {},
+  ): { status: number | null; stdout: string; stderr: string } {
+    return runTask(
+      cwd,
+      [
+        "create",
+        slug,
+        "--description",
+        "worktree identity fixture",
+        "--slug",
+        slug,
+        "--no-start",
+        ...extraArgs,
+      ],
+      envOverrides,
+    );
+  }
+
+  function assigneeOf(cwd: string, slug: string): unknown {
+    const taskJson = path.join(
+      cwd,
+      ".trellis",
+      "tasks",
+      `${datePrefix}-${slug}`,
+      "task.json",
+    );
+    return (
+      JSON.parse(fs.readFileSync(taskJson, "utf-8")) as Record<string, unknown>
+    ).assignee;
+  }
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-wt-identity-"));
+    mainDir = path.join(tmpDir, "main");
+    worktreeDir = path.join(tmpDir, "linked");
+    fs.mkdirSync(mainDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("[worktree-identity] create/list/start work in a fresh worktree with no manual setup", () => {
+    buildRepo("main-dev");
+
+    // The premise: git did not carry the gitignored identity file across.
+    expect(
+      fs.existsSync(path.join(worktreeDir, ".trellis", ".developer")),
+    ).toBe(false);
+
+    const created = createTask(worktreeDir, "inherited");
+    expect(created.status, created.stderr).toBe(0);
+    expect(assigneeOf(worktreeDir, "inherited")).toBe("main-dev");
+
+    const listed = runTask(worktreeDir, ["list", "--json", "--mine"]);
+    expect(listed.status, listed.stderr).toBe(0);
+    const tasks = (
+      JSON.parse(listed.stdout) as { tasks: { id: string; assignee: string }[] }
+    ).tasks;
+    expect(tasks.map((t) => [t.id, t.assignee])).toEqual([
+      ["inherited", "main-dev"],
+    ]);
+
+    const started = runTask(worktreeDir, ["start", `${datePrefix}-inherited`]);
+    expect(started.status, started.stderr).toBe(0);
+
+    // Inheritance is read-only: copying the file in would go stale and shadow
+    // later changes made in the main checkout.
+    expect(
+      fs.existsSync(path.join(worktreeDir, ".trellis", ".developer")),
+    ).toBe(false);
+  });
+
+  it("[worktree-identity] a later main-checkout change is picked up, because nothing was copied", () => {
+    buildRepo("main-dev");
+    expect(createTask(worktreeDir, "first").status).toBe(0);
+    expect(assigneeOf(worktreeDir, "first")).toBe("main-dev");
+
+    fs.writeFileSync(
+      path.join(mainDir, ".trellis", ".developer"),
+      "name=renamed-dev\ninitialized_at=2026-08-09T00:00:00\n",
+      "utf-8",
+    );
+
+    expect(createTask(worktreeDir, "second").status).toBe(0);
+    expect(assigneeOf(worktreeDir, "second")).toBe("renamed-dev");
+  });
+
+  it("[worktree-identity] precedence: --assignee > TRELLIS_DEVELOPER > local file > main checkout", () => {
+    buildRepo("main-dev");
+
+    // 4. main checkout, in the worktree that has no file of its own
+    expect(createTask(worktreeDir, "inherit").status).toBe(0);
+    expect(assigneeOf(worktreeDir, "inherit")).toBe("main-dev");
+
+    // 3. a local file in the worktree wins over the main checkout
+    fs.writeFileSync(
+      path.join(worktreeDir, ".trellis", ".developer"),
+      "name=local-dev\ninitialized_at=2026-08-09T00:00:00\n",
+      "utf-8",
+    );
+    expect(createTask(worktreeDir, "local").status).toBe(0);
+    expect(assigneeOf(worktreeDir, "local")).toBe("local-dev");
+
+    // 2. the env var wins over both files
+    expect(
+      createTask(worktreeDir, "env", [], { TRELLIS_DEVELOPER: "env-dev" })
+        .status,
+    ).toBe(0);
+    expect(assigneeOf(worktreeDir, "env")).toBe("env-dev");
+
+    // 1. --assignee wins over everything
+    expect(
+      createTask(worktreeDir, "flag", ["--assignee", "flag-dev"], {
+        TRELLIS_DEVELOPER: "env-dev",
+      }).status,
+    ).toBe(0);
+    expect(assigneeOf(worktreeDir, "flag")).toBe("flag-dev");
+  });
+
+  it("[worktree-identity] the env var alone is enough in the main checkout too", () => {
+    buildRepo(null);
+    expect(
+      createTask(mainDir, "envonly", [], { TRELLIS_DEVELOPER: "env-dev" })
+        .status,
+    ).toBe(0);
+    expect(assigneeOf(mainDir, "envonly")).toBe("env-dev");
+  });
+
+  it("[worktree-identity] a whitespace-only env var does not count as an identity", () => {
+    buildRepo("main-dev");
+    expect(
+      createTask(worktreeDir, "blank", [], { TRELLIS_DEVELOPER: "   " }).status,
+    ).toBe(0);
+    expect(assigneeOf(worktreeDir, "blank")).toBe("main-dev");
+  });
+
+  it("[worktree-identity] with no identity anywhere, the error names all three sources", () => {
+    buildRepo(null);
+
+    for (const cwd of [mainDir, worktreeDir]) {
+      const created = createTask(cwd, "nobody");
+      expect(created.status).not.toBe(0);
+      expect(created.stderr).toContain("No developer set");
+      expect(created.stderr).toContain("init_developer.py");
+      expect(created.stderr).toContain("TRELLIS_DEVELOPER");
+      expect(created.stderr).toContain("linked git worktree");
+
+      const listed = runTask(cwd, ["list", "--json", "--mine"]);
+      expect(listed.status).not.toBe(0);
+      const payload = JSON.parse(listed.stderr) as {
+        error: string;
+        hint: string;
+      };
+      expect(payload.error).toBe("No developer set");
+      expect(payload.hint).toContain("TRELLIS_DEVELOPER");
+      expect(payload.hint).toContain("linked git worktree");
+    }
+  });
+
+  it("[worktree-identity] a linked worktree of a bare repo inherits nothing", () => {
+    buildRepo("main-dev");
+    const bareDir = path.join(tmpDir, "bare.git");
+    const bareWt = path.join(tmpDir, "bare-wt");
+    git(tmpDir, "clone", "-q", "--bare", mainDir, bareDir);
+    git(bareDir, "worktree", "add", "-q", bareWt, "wt");
+    writeScripts(bareWt);
+
+    const created = createTask(bareWt, "nobody");
+    expect(created.status).toBe(1);
+    expect(created.stderr).toContain("No developer set");
+    expect(created.stderr).not.toContain("Traceback");
+  });
+
+  it("[worktree-identity] a bare repo nested inside an unrelated checkout does not leak that checkout's identity", () => {
+    // Deriving the main root as the parent of `--git-common-dir` picks up
+    // `outer/` here — a real checkout with a real `.developer` — so the wrong
+    // answer looks exactly like a right one. git must name the main worktree.
+    buildRepo("main-dev");
+    const outerDir = path.join(tmpDir, "outer");
+    fs.mkdirSync(path.join(outerDir, ".trellis"), { recursive: true });
+    fs.writeFileSync(
+      path.join(outerDir, ".trellis", ".developer"),
+      "name=unrelated-stranger\ninitialized_at=2026-08-09T00:00:00\n",
+      "utf-8",
+    );
+    fs.writeFileSync(path.join(outerDir, "README.md"), "outer\n", "utf-8");
+    git(outerDir, "init", "-q", "-b", "main", ".");
+    git(outerDir, "config", "user.email", "test@example.com");
+    git(outerDir, "config", "user.name", "test");
+    git(outerDir, "add", "README.md");
+    git(outerDir, "commit", "-qm", "outer");
+
+    const nestedBare = path.join(outerDir, "nested.git");
+    const nestedWt = path.join(tmpDir, "nested-wt");
+    git(tmpDir, "clone", "-q", "--bare", mainDir, nestedBare);
+    git(nestedBare, "worktree", "add", "-q", nestedWt, "wt");
+    writeScripts(nestedWt);
+
+    const created = createTask(nestedWt, "leak");
+    expect(created.status).toBe(1);
+    expect(created.stderr).not.toContain("unrelated-stranger");
+    expect(created.stderr).toContain("No developer set");
+  });
+
+  it("[worktree-identity] a directory that is not a git repo fails normally, never crashes", () => {
+    writeScripts(mainDir);
+
+    const created = createTask(mainDir, "nogit");
+    expect(created.status).toBe(1);
+    expect(created.stderr).toContain("No developer set");
+    expect(created.stderr).not.toContain("Traceback");
+  });
 });

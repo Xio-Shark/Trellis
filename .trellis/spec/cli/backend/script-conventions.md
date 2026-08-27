@@ -220,7 +220,7 @@ def read_json(path: Path) -> dict | None:
     """Read JSON file, return None on error."""
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
+    except (FileNotFoundError, json.JSONDecodeError, OSError, UnicodeDecodeError):
         return None
 
 
@@ -356,11 +356,22 @@ The single source of truth for all JSON file operations. Replaces 8 duplicated `
 
 | Function | Signature | Returns | Error Behavior |
 |----------|-----------|---------|----------------|
-| `read_json` | `(path: Path) -> dict \| None` | Parsed dict, or `None` | Returns `None` on `FileNotFoundError`, `JSONDecodeError`, `OSError` |
-| `read_json_checked` | `(path: Path) -> tuple[dict \| None, str \| None]` | `(data, None)`, or `(None, reason)` | `reason` is one of `JSON_READ_MISSING` / `INVALID` / `UNREADABLE` / `UNDECODABLE` / `NOT_OBJECT` / `EMPTY` |
+| `read_json` | `(path: Path) -> dict \| None` | Parsed dict, or `None` | Returns `None` on `FileNotFoundError`, `JSONDecodeError`, `OSError`, `UnicodeDecodeError` |
+| `read_json_checked` | `(path: Path) -> tuple[dict \| None, str \| None]` | `(data, None)`, or `(None, reason)` | `reason` is one of the `JSON_READ_*` constants; compare against the constant, never the literal (see the value table below) |
 | `describe_json_read_failure` | `(path: Path, reason: str \| None) -> tuple[str, str]` | `(what happened, what to do)` | Never raises; unknown reasons get a generic pair |
 | `write_json` | `(path: Path, data: dict) -> bool` | `True` on success | Returns `False` on `OSError`, `IOError` |
 | `write_text_atomic` | `(path: Path, text: str) -> bool` | `True` on success | Returns `False` on `OSError`; unlinks the temp file and re-raises on `BaseException` (Ctrl-C) |
+
+`read_json_checked` reason constants and the values they carry:
+
+| Constant | Value | Raised by |
+|----------|-------|-----------|
+| `JSON_READ_MISSING` | `"missing"` | `FileNotFoundError` |
+| `JSON_READ_UNDECODABLE` | `"undecodable"` | `UnicodeDecodeError` — the bytes are not UTF-8 |
+| `JSON_READ_UNREADABLE` | `"unreadable"` | any other `OSError` (permissions, I/O) |
+| `JSON_READ_INVALID` | `"invalid"` | `json.JSONDecodeError` |
+| `JSON_READ_NOT_OBJECT` | `"not-object"` | parsed, but the top level is not a dict |
+| `JSON_READ_EMPTY` | `"empty"` | parsed to `{}` — carries none of the fields callers read |
 
 **Contracts**:
 - Always uses `encoding="utf-8"` and `ensure_ascii=False`
@@ -424,6 +435,8 @@ def run_git(args: list[str], cwd: Path | None = None) -> tuple[int, str, str]
 ```python
 def resolve_default_branch(repo_root: Path) -> str | None
 def branch_exists_locally(branch: str, repo_root: Path) -> bool
+def current_branch_name(repo_root: Path) -> str | None
+def has_git_remote(repo_root: Path) -> bool
 ```
 
 - `resolve_default_branch()` tries the local `refs/remotes/origin/HEAD`
@@ -442,6 +455,88 @@ def branch_exists_locally(branch: str, repo_root: Path) -> bool
   yellow warning (not a failure/block) when the recorded branch no longer
   exists locally — the common case is the branch was already merged and
   deleted upstream.
+- `current_branch_name()` returns `git branch --show-current` or `None`;
+  detached HEAD and "not a git repository" both come back as `None`, and
+  callers must treat them the same — there is no branch worth recording.
+- `has_git_remote()` (`git remote`, non-empty) is only used as half of the
+  PR-backed predicate below.
+
+```python
+def main_worktree_root(repo_root: Path) -> Path | None
+```
+
+- Returns the main working tree's root when `repo_root` is a **linked** git
+  worktree, and `None` in the main working tree itself, outside a git
+  repository, and for a linked worktree of a bare repo.
+- The main root comes from the **first record of
+  `git worktree list --porcelain`**, compared against `rev-parse
+  --show-toplevel` (equal means this *is* the main working tree). A `bare`
+  attribute on that first record is the bare case.
+- Do **not** re-derive this from the `.git` layout by taking the parent of
+  `--git-common-dir`. For a bare repo nested in an unrelated checkout
+  (`~/repos/project.git` under a `~/repos` that is itself a repo) that parent
+  is a real checkout with a real `.developer`, so the wrong answer is
+  indistinguishable from the right one and identity leaks between
+  repositories. Covered by `[worktree-identity] a bare repo nested inside an
+  unrelated checkout does not leak that checkout's identity`.
+- Memoized per `repo_root` for the life of the process: a checkout cannot
+  become a worktree mid-run, and the answer costs two subprocesses on a path
+  that is consulted several times per command.
+
+#### Developer identity resolution
+
+`.trellis/.developer` is gitignored on purpose — it carries a personal
+identity and **no tracked file may carry one**. A fresh `git worktree add`
+therefore has no identity file, so `paths.get_developer()` resolves in a fixed
+order, first hit wins:
+
+1. `TRELLIS_DEVELOPER` environment variable (non-empty after strip).
+2. `.trellis/.developer` in this checkout.
+3. `.trellis/.developer` in the main checkout, when this is a linked worktree
+   (`main_worktree_root()`).
+
+A CLI `--assignee` overrides all three — it is applied by the command before
+`get_developer()` is consulted. Step 3 **reads and never copies**: writing the
+inherited name into the worktree would go stale and shadow later changes in
+the main checkout. Steps 2 and 3 are skipped entirely when step 1 hits, so no
+git subprocess runs on the common path.
+
+Every "no developer set" error appends `paths.DEVELOPER_HINT`, which names the
+env var and the worktree-inheritance behavior — the two sources a user cannot
+guess from `init_developer.py` alone.
+
+#### `task.json.branch` lifecycle
+
+`branch` names the feature branch the work was done on; `base_branch` names
+the branch a PR targets. They must differ for PR-backed work.
+
+- `task.py start` (`task.py:_record_start_state`) records
+  `current_branch_name()` into `branch` **only when the field is empty**, in
+  the same read/write that flips `planning → in_progress`. An explicit
+  `set-branch` therefore survives re-starting a task. On detached HEAD or
+  outside git it prints a note and records nothing; the start still succeeds.
+  When the recorded branch equals `base_branch` it is written anyway (the
+  value is true) and a warning says archive will refuse that shape.
+- `task.py archive` (`task_store.py:_validate_branch_metadata`) runs before
+  any mutation and refuses, exit 1, when either
+  (a) `branch` is empty while `base_branch` is set **and** the repo has a
+  remote — the pragmatic definition of "PR-backed": a task created expecting a
+  PR whose branch was simply never written down; or
+  (b) `branch == base_branch`.
+  Both errors name the repair command (`task.py set-branch` /
+  `set-base-branch`) — hand-editing `task.json` is never the documented path.
+  `--skip-branch-validation` bypasses both for tasks that were never
+  PR-backed; it does not suppress the stale-branch warning.
+- Local-only repos (no remote) and tasks without a `base_branch` skip the
+  missing-branch check entirely.
+- Note how wide (a) actually is: `cmd_create` stamps `base_branch` on every
+  task, so in a repo with a remote the predicate reduces to "every task must
+  have a `branch`". Tasks created before start-time recording landed carry
+  `branch: null` and are refused until repaired — repair with `set-branch`,
+  or pass `--skip-branch-validation` per archive.
+- Repairing an **already-archived** task works the same way, but the bare task
+  name no longer resolves; pass the archive path explicitly:
+  `task.py set-branch .trellis/tasks/archive/<YYYY-MM>/<task> <branch>`.
 
 ### `common/active_task.py` — Active Task Resolver
 
@@ -621,7 +716,8 @@ a `.current-task` fallback or a Python hook directory.
   task after `--mine`/`--status` filtering: `{dir, id, title, status,
   display_status, priority, assignee, parent, children, package}`. With
   `--mine --json` and no developer configured, prints `{"error": "No
-  developer set"}` to stderr and exits 1 (mirrors the human-mode error).
+  developer set", "hint": ...}` to stderr and exits 1 (mirrors the human-mode
+  error; `hint` carries `paths.DEVELOPER_HINT`).
   `--json` and human `list` share one iteration pass over
   `iter_active_tasks()` — do not add a second pass for either mode.
 - `display_status` (`_display_status()` in `task.py`) shows `"active"`
@@ -638,7 +734,7 @@ a `.current-task` fallback or a Python hook directory.
 | `create` with context key, default mode | Task files exist; session runtime points at the new task; activation and source are printed; no `.current-task` |
 | `create --no-start` with context key | Task files exist; existing session runtime is unchanged; skip notice is printed; no `.current-task` |
 | `create` without context key | Task files exist; no `.runtime`; no `.current-task` |
-| `create` with `.codex/` and no `codex.dispatch_mode` override (default `auto`) | Task files exist; `implement.jsonl` and `check.jsonl` contain seed `_example` rows |
+| `create` with `.codex/` and no `codex.dispatch_mode` override (default `auto`) | Task files exist; `implement.jsonl` and `check.jsonl` exist and are empty |
 | `create` with `.codex/` and `codex.dispatch_mode: inline` | Task files exist; no `implement.jsonl`; no `check.jsonl` |
 | `start` without context key | Returns success in degraded mode; no `.runtime`; no `.current-task`; hints IDE/session identity or `TRELLIS_CONTEXT_ID` |
 | `start` with `TRELLIS_CONTEXT_ID` | Writes `.runtime/sessions/<key>.json`; does not require `.current-task` |
@@ -653,7 +749,7 @@ a `.current-task` fallback or a Python hook directory.
 | `archive` when the status write or a child re-parent write fails | Nothing is moved; the failure and the affected child are named; exit 1 |
 | `list` with one corrupt `task.json` | Other tasks still list; the skipped task is named on stderr with the reason; exit 0 |
 | `start` on a task whose `task.json` is corrupt, or whose status write fails | Session pointer is still set and `after_start` hooks still run; the skipped status flip is named on stderr; exit 0 |
-| `list --json --mine` with no developer configured | `{"error": "No developer set"}` on stderr; exit 1 |
+| `list --json --mine` with no developer configured | `{"error": "No developer set", "hint": ...}` on stderr; exit 1 |
 | `list --json` / `list` with a parent whose stored status is `planning` and a child past `planning` | `display_status` (and human list label) shows `"active"`; `task.json.status` on disk stays `planning` |
 | `archive` / `validate` when `task.json.branch` no longer exists locally | Prints a yellow warning; does not block archive or fail validation |
 | stale session task + stale `.current-task` exists | Returns stale session state; no `.current-task` fallback |
@@ -668,6 +764,10 @@ a `.current-task` fallback or a Python hook directory.
 | `task.json` that is not valid UTF-8 | `JSON_READ_UNDECODABLE`; reported as "not valid UTF-8 text" with a re-save remedy, never as a parse error or a traceback |
 | A bare task name matching two or more `-<name>` suffixes | Every match is listed, the command exits 1; no task is picked |
 | `create --slug` or `add-context <file>` containing `/`, `\`, or `..` | Rejected with exit 1 before any file is created |
+| `rename` onto an existing active name, an archived name, or the task's current name | Names the conflicting location and exits 1; nothing under `.trellis/tasks/` is touched |
+| `rename` of an archived task (a path under `archive/<YYYY-MM>/`) | Refuses with "is not an active task under ..." and exit 1; archived tasks keep no maintained back-references |
+| `rename <new-slug>` carrying a date prefix | The task's own prefix is normalized away with a warning; a *different* prefix is an error (rename keeps the original creation date, never today's) |
+| `rename` when any write fails | The task directory is still at its old name and is named on stderr; every completed step is idempotent, so re-running the identical command finishes the rename |
 
 ##### 5. Good/Base/Bad Cases
 
@@ -2546,6 +2646,7 @@ Examples:
     # create command
     create_parser = subparsers.add_parser("create", help="Create new task")
     create_parser.add_argument("title", help="Task title")
+    create_parser.add_argument("--description", help="One-line summary")
     create_parser.add_argument("--slug", help="URL-friendly name")
 
     # list command

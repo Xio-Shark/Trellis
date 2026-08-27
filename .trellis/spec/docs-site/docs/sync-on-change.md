@@ -177,10 +177,14 @@ Scope: any edit to `implement.jsonl` / `check.jsonl` seed format, `task.json` sc
 
 ### Contract to keep in sync
 
-- **Seed row schema**: `{"_example": "..."}` — no `file` field
+- **Created state**: on sub-agent-capable platforms `task.py create` writes empty
+  `implement.jsonl` / `check.jsonl` — no placeholder row. Platforms that load specs
+  through skills instead of JSONL (Codex inline mode, Kilo, Antigravity, Devin) get
+  neither file
 - **Curated row schema**: `{"file": "<path>", "reason": "<why>"}`
-- **Consumer behavior**: row without `file` is skipped by every consumer (hook, prelude, validate, list-context)
-- **READY gate**: jsonl with only seed row → NOT ready (must have at least one curated row)
+- **Consumer behavior**: row without `file` is skipped by every consumer (hook, prelude, list-context)
+- **Legacy placeholder row** `{"_example": "..."}`: rejected by `task.py validate` and by PR preflight — delete it
+- **READY gate**: jsonl with no curated rows → NOT ready (must have at least one curated row)
 
 See `.trellis/spec/cli/backend/platform-integration.md` → "Agent-Curated JSONL Contract (Phase 1.3)" for the code-side contract.
 
