@@ -1491,7 +1491,13 @@ def _auto_commit_archive(
         return True
 
     commit_msg = f"chore(task): archive {task_name}"
-    rc, _, err = run_git_retry_index_lock(["commit", "-m", commit_msg], cwd=repo_root)
+    # Commit with an explicit pathspec: a bare `git commit` would sweep any
+    # unrelated entries the developer had staged before archiving into the
+    # chore commit (#579). `source_rel` is included so the source-side
+    # deletions staged above land in the same commit.
+    rc, _, err = run_git_retry_index_lock(
+        ["commit", "-m", commit_msg, "--", *paths, source_rel], cwd=repo_root
+    )
     if rc == 0:
         print(f"[OK] Auto-committed: {commit_msg}", file=sys.stderr)
         return True

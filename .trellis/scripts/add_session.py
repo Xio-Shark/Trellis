@@ -1146,7 +1146,12 @@ def _auto_commit_workspace(repo_root: Path) -> str:
         print("[OK] No workspace changes to commit.", file=sys.stderr)
         return COMMIT_SKIPPED
 
-    rc, _, commit_err = run_git(["commit", "-m", commit_msg], cwd=repo_root)
+    # Commit with an explicit pathspec: a bare `git commit` would sweep any
+    # unrelated entries the developer had staged before this script ran into
+    # the chore commit (#579). The pathspec keeps their staged work untouched.
+    rc, _, commit_err = run_git(
+        ["commit", "-m", commit_msg, "--", *paths], cwd=repo_root
+    )
     if rc == 0:
         print(f"[OK] Auto-committed: {commit_msg}", file=sys.stderr)
         return COMMIT_DONE

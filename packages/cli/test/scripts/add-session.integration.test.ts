@@ -261,6 +261,35 @@ describe.skipIf(!hasPython())("add_session.py auto-commit", () => {
     expect(status).toMatch(/\.trellis\/tasks\/task-b\/prd\.md/);
   });
 
+  it("does not sweep pre-staged unrelated files into the session commit (#579)", () => {
+    seedTask(tmp);
+
+    // The developer stages an unrelated file BEFORE the script runs.
+    fs.writeFileSync(path.join(tmp, "README.md"), "unrelated staged work\n");
+    git(tmp, "add", "README.md");
+
+    runAddSession(tmp, "scoped session commit");
+
+    const lastFiles = git(
+      tmp,
+      "show",
+      "HEAD",
+      "--name-only",
+      "--pretty=format:",
+    )
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    // The chore commit contains only Trellis-owned paths.
+    expect(lastFiles).not.toContain("README.md");
+    expect(lastFiles.every((f) => f.startsWith(".trellis/"))).toBe(true);
+
+    // The developer's file is still staged, ready for their own commit.
+    const status = git(tmp, "status", "--porcelain");
+    expect(status).toMatch(/^A\s+README\.md/m);
+  });
+
   it("omits Main Changes/Testing/Next Steps sections for a legacy call (#394)", () => {
     makeTask(tmp, "task-a", "task A prd\n");
     setCurrentTask(tmp, "task-a");

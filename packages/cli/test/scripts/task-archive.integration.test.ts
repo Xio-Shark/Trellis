@@ -148,6 +148,37 @@ describe.skipIf(!hasPython())(
       expect(status).toMatch(/M\s+\.trellis\/tasks\/task-b\/prd\.md/);
     });
 
+    it("does not sweep pre-staged unrelated files into the archive commit (#579)", () => {
+      makeTask(tmp, "task-a", "task A prd\n");
+      git(tmp, "add", "-A");
+      git(tmp, "commit", "-q", "-m", "initial");
+
+      // The developer stages an unrelated file BEFORE archiving.
+      fs.writeFileSync(path.join(tmp, "README.md"), "unrelated staged work\n");
+      git(tmp, "add", "README.md");
+
+      runArchive(tmp, "task-a");
+
+      const lastFiles = git(
+        tmp,
+        "show",
+        "HEAD",
+        "--name-only",
+        "--pretty=format:",
+      )
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      // The archive commit contains only Trellis-owned paths.
+      expect(lastFiles).not.toContain("README.md");
+      expect(lastFiles.every((f) => f.startsWith(".trellis/"))).toBe(true);
+
+      // The developer's file is still staged, ready for their own commit.
+      const status = git(tmp, "status", "--porcelain");
+      expect(status).toMatch(/^A\s+README\.md/m);
+    });
+
     it(
       "stages source-side deletions in the archive commit (phantom-delete fix)",
       () => {
