@@ -125,6 +125,35 @@ def cmd_add_context(args: argparse.Namespace) -> int:
 # Command: validate
 # =============================================================================
 
+def curated_entry_count(jsonl_file: Path) -> int | None:
+    """Count curated entries in a jsonl context manifest.
+
+    Returns None when the file does not exist — `task.py create` seeds the
+    manifests only on sub-agent-capable platforms, so an absent file means no
+    sub-agent will ever read it and callers should not gate on it. A curated
+    entry is a JSON object row carrying a truthy ``file`` (or legacy ``path``)
+    value: the same rows the sub-agent injection hook materializes.
+    """
+    if not jsonl_file.is_file():
+        return None
+    try:
+        lines = jsonl_file.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return 0
+    count = 0
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            data = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict) and (data.get("file") or data.get("path")):
+            count += 1
+    return count
+
+
 def cmd_validate(args: argparse.Namespace) -> int:
     """Validate JSONL context files."""
     repo_root = get_repo_root()
@@ -355,6 +384,22 @@ def _validate_jsonl(jsonl_file: Path, repo_root: Path, task_dir: Path | None = N
                     "injection will truncate it"
                 )
                 print(f"  {colored(warning_message, Colors.YELLOW)}")
+
+    if errors == 0 and real_entries == 0:
+        # Seed-only / empty manifest: sub-agents dispatched for this task
+        # would run with zero spec context (#573). Silent-green here is how
+        # more than half the tasks in the report ended up uncurated.
+        action = file_name.split(".", 1)[0]
+        print(
+            f"  {colored(f'{file_name}: ✗ (0 curated entries — sub-agents would get zero spec context)', Colors.RED)}"
+        )
+        print(
+            f"    Curate it:  python3 .trellis/scripts/task.py add-context <task> {action} <path> \"<why>\""
+        )
+        print(
+            "    Intentionally empty? Bypass at start: task.py start <task> --allow-empty-context"
+        )
+        return 1
 
     if errors == 0:
         print(f"  {colored(f'{file_name}: ✓ ({real_entries} entries)', Colors.GREEN)}")

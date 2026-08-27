@@ -693,6 +693,44 @@ print("all-valid")
       });
     });
 
+    describe("inject-subagent-context.py: empty-manifest notice (#573)", () => {
+      it("puts a visible notice in the prompt when the manifest has no curated entries", () => {
+        // The stderr WARN never reaches any session; the sub-agent must see
+        // in its own prompt that no spec context was injected.
+        const taskDir = makeTask(tmp, "task-seed-only");
+        fs.writeFileSync(path.join(taskDir, "implement.jsonl"), "", "utf-8");
+        fs.writeFileSync(path.join(taskDir, "prd.md"), "prd body\n", "utf-8");
+        const relTask = path.relative(tmp, taskDir).split(path.sep).join("/");
+        const out = runHookProbe(
+          tmp,
+          `print(mod.get_implement_context(REPO_ROOT, ${JSON.stringify(relTask)}))`,
+        );
+        expect(out).toContain(
+          `[Trellis] ${relTask}/implement.jsonl has no curated entries`,
+        );
+        expect(out).toContain(".trellis/spec/");
+        // Task artifacts still follow the notice.
+        expect(out).toContain("prd body");
+      });
+
+      it("does not add the notice when curated entries exist", () => {
+        const taskDir = makeTask(tmp, "task-curated");
+        fs.writeFileSync(path.join(tmp, "spec.md"), "spec body\n", "utf-8");
+        fs.writeFileSync(
+          path.join(taskDir, "implement.jsonl"),
+          JSON.stringify({ file: "spec.md", reason: "spec" }) + "\n",
+          "utf-8",
+        );
+        const relTask = path.relative(tmp, taskDir).split(path.sep).join("/");
+        const out = runHookProbe(
+          tmp,
+          `print(mod.get_implement_context(REPO_ROOT, ${JSON.stringify(relTask)}))`,
+        );
+        expect(out).toContain("spec body");
+        expect(out).not.toContain("has no curated entries");
+      });
+    });
+
     describe("task.py validate: JSONL hygiene warnings", () => {
       it("warns (does not error) on a jsonl entry that looks like a code file", () => {
         const taskDir = makeTask(tmp, "task-code-warn");

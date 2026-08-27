@@ -493,6 +493,17 @@ def get_agent_context(
     """
     agent_jsonl = f"{task_dir}/{agent_type}.jsonl"
     blocks = _materialize_jsonl_entries(repo_root, agent_jsonl, limits, budget)
+    if not blocks:
+        # Zero curated context reaches the model silently otherwise — the
+        # stderr WARN above never enters any session (#573). Put the fact in
+        # the prompt itself so the sub-agent compensates instead of assuming
+        # the spec context was complete.
+        return (
+            f"[Trellis] {agent_jsonl} has no curated entries, so no spec/research "
+            "context was injected. Before working, read the guidelines relevant "
+            "to the code you will touch under .trellis/spec/, and treat the task "
+            "artifacts below as the only prepared context."
+        )
     return "\n\n".join(blocks)
 
 

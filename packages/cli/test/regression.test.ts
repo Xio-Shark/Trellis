@@ -6963,7 +6963,7 @@ print(len(entries))
     expect(result.trim()).toBe("0");
   });
 
-  it("[validation-preflight] task.py validate passes for a freshly created task (empty manifests)", () => {
+  it("[#573] task.py validate fails for a freshly created task until manifests are curated", () => {
     setupTaskRepo();
     fs.mkdirSync(path.join(tmpDir, ".claude"), { recursive: true });
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
@@ -6977,12 +6977,17 @@ print(len(entries))
     expect(taskDir).toBeDefined();
     const relTaskDir = path.posix.join(".trellis", "tasks", taskDir as string);
 
-    const result = execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} validate ${relTaskDir}`,
+    const result = spawnSync(
+      pythonCmd,
+      [taskScriptPath, "validate", relTaskDir],
       { cwd: tmpDir, encoding: "utf-8" },
     );
-    // Exit 0 (no error raised) plus success marker in output.
-    expect(result).toContain("All validations passed");
+    // Seed-only manifests used to pass with a green "✓ (0 entries)", so
+    // sub-agents silently ran with zero spec context (#573).
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("0 curated entries");
+    expect(result.stdout).toContain("add-context");
+    expect(result.stdout).toContain("--allow-empty-context");
   });
 
   describe("[validation-preflight] task.py validate vs PR preflight contract", () => {
@@ -6991,6 +6996,10 @@ print(len(entries))
     // then trips PR preflight's `_example` scaffolding rule.
     const placeholderRow =
       '{"_example": "Fill with {\\"file\\": \\"<path>\\", \\"reason\\": \\"<why>\\"}."}\n';
+    // Curated row for the manifest not under test: an empty manifest is
+    // itself an error since #573, which would obscure the count under test.
+    const curatedRow =
+      '{"file":".trellis/spec/guides/index.md","reason":"guideline"}\n';
 
     function validateWith(
       implementContent: string,
@@ -7017,7 +7026,7 @@ print(len(entries))
     }
 
     it("rejects a placeholder-only implement.jsonl with file, line, and remediation", () => {
-      const result = validateWith(placeholderRow, "");
+      const result = validateWith(placeholderRow, curatedRow);
       expect(result.status).toBe(1);
       expect(result.stdout).toContain("implement.jsonl:1: Placeholder `_example` row");
       expect(result.stdout).toContain(
@@ -7027,25 +7036,32 @@ print(len(entries))
     });
 
     it("rejects a placeholder row in check.jsonl too", () => {
-      const result = validateWith("", placeholderRow);
+      const result = validateWith(curatedRow, placeholderRow);
       expect(result.status).toBe(1);
       expect(result.stdout).toContain("check.jsonl:1: Placeholder `_example` row");
     });
 
     it("rejects a placeholder row that sits alongside curated entries", () => {
       const result = validateWith(
-        `${placeholderRow}{"file":".trellis/spec/guides/index.md","reason":"guideline"}\n`,
-        "",
+        `${placeholderRow}${curatedRow}`,
+        curatedRow,
       );
       expect(result.status).toBe(1);
       expect(result.stdout).toContain("implement.jsonl:1: Placeholder `_example` row");
       expect(result.stdout).toContain("Validation failed (1 errors)");
     });
 
-    it("passes for empty manifests", () => {
+    it("[#573] fails for empty manifests instead of passing them silently", () => {
       const result = validateWith("", "");
-      expect(result.status).toBe(0);
-      expect(result.stdout).toContain("All validations passed");
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain(
+        "implement.jsonl: ✗ (0 curated entries — sub-agents would get zero spec context)",
+      );
+      expect(result.stdout).toContain(
+        "check.jsonl: ✗ (0 curated entries — sub-agents would get zero spec context)",
+      );
+      expect(result.stdout).toContain("add-context <task> implement");
+      expect(result.stdout).toContain("--allow-empty-context");
     });
 
     it("passes for curated entries pointing at real files", () => {
@@ -7066,7 +7082,7 @@ print(len(entries))
     });
 
     it("still rejects malformed JSON lines", () => {
-      const result = validateWith("{not json\n", "");
+      const result = validateWith("{not json\n", curatedRow);
       expect(result.status).toBe(1);
       expect(result.stdout).toContain("implement.jsonl:1: Invalid JSON");
     });
@@ -7074,7 +7090,7 @@ print(len(entries))
     it("reports a non-object row instead of crashing on it", () => {
       // Valid JSON, wrong shape — the row must be an error with a line
       // number, not an AttributeError traceback out of `data.get`.
-      const result = validateWith('"just a string"\n[1, 2]\nnull\n', "");
+      const result = validateWith('"just a string"\n[1, 2]\nnull\n', curatedRow);
       expect(result.status).toBe(1);
       expect(result.stderr).not.toContain("Traceback");
       for (const line of [1, 2, 3]) {
@@ -7140,6 +7156,81 @@ print(len(entries))
       );
       expect(result.status).toBe(1);
       expect(result.stdout).toContain("implement.jsonl:1: Placeholder `_example` row");
+    });
+  });
+
+  describe("[#573] task.py start seed-only context gate", () => {
+    const curatedRow =
+      '{"file":".trellis/spec/guides/index.md","reason":"guideline"}\n';
+
+    function writeManifests(implement: string | null, check: string | null): void {
+      const taskDir = path.join(tmpDir, ".trellis", "tasks", "issue-106");
+      if (implement !== null) {
+        fs.writeFileSync(path.join(taskDir, "implement.jsonl"), implement, "utf-8");
+      }
+      if (check !== null) {
+        fs.writeFileSync(path.join(taskDir, "check.jsonl"), check, "utf-8");
+      }
+    }
+
+    function runStart(...extra: string[]): ReturnType<typeof spawnSync> {
+      const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+      return spawnSync(
+        pythonCmd,
+        [taskScriptPath, "start", ".trellis/tasks/issue-106", ...extra],
+        {
+          cwd: tmpDir,
+          encoding: "utf-8",
+          // Session identity so a successful start prints "Current task set
+          // to" instead of the degraded-mode notice.
+          env: sessionEnv({ TRELLIS_CONTEXT_ID: "test-ctx-573" }),
+        },
+      );
+    }
+
+    it("blocks start when seeded manifests have zero curated entries", () => {
+      setupTaskRepo();
+      writeManifests("", "");
+      const r = runStart();
+      expect(r.status).toBe(1);
+      expect(r.stdout).toContain("no curated entries");
+      expect(r.stdout).toContain("add-context");
+      expect(r.stdout).toContain("--allow-empty-context");
+      expect(r.stdout).not.toContain("Current task set to");
+    });
+
+    it("names only the manifest that is actually empty", () => {
+      setupTaskRepo();
+      writeManifests(curatedRow, "");
+      const r = runStart();
+      expect(r.status).toBe(1);
+      expect(r.stdout).toContain("check.jsonl has no curated entries");
+      expect(r.stdout).not.toContain("implement.jsonl and check.jsonl");
+    });
+
+    it("--allow-empty-context bypasses the gate", () => {
+      setupTaskRepo();
+      writeManifests("", "");
+      const r = runStart("--allow-empty-context");
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain("Current task set to");
+    });
+
+    it("does not gate when manifests are absent (agent-less platform)", () => {
+      // `create` seeds the manifests only on sub-agent-capable platforms;
+      // absence means no sub-agent will ever read them.
+      setupTaskRepo();
+      const r = runStart();
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain("Current task set to");
+    });
+
+    it("starts normally once both manifests are curated", () => {
+      setupTaskRepo();
+      writeManifests(curatedRow, curatedRow);
+      const r = runStart();
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain("Current task set to");
     });
   });
 
