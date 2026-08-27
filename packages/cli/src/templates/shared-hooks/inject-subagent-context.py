@@ -248,17 +248,32 @@ class _Budget:
         self.used += size
 
 
+def _real_path_contained(base_real: str, target_real: str) -> bool:
+    """Whether an already-realpath'd target sits under an already-realpath'd base.
+
+    ValueError on Windows when the two sit on different drives; that is
+    outside the base by definition, so it fails closed.
+    """
+    try:
+        return os.path.commonpath([base_real, target_real]) == base_real
+    except ValueError:
+        return False
+
+
 def _read_file_bytes(base_path: str, file_path: str) -> bytes | None:
     """Read raw file bytes, return None if file doesn't exist."""
     full_path = os.path.join(base_path, file_path)
     try:
         root_real = os.path.realpath(base_path)
+        # `.trellis` may itself be a symlink into a store outside the repo
+        # (#567); its real location is a second legitimate containment base.
+        workflow_real = os.path.realpath(os.path.join(base_path, ".trellis"))
         full_real = os.path.realpath(full_path)
-        # ValueError on Windows when the two sit on different drives; that is
-        # outside base_path by definition, so it fails closed below.
-        if os.path.commonpath([root_real, full_real]) != root_real:
+        if not _real_path_contained(root_real, full_real) and not (
+            _real_path_contained(workflow_real, full_real)
+        ):
             return None
-    except (OSError, ValueError):
+    except OSError:
         return None
     if os.path.exists(full_path) and os.path.isfile(full_path):
         try:
@@ -1110,12 +1125,15 @@ def main():
         # task's prd.md/design.md reach the model prompt, so it checks again.
         try:
             root_real = os.path.realpath(repo_root)
+            # `.trellis` may itself be a symlink into a store outside the
+            # repo (#567); its real location is a second legitimate base.
+            workflow_real = os.path.realpath(os.path.join(repo_root, ".trellis"))
             task_dir_full = os.path.realpath(os.path.join(repo_root, task_dir))
-            # ValueError on Windows when the two sit on different drives; that
-            # is outside the repo by definition, so it fails closed below.
-            if os.path.commonpath([root_real, task_dir_full]) != root_real:
+            if not _real_path_contained(root_real, task_dir_full) and not (
+                _real_path_contained(workflow_real, task_dir_full)
+            ):
                 sys.exit(0)
-        except (OSError, ValueError):
+        except OSError:
             sys.exit(0)
         if not os.path.exists(task_dir_full):
             sys.exit(0)

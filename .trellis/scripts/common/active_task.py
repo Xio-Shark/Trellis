@@ -210,29 +210,44 @@ def resolve_task_ref(task_ref: str, repo_root: Path) -> Path | None:
     if not normalized:
         return None
 
+    try:
+        root = repo_root.resolve()
+    except OSError:
+        return None
+
     path_obj = Path(normalized)
     if path_obj.is_absolute():
         candidate = path_obj
     elif normalized.startswith(f"{DIR_WORKFLOW}/"):
-        candidate = repo_root / path_obj
+        candidate = root / path_obj
     else:
-        candidate = repo_root / DIR_WORKFLOW / DIR_TASKS / path_obj
+        candidate = root / DIR_WORKFLOW / DIR_TASKS / path_obj
 
     # Both sides are resolved because repo_root itself may sit behind a
     # symlink (/tmp on macOS does), and resolve() is what collapses `..`
     # instead of leaving it for a lexical relative_to() to wave through.
     try:
         resolved = candidate.resolve()
-        root = repo_root.resolve()
+        workflow_real = (root / DIR_WORKFLOW).resolve()
     except OSError:
         return None
 
     try:
         resolved.relative_to(root)
+        return resolved
+    except ValueError:
+        pass
+
+    # `.trellis` may itself be a symlink into a store outside the repo (#567).
+    # The workflow dir's own real location is then a second legitimate
+    # containment base; a ref that escapes BOTH bases is still refused. Map
+    # back to the in-repo (lexical) form so callers store a repo-relative ref.
+    try:
+        rel = resolved.relative_to(workflow_real)
     except ValueError:
         return None
 
-    return resolved
+    return root / DIR_WORKFLOW / rel
 
 
 def _runtime_sessions_dir(repo_root: Path) -> Path:
@@ -592,10 +607,23 @@ def _relative_task_ref(task_path: str, repo_root: Path) -> str:
     if not candidate.is_absolute():
         return normalized
     try:
-        return candidate.resolve().relative_to(repo_root.resolve()).as_posix()
-    except ValueError:
-        # Outside the repo — refuse rather than store an absolute pointer.
+        resolved = candidate.resolve()
+        root = repo_root.resolve()
+        workflow_real = (root / DIR_WORKFLOW).resolve()
+    except OSError:
         return ""
+    try:
+        return resolved.relative_to(root).as_posix()
+    except ValueError:
+        pass
+    # Same dual-base containment as resolve_task_ref: a path through a
+    # symlinked `.trellis` (#567) maps back to its in-repo form; anything
+    # outside both bases is refused rather than stored as an absolute pointer.
+    try:
+        rel = resolved.relative_to(workflow_real)
+    except ValueError:
+        return ""
+    return (Path(DIR_WORKFLOW) / rel).as_posix()
 
 
 def _active_from_ref(

@@ -204,16 +204,19 @@ def resolve_task_dir(target_dir: str, repo_root: Path) -> Path | None:
     directory argument. The candidate is resolved (following symlinks) and must
     land strictly under ``.trellis/tasks/``; archived tasks under
     ``archive/<YYYY-MM>/`` qualify. Traversal (``../victim``), absolute paths
-    outside the repo, a task dir symlinked to somewhere else, and the tasks
-    directory itself are all rejected here so no caller has to re-check.
+    outside the repo, a task dir symlinked out of the tasks tree, and the
+    tasks directory itself are all rejected here so no caller has to re-check.
+    The containment base is the tasks dir's own real location, so a
+    ``.trellis`` that is itself a symlink into a shared store (#567) works.
 
     Args:
         target_dir: Task directory specification.
         repo_root: Repository root path.
 
     Returns:
-        Resolved absolute path, or None when it is not a location inside the
-        tasks directory (an error naming the path is printed to stderr).
+        Absolute path spelled through the repo's own tasks dir (in-repo
+        lexical form), or None when it is not a location inside the tasks
+        directory (an error naming the path is printed to stderr).
     """
     if not target_dir:
         print("Error: task directory is required", file=sys.stderr)
@@ -245,7 +248,8 @@ def resolve_task_dir(target_dir: str, repo_root: Path) -> Path | None:
 
     try:
         resolved = candidate.resolve()
-        tasks_resolved = tasks_dir.resolve()
+        tasks_lexical = get_tasks_dir(repo_root.resolve())
+        tasks_resolved = tasks_lexical.resolve()
     except (OSError, RuntimeError) as e:
         print(f"Error: could not resolve task directory '{target_dir}': {e}", file=sys.stderr)
         return None
@@ -265,7 +269,12 @@ def resolve_task_dir(target_dir: str, repo_root: Path) -> Path | None:
         )
         return None
 
-    return resolved
+    # Hand back the path spelled through the repo's own tasks dir rather than
+    # `resolved`: `.trellis` may be a symlink into a store outside the repo
+    # (#567), in which case `resolved` sits outside the repo even though the
+    # task is legitimate, and callers converting to a repo-relative ref for
+    # storage would refuse it.
+    return tasks_lexical / resolved.relative_to(tasks_resolved)
 
 
 # =============================================================================
