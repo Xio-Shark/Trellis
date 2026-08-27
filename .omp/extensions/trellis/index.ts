@@ -715,6 +715,77 @@ function buildTaskContext(projectRoot: string, taskDir: string, agentType?: Agen
 }
 
 // ---------------------------------------------------------------------------
+// Prompt injection config (escape hatch)
+// ---------------------------------------------------------------------------
+
+// Mirrors DEFAULT_PROMPT_INJECTION_SKIP_KEYWORD in inject-workflow-state.py:
+// the skip keyword defaults to "no-trellis"; an explicit "" disables the
+// escape hatch entirely.
+const DEFAULT_PROMPT_INJECTION_SKIP_KEYWORD = "no-trellis";
+
+// PyYAML-compatible resolution of scalars that parse as non-strings: null
+// (empty, ~, null variants), bool (YAML 1.1 set), and numbers. Quoted scalars
+// never reach this check and stay strings.
+function isYamlNonStringScalar(raw: string): boolean {
+   if (raw === "" || raw === "~" || /^(?:null|Null|NULL)$/.test(raw)) return true;
+   if (/^(?:true|True|TRUE|false|False|FALSE|yes|Yes|YES|no|No|NO|on|On|ON|off|Off|OFF)$/.test(raw)) return true;
+   // PyYAML int resolver: binary/octal/decimal/hex; leading-zero decimals are not ints.
+   if (/^[-+]?(?:0[bB][01_]+|0[0-7_]+|0[xX][0-9a-fA-F_]+|[1-9][\d_]*|0)$/.test(raw)) return true;
+   // PyYAML float resolver: requires a dot and a signed exponent ("1.5e+3",
+   // not "1.5e3" — the latter stays a string in PyYAML).
+   return /^[-+]?(?:\d[\d_]*\.[\d_]*|\.[\d_]+)(?:[eE][-+]\d+)?$/.test(raw) ||
+      /^[-+]?\.(?:inf|Inf|INF)$/.test(raw) ||
+      /^\.(?:nan|NaN|NAN)$/.test(raw);
+}
+
+function readPromptInjectionSkipKeyword(projectRoot: string): string {
+   let config = "";
+   try { config = readFileSync(join(projectRoot, ".trellis", "config.yaml"), "utf-8"); } catch { return DEFAULT_PROMPT_INJECTION_SKIP_KEYWORD; }
+
+   let inSection = false;
+   let sectionIndent = -1;
+   for (const rawLine of config.split(/\r?\n/)) {
+      const trimmed = rawLine.trim();
+      if (!inSection) {
+         if (/^prompt_injection\s*:\s*(#.*)?$/.test(trimmed)) {
+            inSection = true;
+            sectionIndent = rawLine.length - rawLine.trimStart().length;
+         }
+         continue;
+      }
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const indent = rawLine.length - rawLine.trimStart().length;
+      if (indent <= sectionIndent) break;
+      const match = trimmed.match(/^skip_keyword\s*:\s*(.*)$/);
+      if (!match) continue;
+      const rawValue = stripInlineComment(match[1]!).trim();
+      const unquoted = unquoteYaml(rawValue);
+      // Preserve YAML scalar typing, mirroring _resolve_skip_keyword's
+      // isinstance(raw, str) check: a bare non-string scalar (bool/null/
+      // number, including an empty value) falls back to the default, while
+      // quoted scalars — including an explicit "" — stay strings.
+      if (unquoted === rawValue && isYamlNonStringScalar(rawValue)) {
+         return DEFAULT_PROMPT_INJECTION_SKIP_KEYWORD;
+      }
+      return unquoted.trim();
+   }
+   return DEFAULT_PROMPT_INJECTION_SKIP_KEYWORD;
+}
+
+// Mirrors prompt_has_skip_keyword() in inject-workflow-state.py: hyphen counts
+// as a word char so "no-trellisx" / "xno-trellis" / "foo-no-trellis" don't
+// match, but punctuation/whitespace boundaries do. Empty keyword never matches.
+function shouldSkipWorkflowState(
+   userInput: string,
+   skipKeyword: string,
+): boolean {
+   if (!skipKeyword) return false;
+   const escapedKeyword = skipKeyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+   const pattern = new RegExp(`(?<![\\w-])${escapedKeyword}(?![\\w-])`, "i");
+   return pattern.test(userInput);
+}
+
+// ---------------------------------------------------------------------------
 // Per-turn cache — prevents redundant workflow-state resolution within a
 // single event cascade (input, before_agent_start, and context fire closely)
 // ---------------------------------------------------------------------------
@@ -726,7 +797,16 @@ class TurnContextCache {
    private key: string | null = null;
    private timestamp = 0;
    private workflowMsg = "";
+   private skipThisTurn = false;
    private static readonly TTL_MS = 1500;
+
+   // Called once per user turn (input event) with the skip decision for that
+   // turn; invalidates the cache so every reader in the cascade
+   // (before_agent_start, context) resolves the same turn state.
+   beginTurn(skipThisTurn: boolean): void {
+      this.skipThisTurn = skipThisTurn;
+      this.key = null;
+   }
 
    get(projectRoot: string, contextKey: string | null): { workflowMsg: string } {
       const now = Date.now();
@@ -756,7 +836,10 @@ class TurnContextCache {
          workflowBody = "Refer to workflow.md for current step.";
       }
 
-      this.workflowMsg = `<workflow-state>\n${workflowBody}\n</workflow-state>\n\n<session-overview>\n${SESSION_OVERVIEW_TEXT}\n</session-overview>`;
+      // When skip keyword is present, skip workflow state injection this turn
+      this.workflowMsg = this.skipThisTurn
+         ? ""
+         : `<workflow-state>\n${workflowBody}\n</workflow-state>\n\n<session-overview>\n${SESSION_OVERVIEW_TEXT}\n</session-overview>`;
 
       this.key = cacheKey;
       this.timestamp = now;
@@ -902,6 +985,9 @@ export default function(pi: ExtensionAPI): void {
       const cached = turnCache.get(projectRoot, contextKey);
       lastInjectionTs = Date.now();
 
+      // Skip turn: inject nothing (escape hatch)
+      if (!cached.workflowMsg) return;
+
       return {
          message: {
             customType: "trellis-workflow-state",
@@ -943,11 +1029,24 @@ export default function(pi: ExtensionAPI): void {
          if (replacement && !replaced) projectedMessages.push(replacement);
       }
 
-      // Fast path: no task change and no compaction — all persisted context is current.
-      if (!taskContextChanged && lastInjectionTs > lastCompactionTs) return;
-
+      // Resolve the turn state before the fast path: a skip turn must still
+      // run breadcrumb cleanup even when nothing else changed.
       const cached = turnCache.get(projectRoot, contextKey);
-      if (!cached.workflowMsg) return taskContextChanged ? { messages: projectedMessages } : undefined;
+      const skipping = !cached.workflowMsg;
+
+      // Fast path: no task change, no compaction, not skipping — all persisted context is current.
+      if (!taskContextChanged && !skipping && lastInjectionTs > lastCompactionTs) return;
+
+      if (skipping) {
+         // Skip turn (escape hatch): drop any persisted breadcrumb from an
+         // earlier turn so the skip actually takes effect.
+         const withoutBreadcrumb = projectedMessages.filter(
+            (message) => !(message.role === "custom" && message.customType === "trellis-workflow-state"),
+         );
+         if (withoutBreadcrumb.length === projectedMessages.length && !taskContextChanged) return;
+         lastInjectionTs = Date.now();
+         return { messages: withoutBreadcrumb };
+      }
 
       // Post-compaction: reverse-scan to confirm absence before injecting
       for (let i = projectedMessages.length - 1; i >= 0; i--) {
@@ -986,14 +1085,21 @@ export default function(pi: ExtensionAPI): void {
       };
    });
 
-   pi.on("input", async (_event, ctx) => {
+   pi.on("input", async (event, ctx) => {
       if (!projectRoot) {
          projectRoot = findProjectRoot(ctx.cwd);
       }
       // Resolve projectRoot on first input if session_start missed it
       if (!projectRoot) return;
       const contextKey = rememberContextKey(ctx);
-      // Pre-warm the cache so before_agent_start and context can use it
+
+      // Check if this turn should skip workflow state injection
+      const skipKeyword = readPromptInjectionSkipKeyword(projectRoot);
+      const skipThisTurn = shouldSkipWorkflowState(event.text ?? "", skipKeyword);
+
+      // Record the turn's skip decision and pre-warm the cache so
+      // before_agent_start and context can use it
+      turnCache.beginTurn(skipThisTurn);
       turnCache.get(projectRoot, contextKey);
    });
 }
