@@ -190,6 +190,44 @@ describe.skipIf(SKIP)("sqlite-readonly parser", () => {
     db.close();
   });
 
+  it("keys rows by column name when CREATE TABLE has -- comments between columns", () => {
+    buildSqlite(dbPath, {
+      schema: [
+        `CREATE TABLE message_nodes (
+  row_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  node_id INTEGER NOT NULL,           -- node_id within this session's forest
+  parent_node_id INTEGER,             -- NULL for root nodes
+  chat_message TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+)`,
+      ],
+      rows: {
+        message_nodes: [
+          {
+            session_id: "s1",
+            node_id: 1,
+            parent_node_id: null,
+            chat_message: "hello",
+            created_at: 1700000000,
+          },
+        ],
+      },
+    });
+    const db = openSqliteReadOnly(dbPath);
+    expect(db.scanTable("message_nodes")).toEqual([
+      {
+        row_id: 1,
+        session_id: "s1",
+        node_id: 1,
+        parent_node_id: null,
+        chat_message: "hello",
+        created_at: 1700000000,
+      },
+    ]);
+    db.close();
+  });
+
   it.skipIf(process.platform === "win32")(
     "reads a sparse database larger than the readFileSync limit",
     () => {

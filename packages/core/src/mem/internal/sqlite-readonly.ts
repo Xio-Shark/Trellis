@@ -888,10 +888,11 @@ function decodeLeafCell(
  * not columns.
  */
 function parseColumnNames(sql: string): string[] | null {
-  const open = sql.indexOf("(");
-  const close = sql.lastIndexOf(")");
+  const cleaned = stripSqlLineComments(sql);
+  const open = cleaned.indexOf("(");
+  const close = cleaned.lastIndexOf(")");
   if (open < 0 || close < 0 || close <= open) return null;
-  const body = sql.slice(open + 1, close);
+  const body = cleaned.slice(open + 1, close);
 
   const segments = splitTopLevelCommas(body);
   const cols: string[] = [];
@@ -934,6 +935,12 @@ function firstIdentifier(piece: string): string | null {
 
 function isConstraintKeyword(id: string): boolean {
   return /^(primary|unique|check|foreign|constraint)$/i.test(id);
+}
+
+/** Strip `-- line comments` so a comma on the previous line still reveals
+ * the next column. Live Devin CLI `CREATE TABLE` SQL uses that layout. */
+export function stripSqlLineComments(sql: string): string {
+  return sql.replace(/--[^\n]*/g, " ");
 }
 
 // ---------- public entry ----------
@@ -1040,10 +1047,11 @@ export function openSqliteReadOnly(mainPath: string): SqliteReadOnly {
     columns: string[] | null,
   ): number {
     if (!table.sql || !columns) return -1;
-    const open = table.sql.indexOf("(");
-    const close = table.sql.lastIndexOf(")");
+    const cleaned = stripSqlLineComments(table.sql);
+    const open = cleaned.indexOf("(");
+    const close = cleaned.lastIndexOf(")");
     if (open < 0 || close < 0) return -1;
-    const body = table.sql.slice(open + 1, close);
+    const body = cleaned.slice(open + 1, close);
     const segments = splitTopLevelCommas(body);
     let idx = 0;
     for (const seg of segments) {
