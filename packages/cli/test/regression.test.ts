@@ -2880,7 +2880,7 @@ print(json.dumps({
     }
   });
 
-  it("[session-start-proof] shared and Codex contexts include one-shot first-reply notice without changing payload shape", () => {
+  it("[session-start-proof] shared context includes one-shot first-reply notice; Codex full mode does, brief does not", () => {
     setupTaskRepo();
 
     writeProjectFile(
@@ -2892,21 +2892,24 @@ print(json.dumps({
       expectTemplateContent(codexSessionStart, "codex session-start"),
     );
 
-    const sharedPayload = JSON.parse(
-      runPython(path.join(".claude", "hooks", "session-start.py")),
+    const sharedFull = JSON.parse(
+      runPython(path.join(".claude", "hooks", "session-start.py"), undefined, {
+        TRELLIS_SESSION_CONTEXT: "full",
+      }),
     ) as {
       hookSpecificOutput: { hookEventName: string; additionalContext: string };
     };
-    const codexPayload = JSON.parse(
+    const codexFull = JSON.parse(
       runPython(
         path.join(".codex", "hooks", "session-start.py"),
         JSON.stringify({ cwd: tmpDir }),
+        { TRELLIS_SESSION_CONTEXT: "full" },
       ),
     ) as {
       hookSpecificOutput: { hookEventName: string; additionalContext: string };
     };
 
-    for (const payload of [sharedPayload, codexPayload]) {
+    for (const payload of [sharedFull, codexFull]) {
       expect(Object.keys(payload)).not.toContain("firstReplyNotice");
       expect(Object.keys(payload.hookSpecificOutput)).toEqual([
         "hookEventName",
@@ -2923,6 +2926,31 @@ print(json.dumps({
       expect(ctx.indexOf("<first-reply-notice>")).toBeLessThan(
         ctx.indexOf("<current-state>"),
       );
+    }
+
+    // Default ships brief on both platforms: shape unchanged, first-reply ritual dropped.
+    const sharedBrief = JSON.parse(
+      runPython(path.join(".claude", "hooks", "session-start.py")),
+    ) as {
+      hookSpecificOutput: { hookEventName: string; additionalContext: string };
+    };
+    const codexBrief = JSON.parse(
+      runPython(
+        path.join(".codex", "hooks", "session-start.py"),
+        JSON.stringify({ cwd: tmpDir }),
+      ),
+    ) as {
+      hookSpecificOutput: { hookEventName: string; additionalContext: string };
+    };
+    for (const payload of [sharedBrief, codexBrief]) {
+      expect(Object.keys(payload.hookSpecificOutput)).toEqual([
+        "hookEventName",
+        "additionalContext",
+      ]);
+      expect(payload.hookSpecificOutput.additionalContext).not.toContain(
+        "<first-reply-notice>",
+      );
+      expect(payload.hookSpecificOutput.additionalContext).toContain("<current-state>");
     }
   });
 
@@ -4253,6 +4281,8 @@ print(len(entries))
 
     const rawOutput = runPython(
       path.join(".claude", "hooks", "session-start.py"),
+      undefined,
+      { TRELLIS_SESSION_CONTEXT: "full" },
     );
     const payload = JSON.parse(rawOutput) as {
       hookSpecificOutput: { additionalContext: string };
@@ -4276,6 +4306,17 @@ print(len(entries))
     const tagBlockRe =
       /\[workflow-state:([A-Za-z0-9_-]+)\]\s*\n[\s\S]*?\n\s*\[\/workflow-state:\1\]/;
     expect(tagBlockRe.test(workflowBlock)).toBe(false);
+
+    // Default (brief) keeps only the pointer — no Phase Index body.
+    const briefPayload = JSON.parse(
+      runPython(path.join(".claude", "hooks", "session-start.py")),
+    ) as { hookSpecificOutput: { additionalContext: string } };
+    const briefBlock =
+      /<trellis-workflow>([\s\S]*?)<\/trellis-workflow>/.exec(
+        briefPayload.hookSpecificOutput.additionalContext,
+      )?.[1] ?? "";
+    expect(briefBlock).toContain(".trellis/workflow.md");
+    expect(briefBlock).not.toContain("## Phase Index");
   });
 
   it("[workflow-v2] session-start.py <guidelines> block lists context order and spec paths", () => {
@@ -4302,6 +4343,8 @@ print(len(entries))
 
     const rawOutput = runPython(
       path.join(".claude", "hooks", "session-start.py"),
+      undefined,
+      { TRELLIS_SESSION_CONTEXT: "full" },
     );
     const payload = JSON.parse(rawOutput) as {
       hookSpecificOutput: { additionalContext: string };

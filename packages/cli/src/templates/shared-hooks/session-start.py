@@ -142,6 +142,17 @@ def should_skip_injection() -> bool:
     return any(os.environ.get(var) == "1" for var in non_interactive_vars)
 
 
+def is_brief_mode() -> bool:
+    """Brief payload by default; set TRELLIS_SESSION_CONTEXT=full for the old shape."""
+    return os.environ.get("TRELLIS_SESSION_CONTEXT", "brief").strip().lower() != "full"
+
+
+def _strip_next_directives(status_text: str) -> str:
+    """Drop ``Next:`` directive lines, keep Status/Task/Present facts."""
+    kept = [line for line in status_text.splitlines() if not line.startswith("Next:")]
+    return "\n".join(kept).strip()
+
+
 def read_file(path: Path, fallback: str = "") -> str:
     try:
         return path.read_text(encoding="utf-8")
@@ -766,6 +777,7 @@ def main():
     allowed_pkgs = _resolve_spec_scope(is_mono, packages, scope_config, task_pkg, default_pkg)
 
     output = StringIO()
+    brief = is_brief_mode()
 
     spec_index_paths = _collect_spec_index_paths(trellis_dir, allowed_pkgs)
 
@@ -774,8 +786,9 @@ Trellis compact SessionStart context. Use it to orient the session; load details
 </session-context>
 
 """)
-    output.write(FIRST_REPLY_NOTICE)
-    output.write("\n\n")
+    if not brief:
+        output.write(FIRST_REPLY_NOTICE)
+        output.write("\n\n")
 
     # Legacy migration warning
     legacy_warning = _check_legacy_spec(trellis_dir, is_mono, packages)
@@ -787,7 +800,13 @@ Trellis compact SessionStart context. Use it to orient the session; load details
     output.write("\n</current-state>\n\n")
 
     output.write("<trellis-workflow>\n")
-    output.write(_build_workflow_overview(trellis_dir / "workflow.md"))
+    if brief:
+        output.write(
+            "Full guide: .trellis/workflow.md. Step detail: "
+            "`python3 ./.trellis/scripts/get_context.py --mode phase --step <X.Y>`.\n"
+        )
+    else:
+        output.write(_build_workflow_overview(trellis_dir / "workflow.md"))
     output.write("\n</trellis-workflow>\n\n")
 
     output.write("<guidelines>\n")
@@ -798,22 +817,33 @@ Trellis compact SessionStart context. Use it to orient the session; load details
     )
 
     if spec_index_paths:
-        output.write("## Available indexes (read on demand)\n")
-        for p in spec_index_paths:
-            output.write(f"- {p}\n")
-        output.write("\n")
+        if brief:
+            output.write("Spec indexes (read on demand): " + ", ".join(spec_index_paths) + "\n")
+        else:
+            output.write("## Available indexes (read on demand)\n")
+            for p in spec_index_paths:
+                output.write(f"- {p}\n")
+            output.write("\n")
 
-    output.write(
-        "Discover more via: "
-        "`python3 ./.trellis/scripts/get_context.py --mode packages`\n"
-    )
+    if not brief:
+        output.write(
+            "Discover more via: "
+            "`python3 ./.trellis/scripts/get_context.py --mode packages`\n"
+        )
     output.write("</guidelines>\n\n")
 
     # Check task status and inject structured tag
     task_status = _get_task_status(trellis_dir, hook_input)
+    if brief:
+        task_status = _strip_next_directives(task_status)
     output.write(f"<task-status>\n{task_status}\n</task-status>\n\n")
 
-    output.write("""<ready>
+    if brief:
+        output.write("""<ready>
+Context loaded. Load workflow/spec/task details only when needed.
+</ready>""")
+    else:
+        output.write("""<ready>
 Context loaded. Follow <task-status>. Load workflow/spec/task details only when needed.
 </ready>""")
 
