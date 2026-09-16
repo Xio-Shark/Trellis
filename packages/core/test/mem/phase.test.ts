@@ -455,7 +455,7 @@ describe("collectClaudeTurnsAndEvents", () => {
     expect(collectClaudeTurnsAndEvents(s).events).toEqual([]);
   });
 
-  it("survives compaction: turns reset, subsequent task.py events still tracked", () => {
+  it("survives compaction: turns kept, subsequent task.py events still tracked", () => {
     const s = buildSession("session-c", [
       {
         type: "user",
@@ -503,17 +503,23 @@ describe("collectClaudeTurnsAndEvents", () => {
     ]);
 
     const { turns, events } = collectClaudeTurnsAndEvents(s);
-    expect(turns.length).toBe(3);
-    expect(turns[0]?.text.startsWith("[compact summary]")).toBe(true);
+    expect(turns.map((t) => t.text)).toEqual([
+      "early talk",
+      "early reply",
+      turns[2]?.text ?? "",
+      "continuing",
+      "creating",
+    ]);
+    expect(turns[2]?.kind).toBe("marker");
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
       action: "create",
       slug: "post-compact",
-      turnIndex: 2,
+      turnIndex: 4,
     });
   });
 
-  it("compaction discards PRE-compact task.py events (turnIndex no longer valid)", () => {
+  it("compaction keeps PRE-compact task.py events — their turns are still there", () => {
     const s = buildSession("session-d", [
       {
         type: "user",
@@ -552,7 +558,17 @@ describe("collectClaudeTurnsAndEvents", () => {
       },
     ]);
 
-    expect(collectClaudeTurnsAndEvents(s).events).toEqual([]);
+    const { turns, events } = collectClaudeTurnsAndEvents(s);
+    expect(events).toEqual([
+      {
+        action: "create",
+        slug: "stale",
+        timestamp: "2026-05-08T00:00:01Z",
+        turnIndex: 1,
+      },
+    ]);
+    // turnIndex 1 still names the turn the tool call ran after.
+    expect(turns[1]?.text).toBe("creating ahead of compact");
   });
 });
 
@@ -885,7 +901,7 @@ describe("collectPiTurnsAndEvents", () => {
     ]);
   });
 
-  it("drops task.py events from discarded pre-compaction history", () => {
+  it("keeps task.py events from before a compaction — their turns stay on the branch", () => {
     const s = buildSession([
       {
         type: "session",
@@ -930,9 +946,18 @@ describe("collectPiTurnsAndEvents", () => {
 
     const { turns, events } = collectPiTurnsAndEvents(s);
     expect(turns.map((t) => t.text)).toEqual([
-      "[compact summary]\nsummary",
+      "old",
       "kept",
+      turns[2]?.text ?? "",
     ]);
-    expect(events).toEqual([]);
+    expect(turns[2]?.kind).toBe("marker");
+    expect(events).toEqual([
+      {
+        action: "create",
+        slug: "stale",
+        timestamp: "2026-06-18T00:00:01.000Z",
+        turnIndex: 0,
+      },
+    ]);
   });
 });

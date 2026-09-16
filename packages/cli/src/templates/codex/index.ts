@@ -5,11 +5,15 @@
  * Do NOT use Trellis project's own .agents/skills or .codex directories
  * (which may be customized).
  *
+ * Workflow skills are NOT stored here. They come from templates/common/ and are
+ * written to .agents/skills/ as trellis-*, which Codex reads alongside
+ * .codex/skills/ (see configurators/codex.ts).
+ *
  * Directory structure:
  *   codex/
  *   ├── agents/         # Project-scoped Codex custom agents (.toml)
- *   ├── codex-skills/   # Codex-specific skills → .codex/skills/
- *   ├── skills/         # Shared skills → .agents/skills/
+ *   ├── hooks/          # Codex hook scripts → .codex/hooks/
+ *   ├── hooks.json      # Codex hook wiring → .codex/hooks.json
  *   └── config.toml     # Project-scoped Codex config
  */
 
@@ -24,28 +28,12 @@ function readTemplate(relativePath: string): string {
   return readFileSync(join(__dirname, relativePath), "utf-8");
 }
 
-function listDirectories(dir: string): string[] {
-  try {
-    return readdirSync(join(__dirname, dir), { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .sort();
-  } catch {
-    return [];
-  }
-}
-
 function listFiles(dir: string): string[] {
   try {
     return readdirSync(join(__dirname, dir)).sort();
   } catch {
     return [];
   }
-}
-
-export interface SkillTemplate {
-  name: string;
-  content: string;
 }
 
 export interface AgentTemplate {
@@ -74,20 +62,6 @@ export function getAllAgents(): AgentTemplate[] {
   }
 
   return agents;
-}
-
-/**
- * Get Codex-specific skills (installed to .codex/skills/, not shared .agents/skills/).
- */
-export function getAllCodexSkills(): SkillTemplate[] {
-  const skills: SkillTemplate[] = [];
-
-  for (const name of listDirectories("codex-skills")) {
-    const content = readTemplate(`codex-skills/${name}/SKILL.md`);
-    skills.push({ name, content });
-  }
-
-  return skills;
 }
 
 export interface HookTemplate {

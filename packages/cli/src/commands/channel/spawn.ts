@@ -6,8 +6,10 @@ import { fileURLToPath } from "node:url";
 import type { InboxPolicy } from "@mindfoldhq/trellis-core/channel";
 
 import { loadAgent } from "./agent-loader.js";
+import type { CodexSandboxMode } from "./adapters/codex.js";
 import type { Provider } from "./adapters/index.js";
 import { assembleContext } from "./context-loader.js";
+import { resolveTrustedRoots } from "./context-trust.js";
 import {
   enforceSpawnBudget,
   formatBudgetOverflowError,
@@ -31,6 +33,8 @@ export interface SpawnOptions {
   cwd?: string;
   model?: string;
   resume?: string;
+  /** Codex-only: overrides the `thread/start` sandbox mode (default `workspace-write`). */
+  sandbox?: CodexSandboxMode;
   /** Auto-kill the worker after this many milliseconds (anti-zombie). */
   timeoutMs?: number;
   /** Emit supervisor_warning this many milliseconds before timeout. */
@@ -68,13 +72,14 @@ interface ResolvedSpawn {
 
 function resolveSpawn(channelName: string, opts: SpawnOptions): ResolvedSpawn {
   const cwd = opts.cwd ?? process.cwd();
+  const trustedRoots = resolveTrustedRoots(cwd);
   let agentBody: string | undefined;
   let provider = opts.provider;
   let model = opts.model;
   let as = opts.as;
 
   if (opts.agent) {
-    const agent = loadAgent(opts.agent, cwd);
+    const agent = loadAgent(opts.agent, cwd, trustedRoots);
     agentBody = agent.systemPrompt || undefined;
     provider = provider ?? agent.provider;
     model = model ?? agent.model;
@@ -90,7 +95,7 @@ function resolveSpawn(channelName: string, opts: SpawnOptions): ResolvedSpawn {
     throw new Error("Missing --as (no agent name to fall back to)");
   }
 
-  const context = assembleContext(cwd, opts.files, opts.jsonls);
+  const context = assembleContext(cwd, opts.files, opts.jsonls, trustedRoots);
   const systemPrompt = buildSystemPrompt(
     channelName,
     as,
@@ -260,6 +265,7 @@ async function spawnLocked(
       systemPrompt: resolved.systemPrompt,
       model: resolved.model,
       resume: opts.resume,
+      sandbox: opts.sandbox,
       timeoutMs: opts.timeoutMs,
       warnBeforeMs: opts.warnBeforeMs,
       idleTimeoutMs,

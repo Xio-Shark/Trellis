@@ -110,6 +110,7 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".github", "copilot"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".factory"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".pi"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".kimi-code"))).toBe(false);
 
     // Root files
     expect(fs.existsSync(path.join(tmpDir, "AGENTS.md"))).toBe(true);
@@ -146,6 +147,19 @@ describe("init() integration", () => {
     ).toBe(true);
   });
 
+  it("#1a writes .gitattributes with the journal merge=union rule (#415)", async () => {
+    await init({ yes: true });
+
+    const gitattributes = fs.readFileSync(
+      path.join(tmpDir, ".gitattributes"),
+      "utf-8",
+    );
+    expect(gitattributes).toContain(
+      ".trellis/workspace/*/journal-*.md merge=union",
+    );
+    expect(gitattributes).not.toContain("index.md merge=union");
+  });
+
   it("#1b does not print the promotional pain-point block", async () => {
     await init({ yes: true });
 
@@ -177,6 +191,7 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".github", "copilot"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".factory"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".pi"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".kimi-code"))).toBe(false);
     expect(
       fs.existsSync(
         path.join(tmpDir, ".claude", "skills", "trellis-meta", "SKILL.md"),
@@ -200,6 +215,7 @@ describe("init() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".devin", "workflows"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".github", "copilot"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, ".pi"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".kimi-code"))).toBe(false);
   });
 
   it("#3b codex platform creates skills plus .codex assets", async () => {
@@ -546,7 +562,7 @@ describe("init() integration", () => {
     ).toBe(true);
     expect(
       fs.existsSync(
-        path.join(tmpDir, ".pi", "skills", "trellis-check", "SKILL.md"),
+        path.join(tmpDir, ".agents", "skills", "trellis-check", "SKILL.md"),
       ),
     ).toBe(true);
     expect(
@@ -579,6 +595,100 @@ describe("init() integration", () => {
     }
     const expectedPiPaths = [...piTemplates.keys()];
     expect(trackedPaths).toEqual(expect.arrayContaining(expectedPiPaths));
+  });
+
+  it("#3m kimi platform creates shared skills and .kimi-code skills", async () => {
+    await init({ yes: true, kimi: true });
+
+    // Shared workflow + bundled skills → .agents/skills/
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".agents", "skills", "trellis-check", "SKILL.md"),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".agents", "skills", "trellis-meta", "SKILL.md"),
+      ),
+    ).toBe(true);
+
+    // Kimi-private skills: commands-as-skills + agent prompts
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".kimi-code", "skills", "trellis-start", "SKILL.md"),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(
+          tmpDir,
+          ".kimi-code",
+          "skills",
+          "trellis-continue",
+          "SKILL.md",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(
+          tmpDir,
+          ".kimi-code",
+          "skills",
+          "trellis-finish-work",
+          "SKILL.md",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(
+          tmpDir,
+          ".kimi-code",
+          "skills",
+          "trellis-implement",
+          "SKILL.md",
+        ),
+      ),
+    ).toBe(true);
+
+    // Custom sub-agent definitions → .kimi-code/agents/
+    for (const name of [
+      "trellis-implement",
+      "trellis-check",
+      "trellis-research",
+    ]) {
+      expect(
+        fs.existsSync(path.join(tmpDir, ".kimi-code", "agents", `${name}.md`)),
+      ).toBe(true);
+    }
+
+    // Kimi has no project-level hooks/settings surface.
+    expect(fs.existsSync(path.join(tmpDir, ".kimi-code", "hooks"))).toBe(false);
+    expect(
+      fs.existsSync(path.join(tmpDir, ".kimi-code", "settings.json")),
+    ).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(false);
+
+    const hashFile = path.join(
+      tmpDir,
+      DIR_NAMES.WORKFLOW,
+      ".template-hashes.json",
+    );
+    const hashesFile = JSON.parse(fs.readFileSync(hashFile, "utf-8")) as {
+      __version?: number;
+      hashes?: Record<string, string>;
+    };
+    const hashes = hashesFile.hashes ?? {};
+    const trackedPaths = Object.keys(hashes).map((p) => p.replace(/\\/g, "/"));
+    const kimiTemplates = collectPlatformTemplates("kimi");
+    expect(kimiTemplates).toBeInstanceOf(Map);
+    if (!kimiTemplates) {
+      throw new Error("Expected Kimi templates to be collectable");
+    }
+    const expectedKimiPaths = [...kimiTemplates.keys()];
+    expect(trackedPaths).toEqual(expect.arrayContaining(expectedKimiPaths));
   });
 
   it("#3l trae platform writes hooks, commands, agents, and tracked templates", async () => {
@@ -637,11 +747,13 @@ describe("init() integration", () => {
     );
   });
 
-  it("#3m zcode platform emits start slash command without shared command-as-skill fallback", async () => {
+  it("#3m zcode platform filters start command and writes hooks (hasHooks=true)", async () => {
     await init({ yes: true, zcode: true });
 
     // ZCode owns its private .zcode surface. Commands remain commands, while
-    // .zcode/skills contains workflow/bundled skills only.
+    // .zcode/skills contains workflow/bundled skills only. Since ZCode is
+    // agentCapable && hasHooks, the start command is filtered out (SessionStart
+    // hook injects equivalent context) and hook assets are written.
     expect(fs.existsSync(path.join(tmpDir, ".agents", "skills"))).toBe(false);
     expect(
       fs.existsSync(
@@ -652,7 +764,7 @@ describe("init() integration", () => {
       fs.existsSync(
         path.join(tmpDir, ".zcode", "commands", "trellis", "start.md"),
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       fs.existsSync(
         path.join(tmpDir, ".zcode", "skills", "trellis-start", "SKILL.md"),
@@ -692,6 +804,35 @@ describe("init() integration", () => {
         path.join(tmpDir, ".zcode", "agents", "trellis-research.md"),
       ),
     ).toBe(true);
+  });
+
+  it("[issue-zcode-plugin-hint] zcode init prints a concise bilingual plugin hint", async () => {
+    const originalVitest = process.env.VITEST;
+    const originalQuiet = process.env.TRELLIS_QUIET;
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    const stderr: string[] = [];
+    process.stderr.write = ((chunk: string) => {
+      stderr.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    delete process.env.VITEST;
+    delete process.env.TRELLIS_QUIET;
+
+    try {
+      await init({ yes: true, zcode: true });
+    } finally {
+      process.stderr.write = originalWrite;
+      if (originalVitest === undefined) delete process.env.VITEST;
+      else process.env.VITEST = originalVitest;
+      if (originalQuiet === undefined) delete process.env.TRELLIS_QUIET;
+      else process.env.TRELLIS_QUIET = originalQuiet;
+    }
+
+    expect(stderr.join("")).toBe(
+      "ℹ️  ZCode: if project Hooks are disabled, install trellis-bridge, then start a new session.\n" +
+        "   ZCode：若项目 Hooks 被禁用，请安装 trellis-bridge，然后新建会话。\n" +
+        "   请手动在 ZCode 插件市场中添加 https://github.com/CNHLAIA/ZCode-Trellis-Plugin.git，并手动安装 ZCode 补丁插件 trellis-bridge\n",
+    );
   });
 
   it("#3n opencode platform emits start slash command", async () => {
@@ -1418,6 +1559,30 @@ describe("init() integration", () => {
       fs.readFileSync(path.join(tmpDir, ".claude", "settings.json"), "utf-8"),
     ) as Record<string, unknown>;
     expect(settings).toHaveProperty("statusLine");
+  });
+
+  it("#28a issue #500: reinit configures Claude when native .claude settings already exist", async () => {
+    const nativeSettingsPath = path.join(tmpDir, ".claude", "settings.json");
+    fs.mkdirSync(path.dirname(nativeSettingsPath), { recursive: true });
+    fs.writeFileSync(nativeSettingsPath, '{"permissions":{"allow":[]}}\n');
+
+    await init({ yes: true, codex: true, user: "alice" });
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".claude", "skills", "trellis-meta", "SKILL.md"),
+      ),
+    ).toBe(false);
+
+    await init({ yes: true, claude: true });
+
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".claude", "skills", "trellis-meta", "SKILL.md"),
+      ),
+    ).toBe(true);
+    expect(fs.readFileSync(nativeSettingsPath, "utf-8")).toBe(
+      '{"permissions":{"allow":[]}}\n',
+    );
   });
 
   it("#29 reinit add-platform: no confirm when claude is already configured", async () => {

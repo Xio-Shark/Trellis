@@ -13,10 +13,10 @@ Use during Phase 1 planning to turn the request into clear requirements and arti
 If no task exists yet:
 
 ```bash
-TASK_DIR=$({{PYTHON_CMD}} ./.trellis/scripts/task.py create "<short task title>" --slug <slug>)
+TASK_DIR=$({{PYTHON_CMD}} ./.trellis/scripts/task.py create "<short task title>" --description "<one-line summary>" --slug <slug>)
 ```
 
-`--slug` gets the `MM-DD-` prefix automatically. `create` writes a starter `prd.md` — keep it updated as understanding grows.
+Title and `--description` must both be non-empty — `create` rejects blanks. `--slug` gets the `MM-DD-` prefix automatically. `create` writes a starter `prd.md` — keep it updated as understanding grows.
 
 ## Flow
 

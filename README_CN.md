@@ -44,7 +44,7 @@
 | **任务驱动工作流** | PRD、实现上下文、审查上下文与任务状态统一存放于 `.trellis/tasks/`，AI 开发过程保持结构化、可追溯。 |
 | **项目记忆** | `.trellis/workspace/` 中的工作日志（journal）会保留上一次会话的脉络，因此每次新会话都能基于真实上下文开始。 |
 | **团队共享标准** | Spec 随仓库一同版本化，个人总结出的规则与流程可以直接成为整个团队的基础设施。 |
-| **多平台复用** | 同一套 Trellis 结构覆盖 17 个 AI coding 平台，无需为每个工具单独搭建工作流。 |
+| **多平台复用** | 同一套 Trellis 结构覆盖 22 个 AI coding 平台，无需为每个工具单独搭建工作流。 |
 
 ## 前置要求
 
@@ -131,9 +131,26 @@ Trellis 内部运行一个 4 阶段循环，skill 与子代理均由系统自动
 
 </details>
 
+<details>
+<summary><strong>可以临时对比启用与关闭 Trellis 的项目表现吗？</strong></summary>
+
+可以。`trellis ablate` 会先在项目外创建并验证恢复事务，然后临时移除
+Trellis 管理的全部项目级表面。请新开一个 agent 会话进行对比；完成后运行
+`trellis restore`，即可精确恢复到消融前的状态。两个命令都支持
+`--dry-run` 预览。
+私有恢复事务会包含 `.trellis` 中 task、spec 和 workspace 的精确字节，
+其中可能有用户编写的敏感文本；事务会保留到恢复完成验证为止。
+
+它不同于永久删除的 `trellis uninstall`，也不同于只关闭 hooks 的
+`TRELLIS_HOOKS=0`。消融不会启动 agent、管理 worktree、隐藏 Git 变更，
+也不会删除全局 CLI、channel 日志或宿主会话记录。如果消融期间某个受管理
+路径被修改，恢复会拒绝全部写入，直到冲突被处理。
+
+</details>
+
 ## Star 历史
 
-[![Star History Chart](https://api.star-history.com/svg?repos=mindfold-ai/Trellis&type=Date)](https://star-history.com/#mindfold-ai/Trellis&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=mindfold-ai/Trellis&type=Date)](https://star-history.dera.page/#mindfold-ai/Trellis&Date)
 
 ## 社区与资源
 
@@ -145,7 +162,7 @@ Trellis 内部运行一个 4 阶段循环，skill 与子代理均由系统自动
 ### 联系我们
 
 <p align="center">
-<img src="assets/wx_link10.jpg" alt="微信群" width="260" />
+<img src="assets/wx_link11.jpg" alt="微信群" width="260" />
 &nbsp;&nbsp;&nbsp;&nbsp;
 <img src="assets/feishu-group-qr.jpg" alt="飞书话题群" width="260" />
 </p>

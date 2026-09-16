@@ -4,14 +4,22 @@
  * Layout: `~/.pi/agent/sessions/--<encoded-cwd>--/<timestamp>_<id>.jsonl`
  * for the default store, or direct `.jsonl` files under an env/settings
  * configured custom session directory. Entries form a tree via `id` / `parentId`;
- * extraction follows only the active branch (last entry leaf) and mirrors Pi's
- * compaction context rules.
+ * extraction follows the whole active branch (last entry leaf).
+ *
+ * Compaction: Pi writes a `compaction` entry naming the first entry it kept.
+ * That is Pi's context rule, not a record of what was said — every earlier
+ * entry is still on the active path. Extraction keeps the full path and renders
+ * the compaction entry as a boundary marker in place.
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { stripInjectionTags, isBootstrapTurn } from "../dialogue.js";
+import {
+  compactionBoundaryTurn,
+  stripInjectionTags,
+  isBootstrapTurn,
+} from "../dialogue.js";
 import { inRangeOverlap, sameProject } from "../filter.js";
 import { readJsonl, readJsonlFirst } from "../internal/jsonl.js";
 import {
@@ -188,11 +196,11 @@ export function collectPiTurnsAndEvents(s: MemSessionInfo): PiBuilt {
 }
 
 function buildPiTurnsAndEvents(s: MemSessionInfo): PiBuilt {
-  const effective = effectiveActivePath(s.filePath);
+  const activePath = piActivePath(s.filePath);
   const turns: DialogueTurn[] = [];
   const events: TaskPyEvent[] = [];
 
-  for (const entry of effective) {
+  for (const entry of activePath) {
     collectTaskEvents(entry, turns.length, events);
     const turn = turnFromEntry(entry);
     if (turn) turns.push(turn);
@@ -201,7 +209,10 @@ function buildPiTurnsAndEvents(s: MemSessionInfo): PiBuilt {
   return { turns, events };
 }
 
-function effectiveActivePath(filePath: string): PiEntry[] {
+/** Walk parent links back from the last entry — the branch the session ended
+ * on, in chronological order. No compaction truncation: a `compaction` entry is
+ * Pi's context rule, and the entries it excluded are still on this path. */
+function piActivePath(filePath: string): PiEntry[] {
   const entries: PiEntry[] = [];
   readJsonl<PiEntry>(filePath, (entry) => {
     if (entry.type === "session") return;
@@ -229,42 +240,12 @@ function effectiveActivePath(filePath: string): PiEntry[] {
         ? byId.get(current.parentId)
         : undefined;
   }
-
-  const compactionIdx = findLastIndex(
-    activePath,
-    (entry) => entry.type === "compaction",
-  );
-  if (compactionIdx === -1) return activePath;
-
-  const compaction = activePath[compactionIdx];
-  if (!compaction) return activePath;
-  const firstKeptIdx = activePath.findIndex(
-    (entry, idx) =>
-      idx < compactionIdx && entry.id === compaction.firstKeptEntryId,
-  );
-  const keptBeforeCompaction =
-    firstKeptIdx === -1 ? [] : activePath.slice(firstKeptIdx, compactionIdx);
-  return [
-    compaction,
-    ...keptBeforeCompaction,
-    ...activePath.slice(compactionIdx + 1),
-  ];
-}
-
-function findLastIndex<T>(
-  items: readonly T[],
-  pred: (item: T) => boolean,
-): number {
-  for (let i = items.length - 1; i >= 0; i--) {
-    const item = items[i];
-    if (item !== undefined && pred(item)) return i;
-  }
-  return -1;
+  return activePath;
 }
 
 function turnFromEntry(entry: PiEntry): DialogueTurn | null {
   if (entry.type === "compaction") {
-    return syntheticTurn("[compact summary]", entry.summary);
+    return compactionBoundary(entry.summary);
   }
   if (entry.type === "branch_summary") {
     return syntheticTurn("[branch summary]", entry.summary);
@@ -286,10 +267,18 @@ function turnFromEntry(entry: PiEntry): DialogueTurn | null {
     case "branchSummary":
       return syntheticTurn("[branch summary]", msg.summary);
     case "compactionSummary":
-      return syntheticTurn("[compact summary]", msg.summary);
+      return compactionBoundary(msg.summary);
     default:
       return null;
   }
+}
+
+function compactionBoundary(raw: unknown): DialogueTurn {
+  const summary = typeof raw === "string" ? stripInjectionTags(raw) : "";
+  return compactionBoundaryTurn(
+    "context compacted here; the turns above stayed on the active branch",
+    summary,
+  );
 }
 
 function syntheticTurn(prefix: string, raw: unknown): DialogueTurn | null {

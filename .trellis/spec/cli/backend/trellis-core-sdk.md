@@ -69,7 +69,7 @@ import { searchMemSessions } from "@mindfoldhq/trellis-core/mem";
 
 `mem` is published as the `@mindfoldhq/trellis-core/mem` subpath only. It is intentionally **not** re-exported from the `@mindfoldhq/trellis-core` root barrel — that keeps the root API small and stops `DialogueTurn` / `SearchHit` / `MemFilter` from leaking into the root surface. The `mem` public API is `listMemSessions`, `searchMemSessions`, `readMemContext`, `extractMemDialogue`, `listMemProjects`, plus their input/output types and `MemSessionNotFoundError`. Anything under `packages/core/src/mem/internal/` (JSONL/path helpers) is private and must not be deep-imported by the CLI.
 
-The `mem` domain follows the same core API rules as the rest of core: no `zod`, no `console.*`, no `process.exit`. It returns structured results with a `warnings` array; the CLI decides how to surface warnings and what exit code to use.
+The `mem` domain follows the same core API rules as the rest of core: no `zod`, no `console.*`, no `process.exit`. Structured search/context/extract results carry a `warnings` array; list/projects preserve their historical array return types and expose warnings through an optional `onWarning` callback. The CLI decides how to surface warnings and what exit code to use.
 
 ---
 
@@ -184,3 +184,22 @@ Core behavior should be tested in `packages/core` when the behavior can run with
 If a CLI test duplicates a pure core test, move the pure assertion to core and keep only the CLI-specific behavior in the CLI test.
 
 `mem` is the worked example of this rule: the pure retrieval/search/phase/adapter tests live in `packages/core/test/mem/**`, while `packages/cli/test/commands/mem-*.test.ts` keeps only CLI-wrapper coverage — argv parsing, `--json` output shape, exit behavior, and the OpenCode warning.
+
+## Boundary: core task schema vs .trellis Python scripts
+
+`packages/core/src/task/schema.ts` is the single TS-side source of truth for the
+`task.json` shape (including `meta: Record<string, unknown>` with its own
+validation). The `.trellis/scripts/` Python layer implements *behavior* on top of
+that shape (create/list/set-meta/validate/journal rendering) and has NO parallel
+implementation in core — jsonl validation, list tree rendering, and journal
+rendering exist only in Python.
+
+Rule of thumb when changing task behavior:
+
+- New/changed `task.json` **field or shape** → update `schema.ts` AND the Python
+  writers together.
+- New **behavior** on existing fields (flags, rendering, warnings) → Python
+  (template + dogfood copies) only; core needs nothing.
+- The only template code with a genuine dual implementation is sub-agent context
+  injection (Python shared hook ↔ Pi extension) — see the Context Injection
+  Limits Contract in platform-integration.md.

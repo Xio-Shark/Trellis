@@ -214,7 +214,7 @@ grep -l "newFileName" src/templates/trellis/index.ts  # Should match
 
 ### Template Sync Convention
 
-`.trellis/scripts/` (dogfooded) and `packages/cli/src/templates/trellis/scripts/` (template) must stay identical. After editing `.trellis/scripts/`, always sync:
+`.trellis/scripts/` (dogfooded) and `packages/cli/src/templates/trellis/scripts/` (template) must stay identical — build-enforced for every `.py` file, see `cli/backend/script-conventions.md` → "Two script trees, one content". After editing `.trellis/scripts/`, always sync:
 
 ```bash
 rsync -av --delete --exclude='__pycache__' .trellis/scripts/ packages/cli/src/templates/trellis/scripts/

@@ -1,4 +1,3 @@
-import path from "node:path";
 import { AI_TOOLS } from "../types/ai-tools.js";
 import {
   COPILOT_INSTRUCTIONS_PATH,
@@ -6,90 +5,62 @@ import {
   getCopilotInstructions,
   getHooksConfig,
 } from "../templates/copilot/index.js";
-import { ensureDir, writeFile } from "../utils/file-writer.js";
+import { getAllAgents as getCursorAgents } from "../templates/cursor/index.js";
 import {
   resolvePlaceholders,
   resolveCommands,
   resolveSkills,
   resolveBundledSkills,
+  collectSkillTemplates,
+  collectSharedHooks,
   applyPullBasedPreludeMarkdown,
   normalizeCopilotMarkdownAgents,
-  writeSkills,
-  writeSharedHooks,
-  replacePythonCommandLiterals,
 } from "./shared.js";
 
 /**
- * Configure GitHub Copilot:
+ * The GitHub Copilot file set — written at init and diffed by `trellis update`.
  * - prompts/ — start + finish-work as prompt files
  * - skills/trellis-{name}/SKILL.md — auto-triggered skills from `common/skills/`
  * - agents/{name}.agent.md — sub-agent definitions (note .agent.md suffix)
  * - copilot/hooks/ — platform-specific + shared hook scripts
  * - hooks config — hooks.json
- * - copilot-instructions.md — repository-wide review guidance
+ * - copilot-instructions.md — repository-wide review guidance. `trellis update`
+ *   replaces this entry with a managed-block merge over the user's file
+ *   (`buildCopilotInstructionsTemplate`); on a fresh project the merge returns
+ *   the template verbatim, so init and update agree.
  */
-export async function configureCopilot(cwd: string): Promise<void> {
-  const config = AI_TOOLS.copilot;
-  const ctx = config.templateContext;
-  const copilotRoot = path.join(cwd, ".github", "copilot");
-
-  ensureDir(path.join(cwd, ".github"));
-  await writeFile(
-    path.join(cwd, ...COPILOT_INSTRUCTIONS_PATH.split("/")),
-    getCopilotInstructions(),
-  );
-
-  const promptsDir = path.join(cwd, ".github", "prompts");
-  ensureDir(promptsDir);
+export function collectCopilotTemplates(): Map<string, string> {
+  const ctx = AI_TOOLS.copilot.templateContext;
+  const files = new Map<string, string>();
   for (const cmd of resolveCommands(ctx)) {
-    await writeFile(
-      path.join(promptsDir, `${cmd.name}.prompt.md`),
-      cmd.content,
-    );
+    files.set(`.github/prompts/${cmd.name}.prompt.md`, cmd.content);
   }
-
-  await writeSkills(
-    path.join(cwd, ".github", "skills"),
+  for (const [filePath, content] of collectSkillTemplates(
+    ".github/skills",
     resolveSkills(ctx),
     resolveBundledSkills(ctx),
-  );
-
-  const agentsDir = path.join(cwd, ".github", "agents");
-  ensureDir(agentsDir);
-  // Copilot is a class-2 (pull-based) platform: hook events don't reliably
-  // fire for sub-agents (#2392/#2540). Reuse Cursor's agent content and
-  // prepend the pull-based prelude so sub-agents Read Trellis context themselves.
-  // Cursor uses Claude-style comma-separated tools frontmatter; normalize that
-  // to Copilot's YAML tool list format before writing into .github/agents.
-  const { getAllAgents: getCursorAgents } =
-    await import("../templates/cursor/index.js");
+  )) {
+    files.set(filePath, content);
+  }
+  // Copilot's own session-start hook
+  for (const hook of getAllHooks()) {
+    files.set(`.github/copilot/hooks/${hook.name}`, hook.content);
+  }
+  // Shared hooks (inject-workflow-state.py only). Copilot bundles its own
+  // session-start.py above; sub-agent context is pull-based (class-2).
+  for (const [k, v] of collectSharedHooks(".github/copilot/hooks", "copilot")) {
+    files.set(k, v);
+  }
+  // Agents: reuse Cursor content + prepend pull-based prelude, then
+  // normalize Cursor's Claude-style tools frontmatter for Copilot.
   for (const agent of applyPullBasedPreludeMarkdown(
     normalizeCopilotMarkdownAgents(getCursorAgents()),
   )) {
-    await writeFile(
-      path.join(agentsDir, `${agent.name}.agent.md`),
-      replacePythonCommandLiterals(agent.content),
-    );
+    files.set(`.github/agents/${agent.name}.agent.md`, agent.content);
   }
-
-  // Platform-specific hook scripts (Copilot's own session-start.py)
-  const hooksDir = path.join(copilotRoot, "hooks");
-  ensureDir(hooksDir);
-  for (const hook of getAllHooks()) {
-    await writeFile(
-      path.join(hooksDir, hook.name),
-      replacePythonCommandLiterals(hook.content),
-    );
-  }
-
-  // Shared hook scripts (inject-workflow-state.py only). Copilot bundles its
-  // own session-start.py above; sub-agent context is pull-based (class-2).
-  await writeSharedHooks(hooksDir, "copilot");
-
-  // Hooks config
-  const resolvedConfig = resolvePlaceholders(getHooksConfig());
-  await writeFile(path.join(copilotRoot, "hooks.json"), resolvedConfig);
-  const githubHooksDir = path.join(cwd, ".github", "hooks");
-  ensureDir(githubHooksDir);
-  await writeFile(path.join(githubHooksDir, "trellis.json"), resolvedConfig);
+  files.set(COPILOT_INSTRUCTIONS_PATH, getCopilotInstructions());
+  const hooksConfig = resolvePlaceholders(getHooksConfig());
+  files.set(".github/copilot/hooks.json", hooksConfig);
+  files.set(".github/hooks/trellis.json", hooksConfig);
+  return files;
 }

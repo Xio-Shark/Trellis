@@ -29,6 +29,7 @@ import {
   removeHash,
   renameHash,
   computeHash,
+  shouldExcludeFromHash,
 } from "../utils/template-hash.js";
 import { compareVersions } from "../utils/compare-versions.js";
 import { toPosix } from "../utils/posix.js";
@@ -56,10 +57,11 @@ import {
   ALL_MANAGED_DIRS,
   getConfiguredPlatforms,
   collectPlatformTemplates,
-  isManagedPath,
-  isManagedRootDir,
 } from "../configurators/index.js";
 import { replacePythonCommandLiterals } from "../configurators/shared.js";
+import { preserveCodexAgentModelKeys } from "../configurators/codex.js";
+import { printZcodeSetupHint } from "../configurators/zcode.js";
+import { ensureGitattributes } from "../configurators/workflow.js";
 import { pruneOrphanManifestKeys } from "../utils/manifest-prune.js";
 import {
   fetchRegistrySpecTemplates,
@@ -71,6 +73,17 @@ import {
   type RegistrySource,
 } from "../utils/template-fetcher.js";
 import { loadSpecRegistryConfig } from "../utils/registry-config.js";
+import {
+  cleanupEmptyDirs,
+  TRELLIS_BLOCK_END,
+  TRELLIS_BLOCK_START,
+} from "../utils/managed-paths.js";
+
+export {
+  cleanupEmptyDirs,
+  TRELLIS_BLOCK_END,
+  TRELLIS_BLOCK_START,
+} from "../utils/managed-paths.js";
 
 export interface UpdateOptions {
   dryRun?: boolean;
@@ -100,8 +113,6 @@ interface ChangeAnalysis {
 type ConflictAction = "overwrite" | "skip" | "create-new";
 
 const CLAUDE_SETTINGS_PATH = ".claude/settings.json";
-export const TRELLIS_BLOCK_START = "<!-- TRELLIS:START -->";
-export const TRELLIS_BLOCK_END = "<!-- TRELLIS:END -->";
 const LEGACY_UNTRACKED_AGENTS_MD_BLOCK_HASHES = new Set<string>([
   // v0.5.0-beta.17 and earlier wrote AGENTS.md but did not hash-track it.
   // This hash is the pristine Trellis-managed block before the Subagents
@@ -910,6 +921,15 @@ async function collectTemplateFiles(
     }
   }
 
+  // Users configure sub-agent models by editing `model` /
+  // `model_reasoning_effort` directly on the generated agent tomls. Preserve
+  // those two keys from the on-disk files into the freshly rendered desired
+  // content so a project whose only local edit is these keys is not flagged
+  // as a modified-file conflict by the hash comparison below.
+  if (platforms.has("codex")) {
+    preserveCodexAgentModelKeys(cwd, files);
+  }
+
   preserveExistingClaudeStatusLine(cwd, files);
 
   for (const [filePath, content] of await collectRegistrySpecTemplates(cwd)) {
@@ -1023,16 +1043,56 @@ function analyzeChanges(
   return result;
 }
 
-function collectMissingManagedFileHashes(
+/**
+ * Receipt entries that are wrong or missing for a file that is already
+ * byte-identical to its template.
+ *
+ * Nothing else repairs these. `analyzeChanges` classifies such a file
+ * `unchanged`, and the write-back draws only from `newFiles`,
+ * `autoUpdateFiles` and overwritten `changedFiles` — so a poisoned or absent
+ * entry beside a pristine file survives every subsequent `trellis update`,
+ * however many times it is run. Identical template content across versions is
+ * not what saves such an entry from going stale; it is precisely what freezes
+ * it, because the file never leaves the `unchanged` bucket.
+ *
+ * Recording the template's hash here cannot bless a local edit. Membership in
+ * `unchangedFiles` means the file on disk already *is* the template, byte for
+ * byte, so the value written is the one a correct receipt would already hold.
+ * A genuinely customized file differs from its template, lands in
+ * `changedFiles`, and is never seen by this function.
+ *
+ * That also leaves the mixed-ownership paths — `AGENTS.md`,
+ * `.github/copilot-instructions.md`, `.trellis/config.yaml` — free to differ
+ * from their recorded hash, which for them is the correct state: once the
+ * repository has appended its own content they are no longer `unchanged`.
+ */
+function collectUnchangedFileHashRepairs(
   changes: ChangeAnalysis,
   hashes: TemplateHashes,
 ): Map<string, string> {
   const files = new Map<string, string>();
-  const managedFiles = new Set([FILE_NAMES.AGENTS, COPILOT_INSTRUCTIONS_PATH]);
 
   for (const file of changes.unchangedFiles) {
-    if (managedFiles.has(file.relativePath) && !hashes[file.relativePath]) {
-      files.set(file.relativePath, file.newContent);
+    const key = toPosix(file.relativePath);
+    const recorded = hashes[key];
+
+    if (recorded === undefined) {
+      // A missing entry is only an omission for a path the receipt is meant
+      // to carry. `EXCLUDE_FROM_HASH` holds paths deliberately left out —
+      // `.trellis/.gitignore` among them — and adding those here would put
+      // this path in disagreement with `initializeHashes` about what the
+      // receipt tracks at all.
+      if (!shouldExcludeFromHash(key)) {
+        files.set(key, file.newContent);
+      }
+      continue;
+    }
+
+    // An entry that already exists and disagrees with the file is repaired
+    // whatever the path: a wrong value is strictly worse than an absent one,
+    // because it reads as a real local modification.
+    if (recorded !== computeHash(file.newContent)) {
+      files.set(key, file.newContent);
     }
   }
 
@@ -1367,6 +1427,39 @@ function collectAllFiles(dirPath: string, cwd = process.cwd()): string[] {
   }
 
   return files;
+}
+
+/**
+ * Whether every file under `dirRelativePath` byte-matches the CURRENT
+ * template content for its path. Stricter than {@link isDirectorySafeToReplace},
+ * which also accepts files that are merely unmodified relative to an old
+ * stored hash (i.e. stale-but-untouched). Used to decide the safe *direction*
+ * of a rename-dir merge when both source and target exist: if the target
+ * already holds canonical current-version bytes, the source (however it got
+ * there) must not be allowed to overwrite it with older/differently-flavored
+ * content (#447 — a legacy `.pi/skills/` copy rendered with the Pi-specific
+ * resolver must not clobber the shared, neutral `.agents/skills/` content
+ * Codex/Gemini already wrote).
+ */
+function dirMatchesCurrentTemplates(
+  cwd: string,
+  dirRelativePath: string,
+  templates: Map<string, string>,
+): boolean {
+  const dirFullPath = path.join(cwd, dirRelativePath);
+  if (!fs.existsSync(dirFullPath)) return false;
+
+  const files = collectAllFiles(dirFullPath, cwd);
+  if (files.length === 0) return false;
+
+  for (const fullPath of files) {
+    const relativePath = toPosix(path.relative(cwd, fullPath));
+    const templateContent = templates.get(relativePath);
+    if (templateContent === undefined) return false;
+    if (fs.readFileSync(fullPath, "utf-8") !== templateContent) return false;
+  }
+
+  return true;
 }
 
 /**
@@ -1717,45 +1810,6 @@ async function promptMigrationAction(
 }
 
 /**
- * Clean up empty directories after file migration
- * Recursively removes empty parent directories up to .trellis root
- */
-/** @internal Exported for testing only */
-export function cleanupEmptyDirs(cwd: string, dirPath: string): void {
-  const fullPath = path.join(cwd, dirPath);
-
-  // Safety: don't delete outside of managed directories
-  if (!isManagedPath(dirPath)) {
-    return;
-  }
-
-  // Safety: never delete managed root directories themselves (e.g., .claude, .trellis)
-  if (isManagedRootDir(dirPath)) {
-    return;
-  }
-
-  // Check if directory exists and is empty
-  if (!fs.existsSync(fullPath)) return;
-
-  try {
-    const stat = fs.statSync(fullPath);
-    if (!stat.isDirectory()) return;
-
-    const contents = fs.readdirSync(fullPath);
-    if (contents.length === 0) {
-      fs.rmdirSync(fullPath);
-      // Recursively check parent (but stop at root directories)
-      const parent = path.dirname(dirPath);
-      if (parent !== "." && parent !== dirPath && !isManagedRootDir(parent)) {
-        cleanupEmptyDirs(cwd, parent);
-      }
-    }
-  } catch {
-    // Ignore errors (permission issues, etc.)
-  }
-}
-
-/**
  * Sort migrations for safe execution order
  * - rename-dir with deeper paths first (to handle nested directories)
  * - rename-dir before rename/delete
@@ -1785,10 +1839,11 @@ export function sortMigrationsForExecution(
  * @param options.skipAll - Skip all modified files without asking
  * If neither is set, prompts interactively for modified files
  */
-async function executeMigrations(
+export async function executeMigrations(
   classified: ClassifiedMigrations,
   cwd: string,
   options: { force?: boolean; skipAll?: boolean },
+  templates: Map<string, string>,
 ): Promise<MigrationResult> {
   const result: MigrationResult = {
     renamed: 0,
@@ -1825,6 +1880,31 @@ async function executeMigrations(
     } else if (item.type === "rename-dir" && item.to) {
       const oldPath = path.join(cwd, item.from);
       const newPath = path.join(cwd, item.to);
+      const oldPrefix = item.from.endsWith("/") ? item.from : item.from + "/";
+      const newPrefix = item.to.endsWith("/") ? item.to : item.to + "/";
+
+      // Target already exists and already holds canonical, current-version
+      // content (e.g. Codex/Gemini already wrote the shared `.agents/skills/`
+      // root before Pi's legacy `.pi/skills/` copy gets retired). Renaming
+      // the source in would clobber good content with older/differently-
+      // flavored bytes, so just drop the now-redundant source instead (#447).
+      if (
+        fs.existsSync(newPath) &&
+        dirMatchesCurrentTemplates(cwd, item.to, templates)
+      ) {
+        removeDirectoryRecursive(oldPath);
+
+        const hashes = loadHashes(cwd);
+        const updatedHashes: TemplateHashes = {};
+        for (const [hashPath, hashValue] of Object.entries(hashes)) {
+          if (hashPath.startsWith(oldPrefix)) continue; // source retired
+          updatedHashes[hashPath] = hashValue;
+        }
+        saveHashes(cwd, updatedHashes);
+
+        result.deleted++;
+        continue;
+      }
 
       // If target exists (safe to replace, already checked in classification)
       // delete it first before renaming
@@ -1840,8 +1920,6 @@ async function executeMigrations(
 
       // Batch update hash tracking for all files in the directory
       const hashes = loadHashes(cwd);
-      const oldPrefix = item.from.endsWith("/") ? item.from : item.from + "/";
-      const newPrefix = item.to.endsWith("/") ? item.to : item.to + "/";
 
       const updatedHashes: TemplateHashes = {};
       for (const [hashPath, hashValue] of Object.entries(hashes)) {
@@ -2091,6 +2169,7 @@ export async function update(options: UpdateOptions): Promise<void> {
 
   // Load template hashes for modification detection
   let hashes = loadHashes(cwd);
+  const zcodeConfigured = getConfiguredPlatforms(cwd).has("zcode");
   const isFirstHashTracking = Object.keys(hashes).length === 0;
 
   // Handle unknown version - skip regular migrations but safe-file-delete still runs
@@ -2308,7 +2387,7 @@ export async function update(options: UpdateOptions): Promise<void> {
 
   // Analyze changes (pass hashes for modification detection)
   const changes = analyzeChanges(cwd, hashes, templates);
-  const missingManagedFileHashes = collectMissingManagedFileHashes(
+  const unchangedFileHashRepairs = collectUnchangedFileHashRepairs(
     changes,
     hashes,
   );
@@ -2331,6 +2410,14 @@ export async function update(options: UpdateOptions): Promise<void> {
     );
   }
 
+  // Ensure project-root .gitattributes carries the journal merge=union rule.
+  // Additive-only (see ensureGitattributes) — runs regardless of whether
+  // other template files changed, so it must sit before the "nothing to do"
+  // early-return below. Never touches disk in --dry-run.
+  if (!options.dryRun) {
+    ensureGitattributes(cwd);
+  }
+
   // Check if there's anything to do
   const isUpgrade = cliVsProject > 0;
   const isDowngrade = cliVsProject < 0;
@@ -2350,8 +2437,11 @@ export async function update(options: UpdateOptions): Promise<void> {
     !hasPendingMigrations &&
     !hasSafeDeletes
   ) {
-    if (!options.dryRun && missingManagedFileHashes.size > 0) {
-      updateHashes(cwd, missingManagedFileHashes);
+    // The "already up to date" exit still has to repair the receipt: this is
+    // exactly the clean tree where every file is `unchanged`, so it is the run
+    // where a wrong entry would otherwise be skipped again.
+    if (!options.dryRun && unchangedFileHashRepairs.size > 0) {
+      updateHashes(cwd, unchangedFileHashRepairs);
     }
 
     if (isSameVersion) {
@@ -2373,6 +2463,7 @@ export async function update(options: UpdateOptions): Promise<void> {
         );
       }
     }
+    if (zcodeConfigured) printZcodeSetupHint();
     return;
   }
 
@@ -2474,10 +2565,15 @@ export async function update(options: UpdateOptions): Promise<void> {
 
   // Execute migrations if --migrate flag is set
   if (options.migrate && classifiedMigrations) {
-    const migrationResult = await executeMigrations(classifiedMigrations, cwd, {
-      force: options.force,
-      skipAll: options.skipAll,
-    });
+    const migrationResult = await executeMigrations(
+      classifiedMigrations,
+      cwd,
+      {
+        force: options.force,
+        skipAll: options.skipAll,
+      },
+      templates,
+    );
     printMigrationResult(migrationResult);
 
     // Hardcoded: Rename traces-*.md to journal-*.md in workspace directories
@@ -2614,7 +2710,7 @@ export async function update(options: UpdateOptions): Promise<void> {
   updateVersionFile(cwd);
 
   // Update template hashes for new, auto-updated, and overwritten files
-  const filesToHash = new Map<string, string>(missingManagedFileHashes);
+  const filesToHash = new Map<string, string>(unchangedFileHashRepairs);
   for (const file of changes.newFiles) {
     filesToHash.set(file.relativePath, file.newContent);
   }
@@ -2784,6 +2880,8 @@ export async function update(options: UpdateOptions): Promise<void> {
       }
     }
   }
+
+  if (zcodeConfigured) printZcodeSetupHint();
 
   // Display breaking change warnings at the very end (so they don't scroll off screen)
   if (cliVsProject > 0 && projectVersion !== "unknown") {

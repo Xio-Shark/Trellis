@@ -8,7 +8,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { stripInjectionTags, isBootstrapTurn } from "../dialogue.js";
+import {
+  compactionBoundaryTurn,
+  stripInjectionTags,
+  isBootstrapTurn,
+} from "../dialogue.js";
 import { inRangeOverlap, sameProject } from "../filter.js";
 import {
   findInJsonl,
@@ -139,35 +143,40 @@ export function claudeListSessions(f: MemFilter): MemSessionInfo[] {
 
 // ---------- extract ----------
 
+/** Pull the text out of a Claude message body, whichever shape it takes. */
+function claudeText(content: string | ClaudeBlock[] | undefined): string {
+  if (typeof content === "string") return stripInjectionTags(content);
+  if (!Array.isArray(content)) return "";
+  const parts: string[] = [];
+  for (const block of content) {
+    if (block.type === "text" && typeof block.text === "string") {
+      const cleaned = stripInjectionTags(block.text);
+      if (cleaned) parts.push(cleaned);
+    }
+  }
+  return parts.join("\n\n");
+}
+
 export function claudeExtractDialogue(s: MemSessionInfo): DialogueTurn[] {
   // - user: type=="user" + role=="user" + content is a string
   // - assistant: type=="assistant" + role=="assistant", keep only `text` blocks
   // - thinking / tool_use blocks dropped entirely; injection tags stripped
-  // - compaction: an `isCompactSummary` user event resets prior turns and
-  //   replaces them with a single synthetic [compact summary] turn
-  let turns: DialogueTurn[] = [];
+  // - compaction: an `isCompactSummary` user event marks the boundary. Claude
+  //   keeps writing to the same file, so every pre-compaction turn is still
+  //   here; the summary becomes marker content instead of replacing them.
+  const turns: DialogueTurn[] = [];
   readJsonl<ClaudeEvent>(s.filePath, (obj) => {
     const t = obj.type;
     const msg = obj.message;
     if (!msg) return;
     const content = msg.content;
     if (t === "user" && obj.isCompactSummary === true) {
-      let summary = "";
-      if (typeof content === "string") {
-        summary = stripInjectionTags(content);
-      } else if (Array.isArray(content)) {
-        const parts: string[] = [];
-        for (const block of content) {
-          if (block.type === "text" && typeof block.text === "string") {
-            const cleaned = stripInjectionTags(block.text);
-            if (cleaned) parts.push(cleaned);
-          }
-        }
-        summary = parts.join("\n\n");
-      }
-      turns = summary
-        ? [{ role: "user", text: `[compact summary]\n${summary}` }]
-        : [];
+      turns.push(
+        compactionBoundaryTurn(
+          "context compacted here; the turns above are the conversation Claude summarized",
+          claudeText(content),
+        ),
+      );
       return;
     }
     if (t === "user" && msg.role === "user") {
@@ -182,15 +191,8 @@ export function claudeExtractDialogue(s: MemSessionInfo): DialogueTurn[] {
       msg.role === "assistant" &&
       Array.isArray(content)
     ) {
-      const parts: string[] = [];
-      for (const block of content) {
-        if (block.type === "text" && typeof block.text === "string") {
-          const cleaned = stripInjectionTags(block.text);
-          if (cleaned) parts.push(cleaned);
-        }
-      }
-      if (parts.length)
-        turns.push({ role: "assistant", text: parts.join("\n\n") });
+      const text = claudeText(content);
+      if (text) turns.push({ role: "assistant", text });
     }
   });
   return turns;
@@ -204,15 +206,15 @@ export function claudeSearch(s: MemSessionInfo, kw: string): SearchHit {
  * Single-pass scan of a Claude JSONL file that produces both the cleaned
  * dialogue turns (semantically identical to {@link claudeExtractDialogue}) and
  * the list of `task.py create|start` Bash tool_use events with their
- * `turnIndex`. Compaction resets both `turns` AND `events` — pre-compact event
- * indices stop pointing at real turns once history is collapsed.
+ * `turnIndex`. Compaction keeps both `turns` and `events` — the turns those
+ * indices point at are still in the pool.
  */
 export function collectClaudeTurnsAndEvents(s: MemSessionInfo): {
   turns: DialogueTurn[];
   events: TaskPyEvent[];
 } {
-  let turns: DialogueTurn[] = [];
-  let events: TaskPyEvent[] = [];
+  const turns: DialogueTurn[] = [];
+  const events: TaskPyEvent[] = [];
 
   readJsonl<ClaudeEvent>(s.filePath, (obj) => {
     const t = obj.type;
@@ -221,23 +223,12 @@ export function collectClaudeTurnsAndEvents(s: MemSessionInfo): {
     const content = msg.content;
 
     if (t === "user" && obj.isCompactSummary === true) {
-      let summary = "";
-      if (typeof content === "string") {
-        summary = stripInjectionTags(content);
-      } else if (Array.isArray(content)) {
-        const parts: string[] = [];
-        for (const block of content) {
-          if (block.type === "text" && typeof block.text === "string") {
-            const cleaned = stripInjectionTags(block.text);
-            if (cleaned) parts.push(cleaned);
-          }
-        }
-        summary = parts.join("\n\n");
-      }
-      turns = summary
-        ? [{ role: "user", text: `[compact summary]\n${summary}` }]
-        : [];
-      events = [];
+      turns.push(
+        compactionBoundaryTurn(
+          "context compacted here; the turns above are the conversation Claude summarized",
+          claudeText(content),
+        ),
+      );
       return;
     }
 

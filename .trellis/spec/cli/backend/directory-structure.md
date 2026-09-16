@@ -145,16 +145,35 @@ Shared logic belongs in `packages/core/src/` when it is useful outside terminal 
 
 ### Configurator Pattern
 
-Configurators use `cpSync` for direct directory copy (dogfooding):
+A configurator exports **one** function: `collect<Platform>Templates()`,
+returning `Map<relPath, content>` — the single description of what that
+platform installs. `configure` is derived from it in the registry.
 
 ```typescript
 // configurators/cursor.ts
-export async function configureCursor(cwd: string): Promise<void> {
-  const sourcePath = getCursorSourcePath(); // dist/.cursor/ or .cursor/
-  const destPath = path.join(cwd, ".cursor");
-  cpSync(sourcePath, destPath, { recursive: true });
+export function collectCursorTemplates(): Map<string, string> {
+  const files = collectBothTemplates(
+    AI_TOOLS.cursor.templateContext,
+    (n) => `.cursor/commands/trellis-${n}.md`,
+    ".cursor/skills",
+  );
+  for (const agent of getAllAgents()) {
+    files.set(`.cursor/agents/${agent.name}.md`, agent.content);
+  }
+  for (const [k, v] of collectSharedHooks(".cursor/hooks", "cursor")) {
+    files.set(k, v);
+  }
+  files.set(".cursor/hooks.json", resolvePlaceholders(getHooksConfig()));
+  return files;
 }
+
+// configurators/index.ts
+cursor: fromTemplates(collectCursorTemplates),
 ```
+
+Full contract — map key/value rules, the three platforms that also need a
+`configure`, and the parity oracle — in `configurator-shared.md` →
+"Template maps".
 
 ### Template Extraction
 
@@ -386,7 +405,7 @@ Packages that received a remote template download (tracked via `remoteSpecPackag
 ### DO
 
 - Dogfood from project's own config files when possible
-- Use `cpSync` for copying entire directories
+- Describe a platform's file set exactly once, in its `collect<Platform>Templates()`
 - Keep generic templates in `src/templates/markdown/`
 - Use `.md.txt` or `.yaml.txt` for template files
 - Update dogfooding sources (`.cursor/`, `.claude/`, `.trellis/scripts/`) when making changes
@@ -398,6 +417,40 @@ Packages that received a remote template download (tracked via `remoteSpecPackag
 - Don't duplicate content between templates and dogfooding sources
 - Don't put project-specific content in generic templates
 - Don't use dogfooding for spec/ (users fill these in)
+
+---
+
+## Workspace Journal Merge Behavior (parallel sessions / worktrees)
+
+Parallel Trellis sessions (multiple git worktrees, or overlapping branches)
+regularly touch `.trellis/workspace/<developer>/` at the same time. The two
+files there behave differently on merge, and this is intentional:
+
+- **`journal-N.md` auto-resolves.** The project ships `.gitattributes` with
+  `.trellis/workspace/*/journal-*.md merge=union` (project root; both the
+  bundled template at `packages/cli/src/templates/trellis/gitattributes.txt`
+  and this repo's own dogfooded copy carry the rule). Each session only
+  appends a new session block, so a union merge keeps both sides' blocks with
+  no conflict markers — there is nothing semantically to resolve.
+- **`index.md` conflicts ARE EXPECTED and safe.** No merge attribute applies
+  to `index.md` — it is fully rewritten every session (current-status
+  counters, active-documents table, session-history table), so a union merge
+  would silently interleave two different rewrites of the same marker blocks
+  into structurally broken output. When two parallel worktrees/branches both
+  touch `index.md`, git's normal 3-way conflict is the correct outcome.
+  Picking either side to resolve it is safe: `index.md` is a **derived
+  summary**, not a source of truth. Real task state lives in each task's
+  `task.json`, not in the workspace index.
+
+`ensureGitattributes()` (`packages/cli/src/configurators/workflow.ts`) writes
+this rule additively — it is called from both `trellis init` and
+`trellis update`, never overwrites an existing project-root `.gitattributes`
+wholesale, and is a no-op if a `journal-*.md merge=union` rule already exists
+(user-authored or from a previous run).
+
+`add_session.py` prints a one-time-per-process warning (stderr, non-blocking)
+when it detects it is running inside a git worktree (not the main working
+tree) with `session_auto_commit` enabled, pointing back at this section.
 
 ---
 
@@ -424,9 +477,13 @@ import { downloadTemplate } from "giget";
 
 await downloadTemplate("gh:mindfold-ai/Trellis/marketplace/specs/electron-fullstack", {
   dir: destDir,
-  preferOffline: true,
 });
 ```
+
+**Note**: `downloadWithStrategy()` does not pass `preferOffline` — giget's
+default network-first behavior applies at all three call sites (skip,
+overwrite, append), so `init`/`update` always check the remote registry
+for new content instead of silently serving a stale cached tarball.
 
 ### Directory Conflict Strategy (skip/overwrite/append)
 

@@ -130,6 +130,23 @@ describe("scheduleSupervisorIdleTimer", () => {
     vi.advanceTimersByTime(5000);
     expect(shutdown.request).not.toHaveBeenCalled();
   });
+
+  it("still fires after a completed turn emits a terminal event", () => {
+    const shutdown = fakeShutdown();
+    shutdown.hasTerminalEvent.mockReturnValue(true);
+    scheduleSupervisorIdleTimer({
+      idleTimeoutMs: 1000,
+      shutdown,
+      isChildExited: () => false,
+      log: silentLog,
+    });
+
+    vi.advanceTimersByTime(1000);
+    expect(shutdown.request).toHaveBeenCalledWith(
+      "SIGTERM",
+      "idle-timeout",
+    );
+  });
 });
 
 describe("TurnTracker hooks", () => {

@@ -56,6 +56,8 @@ export interface CodexCtx {
   finalMessageSeen: boolean;
   /** Codex may send turn/completed before the final agentMessage item. */
   pendingDone: boolean;
+  /** Prevent duplicate terminal errors when Codex reports one failure twice. */
+  terminalErrorSeen: boolean;
   /** Last-known thread id (used to scope future requests). */
   threadId?: string;
   /** Monotonic outbound id allocator. */
@@ -68,6 +70,7 @@ export function createCodexCtx(): CodexCtx {
     items: new Map(),
     finalMessageSeen: false,
     pendingDone: false,
+    terminalErrorSeen: false,
     nextId: 1,
   };
 }
@@ -241,13 +244,49 @@ function handleNotification(msg: JsonRpcInbound, ctx: CodexCtx): ParseResult {
       return handleItemCompleted(msg, ctx);
     case "item/agentMessage/delta":
       return handleAgentMessageDelta(msg, ctx);
-    case "turn/completed":
+    case "turn/completed": {
+      const turn = isObject(msg.params?.turn) ? msg.params.turn : undefined;
+      if (turn?.status === "failed") {
+        ctx.pendingDone = false;
+        if (ctx.terminalErrorSeen) return { events: [] };
+        ctx.terminalErrorSeen = true;
+        return {
+          events: [
+            {
+              kind: "error",
+              payload: {
+                message: errorMessage(turn.error, "Codex turn failed"),
+              },
+            },
+          ],
+        };
+      }
+      if (ctx.terminalErrorSeen) return { events: [] };
       if (ctx.finalMessageSeen) {
         ctx.pendingDone = false;
         return { events: [{ kind: "done", payload: {} }] };
       }
       ctx.pendingDone = true;
       return { events: [] };
+    }
+    case "error": {
+      const params = msg.params ?? {};
+      const message = errorMessage(params.error, "Codex app-server error");
+      if (params.willRetry === true) {
+        return {
+          events: [
+            {
+              kind: "progress",
+              payload: { detail: { kind: "warning", message } },
+            },
+          ],
+        };
+      }
+      if (ctx.terminalErrorSeen) return { events: [] };
+      ctx.terminalErrorSeen = true;
+      ctx.pendingDone = false;
+      return { events: [{ kind: "error", payload: { message } }] };
+    }
     case "turn/aborted":
       return {
         events: [{ kind: "error", payload: { message: "turn aborted" } }],
@@ -555,6 +594,18 @@ function isObject(x: unknown): x is Record<string, unknown> {
   return typeof x === "object" && x !== null && !Array.isArray(x);
 }
 
+function errorMessage(error: unknown, fallback: string): string {
+  if (typeof error === "string" && error.trim()) return error;
+  if (
+    isObject(error) &&
+    typeof error.message === "string" &&
+    error.message.trim()
+  ) {
+    return error.message;
+  }
+  return fallback;
+}
+
 // ── Outbound helpers ──
 
 export function encodeCodexRequest(
@@ -580,6 +631,7 @@ export function encodeCodexUserMessage(
   }
   ctx.finalMessageSeen = false;
   ctx.pendingDone = false;
+  ctx.terminalErrorSeen = false;
   return encodeCodexRequest(
     ctx,
     "turn/start",
@@ -608,15 +660,44 @@ export function buildCodexArgs(opts: { model?: string }): string[] {
   return args;
 }
 
+/** Codex's documented `sandbox` modes (see `codex app-server` thread/start). */
+export type CodexSandboxMode =
+  | "read-only"
+  | "workspace-write"
+  | "danger-full-access";
+
+export const CODEX_SANDBOX_MODES: ReadonlySet<CodexSandboxMode> = new Set([
+  "read-only",
+  "workspace-write",
+  "danger-full-access",
+]);
+
+/** Validate a `--sandbox` value. Returns `undefined` when unset (caller
+ *  falls back to the `workspace-write` default). */
+export function parseCodexSandboxMode(
+  v: string | undefined,
+): CodexSandboxMode | undefined {
+  if (v === undefined) return undefined;
+  if (!CODEX_SANDBOX_MODES.has(v as CodexSandboxMode)) {
+    throw new Error(
+      `Invalid --sandbox '${v}'. Must be one of: ${[...CODEX_SANDBOX_MODES].join(", ")}`,
+    );
+  }
+  return v as CodexSandboxMode;
+}
+
 export function buildCodexThreadStartParams(
   cwd: string,
   systemPrompt?: string,
+  sandbox?: CodexSandboxMode,
 ): Record<string, unknown> {
   const params: Record<string, unknown> = {
     cwd,
     // MVP: aggressive permissive defaults to avoid getting stuck mid-turn.
     approvalPolicy: "never",
-    sandbox: "workspace-write",
+    // Default stays workspace-write; callers (channel spawn --sandbox) may
+    // override to match the user's main-session Codex permissions (#413).
+    sandbox: sandbox ?? "workspace-write",
     // Disable codex native multi-agent so spawned worker can't recurse into
     // its own sub-agents (would conflict with channel's collaboration layer
     // and reproduce issue #234/#237 recursion).

@@ -2,8 +2,8 @@
  * mem.ts — CLI wrapper over `@mindfoldhq/trellis-core/mem`.
  *
  * The reusable retrieval / context-extraction logic lives in core; this file
- * owns only CLI concerns: argument parsing, terminal rendering, the OpenCode
- * "reader unavailable" notice, and process exit behavior.
+ * owns only CLI concerns: argument parsing, terminal rendering, warning
+ * presentation, and process exit behavior.
  *
  * Commands:
  *   list                          list sessions (default if no command)
@@ -22,6 +22,7 @@ import {
   extractMemDialogue,
   listMemProjects,
   listMemSessions,
+  MEM_SOURCE_KINDS,
   MemSessionNotFoundError,
   readMemContext,
   searchMemSessions,
@@ -65,13 +66,8 @@ export function parseArgv(argv: readonly string[]): Argv {
   return { cmd, positional, flags };
 }
 
-const VALID_PLATFORMS: readonly string[] = [
-  "claude",
-  "codex",
-  "opencode",
-  "pi",
-  "all",
-];
+const VALID_PLATFORMS: readonly string[] = [...MEM_SOURCE_KINDS, "all"];
+const PLATFORM_HELP = VALID_PLATFORMS.join("|");
 
 /** Translate parsed CLI flags into a core `MemFilter`. Validation failures
  * exit the process — core never sees raw CLI flags. */
@@ -119,29 +115,6 @@ function die(msg: string): never {
   process.exit(2);
 }
 
-// ---------- OpenCode reader notice ----------
-//
-// OpenCode 1.2+ moved to a SQLite store; the native dependency was reverted in
-// 0.6.0-beta.4 due to install failures. Core's OpenCode adapter is a silent
-// no-op — surfacing the degraded state is a CLI presentation concern, emitted
-// once per process whenever the OpenCode source is in scope.
-
-let opencodeWarned = false;
-function warnOpencodeUnavailable(): void {
-  if (opencodeWarned) return;
-  opencodeWarned = true;
-  process.stderr.write(
-    "⚠️  tl mem: OpenCode platform reader is temporarily unavailable in this build.\n" +
-      "    OpenCode 1.2+ moved to SQLite; the native dependency was reverted in\n" +
-      "    0.6.0-beta.4 due to install failures. Re-enabled in a future release.\n",
-  );
-}
-
-function maybeWarnOpencode(f: MemFilter): void {
-  if (f.platform === "all" || f.platform === "opencode")
-    warnOpencodeUnavailable();
-}
-
 // ---------- formatting ----------
 
 const HOME = os.homedir();
@@ -176,10 +149,22 @@ function printSessions(rows: readonly MemSessionInfo[]): void {
 
 // ---------- commands ----------
 
+function printWarnings(
+  warnings: readonly { message: string }[] | undefined,
+): void {
+  for (const warning of warnings ?? []) {
+    console.error(`warning: ${warning.message}`);
+  }
+}
+
 function cmdList(argv: Argv): void {
   const f = buildFilter(argv.flags);
-  maybeWarnOpencode(f);
-  const rows = listMemSessions({ filter: f });
+  const warnings: { message: string }[] = [];
+  const rows = listMemSessions({
+    filter: f,
+    onWarning: (warning) => warnings.push(warning),
+  });
+  printWarnings(warnings);
   if (argv.flags.json) {
     console.log(JSON.stringify(rows, null, 2));
     return;
@@ -197,13 +182,13 @@ function cmdSearch(argv: Argv): void {
   const kw = argv.positional[0];
   if (!kw) die("usage: search <keyword>");
   const f = buildFilter(argv.flags);
-  maybeWarnOpencode(f);
   const includeChildren = argv.flags["include-children"] === true;
   const result = searchMemSessions({
     keyword: kw,
     filter: f,
     includeChildren,
   });
+  printWarnings(result.warnings);
   const top = result.matches;
 
   if (argv.flags.json) {
@@ -260,8 +245,12 @@ function cmdProjects(argv: Argv): void {
   // session counts. AI calls this first to learn which project paths have
   // recent activity, then picks one for `--cwd` in a follow-up `search`.
   const f = buildFilter({ ...argv.flags, global: true });
-  maybeWarnOpencode(f);
-  const rows = listMemProjects({ filter: f });
+  const warnings: { message: string }[] = [];
+  const rows = listMemProjects({
+    filter: f,
+    onWarning: (warning) => warnings.push(warning),
+  });
+  printWarnings(warnings);
   const limit = parseOptionalNumberFlag(argv.flags.limit, "--limit", 30);
   const top = rows.slice(0, limit);
 
@@ -300,7 +289,6 @@ function cmdContext(argv: Argv): void {
   if (!id)
     die("usage: context <session-id> [--grep KW] [--turns N] [--around M]");
   const f = buildFilter(argv.flags);
-  maybeWarnOpencode(f);
 
   const grepRaw = argv.flags.grep;
   const grep = typeof grepRaw === "string" ? grepRaw : undefined;
@@ -327,10 +315,13 @@ function cmdContext(argv: Argv): void {
       includeChildren,
     });
   } catch (error) {
-    if (error instanceof MemSessionNotFoundError)
+    if (error instanceof MemSessionNotFoundError) {
+      printWarnings(error.warnings);
       die(`session not found: ${id}`);
+    }
     throw error;
   }
+  printWarnings(result.warnings);
   const s = result.session;
 
   if (argv.flags.json) {
@@ -398,7 +389,6 @@ function cmdExtract(argv: Argv): void {
   const id = argv.positional[0];
   if (!id) die("usage: extract <session-id>");
   const f = buildFilter(argv.flags);
-  maybeWarnOpencode(f);
 
   const phase = parsePhaseFlag(argv.flags.phase);
   const grepRaw = argv.flags.grep;
@@ -408,12 +398,14 @@ function cmdExtract(argv: Argv): void {
   try {
     result = extractMemDialogue({ sessionId: id, filter: f, phase, grep });
   } catch (error) {
-    if (error instanceof MemSessionNotFoundError)
+    if (error instanceof MemSessionNotFoundError) {
+      printWarnings(error.warnings);
       die(`session not found: ${id}`);
+    }
     throw error;
   }
 
-  for (const w of result.warnings) console.error(`warning: ${w.message}`);
+  printWarnings(result.warnings);
 
   const s = result.session;
   if (argv.flags.json) {
@@ -455,7 +447,7 @@ function cmdExtract(argv: Argv): void {
 }
 
 function cmdHelp(): void {
-  console.log(`trellis mem — list/search Claude/Codex/OpenCode/Pi sessions
+  console.log(`trellis mem — list/search Claude/Codex/Devin/Grok/OpenCode/Pi/ZCode sessions
 
 commands:
   list                          list sessions (default if no command)
@@ -467,7 +459,7 @@ commands:
                                 use this to discover which --cwd to pass to search
 
 flags:
-  --platform claude|codex|opencode|pi|all   default all
+  --platform ${PLATFORM_HELP}   default all
   --since YYYY-MM-DD                     inclusive lower bound
   --until YYYY-MM-DD                     inclusive upper bound
   --global                               include all projects (default: cwd-scoped)
@@ -476,7 +468,7 @@ flags:
   --grep KW                              extract / context: filter turns by keyword (multi-token AND)
   --phase brainstorm|implement|all       extract: slice by Trellis brainstorm windows
                                          (default all; brainstorm = [task.py create, task.py start);
-                                         Claude/Codex/Pi supported; OpenCode warns + returns all)
+                                         Claude/Codex/Devin/Grok/Pi/ZCode supported; OpenCode warns + returns all)
   --turns N                              context: number of hit turns to return (default 3)
   --around N                             context: turns of surrounding context per hit (default 1)
   --max-chars N                          context: total char budget (default 6000, ~1500 tokens)

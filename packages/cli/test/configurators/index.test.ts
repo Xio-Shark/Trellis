@@ -77,6 +77,7 @@ describe("isManagedPath", () => {
     expect(isManagedPath(".github/hooks/trellis.json")).toBe(true);
     expect(isManagedPath(".pi/extensions/trellis/index.ts")).toBe(true);
     expect(isManagedPath(".pi/prompts/trellis-continue.md")).toBe(true);
+    expect(isManagedPath(".dsh/skills/trellis-start/SKILL.md")).toBe(true);
   });
 
   // Positive: exact match (startsWith(d + "/") = false, === d = true)
@@ -91,6 +92,7 @@ describe("isManagedPath", () => {
     expect(isManagedPath(".devin/workflows")).toBe(true);
     expect(isManagedPath(".github/prompts")).toBe(true);
     expect(isManagedPath(".github/hooks")).toBe(true);
+    expect(isManagedPath(".dsh")).toBe(true);
     expect(isManagedPath(".trellis")).toBe(true);
   });
 
@@ -114,6 +116,7 @@ describe("isManagedPath", () => {
     expect(isManagedPath(".github/prompts-backup")).toBe(false);
     expect(isManagedPath(".github/copilot-backup")).toBe(false);
     expect(isManagedPath(".github/hooks-backup")).toBe(false);
+    expect(isManagedPath(".dsh-backup")).toBe(false);
   });
 
   // Boundary: empty string
@@ -211,6 +214,11 @@ describe("resolveCliFlag", () => {
 
   it("returns undefined for unknown flag", () => {
     expect(resolveCliFlag("unknown")).toBeUndefined();
+  });
+
+  it("does not resolve removed Snow aliases", () => {
+    expect(resolveCliFlag("snocli")).toBeUndefined();
+    expect(resolveCliFlag("snow-cli")).toBeUndefined();
   });
 
   it("returns undefined for empty string", () => {
@@ -318,7 +326,9 @@ describe("collectPlatformTemplates", () => {
     codebuddy: ".codebuddy/skills",
     copilot: ".github/skills",
     droid: ".factory/skills",
-    pi: ".pi/skills",
+    // Pi discovers `.agents/skills/` natively; Trellis writes there (shared
+    // with Codex/Gemini) instead of a private `.pi/skills/` copy (#447).
+    pi: ".agents/skills",
     zcode: ".zcode/skills",
   };
 
@@ -437,7 +447,7 @@ describe("collectPlatformTemplates", () => {
     );
     expect(result?.has(".zcode/skills/trellis-before-dev/SKILL.md")).toBe(true);
     expect(result?.has(".zcode/skills/trellis-check/SKILL.md")).toBe(true);
-    expect(result?.has(".zcode/commands/trellis/start.md")).toBe(true);
+    expect(result?.has(".zcode/commands/trellis/start.md")).toBe(false);
     expect(result?.has(".zcode/agents/trellis-implement.md")).toBe(true);
     expect(result?.has(".zcode/agents/trellis-check.md")).toBe(true);
     expect(result?.has(".zcode/agents/trellis-research.md")).toBe(true);
@@ -459,5 +469,42 @@ describe("collectPlatformTemplates", () => {
     expect(result?.has(".grok/agents/trellis-implement.md")).toBe(true);
     expect(result?.has(".grok/agents/trellis-check.md")).toBe(true);
     expect(result?.has(".grok/agents/trellis-research.md")).toBe(true);
+  });
+
+  it("kimi collectTemplates includes shared skills and .kimi-code skills", () => {
+    const result = collectPlatformTemplates("kimi");
+    expect(result).toBeInstanceOf(Map);
+    // Shared neutral skills
+    expect(result?.has(".agents/skills/trellis-check/SKILL.md")).toBe(true);
+    expect(result?.has(".agents/skills/trellis-before-dev/SKILL.md")).toBe(
+      true,
+    );
+    expect(result?.has(".agents/skills/trellis-meta/SKILL.md")).toBe(true);
+    // Kimi-private entry points + agent prompts
+    expect(result?.has(".kimi-code/skills/trellis-start/SKILL.md")).toBe(true);
+    expect(result?.has(".kimi-code/skills/trellis-continue/SKILL.md")).toBe(
+      true,
+    );
+    expect(
+      result?.has(".kimi-code/skills/trellis-finish-work/SKILL.md"),
+    ).toBe(true);
+    expect(
+      result?.has(".kimi-code/skills/trellis-implement/SKILL.md"),
+    ).toBe(true);
+    expect(result?.has(".kimi-code/skills/trellis-check/SKILL.md")).toBe(true);
+    expect(
+      result?.has(".kimi-code/skills/trellis-research/SKILL.md"),
+    ).toBe(true);
+    // Custom sub-agent definitions
+    expect(result?.has(".kimi-code/agents/trellis-implement.md")).toBe(true);
+    expect(result?.has(".kimi-code/agents/trellis-check.md")).toBe(true);
+    expect(result?.has(".kimi-code/agents/trellis-research.md")).toBe(true);
+    // No project-level hooks/settings for Kimi
+    expect(
+      [...(result?.keys() ?? [])].some((key) =>
+        key.startsWith(".kimi-code/hooks"),
+      ),
+    ).toBe(false);
+    expect(result?.has(".kimi-code/settings.json")).toBe(false);
   });
 });

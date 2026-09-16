@@ -72,7 +72,10 @@ Both regexes MUST use the `\1` backreference variant — `[workflow-state:([A-Za
 3. It calls `common.active_task.resolve_active_task()` to look up the
    per-session active task. If absent → status is the pseudo `no_task`. If
    the pointer is stale (task dir deleted) → status is `stale_<source_type>`.
-4. Otherwise it reads `task.json.status` from the resolved task directory.
+4. Otherwise it reads `task.json.status` from the resolved task directory. If
+   the task directory exists but `task.json` is missing, malformed, or has no
+   usable status, the hook emits the `task_error` pseudo-status and keeps the
+   task directory name in the breadcrumb header.
 5. It opens `.trellis/workflow.md` and parses every `[workflow-state:STATUS]`
    block.
 6. Codex may map `planning` / `in_progress` to `planning-inline` /
@@ -105,8 +108,106 @@ Both regexes MUST use the `\1` backreference variant — `[workflow-state:([A-Za
    When adding a new hook-capable platform whose per-turn event name is not
    `UserPromptSubmit`, extend `_detect_platform()` and the `hook_event_name`
    selector in `inject-workflow-state.py` (and the OpenCode `.js` plugin if
-   the new platform shares its `chat.message`-style envelope). Do NOT
-   hardcode `UserPromptSubmit` at any new emission site.
+   the new platform shares its transform envelope). Do NOT hardcode
+   `UserPromptSubmit` at any new emission site.
+
+---
+
+## OpenCode messages.transform contract
+
+### 1. Scope / Trigger
+
+OpenCode SessionStart and per-turn workflow-state plugins inject Trellis
+context through `experimental.chat.messages.transform`. That hook runs on
+the in-memory transcript OpenCode is about to convert to model messages
+(`SessionPrompt.run` and compaction). It does not write SQLite / TUI /
+Web history. `chat.message` remains the persist path and must not be used
+for Trellis context (issue #553, replacing the persisted-synthetic-part
+contract from #524).
+
+### 2. Signatures
+
+- `findLatestUserMessageIndex(messages) -> number`
+- `latestUserPromptText(messages) -> string`
+- `platformInputFromMessages(messages) -> { sessionID, agent } | null`
+- `prependEphemeralText(messages, text) -> boolean`
+- Hook name: `experimental.chat.messages.transform`
+- Hook input from OpenCode is `{}`; session identity is read from the
+  latest user message `info`.
+
+### 3. Contracts
+
+- Only the latest `info.role === "user"` message is cloned. Earlier user
+  and assistant messages stay the original object references.
+- The clone prepends `{ type: "text", text, synthetic: true }` parts.
+  Ordinary parts on the clone keep their original objects; the original
+  message's `parts` array is not mutated.
+- Injection does not require a persisted `prt_...` identity. Attachment-only
+  latest user messages still receive the ephemeral text parts.
+- Workflow-state checks the skip keyword only against ordinary user text
+  (`findUserTextPart`), never against ephemeral or stored synthetic parts.
+- SessionStart injects rebuilt compact context onto the latest user message
+  every model call. `<first-reply-notice>` is included only when the
+  transcript has no assistant message.
+- Plugin error handling leaves `output.messages` unchanged (prepend is the
+  last step).
+- Trellis sub-agent turns (`info.agent` matching `trellis-implement` /
+  `trellis-check` / `trellis-research`) skip both plugins.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| `messages` is missing or has no user message | No-op |
+| Latest user message has no ordinary text part | Still prepend ephemeral text (attachment-only turns) |
+| Skip keyword present in ordinary latest-user text | Workflow-state no-op; SessionStart still injects |
+| `TRELLIS_HOOKS=0` / `TRELLIS_DISABLE_HOOKS=1` / `OPENCODE_NON_INTERACTIVE=1` | Both plugins no-op |
+| Plugin order is reversed | Both ephemeral parts still precede ordinary latest-user parts |
+
+### 5. Good / Base / Bad Cases
+
+- Good: a two-turn transcript's first user message is byte-identical after
+  transform; only the latest user message clone carries `<session-context>`
+  and `<workflow-state>`.
+- Base: an attachment-only latest user message gets ephemeral text parts
+  prepended; the file part object is unchanged.
+- Bad: mutating `chat.message` `output.parts` persists Trellis context into
+  history and makes revert restore it into the prompt box.
+
+### 6. Tests Required
+
+- Helper tests cover latest-user selection, clone-not-mutate, and prepend
+  onto attachment-only messages.
+- Real plugin tests run both plugin orders against a multi-turn transcript
+  and deep-compare every historical message.
+- SessionStart tests cover first-reply-notice presence vs absence after an
+  assistant turn. Workflow tests cover default/custom/disabled skip keywords.
+- Existing hook-disable, non-interactive, and Trellis sub-agent exclusion
+  tests remain mandatory, aimed at the transform hook.
+- Template collection tests assert the helper ships through both fresh init
+  and `trellis update`; dogfood `.opencode/` copies must match template bytes.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```javascript
+parts[0].text = `${breadcrumb}\n\n${parts[0].text}`
+insertSyntheticTextPart(parts, breadcrumb, "workflowState")
+```
+
+Both persist machine context into OpenCode history. The first also rewrites
+the user's visible message.
+
+#### Correct
+
+```javascript
+if (promptHasSkipKeyword(latestUserPromptText(messages), skipKeyword)) return
+prependEphemeralText(messages, breadcrumb)
+```
+
+This changes only the in-memory model payload. Stored history and the TUI
+keep the original user message.
 
 ---
 
@@ -156,8 +257,8 @@ a new writer requires updating this spec.**
 | # | Writer | File:Line | Value | Trigger |
 |---|--------|-----------|-------|---------|
 | 1 | `cmd_create` | `packages/cli/src/templates/trellis/scripts/common/task_store.py:206` | `"planning"` | `task.py create "<title>"` (also visibly auto-sets the session active-task pointer when session identity is available; `--no-start` skips pointer movement for backlog batching — see R7 in 04-30-workflow-state-commit-gap PRD) |
-| 2 | `cmd_start` | `packages/cli/src/templates/trellis/scripts/task.py:114-115, 128-129` | `"in_progress"` (gated on prior `"planning"`; both branches in `cmd_start`) | `task.py start <dir>` |
-| 3 | `cmd_archive` | `packages/cli/src/templates/trellis/scripts/common/task_store.py:337` | `"completed"` (unconditional flip + archive `mv`) | `task.py archive <dir>` |
+| 2 | `_record_start_state` (called from both `cmd_start` branches) | `packages/cli/src/templates/trellis/scripts/task.py:111` | `"in_progress"` (gated on prior `"planning"`; the same write also records `task.json.branch` when empty) | `task.py start <dir>` |
+| 3 | `cmd_archive` | `packages/cli/src/templates/trellis/scripts/common/task_store.py:1275` | `"completed"` (flip + archive `mv`, but only after `_validate_branch_metadata` passes) | `task.py archive <dir>` |
 | 4 | `emptyTaskJson` factory | `packages/cli/src/utils/task-json.ts:54` | `"planning"` (default) | TS callers (init, update) |
 | 5 | `getBootstrapTaskJson` | `packages/cli/src/commands/init.ts:535` | `"in_progress"` (override) | `trellis init` (creator path) |
 | 6 | `getJoinerTaskJson` | `packages/cli/src/commands/init.ts:587` | `"in_progress"` (override) | `trellis init` (joiner path) |
@@ -195,6 +296,7 @@ Which breadcrumbs actually fire in normal flow:
 | Status | Reachability | Notes |
 |--------|--------------|-------|
 | `no_task` | ✅ reachable | Pseudo-status; emitted when `resolve_active_task()` returns no pointer. |
+| `task_error` | ✅ reachable | Pseudo-status; emitted when a session task pointer resolves to a directory whose `task.json` cannot be read or has no usable `status`. |
 | `planning` | ✅ reachable | After `cmd_create` (which now auto-sets the session pointer when available) and before `cmd_start`. `planning-inline` is the Codex inline-mode breadcrumb body for the same task status. |
 | `in_progress` | ✅ reachable | After `cmd_start`, until `cmd_archive`. `in_progress-inline` is the Codex inline-mode breadcrumb body for the same task status. |
 | `completed` | ❌ DEAD in normal flow | `cmd_archive` writes `status="completed"` and immediately moves the task dir to `archive/`. The session-pointer cleanup in `clear_task_from_sessions` runs before the move, so the resolver loses the pointer in the same call. The block body in workflow.md is preserved for a future status-transition redesign (e.g. an explicit `in_progress → completed` command) but no current code path produces it. |

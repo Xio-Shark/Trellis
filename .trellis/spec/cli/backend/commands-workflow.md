@@ -149,8 +149,8 @@ Native source-of-truth contract:
 ### 5. Good/Base/Bad Cases
 
 - Good: `trellis workflow --template tdd` replaces a pristine native workflow,
-  removes the workflow hash, and later `trellis update --skip-all` leaves TDD
-  content in place.
+  removes the workflow hash, and later `trellis update` leaves TDD content in
+  place.
 - Base: `trellis init --workflow native` writes bundled native workflow and
   keeps `.trellis/workflow.md` hash-tracked.
 - Bad: `trellis workflow --template tdd` writes TDD content and records the TDD

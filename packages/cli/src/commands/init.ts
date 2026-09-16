@@ -1017,12 +1017,15 @@ interface InitOptions {
   codebuddy?: boolean;
   copilot?: boolean;
   droid?: boolean;
+  dsh?: boolean;
   pi?: boolean;
   reasonix?: boolean;
   zcode?: boolean;
   trae?: boolean;
   omp?: boolean;
   grok?: boolean;
+  kimi?: boolean;
+  snow?: boolean;
   yes?: boolean;
   user?: string;
   force?: boolean;

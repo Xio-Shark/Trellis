@@ -26,12 +26,19 @@ inbox policy, and public SDK contracts.
 
 `packages/cli/src/commands/channel/store/*` still exists and is current code,
 not dead code. Some files are thin re-export / compatibility modules over core
-(`schema.ts`, `filter.ts`, `thread-state.ts`); others remain CLI-local runtime
-primitives for supervisor / spawn / kill / wait paths during the supervisor
-migration (`events.ts`, `paths.ts`, `lock.ts`, `watch.ts`). Do not delete these
-wrappers until their callers have moved to core APIs. New reusable behavior
-belongs in core; CLI-local files should only handle terminal UX, process
-supervision, pid/cursor sidecars, and migration glue.
+(`schema.ts`, `filter.ts`, `thread-state.ts`, and `events.ts` `appendEvent` /
+`readLastSeq`). Others remain CLI-local runtime primitives for supervisor /
+spawn / kill / wait paths during the supervisor migration (`paths.ts`,
+`lock.ts`, `watch.ts`, plus the full-file `readChannelEvents` in `events.ts`).
+Do not delete these wrappers until their callers have moved to core APIs.
+
+Sequence allocation belongs to core. A torn JSONL tail (no trailing newline)
+is truncated to the last complete line before the next append; `seq` continues
+from the last parseable record rather than resetting to 1
+(`truncateIncompleteTail` + `reconcileSeq`). Complete but unparseable lines
+are left intact. New reusable behavior belongs in core; CLI-local files should
+only handle terminal UX, process supervision, pid/cursor sidecars, and
+migration glue.
 
 ---
 
@@ -65,6 +72,10 @@ trellis channel spawn <name> [opts]
   --cwd <path>           : worker cwd (default process.cwd())
   --model <id>           : model override
   --resume <id>          : resume an existing session/thread id
+  --sandbox <mode>       : codex-only: read-only | workspace-write | danger-full-access
+                           (default workspace-write; overrides thread/start sandbox
+                           to match the user's main-session Codex permissions; ignored
+                           for other providers; invalid value throws before spawn)
   --timeout <duration>   : auto-kill after duration (e.g. "30m", "1h", "7200s")
                            — no default; opt-in hard cutoff
   --warn-before <duration>: emit `supervisor_warning` before timeout

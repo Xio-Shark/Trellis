@@ -34,9 +34,18 @@ export function writeFileAtomic(filePath: string, data: string | Uint8Array): vo
 ```python
 # templates/trellis/scripts/common/io.py
 def write_json(path: Path, data: dict) -> bool
+def write_text_atomic(path: Path, text: str) -> bool
 # tempfile.mkstemp(dir=path.parent) -> os.fdopen write -> os.replace(tmp, path);
 # unlinks tmp and re-raises on BaseException (Ctrl-C included).
+# write_json serializes and delegates, so both share one implementation.
 ```
+
+`write_text_atomic` covers the Markdown state files, not just JSON:
+`add_session.py` appends to `journal-*.md` and rewrites `index.md` through it.
+Those two carry the session record that a retry classifies, so a half-written
+one is not a cosmetic defect — it is pending evidence nothing can resume from.
+The append is read-all + write-all rather than `open("a")` for exactly that
+reason.
 
 ### Wrong vs Correct
 
@@ -106,11 +115,13 @@ an explicit env bypass, mirroring `TRELLIS_ALLOW_HOMEDIR`
 ## 4. Dogfood twin sync
 
 Shipped Python (`packages/cli/src/templates/trellis/scripts/**`) has a dogfood
-twin at repo `.trellis/scripts/**`. When you change a shipped script, sync the
-twin **iff** they were identical first (`diff` before `cp`); if the twin has
-drifted, apply the same edit surgically so unrelated local drift is preserved.
-`packages/cli/dist/**` and `.trellis/.backup-*/**` are generated/history —
-never hand-edit.
+twin at repo `.trellis/scripts/**`. **Every `.py` under the two trees must be
+byte-identical, and the build fails if it is not** — there is no such thing as
+acceptable local drift. Edit both copies, never one.
+
+The full contract, including what the test does and does not cover, is in
+`script-conventions.md` → "Two script trees, one content". `packages/cli/dist/**`
+and `.trellis/.backup-*/**` are generated/history — never hand-edit.
 
 ---
 
@@ -122,6 +133,7 @@ without the guard**:
 - Atomic write: write-succeeds + no tmp leftover + original survives a failed write (`test/utils/atomic-write.test.ts`; Python covered via `task-archive` integration).
 - Path traversal: `create '../../victim' --force` / `rm '../../victim'` throw and the external dir survives — reproduce in a sandbox (`test/channel/name-safety`, `test/commands/channel-name-safety`).
 - Ownership/backup gates: unowned source skipped (`update-internals` rename-dir gate), `archive src` refused with `src/` intact (`task-archive` integration), overwrite-fails-preserves-spec (`template-fetcher-overwrite`), uninstall refuses dirty `--yes` (`uninstall-dirty-guard`, real git).
+- Dogfood twin sync: identical `.py` path sets in both trees, plus one byte-compare case per file (`regression.test.ts` → "regression: .trellis/scripts stays byte-identical to templates/trellis/scripts"). The file list is derived from the filesystem, so a new script is covered the moment it is added.
 
 ---
 
@@ -132,3 +144,25 @@ without the guard**:
 - [`trellis channel` Command](./commands-channel.md) — store paths, project buckets
 - [Script Conventions](./script-conventions.md) — Python `io.py` contract
 - [Migrations](./migrations.md) — rename/rename-dir/delete semantics
+
+## Channel Context Trust Set (`channel.trusted_context_dirs`, #414)
+
+Worker context containment (context-loader `jailedRealpath`, agent-loader,
+OMP extension `resolveProjectFile`) accepts realpaths inside worker cwd **or**
+inside a trusted root. Trusted roots resolve once per spawn
+(`channel/context-trust.ts` `resolveTrustedRoots(cwd)`):
+
+1. `.trellis/config.yaml` → `channel.trusted_context_dirs` (list; relative
+   entries resolve against cwd; missing dirs warn + skip; each entry is
+   realpath-canonicalized).
+2. Auto-trust (disable with `channel.auto_trust_trellis_symlinks: false`):
+   ONLY the top-level `.trellis/tasks` and `.trellis/workspace` entries, when
+   they are themselves symlinks, contribute their realpath targets. No
+   recursion — a nested symlink planted inside a task dir stays refused.
+
+Containment predicate (identical at all three sites, byte-comparable):
+`real === root || real.startsWith(root + path.sep)` — the `path.sep` suffix is
+load-bearing (blocks `/work/ws-evil` matching trusted `/work/ws`). The OMP
+template carries a standalone verbatim copy of the parser/resolver; changes
+must be mirrored there. Do not relax to lexical checks — realpath containment
+is the defense from the 2026-07-10 audit (#409 family).

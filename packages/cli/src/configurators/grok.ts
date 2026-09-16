@@ -11,23 +11,18 @@
  * consumes hook stdout additionalContext (verified absent on 0.2.x).
  */
 
-import path from "node:path";
 import { AI_TOOLS } from "../types/ai-tools.js";
-import { ensureDir, writeFile } from "../utils/file-writer.js";
 import { getAllAgents } from "../templates/grok/index.js";
 import {
   collectSkillTemplates,
   resolveBundledSkills,
   resolveCommands,
   resolveSkills,
-  writeSkills,
-  writeAgents,
   applyPullBasedPreludeMarkdown,
 } from "./shared.js";
 
 /**
- * Collect all Grok template files for `trellis update` diff tracking.
- * Must stay in sync with `configureGrok`.
+ * The Grok Build file set — written at init and diffed by `trellis update`.
  */
 export function collectGrokTemplates(): Map<string, string> {
   const config = AI_TOOLS.grok;
@@ -55,35 +50,4 @@ export function collectGrokTemplates(): Map<string, string> {
   }
 
   return files;
-}
-
-/**
- * Configure Grok Build at init time: write skills, commands, and sub-agents.
- */
-export async function configureGrok(cwd: string): Promise<void> {
-  const config = AI_TOOLS.grok;
-  const ctx = config.templateContext;
-
-  // 1. Workflow + bundled skills → .grok/skills/
-  await writeSkills(
-    path.join(cwd, ".grok", "skills"),
-    resolveSkills(ctx),
-    resolveBundledSkills(ctx),
-  );
-
-  // 2. Commands → flat .grok/commands/trellis-*.md
-  const commandsDir = path.join(cwd, ".grok", "commands");
-  ensureDir(commandsDir);
-  for (const cmd of resolveCommands(ctx)) {
-    await writeFile(
-      path.join(commandsDir, `trellis-${cmd.name}.md`),
-      cmd.content,
-    );
-  }
-
-  // 3. Sub-agents → .grok/agents/ (with pull-based prelude)
-  await writeAgents(
-    path.join(cwd, ".grok", "agents"),
-    applyPullBasedPreludeMarkdown(getAllAgents()),
-  );
 }

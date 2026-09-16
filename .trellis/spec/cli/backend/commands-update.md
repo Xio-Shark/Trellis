@@ -345,7 +345,15 @@ Migrations are forward-only. A user who downgrades while staying on the same maj
 
 ### Codex two-layer upgrade
 
-Old Trellis used `.agents/skills/` as the Codex configDir; current Trellis uses `.codex/` plus a shared `.agents/skills/` layer. `commands/update.ts:needsCodexUpgrade` detects the legacy state by looking for command-as-skill marker entries (`trellis-continue/SKILL.md`, `trellis-finish-work/SKILL.md`) in the hash file, then excludes any configured non-Codex platform whose current template collector declares those same marker paths. Current non-Codex platforms with a private command surface, such as ZCode, must not declare those marker paths under `.agents/skills`; this keeps combined installs from producing hash churn and keeps the Codex legacy detector unambiguous. When legacy Codex is detected, `update()` injects `codex` into `extraPlatforms` so `collectTemplateFiles` produces the missing `.codex/` files. Don't add platform-detection-via-hashes for any other case without a similarly tight marker and non-owner exclusion — false positives here would create bogus directories.
+Old Trellis used `.agents/skills/` as the Codex configDir; current Trellis uses `.codex/` plus a shared `.agents/skills/` layer. `commands/update.ts:needsCodexUpgrade` detects the legacy state by looking for command-as-skill marker entries (`trellis-continue/SKILL.md`, `trellis-finish-work/SKILL.md`) in the hash file, then excludes any configured non-Codex platform whose current template collector declares those same marker paths. Current non-Codex platforms with a private command surface, such as ZCode, must not declare those marker paths under `.agents/skills`; this keeps combined installs from producing hash churn and keeps the Codex legacy detector unambiguous. When legacy Codex is detected, `update()` injects `codex` into `extraPlatforms` so `collectTemplateFiles` produces the missing `.codex/` files.
+
+General platform detection also uses template hashes, but with a stricter
+ownership intersection: a platform counts only when the manifest contains a
+path declared by that platform's current `collectTemplates()` output and the
+path is under its private `configDir`. Shared `.agents/skills/` entries cannot
+activate Codex, Gemini, Pi, or Kimi, and native platform directories cannot
+activate themselves. Keep both filters; dropping either one can create bogus
+platform detections and unsafe update/uninstall plans.
 
 ### Things that look like bugs but aren't
 

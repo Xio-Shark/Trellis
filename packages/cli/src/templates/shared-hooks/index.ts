@@ -40,12 +40,13 @@ export type SharedHookPlatform =
   | "codebuddy"
   | "droid"
   | "kiro"
-  | "trae";
+  | "trae"
+  | "zcode";
 
 /**
  * Which shared hooks each platform actually invokes. Single source of truth
- * for shared-hook distribution — both `writeSharedHooks` (runtime install)
- * and `collectSharedHooks` (`trellis update` diff) read from this table.
+ * for shared-hook distribution — `collectSharedHooks` reads this table, and
+ * both `trellis init` and `trellis update` consume the map it returns.
  *
  * Routing rules encoded here:
  * - `session-start.py` — shipped by every platform with a SessionStart
@@ -54,10 +55,24 @@ export type SharedHookPlatform =
  * - `inject-workflow-state.py` — every platform with a UserPromptSubmit
  *   (or equivalent) event. Kiro + codex self-included; platforms without
  *   per-turn main-session hooks are excluded.
- * - `inject-subagent-context.py` — class-1 (push-based) platforms only.
- *   Class-2 (pull-based) platforms (codex, copilot, gemini, qoder) can't
- *   have hooks mutate sub-agent prompts — their sub-agents load context
- *   via a prelude instead.
+ * - `inject-subagent-context.py` — platforms with native sub-agent context
+ *   delivery. Most use a PreToolUse prompt mutation; Codex uses its
+ *   SubagentStart `additionalContext` event. Class-2 (pull-based) platforms
+ *   such as copilot, gemini, qoder, and trae still load context from a
+ *   self-loading agent profile.
+ * - `inject-shell-session-context.py` — platforms with a hook that fires
+ *   *before* a shell command and receives both the session id and the pending
+ *   command. That hook is the only channel by which session identity reaches
+ *   `task.py`, which runs in the shell child: no platform researched exports a
+ *   session id into that child (2026-08-05 audit of 21 platforms). Declaring a
+ *   platform here also requires an entry in its own hook config template —
+ *   `shared-hooks.test.ts` fails the build when the two disagree, because a
+ *   script on disk that nothing invokes is indistinguishable from success.
+ *   Kiro is deliberately absent: its two hook surfaces (CLI agent JSON
+ *   `hooks.{agentSpawn,userPromptSubmit}` and IDE `.kiro.hook` `when.type`)
+ *   publish no pre-tool trigger, and an unknown key in the agent JSON risks
+ *   the whole agent failing to load. Settle it by running Kiro and checking
+ *   its hook trigger list before adding it.
  * - Kiro supports per-turn + spawn hooks on both surfaces (per the official
  *   docs https://kiro.dev/docs/cli/hooks/): the CLI custom agent declares
  *   `hooks.userPromptSubmit` + `hooks.agentSpawn`, and the IDE declares a
@@ -71,6 +86,11 @@ export type SharedHookPlatform =
  *   or opt in to the Trellis one via `trellis init --with-statusline`
  *   (installed from `templates/claude/hooks/`, not from this table — no
  *   other platform has a statusLine event).
+ * - ZCode (3.x) ships a workspace hook config at `.zcode/config.json` covering
+ *   SessionStart + UserPromptSubmit in the main session, plus PreToolUse for
+ *   `Agent|Task`. Live probing confirmed `hookSpecificOutput.updatedInput`
+ *   reaches the sub-agent prompt, so ZCode is class-1 and ships
+ *   `inject-subagent-context.py`.
  */
 export const SHARED_HOOKS_BY_PLATFORM: Record<
   SharedHookPlatform,
@@ -86,17 +106,27 @@ export const SHARED_HOOKS_BY_PLATFORM: Record<
     "inject-shell-session-context.py",
     "inject-subagent-context.py",
   ],
-  codex: ["inject-workflow-state.py"],
-  gemini: ["session-start.py", "inject-workflow-state.py"],
-  qoder: ["session-start.py", "inject-workflow-state.py"],
+  codex: ["inject-workflow-state.py", "inject-subagent-context.py"],
+  gemini: [
+    "session-start.py",
+    "inject-shell-session-context.py",
+    "inject-workflow-state.py",
+  ],
+  qoder: [
+    "session-start.py",
+    "inject-shell-session-context.py",
+    "inject-workflow-state.py",
+  ],
   copilot: ["inject-workflow-state.py"],
   codebuddy: [
     "session-start.py",
+    "inject-shell-session-context.py",
     "inject-workflow-state.py",
     "inject-subagent-context.py",
   ],
   droid: [
     "session-start.py",
+    "inject-shell-session-context.py",
     "inject-workflow-state.py",
     "inject-subagent-context.py",
   ],
@@ -105,7 +135,17 @@ export const SHARED_HOOKS_BY_PLATFORM: Record<
     "inject-workflow-state.py",
     "inject-subagent-context.py",
   ],
-  trae: ["session-start.py", "inject-workflow-state.py"],
+  trae: [
+    "session-start.py",
+    "inject-shell-session-context.py",
+    "inject-workflow-state.py",
+  ],
+  zcode: [
+    "session-start.py",
+    "inject-shell-session-context.py",
+    "inject-workflow-state.py",
+    "inject-subagent-context.py",
+  ],
 };
 
 /**
@@ -127,8 +167,8 @@ export function getSharedHookScripts(): HookScript[] {
 
 /**
  * Get the shared hook scripts that a given platform actually registers.
- * Drives both `writeSharedHooks` and `collectSharedHooks` so distribution
- * never drifts from the per-platform capability declared above.
+ * Drives `collectSharedHooks` so distribution never drifts from the
+ * per-platform capability declared above.
  */
 export function getSharedHookScriptsForPlatform(
   platform: SharedHookPlatform,

@@ -10,6 +10,7 @@ on:
       - 'pnpm-workspace.yaml'
       - 'package.json'
       - 'marketplace'
+      - '**/*.py'
       - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
@@ -20,6 +21,7 @@ on:
       - 'pnpm-workspace.yaml'
       - 'package.json'
       - 'marketplace'
+      - '**/*.py'
       - '.github/workflows/ci.yml'
 
 jobs:
@@ -36,6 +38,16 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Setup minimum supported Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.9"
+
+      - name: Check Python 3.9 syntax
+        run: |
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/trellis-pycache"
+          git ls-files -z --recurse-submodules '*.py' | xargs -0 python -m py_compile
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -47,14 +59,19 @@ jobs:
       - name: Typecheck (core + cli)
         run: pnpm typecheck
 
+      - name: Typecheck Python
+        run: pnpm --filter @mindfoldhq/trellis lint:py
+
       - name: Lint (core + cli)
         run: pnpm lint
 
-      - name: Test (core + cli)
-        run: pnpm test
-
+      # Build before test: integration tests spawn the real CLI via
+      # bin/trellis.js, which imports dist/ and needs build output to exist.
       - name: Build (core then cli)
         run: pnpm build
+
+      - name: Test (core + cli)
+        run: pnpm test
 
       - name: Verify build output
         run: |

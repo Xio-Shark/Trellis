@@ -4,46 +4,26 @@
  * `searchMemSessions`, and `extractMemDialogue` entry points.
  */
 
-import {
-  claudeExtractDialogue,
-  claudeListSessions,
-  claudeSearch,
-  collectClaudeTurnsAndEvents,
-} from "./adapters/claude.js";
-import {
-  codexExtractDialogue,
-  codexListSessions,
-  codexSearch,
-  collectCodexTurnsAndEvents,
-} from "./adapters/codex.js";
-import {
-  opencodeExtractDialogue,
-  opencodeListSessions,
-  opencodeSearch,
-} from "./adapters/opencode.js";
-import {
-  collectPiTurnsAndEvents,
-  piExtractDialogue,
-  piListSessions,
-  piSearch,
-} from "./adapters/pi.js";
+import { MEM_PLATFORMS } from "./platforms.js";
 import { buildBrainstormWindows } from "./phase.js";
 import { relevanceScore, searchInDialogue } from "./search.js";
-import type {
-  DialogueTurn,
-  ExtractMemDialogueOptions,
-  ListMemSessionsOptions,
-  MemDialogueGroup,
-  MemExtractResult,
-  MemFilter,
-  MemPhase,
-  MemSearchMatch,
-  MemSearchResult,
-  MemSessionInfo,
-  MemWarning,
-  SearchHit,
-  SearchMemSessionsOptions,
-  TaskPyEvent,
+import {
+  MEM_SOURCE_KINDS,
+  type DialogueTurn,
+  type ExtractMemDialogueOptions,
+  type ListMemSessionsOptions,
+  type MemDialogueGroup,
+  type MemExtractResult,
+  type MemFilter,
+  type MemPhase,
+  type MemSearchMatch,
+  type MemSearchResult,
+  type MemSessionInfo,
+  type MemSourceKind,
+  type MemWarning,
+  type SearchHit,
+  type SearchMemSessionsOptions,
+  type TaskPyEvent,
 } from "./types.js";
 
 /** Internal wide limit — `limit` only caps display; search recall and session
@@ -54,10 +34,12 @@ export const WIDE_LIMIT = 1_000_000;
  * session id cannot be resolved. */
 export class MemSessionNotFoundError extends Error {
   readonly sessionId: string;
-  constructor(sessionId: string) {
+  readonly warnings: MemWarning[];
+  constructor(sessionId: string, warnings: MemWarning[] = []) {
     super(`mem session not found: ${sessionId}`);
     this.name = "MemSessionNotFoundError";
     this.sessionId = sessionId;
+    this.warnings = warnings;
   }
 }
 
@@ -72,63 +54,63 @@ export function resolveFilter(filter?: MemFilter): MemFilter {
   };
 }
 
+function inPlatformScope(f: MemFilter, kind: MemSourceKind): boolean {
+  return f.platform === "all" || f.platform === kind;
+}
+
 /** Fan out to every in-scope platform, merge by recency, cap at `f.limit`. */
-export function listAll(f: MemFilter): MemSessionInfo[] {
+export function listAll(
+  f: MemFilter,
+  warnings: MemWarning[] = [],
+): MemSessionInfo[] {
   const all: MemSessionInfo[] = [];
-  if (f.platform === "all" || f.platform === "claude")
-    all.push(...claudeListSessions(f));
-  if (f.platform === "all" || f.platform === "codex")
-    all.push(...codexListSessions(f));
-  if (f.platform === "all" || f.platform === "opencode")
-    all.push(...opencodeListSessions(f));
-  if (f.platform === "all" || f.platform === "pi")
-    all.push(...piListSessions(f));
+  for (const kind of MEM_SOURCE_KINDS) {
+    if (!inPlatformScope(f, kind)) continue;
+    all.push(...MEM_PLATFORMS[kind].list(f, warnings));
+  }
   all.sort((a, b) =>
     (b.updated ?? b.created ?? "").localeCompare(a.updated ?? a.created ?? ""),
   );
   return all.slice(0, f.limit);
 }
 
-function extractDialogue(s: MemSessionInfo): DialogueTurn[] {
-  switch (s.platform) {
-    case "claude":
-      return claudeExtractDialogue(s);
-    case "codex":
-      return codexExtractDialogue(s);
-    case "opencode":
-      return opencodeExtractDialogue(s);
-    case "pi":
-      return piExtractDialogue(s);
-  }
+function extractDialogue(
+  s: MemSessionInfo,
+  warnings: MemWarning[] = [],
+): DialogueTurn[] {
+  return MEM_PLATFORMS[s.platform].extract(s, warnings);
 }
 
-function searchSession(s: MemSessionInfo, kw: string): SearchHit {
-  switch (s.platform) {
-    case "claude":
-      return claudeSearch(s, kw);
-    case "codex":
-      return codexSearch(s, kw);
-    case "opencode":
-      return opencodeSearch(kw);
-    case "pi":
-      return piSearch(s, kw);
-  }
+function searchSession(
+  s: MemSessionInfo,
+  kw: string,
+  warnings: MemWarning[] = [],
+): SearchHit {
+  return MEM_PLATFORMS[s.platform].search(s, kw, warnings);
 }
 
-function collectTurnsAndEvents(s: MemSessionInfo): {
-  turns: DialogueTurn[];
-  events: TaskPyEvent[];
-} {
-  switch (s.platform) {
-    case "claude":
-      return collectClaudeTurnsAndEvents(s);
-    case "codex":
-      return collectCodexTurnsAndEvents(s);
-    case "opencode":
-      return { turns: opencodeExtractDialogue(s), events: [] };
-    case "pi":
-      return collectPiTurnsAndEvents(s);
+function collectTurnsAndEvents(
+  s: MemSessionInfo,
+  warnings: MemWarning[] = [],
+): { turns: DialogueTurn[]; events: TaskPyEvent[] } {
+  return MEM_PLATFORMS[s.platform].collect(s, warnings);
+}
+
+function prepareSqliteStores(
+  candidates: readonly MemSessionInfo[],
+  warnings: MemWarning[],
+): (() => void)[] {
+  const seen = new Set<MemSourceKind>();
+  const releases: (() => void)[] = [];
+  for (const s of candidates) {
+    if (seen.has(s.platform)) continue;
+    seen.add(s.platform);
+    const platform = MEM_PLATFORMS[s.platform];
+    if (!platform.prepare || !platform.release) continue;
+    platform.prepare(s.filePath, warnings);
+    releases.push(platform.release);
   }
+  return releases;
 }
 
 /** Build a parent → descendants index (transitively flattened) for OpenCode
@@ -162,11 +144,12 @@ function searchSessionWithChildren(
   s: MemSessionInfo,
   kw: string,
   childIndex: Map<string, MemSessionInfo[]>,
+  warnings: MemWarning[],
 ): SearchHit {
   const children = childIndex.get(s.id) ?? [];
-  if (children.length === 0) return searchSession(s, kw);
-  const merged: DialogueTurn[] = [...extractDialogue(s)];
-  for (const c of children) merged.push(...extractDialogue(c));
+  if (children.length === 0) return searchSession(s, kw, warnings);
+  const merged: DialogueTurn[] = [...extractDialogue(s, warnings)];
+  for (const c of children) merged.push(...extractDialogue(c, warnings));
   return searchInDialogue(merged, kw);
 }
 
@@ -174,9 +157,10 @@ function searchSessionWithChildren(
 export function findSessionById(
   id: string,
   f: MemFilter,
+  warnings: MemWarning[] = [],
 ): MemSessionInfo | undefined {
   const wide: MemFilter = { ...f, cwd: undefined, limit: WIDE_LIMIT };
-  const all = listAll(wide);
+  const all = listAll(wide, warnings);
   return all.find((s) => s.id === id) ?? all.find((s) => s.id.startsWith(id));
 }
 
@@ -187,21 +171,24 @@ interface PhaseSlice {
   warnings: MemWarning[];
 }
 
-/** Slice cleaned dialogue by phase. Claude / Codex / Pi have native boundary
- * detection; OpenCode degrades to "all turns + warning". */
-function sliceMemPhase(s: MemSessionInfo, phase: MemPhase): PhaseSlice {
-  const warnings: MemWarning[] = [];
-
-  if (phase === "all" || s.platform === "opencode") {
-    if (phase !== "all" && s.platform === "opencode") {
+/** Slice cleaned dialogue by phase. Platforms with `phaseSupported: false`
+ * (OpenCode) degrade to "all turns + warning". */
+function sliceMemPhase(
+  s: MemSessionInfo,
+  phase: MemPhase,
+  warnings: MemWarning[] = [],
+): PhaseSlice {
+  const platform = MEM_PLATFORMS[s.platform];
+  if (phase === "all" || !platform.phaseSupported) {
+    if (phase !== "all" && !platform.phaseSupported) {
       warnings.push({
-        code: "opencode-phase-unsupported",
+        code: `${s.platform}-phase-unsupported`,
         message:
-          `--phase ${phase} on platform=opencode is not yet supported; ` +
+          `--phase ${phase} on platform=${s.platform} is not yet supported; ` +
           `returning full dialogue.`,
       });
     }
-    const turns = extractDialogue(s);
+    const turns = extractDialogue(s, warnings);
     return {
       groups: [{ label: null, turns }],
       windows: [],
@@ -210,7 +197,7 @@ function sliceMemPhase(s: MemSessionInfo, phase: MemPhase): PhaseSlice {
     };
   }
 
-  const { turns, events } = collectTurnsAndEvents(s);
+  const { turns, events } = collectTurnsAndEvents(s, warnings);
   const windows = buildBrainstormWindows(events, turns.length);
 
   if (phase === "brainstorm") {
@@ -267,12 +254,15 @@ function sliceMemPhase(s: MemSessionInfo, phase: MemPhase): PhaseSlice {
 
 // ---------- public API ----------
 
-/** List session metadata across Claude / Codex / OpenCode / Pi, sorted by
- * recency and capped at the filter's `limit` (default 50). */
+/** List session metadata across every mem platform, sorted by recency and
+ * capped at the filter's `limit` (default 50). */
 export function listMemSessions(
   options?: ListMemSessionsOptions,
 ): MemSessionInfo[] {
-  return listAll(resolveFilter(options?.filter));
+  const warnings: MemWarning[] = [];
+  const sessions = listAll(resolveFilter(options?.filter), warnings);
+  for (const warning of warnings) options?.onWarning?.(warning);
+  return sessions;
 }
 
 /** Multi-token AND grep over cleaned dialogue across all matching sessions,
@@ -284,8 +274,9 @@ export function searchMemSessions(
   const f = resolveFilter(options.filter);
   const kw = options.keyword;
   const includeChildren = options.includeChildren === true;
+  const warnings: MemWarning[] = [];
 
-  const candidates = listAll({ ...f, limit: WIDE_LIMIT });
+  const candidates = listAll({ ...f, limit: WIDE_LIMIT }, warnings);
   const childIndex = includeChildren
     ? buildChildIndex(candidates)
     : new Map<string, MemSessionInfo[]>();
@@ -296,18 +287,23 @@ export function searchMemSessions(
     candidateIds.has(s.parent_id);
 
   const matches: MemSearchMatch[] = [];
-  for (const s of candidates) {
-    if (isAbsorbedChild(s)) continue;
-    const hit = includeChildren
-      ? searchSessionWithChildren(s, kw, childIndex)
-      : searchSession(s, kw);
-    if (hit.count === 0) continue;
-    matches.push({
-      session: s,
-      hit,
-      score: relevanceScore(hit),
-      descendantsMerged: childIndex.get(s.id)?.length ?? 0,
-    });
+  const releases = prepareSqliteStores(candidates, warnings);
+  try {
+    for (const s of candidates) {
+      if (isAbsorbedChild(s)) continue;
+      const hit = includeChildren
+        ? searchSessionWithChildren(s, kw, childIndex, warnings)
+        : searchSession(s, kw, warnings);
+      if (hit.count === 0) continue;
+      matches.push({
+        session: s,
+        hit,
+        score: relevanceScore(hit),
+        descendantsMerged: childIndex.get(s.id)?.length ?? 0,
+      });
+    }
+  } finally {
+    for (const release of releases) release();
   }
   matches.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
@@ -320,7 +316,7 @@ export function searchMemSessions(
   return {
     matches: matches.slice(0, f.limit),
     totalMatches: matches.length,
-    warnings: [],
+    warnings,
   };
 }
 
@@ -331,10 +327,11 @@ export function extractMemDialogue(
 ): MemExtractResult {
   const f = resolveFilter(options.filter);
   const phase: MemPhase = options.phase ?? "all";
-  const s = findSessionById(options.sessionId, f);
-  if (!s) throw new MemSessionNotFoundError(options.sessionId);
+  const warnings: MemWarning[] = [];
+  const s = findSessionById(options.sessionId, f, warnings);
+  if (!s) throw new MemSessionNotFoundError(options.sessionId, warnings);
 
-  const slice = sliceMemPhase(s, phase);
+  const slice = sliceMemPhase(s, phase, warnings);
   const grepLc =
     typeof options.grep === "string" ? options.grep.toLowerCase() : undefined;
   const filterTurns = (turns: DialogueTurn[]): DialogueTurn[] =>
