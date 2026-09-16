@@ -522,10 +522,18 @@ def parent_may_complete(parent_dir: Path, tasks_dir: Path) -> tuple[bool, str]:
                 incomplete.append(f"{name} (missing)")
             continue
         child = read_json(cj) or {}
+        # Plain tree children are organizational — archiving unlinks them.
+        # Only parallel-graph children (depends_on edges / worktree
+        # isolation) block completion while unfinished.
+        is_graph_child = (
+            bool(child.get("depends_on"))
+            or child.get("isolation") == "worktree"
+            or bool(child.get("worktree_path"))
+        )
         status = str(child.get("status", "unknown"))
-        if status == FAILED_STATUS:
+        if is_graph_child and status == FAILED_STATUS:
             failed.append(name)
-        elif status not in DONE_STATUSES:
+        elif is_graph_child and status not in DONE_STATUSES:
             incomplete.append(f"{name} ({status})")
 
     if failed:

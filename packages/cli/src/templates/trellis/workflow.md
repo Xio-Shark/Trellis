@@ -300,9 +300,11 @@ Goal: turn reviewed artifacts into code that passes quality checks.
 
 Dispatch `trellis-implement`: implement the reviewed artifacts, consult `research/`, finish with project lint + type-check. **Dispatch prompt guard**: the prompt MUST start with `Active task: <task path>`, and the spawned agent is already the `trellis-implement` sub-agent — it must implement directly, not spawn another `trellis-implement` / `trellis-check`.
 
-The platform hook/plugin auto-handles (for Codex, `SubagentStart` supplies native context injection and the agent profile keeps child-side loading as fallback):
+The platform hook/plugin auto-handles:
+
 - Reads `implement.jsonl` and injects the referenced spec/research files into the agent prompt
 - Injects `prd.md`, `design.md` if present, and `implement.md` if present
+- For Codex, `SubagentStart` supplies native context injection; the agent profile keeps child-side loading as the fallback
 
 [/Claude Code, Cursor, OpenCode, codex-sub-agent, CodeBuddy, Droid, Pi, ZCode, Snow, Oh My Pi]
 
